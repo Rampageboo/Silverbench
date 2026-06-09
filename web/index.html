@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YOLO Label Viewer Web</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+		  <div class="app video" id="app">
+		    <nav class="tabbar">
+			      <div class="brand">YOLO Tools</div>
+			      <button id="imagePoolTabBtn">Images</button>
+				      <button id="poolLabelTabBtn">Pool Label</button>
+			      <button id="inboxTabBtn" hidden>Assign</button>
+			      <button id="videoTabBtn" class="active">Video Screenshot</button>
+				      <button id="yoloTabBtn" hidden>Review</button>
+				      <button id="trainPrepTabBtn">Dataset Prep</button>
+				      <button id="trainTabBtn">Auto Label</button>
+				      <button id="cropTabBtn">Crop</button>
+				      <button id="maskNoiseTabBtn">Mask Noise</button>
+			      <button id="mergeTabBtn">Dataset Merge</button>
+		    </nav>
+			    <header class="topbar">
+			      <div class="brand" id="activeToolTitle">Video Screenshot</div>
+		      <div class="topbar-actions" id="topbarActions">
+		        <div class="yolo-mode-controls" id="yoloModeControls" hidden>
+		          <div class="inbox-target-toggle yolo-dataset-toggle" id="yoloViewModes" role="group" aria-label="YOLO dataset mode">
+		            <button type="button" class="inbox-target-option" data-yolo-mode="detect">Detect</button>
+		            <button type="button" class="inbox-target-option" data-yolo-mode="clf">Clf</button>
+		          </div>
+		        </div>
+		      </div>
+		      <div class="status" id="status">Open or drop a video. With a workspace bound, screenshots save to image_pool by default.</div>
+		    </header>
+
+	    <main class="image-pool-workspace">
+	      <section class="panel image-pool-panel">
+	        <div class="panel-header">
+	          <span>Image Library</span>
+	          <span id="imagePoolStats" class="status">Open a workspace to scan image_pool</span>
+	        </div>
+	        <div class="panel-body image-pool-body">
+	          <div class="row image-pool-toolbar">
+	            <button class="primary" id="imagePoolOpenFolderBtn">Open Workspace</button>
+	            <button id="imagePoolRefreshBtn">Refresh Scan</button>
+	            <button id="imagePoolMarkSeenBtn">Mark All Seen</button>
+	            <button id="imagePoolSelectAllBtn">Select Visible</button>
+	            <button id="imagePoolClearSelectionBtn">Clear Selection</button>
+	            <button id="imagePoolOpenYoloBtn">Pool Label</button>
+	            <button class="danger" id="imagePoolDeleteSelectedBtn">Delete Selected</button>
+	          </div>
+	          <div class="hint image-pool-select-hint">Click to select; use Ctrl/Shift for multi-select. Double-click to preview. Delete removes image_pool files, hard links, labels, and metadata.</div>
+	          <div class="image-pool-filters">
+	            <button id="imagePoolFilterAllBtn" class="active">All</button>
+	            <button id="imagePoolFilterNewBtn">NEW</button>
+	            <button id="imagePoolFilterUnusedBtn">Unused</button>
+	            <button id="imagePoolFilterUsedBtn">Used</button>
+	          </div>
+	          <div class="image-pool-grid-wrap" id="imagePoolGridWrap">
+	            <div class="gallery" id="imagePoolGrid">
+	              <div class="empty">Open a workspace containing image_pool.</div>
+	            </div>
+	          </div>
+	        </div>
+	      </section>
+	      <div class="image-pool-dup-overlay collapsed" id="imagePoolDupOverlay">
+	        <button type="button" class="image-pool-dup-fab" id="imagePoolDupFab" title="Duplicate images" aria-expanded="false">
+	          <svg class="image-pool-dup-fab-icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+	            <rect x="3" y="5" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+	            <rect x="9" y="7" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+	          </svg>
+	          <span class="image-pool-dup-badge" id="imagePoolDupBadge" hidden></span>
+	        </button>
+	        <div class="image-pool-dup-panel" id="imagePoolDupPanel" role="dialog" aria-label="Duplicate images">
+	          <div class="image-pool-dup-panel-head">
+	            <span class="image-pool-dup-title">Duplicates</span>
+	            <span id="imagePoolDuplicateStatus" class="status">Not scanned</span>
+	            <button type="button" class="image-pool-dup-close" id="imagePoolDupCollapseBtn" title="Collapse">×</button>
+	          </div>
+	          <div class="image-pool-dup-panel-body duplicate-photo-panel">
+	            <div class="row">
+	              <button class="primary" id="imagePoolFindDuplicatesBtn">Find Duplicates</button>
+	              <button class="danger" id="imagePoolClearDuplicatesBtn">Clear Duplicates</button>
+	            </div>
+	            <div class="hint">Scans image_pool only. Deleting duplicates removes hard links and updates metadata.csv.</div>
+	            <div class="duplicate-photo-results" id="imagePoolDuplicateResults">
+	              <div class="empty">Click Find Duplicates to scan identical files.</div>
+	            </div>
+	          </div>
+	        </div>
+	      </div>
+	    </main>
+
+	    <main class="inbox-workspace">
+	      <section class="panel inbox-gallery-panel">
+	        <div class="panel-header">
+	          <span>Images to Assign</span>
+	          <span id="inboxStats" class="status">Open a workspace to load NEW images</span>
+	        </div>
+	        <div class="panel-body inbox-body">
+	          <div class="row inbox-toolbar">
+	            <button class="primary" id="inboxOpenFolderBtn">Open Workspace</button>
+	            <button id="inboxRefreshBtn">Refresh</button>
+	            <button id="inboxSelectAllBtn">Select Visible</button>
+	            <button id="inboxClearSelectionBtn">Clear Selection</button>
+	            <button class="danger inbox-toolbar-end" id="inboxMarkJunkBtn" disabled>Mark Junk</button>
+	          </div>
+	          <div class="inbox-filters">
+	            <button id="inboxFilterNewBtn" class="active">NEW</button>
+	            <button id="inboxFilterUnassignedBtn">No Metadata</button>
+	            <button id="inboxFilterAllBtn">All</button>
+	          </div>
+	          <div class="inbox-grid-wrap" id="inboxGridWrap">
+	            <div class="gallery" id="inboxGrid">
+	              <div class="empty">Open a workspace containing image_pool, then start assigning NEW images.</div>
+	            </div>
+	          </div>
+	        </div>
+	      </section>
+	      <aside class="panel inbox-assign-panel">
+	        <div class="panel-header">
+	          <span class="panel-header-title">
+	            Batch Assign
+	            <button type="button" class="info-icon-btn" id="inboxAssignInfoBtn" title="Select images, click a class chip, and metadata is written to the workspace session. Build pending batches or build all metadata when ready." aria-label="Batch assign help">i</button>
+	          </span>
+	          <span id="inboxSelectionCount" class="status">0 selected</span>
+	        </div>
+	        <div class="panel-body inbox-assign-body">
+	          <div class="status inbox-workflow-status" id="inboxWorkflowStatus">Record file: .yolo_label_viewer/session.json</div>
+	          <div class="inbox-target-toggle" role="group" aria-label="Assign to Detect or Clf">
+	            <button type="button" class="inbox-target-option" id="inboxTargetDetectBtn" data-target="detect">Detect</button>
+	            <button type="button" class="inbox-target-option active" id="inboxTargetClfBtn" data-target="clf">Clf</button>
+	          </div>
+	          <div class="hint inbox-assign-legend">Thumbnail borders show current assignment state. Blue means selected.</div>
+	          <div class="inbox-assign-target-panels">
+	            <div class="inbox-assign-target-panel" id="inboxClfAssignPanel">
+	              <div class="inbox-class-field">
+	                <span>Clf Class</span>
+	                <div class="hint" id="inboxClassHint">Classes load from clf_dataset folders</div>
+	                <input id="inboxClassSearchInput" type="search" placeholder="Search classes...">
+	                <div class="inbox-class-picker" id="inboxClassPicker">
+	                  <div class="empty">Open a workspace to load classes</div>
+	                </div>
+	              </div>
+	              <label>Or create class <input id="inboxNewClassInput" type="text" placeholder="class_name"></label>
+	            </div>
+	            <div class="inbox-assign-target-panel" id="inboxDetectAssignPanel" hidden>
+	              <div class="inbox-class-field">
+	                <span>Detect Classes</span>
+	                <div class="hint" id="inboxDetectClassHint">Classes load from detect_dataset/data.yaml</div>
+	                <input id="inboxDetectClassSearchInput" type="search" placeholder="Search detect classes...">
+	                <div class="inbox-class-picker" id="inboxDetectClassPicker">
+	                  <div class="empty">Open a workspace to load detect classes</div>
+	                </div>
+	              </div>
+	              <div class="hint inbox-detect-assign-hint">Select images, then click a class chip or Apply to Selected. Box labels stay in Pool Label.</div>
+	            </div>
+	          </div>
+	          <div class="row" style="margin-top:12px">
+	            <button id="inboxApplyAssignBtn">Apply to Selected</button>
+	          </div>
+	          <div class="row" style="margin-top:8px">
+	            <button class="primary" id="inboxBuildPendingBtn">Build Pending</button>
+	            <button id="inboxBuildLinksBtn">Build All</button>
+	            <label class="inbox-check"><input type="checkbox" id="inboxRebuildInput"> rebuild</label>
+	          </div>
+	          <div class="merge-log inbox-log" id="inboxLog">Ready.</div>
+	        </div>
+	      </aside>
+	    </main>
+
+	    <main class="video-workspace">
+	      <section class="panel">
+	        <div class="panel-header">
+	          <span>Video</span>
+	          <span id="videoMeta" class="status">No video loaded</span>
+	        </div>
+		        <div class="panel-body video-panel">
+			          <div class="video-stage" id="videoDropZone">
+				            <video id="videoPlayer" controls preload="metadata" playsinline></video>
+			            <img id="backendFramePreview" alt="Video preview" hidden>
+			          </div>
+			          <input id="videoScrubber" class="video-scrubber" type="range" min="0" max="0" step="0.001" value="0" aria-label="Video progress">
+			          <div class="segment-box">
+		            <div class="row">
+		              <div class="group-title" style="margin:0">Screenshot Segments</div>
+		              <button id="addSegmentBtn">Add Segment</button>
+		              <button id="deleteSegmentBtn" class="danger">Delete Segment</button>
+		              <button id="fullSegmentBtn">Full Video</button>
+		            </div>
+		            <div class="segment-timeline" id="segmentTimeline">
+		              <div class="segment-rail"></div>
+		              <div id="segmentLayer"></div>
+		              <div class="segment-playhead" id="segmentPlayhead" style="left:12px"></div>
+		            </div>
+		            <div class="segment-summary" id="segmentSummary">Segments: none</div>
+		          </div>
+		        </div>
+	      </section>
+	      <aside class="panel">
+	        <div class="panel-header">
+	          <span>Screenshot</span>
+	          <span id="videoImportCount" class="status">0 videos</span>
+	        </div>
+	        <div class="panel-body video-control-stack">
+	          <div class="row">
+		            <button class="primary" id="openVideoBtn">Add Video</button>
+	            <button id="chooseScreenshotFolderBtn">Output Folder</button>
+	            <button id="openBrowserWebBtn" class="yolo-control" hidden title="Open web/index.html in Chrome/Edge">Open in Chrome</button>
+	          </div>
+	          <div class="video-list" id="videoList">
+	            <div class="empty">Drop a video file or folder.</div>
+	          </div>
+	          <div class="video-time" id="videoTimeReadout">00:00:00.000 / 00:00:00.000</div>
+	          <div class="video-time" id="frameEstimate">Estimated frames: 0 current / 0 all</div>
+		          <button class="primary" id="captureFrameBtn">Capture Current Frame</button>
+	          <div class="video-inline-grid">
+	            <label>Interval seconds <input id="captureIntervalInput" type="number" min="0.1" step="0.1" value="1"></label>
+	            <label>Format
+	              <select id="screenshotFormatSelect">
+	                <option value="png">PNG</option>
+	                <option value="jpg">JPG</option>
+	              </select>
+	            </label>
+	          </div>
+	          <label>Filename prefix <input id="screenshotPrefixInput" type="text" placeholder="video name"></label>
+	          <div class="hint">Export naming: video_seg01_000001_timestamp.jpg. Each video is numbered independently.</div>
+	          <div class="row">
+			            <button id="captureBatchBtn">Capture Segments</button>
+	            <button id="exportAllVideosBtn">Export All Videos</button>
+	          </div>
+	          <div class="video-progress" id="videoProgressBox" hidden>
+	            <progress id="videoProgress" value="0" max="1"></progress>
+	            <div class="video-progress-count" id="videoProgressText">0 / 0</div>
+	            <div class="video-progress-detail" id="videoProgressDetail"></div>
+	          </div>
+		          <div class="hint">Add or drop a video, then capture screenshots. With a workspace open, output defaults to image_pool.</div>
+	          <div class="merge-log" id="videoLog">Ready.</div>
+	        </div>
+	      </aside>
+	    </main>
+
+		    <main class="workspace yolo-workspace" id="yoloWorkspace">
+	      <section class="panel" id="imagePanel">
+        <div class="panel-header">
+          <span>Images</span>
+          <div class="image-view-controls">
+            <button id="showAllImagesBtn" class="active">Show All</button>
+            <button id="hideReviewedImagesBtn">Hide Reviewed</button>
+            <button id="showFlaggedImagesBtn">Show Flagged</button>
+            <button id="sendToCropBtn" title="Add visible images to the Crop queue">Send to Crop</button>
+            <span id="imageCount" class="status"></span>
+          </div>
+        </div>
+        <div class="panel-body" id="galleryScroll">
+          <div class="gallery" id="gallery">
+            <div class="empty">Open a folder, or drop one into the window.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="previewPanel">
+        <div class="panel-header">
+          <span>Preview</span>
+          <span id="boxCount" class="status"></span>
+        </div>
+        <div class="panel-body viewer">
+          <div class="canvas-wrap" id="dropZone">
+            <canvas id="previewCanvas"></canvas>
+          </div>
+          <div class="viewer-splitter" id="viewerSplitter" title="Drag to resize preview and tools"></div>
+          <div class="edit-tray">
+            <div class="tool-card">
+              <div class="group-title">Image Edit</div>
+              <div class="segmented">
+                <label><input type="radio" name="editMode" value="none" checked>Off</label>
+                <label><input type="radio" name="editMode" value="crop">Crop</label>
+                <label><input type="radio" name="editMode" value="black">Black</label>
+                <label><input type="radio" name="editMode" value="box">Box</label>
+              </div>
+              <div class="row" style="margin-top:10px">
+                <button id="addEditBtn">Add</button>
+                <button id="clearSelectionBtn">Clear</button>
+                <button id="undoLastBtn">Undo Last</button>
+                <button class="danger" id="undoImageBtn">Undo Image</button>
+              </div>
+              <div class="row" style="margin-top:8px">
+                <button id="repeatOneBtn">Repeat x1</button>
+                <button id="repeatManyBtn">Repeat to Shift</button>
+              </div>
+              <div class="row" style="margin-top:8px">
+                <button class="primary" id="applyBlackBtn">Apply Blacks</button>
+                <button id="applyAllBlackBtn">Apply All Blacks</button>
+              </div>
+              <div class="row" style="margin-top:8px">
+                <button id="chooseBackupBtn" title="Browser folder mode: choose a manual backup folder">Source Copy Folder</button>
+                <button class="danger" id="restoreBackupBtn" title="Workspace: restore the current image from image_pool_backup">Restore Backup</button>
+              </div>
+              <div class="pending-line" id="pendingStatus">Black boxes: dashed preview until Apply.</div>
+              <div class="pending-list" id="currentPendingList">
+                <div class="pending-item"><span>No image edits on this image yet.</span></div>
+              </div>
+              <div class="hint" id="editHint">Workspace: before the first Crop/Black save, the original is backed up to image_pool_backup/. Black boxes preview as dashed outlines until Apply. Ctrl/Shift-click thumbnails for multi-select.</div>
+            </div>
+            <div class="tray-splitter" data-tray-splitter="imageCrop" title="Drag to resize tool cards"></div>
+
+            <div class="tool-card">
+              <div class="group-title">TXT / Box Edit</div>
+              <div class="hint" id="boxEditStatus">Click a green YOLO box to select. Drag inside to move; drag a corner to resize.</div>
+              <div class="box-form" style="margin-top:10px">
+                <label>Class <input id="boxClassInput" type="number" step="1"></label>
+                <label>X center <input id="boxXInput" type="number" step="0.001" min="0" max="1"></label>
+                <label>Y center <input id="boxYInput" type="number" step="0.001" min="0" max="1"></label>
+                <label>Width <input id="boxWInput" type="number" step="0.001" min="0" max="1"></label>
+                <label>Height <input id="boxHInput" type="number" step="0.001" min="0" max="1"></label>
+              </div>
+              <div class="row" style="margin-top:10px">
+	                <button id="updateBoxBtn">Update Box</button>
+	                <button class="danger" id="deleteBoxBtn">Delete Box</button>
+	              </div>
+            </div>
+            <div class="tray-splitter" data-tray-splitter="boxClasses" title="Drag to resize tool cards"></div>
+
+            <div class="tool-card selected-class-card">
+              <div class="tool-card-head">
+                <div class="group-title">Selected Classes</div>
+                <span id="selectedClassStatus" class="status">0 images</span>
+              </div>
+		              <div class="row selected-class-actions" data-selected-class-mode="detect">
+		                <button id="selectAllSelectedClassesBtn">Select All</button>
+		                <button id="clearSelectedClassesBtn">Clear</button>
+		                <button id="addSelectedClassesIncludeBtn" class="primary">Add Include</button>
+		                <button id="addSelectedClassesExcludeBtn">Add Exclude</button>
+		                <button id="removeSelectedClassesBtn" class="danger">Remove Class</button>
+		              </div>
+		              <div class="row selected-class-actions is-hidden" data-selected-class-mode="classify">
+		                <input id="classFolderNameInput" type="text" placeholder="class ID or folder name">
+		                <button id="addClassFolderBtn">Add Folder</button>
+		                <button id="moveSelectedToClassBtn" class="primary">Move Selected</button>
+		              </div>
+	              <div class="selected-class-list" id="selectedClassList">
+                <div class="empty">Select images to inspect classes.</div>
+              </div>
+              <div class="hint" id="selectedClassHint">Uses the current image plus Ctrl/Shift selected thumbnails.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="side-stack yolo-side-stack" id="yoloSideStack">
+        <section class="panel txt-info-panel" id="txtInfoPanel">
+          <div class="panel-header">
+            <span>TXT Info</span>
+            <span id="positionMeta" class="status"></span>
+          </div>
+          <div class="panel-body txt-info-body">
+            <div class="meta">
+              <div id="fileMeta">No image selected.</div>
+            </div>
+            <textarea id="labelText" readonly></textarea>
+          </div>
+        </section>
+        <section class="panel filter-panel">
+          <div class="panel-header">
+            <span>Filter</span>
+          </div>
+          <div class="panel-body filter-panel-body">
+            <div class="yolo-filter-tools row" style="margin-bottom:8px">
+              <button id="clearIncludeBtn">Deselect Include</button>
+              <button id="clearExcludeBtn">Deselect Exclude</button>
+              <button id="clearFilterBtn">Deselect All</button>
+            </div>
+            <div class="yolo-filter-tools filter-list" id="filterList">
+              <div class="empty">No classes loaded.</div>
+            </div>
+            <div class="yolo-filter-tools hint" id="filterStatus">Include narrows first; Exclude removes matches after that.</div>
+          </div>
+        </section>
+
+      </aside>
+	    </main>
+	    <main class="workspace pool-label-workspace" id="poolLabelWorkspace">
+	      <section class="pool-label-shortcuts-panel" id="poolLabelShortcutsPanel">
+	        <div class="pool-label-shortcuts-head">
+	          <span>Class Shortcuts</span>
+	          <span id="poolLabelShortcutHint" class="status">Bind any class to 0-9, then press the key while labeling.</span>
+	        </div>
+	        <div class="pool-label-shortcuts" id="poolLabelShortcuts"></div>
+	      </section>
+	      <aside class="side-stack pool-label-side-stack" id="poolLabelSideStack">
+	        <section class="panel pool-label-box-panel" id="poolLabelBoxPanel">
+	          <div class="panel-header">
+	            <span>Current Boxes</span>
+	          </div>
+	          <div class="panel-body pool-label-box-panel-body">
+	            <div class="hint" id="poolLabelStatus">Drag to create. A/D or arrows navigate. 0-9 assigns class.</div>
+	            <div class="pool-label-box-list" id="poolLabelBoxList"></div>
+	          </div>
+	        </section>
+
+	        <section class="panel filter-panel pool-label-classes-panel">
+	          <div class="panel-header">
+	            <span>Classes</span>
+	          </div>
+	          <div class="panel-body filter-panel-body">
+	            <div class="pool-label-tools">
+	              <div class="row">
+	                <input id="poolLabelClassNameInput" type="text" placeholder="class name">
+	                <button id="poolLabelAddClassBtn" class="primary">Add Class</button>
+	                <button id="poolLabelRenameClassBtn">Rename Selected</button>
+	              </div>
+	              <div class="row" style="margin-top:8px">
+	                <select id="poolLabelBindSlotSelect"></select>
+	                <button id="poolLabelBindSlotBtn">Bind Current to Slot</button>
+	              </div>
+	              <div class="pool-label-class-list" id="poolLabelClassList"></div>
+	              <div class="pool-label-actions">
+	                <button id="poolLabelPointerToolBtn" class="pool-label-icon-tool" type="button" title="Pointer tool (V): select, move, and resize boxes" aria-label="Pointer tool: select, move, and resize boxes" aria-pressed="false">
+	                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+	                    <path d="M6 3l10 10-5 1.5L8.5 20 6 3z" />
+	                  </svg>
+	                </button>
+	                <button id="poolLabelAutoFitToolBtn" class="pool-label-icon-tool" type="button" title="Subject Select (W): auto-fit rough box to subject" aria-label="Subject Select: auto-fit rough box to subject" aria-pressed="false">
+	                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+	                    <path d="M12 3v4M12 17v4M3 12h4M17 12h4" />
+	                    <path d="M8 8h8v8H8z" />
+	                    <path d="M10 10h4v4h-4z" />
+	                  </svg>
+	                </button>
+	                <button id="poolLabelSaveEmptyBtn">Save Empty TXT</button>
+	                <button id="poolLabelTrackBtn" class="primary">Copy to Next (T)</button>
+	                <button id="poolLabelCsrtBtn">CSRT Track (Shift+T)</button>
+	              </div>
+	              <div class="pool-label-csrt-controls">
+	                <label>Frames <input id="poolLabelCsrtFramesInput" type="number" min="1" max="100" step="1" value="5"></label>
+	                <label>Area min <input id="poolLabelCsrtAreaMinInput" type="number" min="0.05" max="1" step="0.05" value="0.6"></label>
+	                <label>Area max <input id="poolLabelCsrtAreaMaxInput" type="number" min="1" max="10" step="0.1" value="1.6"></label>
+	                <label>Jump <input id="poolLabelCsrtJumpInput" type="number" min="0.1" max="5" step="0.1" value="0.7"></label>
+	              </div>
+	            </div>
+	          </div>
+	        </section>
+	      </aside>
+	    </main>
+	    <main class="crop-workspace">
+	      <section class="panel">
+	        <div class="panel-header">
+	          <span>Batch Crop Images</span>
+	          <span id="batchCropStatus" class="status">Choose folders</span>
+	        </div>
+	        <div class="panel-body train-prep-stack">
+	          <div class="batch-crop-queue-panel">
+	            <div class="row">
+	              <span class="group-title">Crop Queue</span>
+	              <button id="clearBatchCropQueueBtn" type="button">Clear Queue</button>
+	            </div>
+	            <div class="merge-log" id="batchCropQueueSummary">Use Send to Crop from Review, or right-click a class in Filter.</div>
+	          </div>
+	          <div class="train-grid">
+	            <label>Output <input id="batchCropOutputDir" type="text" readonly placeholder="cropped output folder"></label>
+	            <label>Width <input id="batchCropWidthInput" type="number" min="1" step="1" value="2560"></label>
+	            <label>Height <input id="batchCropHeightInput" type="number" min="1" step="1" value="1440"></label>
+	            <label>Anchor
+	              <select id="batchCropAnchorSelect">
+	                <option value="center">Center</option>
+	                <option value="top">Top</option>
+	                <option value="bottom">Bottom</option>
+	              </select>
+	            </label>
+		          </div>
+		          <div class="row">
+		            <button id="useClassifyTrainCropBtn">Enqueue All Train</button>
+		            <button id="chooseBatchCropOutputBtn">Output Folder</button>
+		            <button id="runBatchCropBtn" class="primary">Batch Crop</button>
+		          </div>
+		          <details class="batch-crop-advanced">
+		            <summary>Advanced: import from folder (legacy flow)</summary>
+		            <div class="train-grid" style="margin-top:8px">
+		              <label>Input <input id="batchCropInputDir" type="text" readonly placeholder="source image folder"></label>
+		            </div>
+		            <div class="row" style="margin-top:8px">
+		              <button id="chooseBatchCropInputBtn">Input Folder</button>
+		            </div>
+		          </details>
+	          <div class="class-anchor-list" id="batchCropClassAnchorList">
+	            <div class="empty">Open a classification dataset to set per-class anchors.</div>
+	          </div>
+	          <div class="merge-log" id="batchCropLog">For 2560x1660 to 2560x1440, Center crops 110px from top and bottom.</div>
+	        </div>
+	      </section>
+
+	      <section class="panel">
+	        <div class="panel-header">
+	          <span>Smart Crop YOLO Dataset</span>
+	          <span id="cropDatasetStatus" class="status">No dataset loaded</span>
+	        </div>
+	        <div class="panel-body train-prep-stack">
+	          <div class="crop-grid">
+	            <label>Width <input id="cropTargetWInput" type="number" min="64" step="16" value="2560"></label>
+	            <label>Height <input id="cropTargetHInput" type="number" min="64" step="16" value="1440"></label>
+	            <label>Max / image <input id="cropMaxPerImageInput" type="number" min="1" max="12" step="1" value="3"></label>
+	            <label>Margin px <input id="cropBoxMarginInput" type="number" min="0" max="1000" step="8" value="80"></label>
+	          </div>
+	          <div class="row">
+	            <button id="previewSmartCropBtn">Preview Current</button>
+	            <button class="primary" id="applySmartCropBtn">Apply Dataset</button>
+	            <button class="danger" id="stopSmartCropBtn" disabled>Stop</button>
+	          </div>
+	          <div class="crop-tool-log" id="cropLog">Open a YOLO dataset first. Preview uses the current YOLO View image; Apply writes smart_crops into the dataset.</div>
+	        </div>
+	      </section>
+	    </main>
+
+	    <main class="train-prep-workspace">
+	      <section class="panel">
+	        <div class="panel-header">
+	          <span>Dataset Split</span>
+	          <span id="trainPrepDatasetStatus" class="status">No dataset loaded</span>
+	        </div>
+	        <div class="panel-body train-prep-stack">
+	          <div class="row">
+	            <button class="primary" id="trainPrepOpenDatasetBtn">Open Dataset</button>
+	            <label class="inline-input">Val ratio <input id="valSplitRatioInput" type="number" min="0.05" max="0.4" step="0.05" value="0.15"></label>
+	            <button id="prepareValSplitBtn">Create Val Split</button>
+	            <button id="fixDataYamlBtn">Fix data.yaml</button>
+	          </div>
+	          <div class="hint" id="valSplitStatus">Drop a dataset to open it for labeling. Create Val Split / Fix data.yaml requires Open Dataset Folder with a disk path.</div>
+		        </div>
+		      </section>
+		      <section class="panel">
+		        <div class="panel-header">Training Command Builder</div>
+		        <div class="panel-body train-prep-stack">
+		          <div class="train-grid">
+		            <label>Command
+		              <select id="trainCommandModeSelect">
+		                <option value="train">Train from scratch</option>
+		                <option value="continue-train">Continue from best.pt</option>
+		                <option value="export-onnx">Export .pt to ONNX</option>
+		              </select>
+		            </label>
+		            <label>Task
+		              <select id="trainTaskSelect">
+		                <option value="detect">Detect</option>
+		                <option value="classify">Classify</option>
+		              </select>
+		            </label>
+		            <label>Data <input id="trainDataInput" type="text" placeholder="dataset/data.yaml"></label>
+		            <label>Model
+		              <select id="trainModelSelect">
+		                <option value="yolo11n.pt">yolo11n.pt</option>
+		                <option value="yolo11s.pt">yolo11s.pt</option>
+		                <option value="yolo11m.pt">yolo11m.pt</option>
+		                <option value="yolo11l.pt">yolo11l.pt</option>
+		                <option value="yolo11x.pt">yolo11x.pt</option>
+		                <option value="yolov8n.pt">yolov8n.pt</option>
+		                <option value="yolov8s.pt">yolov8s.pt</option>
+		                <option value="yolo11n-cls.pt">yolo11n-cls.pt</option>
+		                <option value="yolo11s-cls.pt">yolo11s-cls.pt</option>
+		                <option value="yolo11m-cls.pt">yolo11m-cls.pt</option>
+		                <option value="yolov8n-cls.pt">yolov8n-cls.pt</option>
+		                <option value="yolov8s-cls.pt">yolov8s-cls.pt</option>
+		                <option value="runs/classify/train/weights/best.pt">runs/classify/train/weights/best.pt</option>
+		                <option value="runs/detect/train/weights/best.pt">runs/detect/train/weights/best.pt</option>
+		              </select>
+		            </label>
+		            <label>Epochs <input id="trainEpochsInput" type="number" min="1" step="1" value="100"></label>
+		            <label>Batch <input id="trainBatchInput" type="number" min="-1" step="1" value="16"></label>
+		            <label>Image size <input id="trainImageSizeInput" type="number" min="64" step="32" value="640"></label>
+		            <label>Device <input id="trainDeviceInput" type="text" value="0" placeholder="0, cpu, 0,1"></label>
+		            <label>Workers <input id="trainWorkersInput" type="number" min="0" step="1" value="8"></label>
+		            <label>Project <input id="trainProjectInput" type="text" value="runs/detect"></label>
+		            <label>Name <input id="trainNameInput" type="text" value="train"></label>
+		          </div>
+		          <div class="row">
+		            <button id="generateTrainCommandBtn" class="primary">Generate</button>
+		            <button id="chooseTrainModelFileBtn">Choose Weights</button>
+		            <button id="copyTrainCommandBtn">Copy</button>
+		          </div>
+		          <textarea id="trainCommandText" class="command-output" readonly></textarea>
+			          <div class="hint">Uses Ultralytics YOLO CLI. Train creates model weights, Continue starts from selected best.pt, and Export converts selected .pt weights to ONNX.</div>
+		        </div>
+		      </section>
+			    </main>
+			    <main class="train-workspace">
+				      <section class="panel">
+				        <div class="panel-header">
+				          <span>Detect / Auto Label New Data</span>
+				          <span id="ptDetectStatus" class="status">No model selected</span>
+				        </div>
+				        <div class="panel-body train-prep-stack">
+				          <div class="train-grid">
+				            <label>Model <input id="ptDetectModelInput" type="text" readonly placeholder="detect best.pt"></label>
+				            <label>Source <input id="ptDetectSourceInput" type="text" readonly placeholder="detect_dataset folder"></label>
+				            <label>Output <input id="ptDetectOutputInput" type="text" readonly placeholder="auto-labeled dataset folder"></label>
+				            <label>Image size <input id="ptDetectImageSizeInput" type="number" min="64" step="32" value="640"></label>
+				            <label>Conf <input id="ptDetectConfInput" type="number" min="0.01" max="1" step="0.01" value="0.25"></label>
+				            <label>Device <input id="ptDetectDeviceInput" type="text" value="0" placeholder="0 or cpu"></label>
+				          </div>
+					          <div class="row">
+					            <button id="choosePtDetectModelBtn">Choose detect best.pt</button>
+						            <button id="choosePtDetectSourceBtn">Source Dataset</button>
+					            <button id="choosePtDetectOutputBtn">Output Folder</button>
+					            <label class="inline-check"><input id="ptDetectOnlyNewInput" type="checkbox"> Only NEW image_pool</label>
+					            <button id="runPtDetectBtn" class="primary">Auto Label Folder</button>
+					            <button id="stopPtDetectBtn" class="danger" disabled>Stop</button>
+					          </div>
+				          <progress id="ptDetectProgress" value="0" max="1" hidden></progress>
+				          <div class="merge-log" id="ptDetectLog">Use a rough YOLO detect best.pt to create output/images, output/labels, and data.yaml.</div>
+				        </div>
+				      </section>
+				      <section class="panel">
+				        <div class="panel-header">
+				          <span>Classify New Data</span>
+			          <span id="ptClassifyStatus" class="status">No model selected</span>
+			        </div>
+			        <div class="panel-body train-prep-stack">
+			          <div class="train-grid">
+			            <label>Model <input id="ptClassifyModelInput" type="text" readonly placeholder="best.pt"></label>
+				            <label>Source <input id="ptClassifySourceInput" type="text" readonly placeholder="clf_dataset folder"></label>
+			            <label>Output <input id="ptClassifyOutputInput" type="text" readonly placeholder="classified output folder"></label>
+			            <label>Image size <input id="ptClassifyImageSizeInput" type="number" min="64" step="32" value="224"></label>
+			            <label>Device <input id="ptClassifyDeviceInput" type="text" value="0" placeholder="0 or cpu"></label>
+			          </div>
+				          <div class="row">
+				            <button id="choosePtClassifyModelBtn">Choose best.pt</button>
+					            <button id="choosePtClassifySourceBtn">Source Dataset</button>
+				            <button id="choosePtClassifyOutputBtn">Output Folder</button>
+				            <label class="inline-check"><input id="ptClassifyOnlyNewInput" type="checkbox"> Only NEW image_pool</label>
+				            <button id="runPtClassifyBtn" class="primary">Classify Folder</button>
+				            <button id="stopPtClassifyBtn" class="danger" disabled>Stop</button>
+				          </div>
+			          <progress id="ptClassifyProgress" value="0" max="1" hidden></progress>
+			          <div class="merge-log" id="ptClassifyLog">Use a rough YOLO classify best.pt to copy new images into output/class_name folders.</div>
+			        </div>
+			      </section>
+			    </main>
+	    <main class="mask-noise-workspace">
+	      <section class="panel">
+	        <div class="panel-header">
+	          <span>Black Area Noise</span>
+	          <span id="maskNoiseStatus" class="status">No image loaded</span>
+	        </div>
+	        <div class="panel-body mask-noise-stack">
+	          <div class="row">
+	            <button id="importMaskFolderBtn">Import Folder</button>
+	            <button id="chooseMaskOutputBtn">Output Folder</button>
+	            <button class="primary" id="exportAllMaskNoiseBtn">Export All</button>
+	            <button class="primary" id="openMaskPhotoBtn">Open Photo</button>
+	            <button id="openMaskMapBtn">Open B/W Mask</button>
+	            <button id="generateMaskNoiseBtn">Generate</button>
+	            <button id="saveMaskNoiseBtn">Save PNG</button>
+	          </div>
+	          <div class="mask-noise-grid">
+	            <label>Black threshold <input id="maskBlackThresholdInput" type="number" min="0" max="255" step="1" value="80"></label>
+	            <label>Noise sigma <input id="maskNoiseAmountInput" type="number" min="0" max="40" step="1" value="6"></label>
+	            <label>Blur radius <input id="maskBlurRadiusInput" type="number" min="0" max="12" step="1" value="2"></label>
+	            <label>Effect mix <input id="maskFineNoiseInput" type="number" min="0" max="1" step="0.05" value="0.35"></label>
+	            <label>Gray max <input id="maskGrayMaxInput" type="number" min="0" max="255" step="1" value="220"></label>
+	            <label>Gray erase mix <input id="maskGrayMixInput" type="number" min="0" max="1" step="0.05" value="0.75"></label>
+	          </div>
+	          <div class="hint">Black mask areas receive light blur/noise. Gray mask areas get randomized background-like erasing. White areas stay unchanged.</div>
+	          <div class="duplicate-panel">
+	            <div class="row duplicate-head">
+	              <div class="group-title">Duplicate Selected</div>
+	              <span id="duplicateStatus" class="status">No grid selection</span>
+	            </div>
+	            <div class="mask-noise-grid">
+	              <label>Min copies / image <input id="duplicateMinInput" type="number" min="0" max="100" step="0.1" value="1"></label>
+	              <label>Max copies / image <input id="duplicateMaxInput" type="number" min="0" max="100" step="0.1" value="3"></label>
+	            </div>
+	            <div class="row">
+	              <button id="duplicateSelectedBtn">Duplicate Selected</button>
+	            </div>
+	            <div class="hint">Each selected image gets its own random copy count in this range.</div>
+	          </div>
+	          <div class="mask-mini-preview" id="maskDropZone">
+	            <div class="group-title">Mask Preview</div>
+	            <canvas id="maskMapCanvas"></canvas>
+	          </div>
+	          <div class="merge-log mask-noise-log" id="maskNoiseLog">Open a photo and a black/white mask.</div>
+	        </div>
+	      </section>
+	      <section class="panel">
+	        <div class="panel-header">Preview</div>
+	        <div class="panel-body mask-noise-preview">
+	          <div class="mask-canvas-card">
+	            <div class="group-title">Photo</div>
+	            <canvas id="maskOriginalCanvas"></canvas>
+	          </div>
+	          <div class="mask-canvas-card">
+	            <div class="group-title">Output</div>
+	            <canvas id="maskOutputCanvas"></canvas>
+	          </div>
+	          <div class="mask-canvas-card">
+	            <div class="group-title">Diff x8</div>
+	            <canvas id="maskDiffCanvas"></canvas>
+	          </div>
+	          <div class="mask-folder-grid" id="maskFolderGrid">
+	            <div class="empty">Import a folder to show image thumbnails.</div>
+	          </div>
+	        </div>
+	      </section>
+	    </main>
+	    <main class="merge-workspace">
+	      <section class="panel">
+	        <div class="panel-header">
+	          <span>Sources</span>
+	          <span id="mergeSourceCount" class="status">0</span>
+	        </div>
+	        <div class="panel-body">
+	          <div class="merge-drop" id="mergeDropZone">Drop dataset folders or ZIP files here.</div>
+	          <div class="row" style="margin-top:12px">
+	            <button class="primary" id="addMergeSourceBtn">Add Folder</button>
+	            <button id="addMergeZipBtn">Add ZIP</button>
+	            <button id="clearMergeSourcesBtn">Clear</button>
+	          </div>
+	          <div class="merge-list" id="mergeSourceList">
+	            <div class="empty">No source folders or ZIP files added.</div>
+	          </div>
+	        </div>
+	      </section>
+	      <section class="panel">
+	        <div class="panel-header">
+	          <span>Merge Output</span>
+	          <span id="mergeTargetName" class="status">No target folder</span>
+	        </div>
+		        <div class="panel-body">
+		          <div class="segmented merge-task-segmented">
+		            <label><input type="radio" name="mergeTask" value="detect" checked>Detect</label>
+		            <label><input type="radio" name="mergeTask" value="classify">Classify</label>
+		          </div>
+		          <div class="row merge-actions-row">
+		            <button id="chooseMergeTargetBtn">Target Folder</button>
+		            <button class="primary" id="runMergeBtn">Merge</button>
+		            <label><input id="autoRenameConflicts" type="checkbox" checked> Auto rename conflicts</label>
+		          </div>
+		          <div class="hint" id="mergeModeHint">Detect output keeps the CVAT-style structure: images/train, labels/train, generated train.txt, and d1_/d2_/d3_ prefixes. Existing train/val/test TXT lists are ignored.</div>
+		          <div class="merge-val-train-card" id="mergeValToTrainCard">
+		            <div class="group-title">Val → Train</div>
+		            <div class="row">
+		              <button id="mergeValToTrainBtn" title="Move validation data back to train and auto-handle name conflicts">Val → Train</button>
+		            </div>
+		            <div class="hint" id="mergeValToTrainHint">Move val data back to train and auto-handle name conflicts. Runs on the selected Target Folder above.</div>
+		          </div>
+		          <div class="merge-log" id="mergeLog" style="margin-top:12px">Ready.</div>
+	        </div>
+	      </section>
+	    </main>
+	    <input id="mergeZipInput" type="file" accept=".zip,application/zip" multiple hidden>
+	    <input id="videoInput" type="file" accept="video/*" multiple hidden>
+	    <input id="maskPhotoInput" type="file" accept="image/*" hidden>
+	    <input id="maskMapInput" type="file" accept="image/*" hidden>
+	  </div>
+  <div id="buildProgressOverlay" class="export-progress-overlay" hidden>
+    <div class="export-progress-card" role="dialog" aria-labelledby="buildProgressTitle">
+      <h2 id="buildProgressTitle">Build Dataset</h2>
+      <progress id="buildProgress" value="0" max="1"></progress>
+      <div class="export-progress-count" id="buildProgressText">0 / 0</div>
+      <div class="export-progress-detail" id="buildProgressDetail"></div>
+    </div>
+  </div>
+  <div id="mergeProgressOverlay" class="export-progress-overlay" hidden>
+    <div class="export-progress-card" role="dialog" aria-labelledby="mergeProgressTitle">
+      <h2 id="mergeProgressTitle">Merging</h2>
+      <progress id="mergeProgress" value="0" max="1"></progress>
+      <div class="export-progress-count" id="mergeProgressText">0 / 0</div>
+      <div class="export-progress-detail" id="mergeProgressDetail"></div>
+    </div>
+  </div>
+  <div id="exportProgressOverlay" class="export-progress-overlay" hidden>
+    <div class="export-progress-card" role="dialog" aria-labelledby="exportProgressTitle">
+      <h2 id="exportProgressTitle">Exporting</h2>
+      <progress id="exportProgress" value="0" max="1"></progress>
+      <div class="export-progress-count" id="exportProgressText">0 / 0</div>
+      <div class="export-progress-detail" id="exportProgressDetail"></div>
+      <button type="button" id="stopCaptureBatchBtn" class="danger">Stop</button>
+    </div>
+  </div>
+  <div id="imagePreviewLightbox" class="image-preview-lightbox" hidden>
+    <div class="image-preview-shell" id="imagePreviewShell">
+      <div class="image-preview-dialog" id="imagePreviewDialog" role="dialog" aria-modal="true" aria-label="Large preview">
+        <div class="image-preview-toolbar">
+          <span id="imagePreviewTitle" class="image-preview-title"></span>
+          <span id="imagePreviewMeta" class="image-preview-meta"></span>
+          <button type="button" class="image-preview-junk" id="imagePreviewJunkBtn" hidden>Mark Junk</button>
+          <div class="image-preview-zoom-controls">
+            <button type="button" id="imagePreviewZoomOutBtn" title="Zoom out">−</button>
+            <button type="button" id="imagePreviewZoomResetBtn" title="Fit to window">100%</button>
+            <button type="button" id="imagePreviewZoomInBtn" title="Zoom in">+</button>
+          </div>
+          <button type="button" class="image-preview-close" id="imagePreviewCloseBtn" title="Close (Esc)">×</button>
+        </div>
+        <button type="button" class="image-preview-nav prev" id="imagePreviewPrevBtn" hidden aria-label="Previous image">‹</button>
+        <div class="image-preview-stage" id="imagePreviewStage">
+          <img id="imagePreviewImgA" class="image-preview-img active" alt="" draggable="false">
+          <img id="imagePreviewImgB" class="image-preview-img" alt="" draggable="false">
+        </div>
+        <button type="button" class="image-preview-nav next" id="imagePreviewNextBtn" hidden aria-label="Next image">›</button>
+        <div class="image-preview-filmstrip" id="imagePreviewFilmstrip" hidden>
+          <div class="image-preview-filmstrip-track" id="imagePreviewFilmstripTrack"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="segmentContextMenu" class="segment-context-menu" hidden>
+    <button type="button" id="snapSegmentHandleBtn">Snap to playhead</button>
+  </div>
+  <script src="main.js"></script>
+</body>
+</html>
