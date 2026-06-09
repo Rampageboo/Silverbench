@@ -114,6 +114,7 @@
         const anchor = state.multiSelectAnchorIndex ?? state.currentIndex;
         selectGalleryRange(anchor, index);
         renderGallery();
+        if (typeof poolLabelSyncCopySelectedButton === "function") poolLabelSyncCopySelectedButton();
         updateReviewControls();
         updateSelectedClassPanel();
         return;
@@ -123,12 +124,14 @@
         else state.shiftSelectedPaths.add(pair.imagePath);
         state.multiSelectAnchorIndex = index;
         renderGallery();
+        if (typeof poolLabelSyncCopySelectedButton === "function") poolLabelSyncCopySelectedButton();
         updateReviewControls();
         updateSelectedClassPanel();
         return;
       }
       state.multiSelectAnchorIndex = index;
       state.shiftSelectedPaths.clear();
+      if (typeof poolLabelSyncCopySelectedButton === "function") poolLabelSyncCopySelectedButton();
       await selectIndex(index);
     }
 
@@ -150,6 +153,21 @@
       preloadAroundCurrent();
       renderGallery();
       saveSessionSoon();
+    }
+
+    function scrollGalleryNearIndex(index, options = {}) {
+      if (!el.galleryScroll || !state.pairs.length || !Number.isInteger(index)) return;
+      const layout = computeVirtualGalleryLayout({
+        scrollEl: el.galleryScroll,
+        itemCount: state.pairs.length,
+        columnUnit: 138,
+        rowExtra: 36
+      });
+      const row = Math.max(0, Math.floor(Math.max(0, Math.min(index, state.pairs.length - 1)) / Math.max(1, layout.columns)));
+      const targetTop = Math.max(0, Math.round(row * layout.rowHeight - (el.galleryScroll.clientHeight || 0) * 0.35));
+      el.galleryScroll.scrollTop = targetTop;
+      state.galleryScrollTop = targetTop;
+      if (options.render !== false) renderGallery();
     }
 
     let previewRenderToken = 0;

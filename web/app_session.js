@@ -208,10 +208,11 @@ function sessionData() {
     rootName: state.rootName,
     datasetRoot: state.datasetBackendRoot || "",
     savedAt: new Date().toISOString(),
-    currentImagePath: state.currentImagePath,
+    currentImagePath: state.currentImagePath || state.pairs[state.currentIndex]?.imagePath || "",
     galleryScrollTop: Math.max(0, Math.round(el.galleryScroll?.scrollTop || state.galleryScrollTop || 0)),
     imageViewMode: state.imageViewMode,
     poolLabelShortcuts: typeof poolLabelState !== "undefined" ? normalizePoolLabelShortcuts(poolLabelState.shortcutSlots) : undefined,
+    poolLabelFixedBoxes: typeof poolLabelState !== "undefined" ? normalizePoolLabelFixedBoxes(poolLabelState.fixedBoxSlots) : undefined,
     poolLabelPointerToolEnabled: typeof poolLabelState !== "undefined" ? !!poolLabelState.pointerToolEnabled : undefined,
     poolLabelAutoFitEnabled: typeof poolLabelState !== "undefined" ? !!poolLabelState.autoFitEnabled : undefined,
     imagePoolUi: typeof imagePoolState !== "undefined" ? imagePoolSessionData() : undefined,
@@ -228,7 +229,16 @@ function applySessionData(data, preferredPath = null) {
   state.flaggedPaths = new Set((data.flaggedPaths || []).filter(path => validPaths.has(path)));
   state.imageViewMode = ["all", "hideReviewed", "flagged"].includes(data.imageViewMode) ? data.imageViewMode : "all";
   if (typeof poolLabelState !== "undefined") {
-    poolLabelState.shortcutSlots = normalizePoolLabelShortcuts(data.poolLabelShortcuts);
+    const localPoolLabel = typeof poolLabelLoadShortcutLocalSession === "function"
+      ? poolLabelLoadShortcutLocalSession()
+      : null;
+    const localTime = Date.parse(localPoolLabel?.savedAt || "") || 0;
+    const sessionTime = Date.parse(data.savedAt || "") || 0;
+    const poolLabelSource = localPoolLabel && localTime >= sessionTime ? localPoolLabel : data;
+    poolLabelState.shortcutSlots = normalizePoolLabelShortcuts(poolLabelSource.poolLabelShortcuts || poolLabelSource.shortcutSlots);
+    poolLabelState.fixedBoxSlots = normalizePoolLabelFixedBoxes(poolLabelSource.poolLabelFixedBoxes || poolLabelSource.fixedBoxSlots);
+    poolLabelState.activeFixedBoxSlot = null;
+    poolLabelState.recordingFixedBoxSlot = null;
     poolLabelState.pointerToolEnabled = !!data.poolLabelPointerToolEnabled;
     poolLabelState.autoFitEnabled = !!data.poolLabelAutoFitEnabled;
     if (poolLabelState.pointerToolEnabled) poolLabelState.autoFitEnabled = false;
@@ -265,6 +275,19 @@ function saveSessionSoon() {
   clearTimeout(sessionSaveTimer);
   sessionSaveTimer = setTimeout(() => saveSession({ manual: false }), 500);
 }
+
+function flushSessionSoon() {
+  if (!hasDatasetOpen() && !hasWorkspaceRoot()) return;
+  state.currentImagePath = state.currentImagePath || state.pairs[state.currentIndex]?.imagePath || "";
+  state.galleryScrollTop = Math.max(0, Math.round(el.galleryScroll?.scrollTop || state.galleryScrollTop || 0));
+  clearTimeout(sessionSaveTimer);
+  saveSession({ manual: false }).catch(error => console.warn("Session flush failed:", error));
+}
+
+window.addEventListener("pagehide", flushSessionSoon);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") flushSessionSoon();
+});
 
 async function saveSession({ manual = false } = {}) {
   if (!hasDatasetOpen() && !hasWorkspaceRoot()) {

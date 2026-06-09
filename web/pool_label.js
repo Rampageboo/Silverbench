@@ -2,26 +2,57 @@ const poolLabelState = {
   currentClassId: 0,
   activeShortcutSlot: null,
   shortcutSlots: Array(10).fill(null),
+  activeFixedBoxSlot: null,
+  fixedBoxSlots: Array(10).fill(null),
+  recordingFixedBoxSlot: null,
+  fixedShortcutMode: false,
+  undoStack: [],
   tracking: false,
   pointerToolEnabled: false,
   autoFitEnabled: false,
   cursorPoint: null
 };
+const POOL_LABEL_SLOT_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
 const POOL_LABEL_SUBJECT_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Crect x='5.5' y='5.5' width='13' height='13' fill='none' stroke='%23ef4444' stroke-width='2'/%3E%3C/svg%3E") 12 12, crosshair`;
 
 function bindPoolLabelPageEvents() {
   el.poolLabelPointerToolBtn?.addEventListener("click", () => poolLabelTogglePointerTool());
   el.poolLabelAutoFitToolBtn?.addEventListener("click", () => poolLabelToggleAutoFit());
-  el.poolLabelSaveEmptyBtn?.addEventListener("click", () => poolLabelSaveEmpty().catch(showError));
   el.poolLabelTrackBtn?.addEventListener("click", () => poolLabelTrackForward().catch(showError));
   el.poolLabelCsrtBtn?.addEventListener("click", () => poolLabelTrackCsrtForward().catch(showError));
+  el.poolLabelCopySelectedBtn?.addEventListener("click", () => poolLabelCopyToSelected().catch(showError));
+  el.poolLabelUndoBtn?.addEventListener("click", () => poolLabelUndoLast().catch(showError));
   el.poolLabelAddClassBtn?.addEventListener("click", () => poolLabelAddClass().catch(showError));
   el.poolLabelRenameClassBtn?.addEventListener("click", () => poolLabelRenameSelectedClass().catch(showError));
   el.poolLabelBindSlotBtn?.addEventListener("click", () => poolLabelBindSelectedToSlot().catch(showError));
+  window.addEventListener("keydown", poolLabelUpdateFixedShortcutModeFromEvent);
+  window.addEventListener("keyup", poolLabelUpdateFixedShortcutModeFromEvent);
+  window.addEventListener("blur", () => poolLabelSetFixedShortcutMode(false));
+  document.addEventListener("pointerdown", poolLabelCloseShortcutMenusOnOutsideClick);
 }
 
 function isPoolLabelActive() {
   return el.app.classList.contains("pool-label");
+}
+
+function poolLabelUpdateFixedShortcutModeFromEvent(event) {
+  if (poolLabelShortcutEventTargetIsSelect(event)) return;
+  if (!isPoolLabelActive()) {
+    poolLabelSetFixedShortcutMode(false);
+    return;
+  }
+  poolLabelSetFixedShortcutMode(Boolean(event.shiftKey));
+}
+
+function poolLabelShortcutEventTargetIsSelect(event) {
+  return event.target?.closest?.(".pool-label-shortcuts");
+}
+
+function poolLabelSetFixedShortcutMode(enabled) {
+  const next = Boolean(enabled);
+  poolLabelState.fixedShortcutMode = next;
+  el.poolLabelShortcutsPanel?.classList.toggle("fixed-mode", next);
+  el.poolLabelShortcutsPanel?.classList.toggle("class-mode", !next);
 }
 
 function poolLabelTogglePointerTool() {
@@ -44,6 +75,47 @@ function poolLabelAfterToolChange() {
   redrawPreviewOverlays();
   saveSessionSoon();
   updatePoolLabelPanel().catch(showError);
+}
+
+function poolLabelSaveSessionNow() {
+  poolLabelSaveShortcutLocalSession();
+  saveSessionSoon();
+  if (typeof saveSession === "function") {
+    saveSession({ manual: false }).catch(error => console.warn("Pool label session save failed:", error));
+  }
+}
+
+function poolLabelShortcutLocalSessionKey() {
+  const root = state.workspaceRoot || state.datasetBackendRoot || state.rootName || "default";
+  return `yolo_label_viewer_pool_label_shortcuts:${root}`;
+}
+
+function poolLabelSaveShortcutLocalSession() {
+  try {
+    localStorage.setItem(poolLabelShortcutLocalSessionKey(), JSON.stringify({
+      savedAt: new Date().toISOString(),
+      shortcutSlots: normalizePoolLabelShortcuts(poolLabelState.shortcutSlots),
+      fixedBoxSlots: normalizePoolLabelFixedBoxes(poolLabelState.fixedBoxSlots)
+    }));
+  } catch {
+    // Browser storage can be disabled; backend session remains the primary store.
+  }
+}
+
+function poolLabelLoadShortcutLocalSession() {
+  try {
+    const text = localStorage.getItem(poolLabelShortcutLocalSessionKey());
+    if (!text) return null;
+    const data = JSON.parse(text);
+    if (!data || typeof data !== "object") return null;
+    return {
+      savedAt: data.savedAt || "",
+      shortcutSlots: normalizePoolLabelShortcuts(data.shortcutSlots),
+      fixedBoxSlots: normalizePoolLabelFixedBoxes(data.fixedBoxSlots)
+    };
+  } catch {
+    return null;
+  }
 }
 
 function poolLabelSyncPointerTool() {
@@ -121,6 +193,7 @@ async function onPoolLabelPointerDown(event) {
     if (index >= 0) {
       state.selectedBoxIndex = index;
       const box = boxes[index];
+      poolLabelPushUndo(pair, boxes, "edit box");
       state.boxDrag = { handle: hit.handle, start: point, rect: boxToImageRect(box), index };
       poolLabelState.currentClassId = box.classId;
       populateBoxEditor(box);
@@ -216,14 +289,16 @@ async function onPoolLabelPointerUp(event) {
     return;
   }
   const boxes = await editableBoxesFor(pair);
+  poolLabelPushUndo(pair, boxes, "add box");
   const fittedSelection = shouldAutoFit ? await poolLabelAutoFitSelection(pair, selection, seedPoint) : selection;
   const box = rectToBox(fittedSelection, poolLabelState.currentClassId);
   boxes.push(box);
   state.selectedBoxIndex = boxes.length - 1;
   populateBoxEditor(box);
+  const fixedBoxMessage = poolLabelRecordFixedBoxFromBox(box);
   await persistLabelBoxes(pair, boxes);
   await poolLabelRefreshAfterEdit(
-    fittedSelection !== selection ? "Color subject box saved. Shift keeps drawn box." : ""
+    fixedBoxMessage || (fittedSelection !== selection ? "Color subject box saved. Shift keeps drawn box." : "")
   );
 }
 
@@ -231,6 +306,7 @@ function onPoolLabelKeyDown(event) {
   const tag = event.target?.tagName?.toLowerCase();
   if (tag === "input" || tag === "textarea" || event.target?.isContentEditable) return false;
   const key = event.key.toLowerCase();
+  const digitSlot = poolLabelKeyDigit(event);
   if (event.ctrlKey && key === "s") {
     event.preventDefault();
     poolLabelSaveCurrent().then(() => updatePoolLabelPanel("Saved current TXT.")).catch(showError);
@@ -246,9 +322,10 @@ function onPoolLabelKeyDown(event) {
     renderCurrentImage().then(() => updatePoolLabelPanel("Selection cleared.")).catch(showError);
     return true;
   }
-  if (/^[0-9]$/.test(key)) {
+  if (digitSlot !== null) {
     event.preventDefault();
-    poolLabelUseShortcutSlot(Number(key)).catch(showError);
+    if (event.shiftKey) poolLabelUseFixedBoxSlot(digitSlot).catch(showError);
+    else poolLabelUseShortcutSlot(digitSlot).catch(showError);
     return true;
   }
   if (key === "delete" || key === "backspace") {
@@ -294,15 +371,26 @@ function onPoolLabelKeyDown(event) {
   return false;
 }
 
+function poolLabelKeyDigit(event) {
+  if (/^[0-9]$/.test(event.key)) return Number(event.key);
+  const digit = /^Digit([0-9])$/.exec(event.code || "");
+  if (digit) return Number(digit[1]);
+  const numpad = /^Numpad([0-9])$/.exec(event.code || "");
+  if (numpad) return Number(numpad[1]);
+  return null;
+}
+
 async function poolLabelAssignClass(classId, options = {}) {
   if (!Number.isInteger(classId) || classId < 0) return;
   poolLabelState.activeShortcutSlot = Number.isInteger(options.shortcutSlot) ? options.shortcutSlot : null;
+  poolLabelState.activeFixedBoxSlot = null;
   poolLabelState.currentClassId = classId;
   el.poolLabelClassNameInput.value = state.classNames.get(classId) || "";
   const pair = state.pairs[state.currentIndex];
   if (pair && state.selectedBoxIndex !== null) {
     const boxes = await editableBoxesFor(pair);
     if (boxes[state.selectedBoxIndex]) {
+      poolLabelPushUndo(pair, boxes, "change class");
       boxes[state.selectedBoxIndex] = { ...boxes[state.selectedBoxIndex], classId };
       populateBoxEditor(boxes[state.selectedBoxIndex]);
       await persistLabelBoxes(pair, boxes);
@@ -330,8 +418,72 @@ async function poolLabelBindSelectedToSlot() {
     return;
   }
   poolLabelState.shortcutSlots[slot] = poolLabelState.currentClassId;
-  saveSessionSoon();
+  poolLabelSaveSessionNow();
   await updatePoolLabelPanel(`Bound shortcut ${slot} to ${classDisplay(poolLabelState.currentClassId)}.`);
+}
+
+async function poolLabelStartFixedBoxRecording(slot, classId) {
+  if (!Number.isInteger(slot) || slot < 0 || slot > 9) return;
+  if (!Number.isInteger(classId) || !state.classNames.has(classId)) {
+    poolLabelState.fixedBoxSlots[slot] = null;
+    if (poolLabelState.recordingFixedBoxSlot === slot) poolLabelState.recordingFixedBoxSlot = null;
+    poolLabelSaveSessionNow();
+    await updatePoolLabelPanel(`Fixed box ${slot} cleared.`);
+    return;
+  }
+  poolLabelState.currentClassId = classId;
+  poolLabelState.activeShortcutSlot = null;
+  poolLabelState.activeFixedBoxSlot = slot;
+  poolLabelState.recordingFixedBoxSlot = slot;
+  poolLabelState.fixedBoxSlots[slot] = { classId, x: null, y: null, w: null, h: null };
+  el.poolLabelClassNameInput.value = state.classNames.get(classId) || "";
+  poolLabelState.pointerToolEnabled = false;
+  poolLabelState.autoFitEnabled = false;
+  poolLabelSaveSessionNow();
+  await updatePoolLabelPanel(`Draw one ${classDisplay(classId)} box to record fixed box ${slot}. Hold Shift and press ${slot} to create it.`);
+}
+
+function poolLabelRecordFixedBoxFromBox(box) {
+  const slot = poolLabelState.recordingFixedBoxSlot;
+  if (!Number.isInteger(slot) || slot < 0 || slot > 9) return "";
+  poolLabelState.fixedBoxSlots[slot] = {
+    classId: box.classId,
+    x: box.x,
+    y: box.y,
+    w: box.w,
+    h: box.h
+  };
+  poolLabelState.activeFixedBoxSlot = slot;
+  poolLabelState.recordingFixedBoxSlot = null;
+  poolLabelSaveSessionNow();
+  return `Recorded fixed box ${slot}: ${classDisplay(box.classId)}. Hold Shift and press ${slot} to create it.`;
+}
+
+async function poolLabelUseFixedBoxSlot(slot) {
+  const template = poolLabelState.fixedBoxSlots[slot];
+  if (!poolLabelFixedBoxSlotReady(template)) {
+    await updatePoolLabelPanel(`Fixed box ${slot} is empty. Choose a class in the fixed box row, then draw it once.`);
+    return;
+  }
+  const pair = state.pairs[state.currentIndex];
+  if (!pair) return;
+  const box = {
+    classId: template.classId,
+    x: clamp01(template.x),
+    y: clamp01(template.y),
+    w: clamp01(template.w),
+    h: clamp01(template.h)
+  };
+  const boxes = await editableBoxesFor(pair);
+  poolLabelPushUndo(pair, boxes, "fixed box");
+  boxes.push(box);
+  state.selectedBoxIndex = boxes.length - 1;
+  poolLabelState.currentClassId = box.classId;
+  poolLabelState.activeShortcutSlot = null;
+  poolLabelState.activeFixedBoxSlot = slot;
+  populateBoxEditor(box);
+  await persistLabelBoxes(pair, boxes);
+  await poolLabelRefreshAfterEdit(`Created fixed box ${slot}: ${classDisplay(box.classId)}.`);
 }
 
 async function poolLabelAddClass() {
@@ -476,6 +628,7 @@ async function poolLabelDeleteSelected() {
   if (!pair || state.selectedBoxIndex === null) return;
   const boxes = await editableBoxesFor(pair);
   if (!boxes[state.selectedBoxIndex]) return;
+  poolLabelPushUndo(pair, boxes, "delete box");
   boxes.splice(state.selectedBoxIndex, 1);
   state.selectedBoxIndex = null;
   populateBoxEditor(null);
@@ -495,6 +648,80 @@ async function poolLabelSaveCurrent() {
   if (!pair || state.datasetTask === "classify") return;
   const boxes = await effectiveBoxesFor(pair);
   await persistLabelBoxes(pair, boxes, { refreshFilterList: false });
+}
+
+function poolLabelPushUndo(pair, boxes, action = "edit") {
+  if (!pair || !Array.isArray(boxes)) return;
+  poolLabelState.undoStack.push({
+    imagePath: pair.imagePath,
+    selectedBoxIndex: state.selectedBoxIndex,
+    classId: poolLabelState.currentClassId,
+    action,
+    boxes: boxes.map(box => ({ ...box }))
+  });
+  if (poolLabelState.undoStack.length > 50) poolLabelState.undoStack.shift();
+}
+
+function poolLabelPushBatchUndo(items, action = "batch edit") {
+  const snapshots = items
+    .filter(item => item?.pair && Array.isArray(item.boxes))
+    .map(item => ({
+      imagePath: item.pair.imagePath,
+      selectedBoxIndex: item.selectedBoxIndex ?? null,
+      classId: item.classId ?? poolLabelState.currentClassId,
+      boxes: item.boxes.map(box => ({ ...box }))
+    }));
+  if (!snapshots.length) return;
+  poolLabelState.undoStack.push({ action, snapshots });
+  if (poolLabelState.undoStack.length > 50) poolLabelState.undoStack.shift();
+}
+
+async function poolLabelUndoLast() {
+  const snapshot = poolLabelState.undoStack.pop();
+  if (!snapshot) {
+    await updatePoolLabelPanel("Nothing to undo.");
+    return;
+  }
+  if (Array.isArray(snapshot.snapshots)) {
+    let restored = 0;
+    for (const item of snapshot.snapshots) {
+      const pair = poolLabelPairByImagePath(item.imagePath);
+      if (!pair) continue;
+      await persistLabelBoxes(pair, item.boxes.map(box => ({ ...box })), { refreshFilterList: false });
+      restored += 1;
+    }
+    await buildFilterList();
+    syncFilterInputs();
+    await renderCurrentImage();
+    renderGallery();
+    await updatePoolLabelPanel(`Undid ${snapshot.action} on ${restored} image(s).`);
+    return;
+  }
+  const pair = poolLabelPairByImagePath(snapshot.imagePath);
+  if (!pair) {
+    await updatePoolLabelPanel("Undo target image is no longer available.");
+    return;
+  }
+  const boxes = snapshot.boxes.map(box => ({ ...box }));
+  await persistLabelBoxes(pair, boxes);
+  if (pair.imagePath === state.pairs[state.currentIndex]?.imagePath) {
+    state.selectedBoxIndex = Number.isInteger(snapshot.selectedBoxIndex)
+      ? Math.min(snapshot.selectedBoxIndex, boxes.length - 1)
+      : null;
+    if (state.selectedBoxIndex !== null && state.selectedBoxIndex < 0) state.selectedBoxIndex = null;
+    poolLabelState.currentClassId = Number.isInteger(snapshot.classId) ? snapshot.classId : poolLabelState.currentClassId;
+    populateBoxEditor(state.selectedBoxIndex !== null ? boxes[state.selectedBoxIndex] : null);
+    await poolLabelRefreshAfterEdit(`Undid ${snapshot.action}.`);
+    return;
+  }
+  renderGallery();
+  await updatePoolLabelPanel(`Undid ${snapshot.action} on another image.`);
+}
+
+function poolLabelPairByImagePath(imagePath) {
+  return state.allPairs.find(pair => pair.imagePath === imagePath)
+    || state.pairs.find(pair => pair.imagePath === imagePath)
+    || null;
 }
 
 async function poolLabelAutoFitSelection(pair, selection, seedPoint = null) {
@@ -782,6 +1009,8 @@ async function poolLabelSaveEmpty() {
   if (!pair) return;
   state.selectedBoxIndex = null;
   populateBoxEditor(null);
+  const boxes = await effectiveBoxesFor(pair);
+  poolLabelPushUndo(pair, boxes, "save empty");
   await persistLabelBoxes(pair, []);
   await poolLabelRefreshAfterEdit("Saved empty TXT for background frame.");
 }
@@ -822,6 +1051,66 @@ async function poolLabelTrackForward() {
     poolLabelState.tracking = false;
     el.poolLabelTrackBtn.disabled = false;
   }
+}
+
+async function poolLabelCopyToSelected() {
+  if (poolLabelState.tracking) return;
+  const sourcePair = state.pairs[state.currentIndex];
+  if (!sourcePair) return;
+  const sourceBoxes = await effectiveBoxesFor(sourcePair);
+  const selectedBox = state.selectedBoxIndex !== null ? sourceBoxes[state.selectedBoxIndex] : null;
+  const boxesToCopy = selectedBox ? [selectedBox] : sourceBoxes;
+  if (!boxesToCopy.length) {
+    await updatePoolLabelPanel("No boxes to copy from the current image.");
+    return;
+  }
+  const targets = poolLabelSelectedTargetPairs(sourcePair.imagePath);
+  if (!targets.length) {
+    await updatePoolLabelPanel("Ctrl+click thumbnails to select targets, or Shift+click a range, then copy.");
+    return;
+  }
+  await poolLabelSaveCurrent();
+  poolLabelState.tracking = true;
+  if (el.poolLabelCopySelectedBtn) el.poolLabelCopySelectedBtn.disabled = true;
+  await updatePoolLabelPanel(`Copying ${boxesToCopy.length} box(es) to ${targets.length} selected image(s)...`);
+  try {
+    const undoItems = [];
+    let changed = 0;
+    for (const targetPair of targets) {
+      const targetBoxes = await editableBoxesFor(targetPair);
+      undoItems.push({
+        pair: targetPair,
+        boxes: targetBoxes.map(box => ({ ...box })),
+        selectedBoxIndex: null,
+        classId: poolLabelState.currentClassId
+      });
+      for (const box of boxesToCopy) poolLabelMergeCopiedBox(targetBoxes, { ...box });
+      await persistLabelBoxes(targetPair, targetBoxes, { refreshFilterList: false });
+      changed += 1;
+    }
+    poolLabelPushBatchUndo(undoItems, "copy to selected");
+    await buildFilterList();
+    syncFilterInputs();
+    renderGallery();
+    await renderCurrentImage();
+    const mode = selectedBox ? classDisplay(selectedBox.classId) : "all current boxes";
+    await updatePoolLabelPanel(`Copied ${mode} to ${changed} selected image(s).`);
+  } finally {
+    poolLabelState.tracking = false;
+    if (el.poolLabelCopySelectedBtn) el.poolLabelCopySelectedBtn.disabled = !poolLabelSelectedTargetPairs(sourcePair.imagePath).length;
+  }
+}
+
+function poolLabelSelectedTargetPairs(sourceImagePath) {
+  return state.pairs.filter(pair => state.shiftSelectedPaths.has(pair.imagePath) && pair.imagePath !== sourceImagePath);
+}
+
+function poolLabelSyncCopySelectedButton() {
+  if (!el.poolLabelCopySelectedBtn || !isPoolLabelActive()) return;
+  const pair = state.pairs[state.currentIndex];
+  el.poolLabelCopySelectedBtn.disabled = !pair
+    || !poolLabelSelectedTargetPairs(pair.imagePath).length
+    || poolLabelState.tracking;
 }
 
 async function poolLabelTrackCsrtForward() {
@@ -871,17 +1160,11 @@ async function poolLabelTrackCsrtForward() {
 
 function poolLabelCsrtOptions() {
   return {
-    maxFrames: poolLabelNumberInput(el.poolLabelCsrtFramesInput, 5, 1, 100),
-    areaMinRatio: poolLabelNumberInput(el.poolLabelCsrtAreaMinInput, 0.6, 0.05, 1),
-    areaMaxRatio: poolLabelNumberInput(el.poolLabelCsrtAreaMaxInput, 1.6, 1, 10),
-    centerJumpRatio: poolLabelNumberInput(el.poolLabelCsrtJumpInput, 0.7, 0.1, 5)
+    maxFrames: 5,
+    areaMinRatio: 0.6,
+    areaMaxRatio: 1.6,
+    centerJumpRatio: 0.7
   };
-}
-
-function poolLabelNumberInput(input, fallback, min, max) {
-  const value = Number.parseFloat(input?.value);
-  if (!Number.isFinite(value)) return fallback;
-  return Math.max(min, Math.min(max, value));
 }
 
 async function poolLabelSelectNearestBox(box) {
@@ -964,17 +1247,26 @@ async function updatePoolLabelPanel(message = "") {
   const pair = state.pairs[state.currentIndex];
   const boxes = pair ? await effectiveBoxesFor(pair) : [];
   poolLabelSyncAutoFitTool();
+  if (el.poolLabelUndoBtn) el.poolLabelUndoBtn.disabled = !poolLabelState.undoStack.length;
+  if (el.poolLabelCopySelectedBtn) {
+    const currentPath = pair?.imagePath || "";
+    el.poolLabelCopySelectedBtn.disabled = !poolLabelSelectedTargetPairs(currentPath).length || !boxes.length || poolLabelState.tracking;
+  }
   const modeText = poolLabelState.pointerToolEnabled
     ? "Pointer mode (V). Select, move, and resize boxes."
     : poolLabelState.autoFitEnabled
     ? "Subject Select (W). Click a color, or drag to limit the color search."
     : "Manual box mode. V pointer, W subject select.";
-  el.poolLabelStatus.textContent = message || `New class: ${classDisplay(poolLabelState.currentClassId)} | ${boxes.length} box(es). ${modeText} T copies, Shift+T CSRT.`;
+  const fixedText = Number.isInteger(poolLabelState.recordingFixedBoxSlot)
+    ? ` Recording fixed box ${poolLabelState.recordingFixedBoxSlot}.`
+    : "";
+  el.poolLabelStatus.textContent = message || `New class: ${classDisplay(poolLabelState.currentClassId)} | ${boxes.length} box(es). ${modeText} T copies, Shift+T CSRT. Hold Shift for fixed boxes.${fixedText}`;
   renderPoolLabelShortcuts();
+  renderPoolLabelFixedBoxes();
   renderPoolLabelClassManager();
   el.poolLabelBoxList.innerHTML = "";
   if (!boxes.length) {
-    el.poolLabelBoxList.innerHTML = `<div class="empty">No boxes. Save Empty TXT marks this as background.</div>`;
+    el.poolLabelBoxList.innerHTML = `<div class="empty">No boxes on this image.</div>`;
     return;
   }
   boxes.forEach((box, index) => {
@@ -1001,32 +1293,150 @@ function normalizePoolLabelShortcuts(value) {
   });
 }
 
+function normalizePoolLabelFixedBoxes(value) {
+  const source = Array.isArray(value) ? value : [];
+  return Array.from({ length: 10 }, (_, index) => {
+    const item = source[index];
+    if (!item || typeof item !== "object") return null;
+    const classId = Number(item.classId);
+    const x = Number(item.x);
+    const y = Number(item.y);
+    const w = Number(item.w);
+    const h = Number(item.h);
+    if (!Number.isInteger(classId) || classId < 0) return null;
+    if ([x, y, w, h].some(value => !Number.isFinite(value))) return { classId, x: null, y: null, w: null, h: null };
+    return { classId, x: clamp01(x), y: clamp01(y), w: clamp01(w), h: clamp01(h) };
+  });
+}
+
+function poolLabelFixedBoxSlotReady(template) {
+  return !!template
+    && Number.isInteger(template.classId)
+    && state.classNames.has(template.classId)
+    && [template.x, template.y, template.w, template.h].every(Number.isFinite)
+    && template.w > 0
+    && template.h > 0;
+}
+
 function renderPoolLabelShortcuts() {
   if (!el.poolLabelShortcuts) return;
   el.poolLabelShortcuts.replaceChildren();
-  for (let slot = 0; slot < 10; slot += 1) {
+  poolLabelSetFixedShortcutMode(poolLabelState.fixedShortcutMode);
+  for (const slot of POOL_LABEL_SLOT_ORDER) {
     const classId = poolLabelState.shortcutSlots[slot];
     const bound = Number.isInteger(classId) && state.classNames.has(classId);
-    const select = document.createElement("select");
-    select.className = `pool-label-shortcut-select${bound && classId === poolLabelState.currentClassId && poolLabelState.activeShortcutSlot === slot ? " active" : ""}`;
-    select.title = `Shortcut ${slot}`;
-    select.appendChild(new Option(`${slot}: empty`, ""));
-    for (const [id, name] of [...state.classNames.entries()].sort((a, b) => a[0] - b[0])) {
-      select.appendChild(new Option(`${slot}: ${id}: ${name}`, String(id)));
-    }
-    select.value = bound ? String(classId) : "";
-    select.addEventListener("change", () => {
-      const next = select.value === "" ? null : Number(select.value);
-      poolLabelState.shortcutSlots[slot] = Number.isInteger(next) ? next : null;
-      saveSessionSoon();
-      if (Number.isInteger(next) && state.classNames.has(next)) {
-        poolLabelAssignClass(next, { shortcutSlot: slot }).catch(showError);
-        return;
+    const active = bound && classId === poolLabelState.currentClassId && poolLabelState.activeShortcutSlot === slot;
+    const control = poolLabelShortcutDropdown({
+      label: bound ? `${slot}: ${classId}: ${state.classNames.get(classId)}` : `${slot}: empty`,
+      title: `Shortcut ${slot}`,
+      options: poolLabelShortcutOptions(slot, bound ? classId : null),
+      onSelect: value => {
+        const next = value === "" ? null : Number(value);
+        poolLabelState.shortcutSlots[slot] = Number.isInteger(next) ? next : null;
+        poolLabelSaveSessionNow();
+        if (Number.isInteger(next) && state.classNames.has(next)) {
+          poolLabelAssignClass(next, { shortcutSlot: slot }).catch(showError);
+          return;
+        }
+        updatePoolLabelPanel(`Shortcut ${slot} cleared.`).catch(showError);
       }
-      updatePoolLabelPanel(`Shortcut ${slot} cleared.`).catch(showError);
     });
-    el.poolLabelShortcuts.appendChild(select);
+    el.poolLabelShortcuts.appendChild(poolLabelShortcutSlotElement(control, ["class-slot", active ? "active" : ""]));
   }
+}
+
+function renderPoolLabelFixedBoxes() {
+  if (!el.poolLabelFixedBoxes) return;
+  el.poolLabelFixedBoxes.replaceChildren();
+  for (const slot of POOL_LABEL_SLOT_ORDER) {
+    const template = poolLabelState.fixedBoxSlots[slot];
+    const ready = poolLabelFixedBoxSlotReady(template);
+    const classId = template?.classId;
+    const hasClass = Number.isInteger(classId) && state.classNames.has(classId);
+    const label = hasClass ? `${slot}: ${classId}: ${state.classNames.get(classId)}${ready ? " ready" : ""}` : `${slot}: empty`;
+    const control = poolLabelShortcutDropdown({
+      label,
+      title: `Fixed box ${slot}`,
+      options: poolLabelShortcutOptions(slot, hasClass ? classId : null, ready),
+      onSelect: value => {
+        const next = value === "" ? null : Number(value);
+        poolLabelStartFixedBoxRecording(slot, Number.isInteger(next) ? next : null).catch(showError);
+      }
+    });
+    el.poolLabelFixedBoxes.appendChild(poolLabelShortcutSlotElement(control, [
+      "fixed-slot",
+      ready && poolLabelState.activeFixedBoxSlot === slot ? "active" : "",
+      poolLabelState.recordingFixedBoxSlot === slot ? "recording" : ""
+    ]));
+  }
+}
+
+function poolLabelShortcutOptions(slot, selectedClassId = null, ready = false) {
+  const options = [{ value: "", label: `${slot}: empty`, selected: selectedClassId == null }];
+  for (const [id, name] of [...state.classNames.entries()].sort((a, b) => a[0] - b[0])) {
+    options.push({
+      value: String(id),
+      label: `${slot}: ${id}: ${name}${ready && id === selectedClassId ? " ready" : ""}`,
+      selected: id === selectedClassId
+    });
+  }
+  return options;
+}
+
+function poolLabelShortcutDropdown({ label, title, options, onSelect }) {
+  const wrap = document.createElement("div");
+  wrap.className = "pool-label-shortcut-dropdown";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "pool-label-shortcut-button";
+  button.title = title;
+  button.textContent = label;
+  button.addEventListener("pointerdown", event => {
+    event.stopPropagation();
+    poolLabelSetFixedShortcutMode(false);
+  });
+  button.addEventListener("click", event => {
+    event.stopPropagation();
+    poolLabelToggleShortcutMenu(wrap);
+  });
+  const menu = document.createElement("div");
+  menu.className = "pool-label-shortcut-menu";
+  for (const option of options) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `pool-label-shortcut-option${option.selected ? " selected" : ""}`;
+    item.textContent = option.label;
+    item.addEventListener("click", event => {
+      event.stopPropagation();
+      poolLabelCloseShortcutMenus();
+      onSelect(option.value);
+    });
+    menu.appendChild(item);
+  }
+  wrap.append(button, menu);
+  return wrap;
+}
+
+function poolLabelToggleShortcutMenu(wrap) {
+  const open = wrap.classList.contains("open");
+  poolLabelCloseShortcutMenus();
+  wrap.classList.toggle("open", !open);
+}
+
+function poolLabelCloseShortcutMenus() {
+  document.querySelectorAll(".pool-label-shortcut-dropdown.open").forEach(item => item.classList.remove("open"));
+}
+
+function poolLabelCloseShortcutMenusOnOutsideClick(event) {
+  if (event.target?.closest?.(".pool-label-shortcut-dropdown")) return;
+  poolLabelCloseShortcutMenus();
+}
+
+function poolLabelShortcutSlotElement(control, classes) {
+  const slot = document.createElement("div");
+  slot.className = ["pool-label-shortcut-slot", ...classes].filter(Boolean).join(" ");
+  slot.appendChild(control);
+  return slot;
 }
 
 function renderPoolLabelClassManager() {
@@ -1052,7 +1462,7 @@ function renderPoolLabelSlotSelect() {
   if (!el.poolLabelBindSlotSelect) return;
   const currentValue = el.poolLabelBindSlotSelect.value || "0";
   el.poolLabelBindSlotSelect.replaceChildren();
-  for (let slot = 0; slot < 10; slot += 1) {
+  for (const slot of POOL_LABEL_SLOT_ORDER) {
     const classId = poolLabelState.shortcutSlots[slot];
     const option = document.createElement("option");
     option.value = String(slot);

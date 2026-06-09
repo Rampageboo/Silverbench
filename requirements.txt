@@ -1,0 +1,4 @@
+numpy
+Pillow
+opencv-contrib-python
+PySide6

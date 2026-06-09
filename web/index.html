@@ -269,6 +269,34 @@
           <div class="canvas-wrap" id="dropZone">
             <canvas id="previewCanvas"></canvas>
           </div>
+          <div class="pool-label-preview-toolbar" id="poolLabelPreviewToolbar" aria-label="Pool Label tools">
+            <button id="poolLabelPointerToolBtn" class="pool-label-icon-tool" type="button" title="Cursor (V)" aria-label="Cursor" aria-pressed="false">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <path d="M6 3l10 10-5 1.5L8.5 20 6 3z" />
+              </svg>
+            </button>
+            <button id="poolLabelAutoFitToolBtn" class="pool-label-icon-tool" type="button" title="Select (W)" aria-label="Select" aria-pressed="false">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <path d="M12 3v4M12 17v4M3 12h4M17 12h4" />
+                <path d="M8 8h8v8H8z" />
+                <path d="M10 10h4v4h-4z" />
+              </svg>
+            </button>
+            <button id="poolLabelTrackBtn" class="pool-label-icon-tool primary" type="button" title="Copy Next (T)" aria-label="Copy Next">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <path d="M8 7H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-2" />
+                <path d="M11 4h9v9" />
+                <path d="M10 14L20 4" />
+              </svg>
+            </button>
+            <button id="poolLabelCsrtBtn" class="pool-label-icon-tool" type="button" title="CSRT Track (Shift+T)" aria-label="CSRT Track">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <path d="M12 3v4M12 17v4M3 12h4M17 12h4" />
+                <circle cx="12" cy="12" r="4" />
+                <path d="M17 7l3-3" />
+              </svg>
+            </button>
+          </div>
           <div class="viewer-splitter" id="viewerSplitter" title="Drag to resize preview and tools"></div>
           <div class="edit-tray">
             <div class="tool-card">
@@ -384,14 +412,22 @@
 	      <section class="pool-label-shortcuts-panel" id="poolLabelShortcutsPanel">
 	        <div class="pool-label-shortcuts-head">
 	          <span>Class Shortcuts</span>
-	          <span id="poolLabelShortcutHint" class="status">Bind any class to 0-9, then press the key while labeling.</span>
+	          <span id="poolLabelShortcutHint" class="status">Number keys use class shortcuts. Hold Shift to switch to fixed boxes.</span>
 	        </div>
 	        <div class="pool-label-shortcuts" id="poolLabelShortcuts"></div>
+	        <div class="pool-label-shortcuts-head compact">
+	          <span>Fixed Box Shortcuts</span>
+	        </div>
+	        <div class="pool-label-shortcuts" id="poolLabelFixedBoxes"></div>
 	      </section>
 	      <aside class="side-stack pool-label-side-stack" id="poolLabelSideStack">
 	        <section class="panel pool-label-box-panel" id="poolLabelBoxPanel">
 	          <div class="panel-header">
 	            <span>Current Boxes</span>
+	            <div class="pool-label-panel-actions">
+	              <button id="poolLabelCopySelectedBtn" type="button">Copy Selected</button>
+	              <button id="poolLabelUndoBtn" type="button">Undo</button>
+	            </div>
 	          </div>
 	          <div class="panel-body pool-label-box-panel-body">
 	            <div class="hint" id="poolLabelStatus">Drag to create. A/D or arrows navigate. 0-9 assigns class.</div>
@@ -415,29 +451,6 @@
 	                <button id="poolLabelBindSlotBtn">Bind Current to Slot</button>
 	              </div>
 	              <div class="pool-label-class-list" id="poolLabelClassList"></div>
-	              <div class="pool-label-actions">
-	                <button id="poolLabelPointerToolBtn" class="pool-label-icon-tool" type="button" title="Pointer tool (V): select, move, and resize boxes" aria-label="Pointer tool: select, move, and resize boxes" aria-pressed="false">
-	                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-	                    <path d="M6 3l10 10-5 1.5L8.5 20 6 3z" />
-	                  </svg>
-	                </button>
-	                <button id="poolLabelAutoFitToolBtn" class="pool-label-icon-tool" type="button" title="Subject Select (W): auto-fit rough box to subject" aria-label="Subject Select: auto-fit rough box to subject" aria-pressed="false">
-	                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-	                    <path d="M12 3v4M12 17v4M3 12h4M17 12h4" />
-	                    <path d="M8 8h8v8H8z" />
-	                    <path d="M10 10h4v4h-4z" />
-	                  </svg>
-	                </button>
-	                <button id="poolLabelSaveEmptyBtn">Save Empty TXT</button>
-	                <button id="poolLabelTrackBtn" class="primary">Copy to Next (T)</button>
-	                <button id="poolLabelCsrtBtn">CSRT Track (Shift+T)</button>
-	              </div>
-	              <div class="pool-label-csrt-controls">
-	                <label>Frames <input id="poolLabelCsrtFramesInput" type="number" min="1" max="100" step="1" value="5"></label>
-	                <label>Area min <input id="poolLabelCsrtAreaMinInput" type="number" min="0.05" max="1" step="0.05" value="0.6"></label>
-	                <label>Area max <input id="poolLabelCsrtAreaMaxInput" type="number" min="1" max="10" step="0.1" value="1.6"></label>
-	                <label>Jump <input id="poolLabelCsrtJumpInput" type="number" min="0.1" max="5" step="0.1" value="0.7"></label>
-	              </div>
 	            </div>
 	          </div>
 	        </section>

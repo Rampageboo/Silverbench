@@ -52,7 +52,10 @@
       ctx.strokeRect(x, y, w, h);
       if (!dashed && color === "#2563eb") {
         ctx.fillStyle = color;
-        for (const [hx, hy] of [[x, y], [x + w, y], [x, y + h], [x + w, y + h]]) {
+        for (const [hx, hy] of [
+          [x, y], [x + w, y], [x, y + h], [x + w, y + h],
+          [x + w / 2, y], [x + w / 2, y + h], [x, y + h / 2], [x + w, y + h / 2]
+        ]) {
           ctx.fillRect(hx - 4, hy - 4, 8, 8);
         }
       }
@@ -301,9 +304,13 @@
     }
 
     function boxHandlePointsImage(rect) {
+      const midX = (rect.x1 + rect.x2) / 2;
+      const midY = (rect.y1 + rect.y2) / 2;
       return [
         ["nw", rect.x1, rect.y1], ["ne", rect.x2, rect.y1],
-        ["sw", rect.x1, rect.y2], ["se", rect.x2, rect.y2]
+        ["sw", rect.x1, rect.y2], ["se", rect.x2, rect.y2],
+        ["n", midX, rect.y1], ["s", midX, rect.y2],
+        ["w", rect.x1, midY], ["e", rect.x2, midY]
       ];
     }
 
@@ -369,9 +376,13 @@
     }
 
     function editBoxHandlePointsCanvas(rect) {
+      const midX = (rect.x1 + rect.x2) / 2;
+      const midY = (rect.y1 + rect.y2) / 2;
       return [
         ["nw", rect.x1, rect.y1], ["ne", rect.x2, rect.y1],
-        ["sw", rect.x1, rect.y2], ["se", rect.x2, rect.y2]
+        ["sw", rect.x1, rect.y2], ["se", rect.x2, rect.y2],
+        ["n", midX, rect.y1], ["s", midX, rect.y2],
+        ["w", rect.x1, midY], ["e", rect.x2, midY]
       ];
     }
 

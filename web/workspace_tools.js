@@ -299,7 +299,9 @@ async function loadYoloWorkspaceAnnotation(workspaceRoot, preferredPath = null, 
     const preferredIndex = resumePath
       ? state.pairs.findIndex(pair => pair.imagePath === resumePath)
       : -1;
-    await selectIndex(preferredIndex >= 0 ? preferredIndex : 0);
+    const nextIndex = preferredIndex >= 0 ? preferredIndex : 0;
+    await selectIndex(nextIndex);
+    if (typeof scrollGalleryNearIndex === "function") scrollGalleryNearIndex(nextIndex);
   } else {
     clearPreview();
   }

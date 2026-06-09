@@ -162,6 +162,10 @@ function syncImageWorkspacePanelsForTab(isPoolLabel) {
 
 function switchTab(tab) {
   const switchSeq = ++appShellTabSwitchSeq;
+  if (isImageWorkspaceTab(state.activeTab)) {
+    state.currentImagePath = state.pairs[state.currentIndex]?.imagePath || state.currentImagePath;
+    state.galleryScrollTop = Math.max(0, Math.round(el.galleryScroll?.scrollTop || state.galleryScrollTop || 0));
+  }
   state.activeTab = validSessionTab(tab);
   saveSessionSoon();
   const isImagePool = tab === "image-pool";

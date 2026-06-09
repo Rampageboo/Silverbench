@@ -207,7 +207,9 @@ async function openDatasetFolder() {
         const preferredIndex = resumePath
           ? state.pairs.findIndex(pair => pair.imagePath === resumePath)
           : -1;
-        await selectIndex(preferredIndex >= 0 ? preferredIndex : 0);
+        const nextIndex = preferredIndex >= 0 ? preferredIndex : 0;
+        await selectIndex(nextIndex);
+        if (typeof scrollGalleryNearIndex === "function") scrollGalleryNearIndex(nextIndex);
       }
       updateStatus();
       updateTrainPrepStatus();
@@ -382,6 +384,7 @@ async function openDatasetFolder() {
           nextIndex,
           preserveUi ? { preserveShiftSelection: true } : undefined
         );
+        if (!preserveUi && typeof scrollGalleryNearIndex === "function") scrollGalleryNearIndex(nextIndex);
       }
       updateStatus();
       updateTrainPrepStatus();
