@@ -8,6 +8,9 @@ const inboxState = {
   filter: "new",
   selected: new Set(),
   metadataByFile: new Map(),
+  randomUnusedFilenames: new Set(),
+  randomUnusedNonce: 0,
+  randomUnusedCandidateCount: 0,
   classes: [],
   clfDatasetPath: "",
   detectClasses: [],
@@ -100,11 +103,12 @@ function updateInboxWorkflowSummary(summary = null) {
 function applyInboxWorkflowUi() {
   const ui = inboxState.workflow?.ui;
   if (!ui) return;
-  if (["new", "unassigned", "all"].includes(ui.filter)) {
+  if (["new", "unassigned", "random-unused", "all"].includes(ui.filter)) {
     inboxState.filter = ui.filter;
     for (const [key, button] of [
       ["new", el.inboxFilterNewBtn],
       ["unassigned", el.inboxFilterUnassignedBtn],
+      ["random-unused", el.inboxFilterRandomUnusedBtn],
       ["all", el.inboxFilterAllBtn]
     ]) {
       button?.classList.toggle("active", inboxState.filter === key);
@@ -205,18 +209,60 @@ const inboxVirtual = createVirtualGalleryState(150);
 let inboxThumbObserver = null;
 
 function inboxPairsCacheKey() {
-  return `${inboxState.filter}:${imagePoolState.scanAt}:${imagePoolState.pairPaths.length}:${inboxState.metadataRevision}:${inboxState.metadataByFile.size}`;
+  return `${inboxState.filter}:${inboxState.randomUnusedNonce}:${imagePoolState.scanAt}:${imagePoolState.pairPaths.length}:${inboxState.metadataRevision}:${inboxState.metadataByFile.size}`;
+}
+
+function inboxIsUnusedForDataset(filename) {
+  const sideState = inboxMetadataSideState(filename);
+  const poolMeta = imagePoolState.metaByFile.get(filename);
+  return !sideState.detectInUse && !sideState.clfInUse && !poolMeta?.isUsed;
+}
+
+function inboxHasNoAssignmentMetadata(filename) {
+  const sideState = inboxMetadataSideState(filename);
+  return !sideState.detectInUse
+    && !sideState.clfInUse
+    && !sideState.detectRejected
+    && !sideState.clfRejected;
+}
+
+function shuffleInboxPairs(pairs) {
+  const shuffled = pairs.slice();
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+function chooseInboxRandomUnusedSample() {
+  const candidates = imagePoolBasePairs().filter(pair => {
+    const filename = pair.imagePath.split("/").pop();
+    return inboxIsUnusedForDataset(filename);
+  });
+  inboxState.randomUnusedCandidateCount = candidates.length;
+  inboxState.randomUnusedFilenames = new Set(
+    shuffleInboxPairs(candidates)
+      .slice(0, 100)
+      .map(pair => pair.imagePath.split("/").pop())
+  );
+  inboxState.randomUnusedNonce += 1;
 }
 
 function rebuildInboxPairs() {
   const pairs = imagePoolBasePairs();
+  if (inboxState.filter === "random-unused" && inboxState.randomUnusedNonce === 0) {
+    chooseInboxRandomUnusedSample();
+  }
   inboxState.pairs = pairs.filter(pair => {
     const filename = pair.imagePath.split("/").pop();
     const meta = imagePoolState.metaByFile.get(filename);
     if (inboxState.filter === "new") return meta?.isNew;
     if (inboxState.filter === "unassigned") {
-      const assigned = inboxState.metadataByFile.get(filename);
-      return !assigned?.clf_class;
+      return inboxHasNoAssignmentMetadata(filename);
+    }
+    if (inboxState.filter === "random-unused") {
+      return inboxState.randomUnusedFilenames.has(filename) && inboxIsUnusedForDataset(filename);
     }
     return true;
   });
@@ -229,7 +275,7 @@ function updateInboxTabBadge() {
   const btn = el.inboxTabBtn;
   if (!btn) return;
   const count = imagePoolState.summary?.newCount || 0;
-  btn.textContent = count > 0 ? `Assign (${count})` : "Assign";
+  btn.textContent = count > 0 ? `Image Assign (${count})` : "Image Assign";
 }
 
 function updateInboxSelectionCount() {
@@ -313,6 +359,7 @@ function setInboxFilter(filter) {
   for (const [key, button] of [
     ["new", el.inboxFilterNewBtn],
     ["unassigned", el.inboxFilterUnassignedBtn],
+    ["random-unused", el.inboxFilterRandomUnusedBtn],
     ["all", el.inboxFilterAllBtn]
   ]) {
     button?.classList.toggle("active", filter === key);
@@ -320,9 +367,10 @@ function setInboxFilter(filter) {
   inboxState.selected.clear();
   inboxState.anchorIndex = null;
   saveInboxWorkflowUi().catch(() => {});
-  if (filter === "unassigned") {
+  if (filter === "unassigned" || filter === "random-unused") {
     ensureInboxMetadataIndex()
       .then(() => {
+        if (filter === "random-unused") chooseInboxRandomUnusedSample();
         rebuildInboxPairs();
         renderInboxGrid();
       })
@@ -397,6 +445,13 @@ function updateInboxAssignTargetUi() {
   const isDetect = target === "detect";
   if (el.inboxClfAssignPanel) el.inboxClfAssignPanel.hidden = isDetect;
   if (el.inboxDetectAssignPanel) el.inboxDetectAssignPanel.hidden = !isDetect;
+  if (el.inboxAssignActionRow) {
+    const actionHost = isDetect ? el.inboxDetectAssignPanel : el.inboxCreateAssignRow;
+    if (actionHost && el.inboxAssignActionRow.parentElement !== actionHost) {
+      actionHost.appendChild(el.inboxAssignActionRow);
+    }
+    el.inboxAssignActionRow.classList.toggle("is-detect", isDetect);
+  }
   if (el.inboxApplyAssignBtn) {
     el.inboxApplyAssignBtn.textContent = isDetect ? "Apply to Selected (Detect)" : "Apply to Selected";
   }
@@ -556,7 +611,10 @@ function renderInboxStats() {
   const visible = inboxState.pairs.length;
   const selected = inboxState.selected.size;
   const newCount = imagePoolState.summary?.newCount ?? 0;
-  el.inboxStats.textContent = `${visible} visible | NEW ${newCount} | ${selected} selected`;
+  const randomText = inboxState.filter === "random-unused"
+    ? ` | unused candidates ${inboxState.randomUnusedCandidateCount}`
+    : "";
+  el.inboxStats.textContent = `${visible} visible | NEW ${newCount}${randomText} | ${selected} selected`;
 }
 
 function ensureInboxThumbObserver() {
@@ -893,7 +951,11 @@ function renderInboxGrid(options = {}) {
     el.inboxGrid.replaceChildren();
     el.inboxGrid.appendChild(Object.assign(document.createElement("div"), {
       className: "empty",
-      textContent: inboxState.filter === "new" ? "No NEW images." : "No images match the current filter."
+      textContent: inboxState.filter === "new"
+        ? "No NEW images."
+        : inboxState.filter === "random-unused"
+          ? "No unused images found for random sample."
+          : "No images match the current filter."
     }));
     renderInboxStats();
     return;
@@ -1429,6 +1491,9 @@ async function quickAssignInboxClass(className) {
 function resetInboxState() {
   inboxState.selected.clear();
   inboxState.metadataByFile = new Map();
+  inboxState.randomUnusedFilenames = new Set();
+  inboxState.randomUnusedNonce = 0;
+  inboxState.randomUnusedCandidateCount = 0;
   inboxState.classes = [];
   inboxState.clfDatasetPath = "";
   inboxState.detectClasses = [];
@@ -1460,6 +1525,7 @@ function bindInboxEvents() {
   el.inboxMarkJunkBtn?.addEventListener("click", () => markInboxJunkSelected().catch(showError));
   el.inboxFilterNewBtn?.addEventListener("click", () => setInboxFilter("new"));
   el.inboxFilterUnassignedBtn?.addEventListener("click", () => setInboxFilter("unassigned"));
+  el.inboxFilterRandomUnusedBtn?.addEventListener("click", () => setInboxFilter("random-unused"));
   el.inboxFilterAllBtn?.addEventListener("click", () => setInboxFilter("all"));
   el.inboxApplyAssignBtn?.addEventListener("click", () => applyInboxAssignment().catch(showError));
   el.inboxBuildPendingBtn?.addEventListener("click", () => buildInboxLinks({ scope: "pending" }).catch(showError));

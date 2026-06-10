@@ -84,7 +84,7 @@ class WebPage(QWebEnginePage):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("YOLO Label Viewer")
+        self.setWindowTitle("YoloWorkBench")
         self.resize(1440, 900)
         self.setAcceptDrops(True)
 

@@ -372,7 +372,8 @@
           bestDistance = distance;
         }
       }
-      return best;
+      if (best) return best;
+      return hitBoxEdgeAtCanvasPoint(point, canvasRect, cornerTolerance);
     }
 
     function editBoxHandlePointsCanvas(rect) {
@@ -384,6 +385,26 @@
         ["n", midX, rect.y1], ["s", midX, rect.y2],
         ["w", rect.x1, midY], ["e", rect.x2, midY]
       ];
+    }
+
+    function hitBoxEdgeAtCanvasPoint(point, rect, tolerance) {
+      const left = Math.min(rect.x1, rect.x2);
+      const right = Math.max(rect.x1, rect.x2);
+      const top = Math.min(rect.y1, rect.y2);
+      const bottom = Math.max(rect.y1, rect.y2);
+      const nearX = point.x >= left - tolerance && point.x <= right + tolerance;
+      const nearY = point.y >= top - tolerance && point.y <= bottom + tolerance;
+      const candidates = [];
+      if (nearX) {
+        candidates.push(["n", Math.abs(point.y - top)]);
+        candidates.push(["s", Math.abs(point.y - bottom)]);
+      }
+      if (nearY) {
+        candidates.push(["w", Math.abs(point.x - left)]);
+        candidates.push(["e", Math.abs(point.x - right)]);
+      }
+      candidates.sort((a, b) => a[1] - b[1]);
+      return candidates[0]?.[1] <= tolerance ? candidates[0][0] : null;
     }
 
     function normalizeImageRectInPlace(rect) {

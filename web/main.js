@@ -69,7 +69,7 @@ function installGlobalErrorHandlers() {
 function loadClassicScript(src) {
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = src;
+    script.src = `${src}?v=${encodeURIComponent(window.YOLO_LABEL_VIEWER_BUILD || "dev")}-${Date.now()}`;
     script.async = false;
     script.onload = () => resolve();
     script.onerror = () => reject(new Error(`Failed to load ${src}`));

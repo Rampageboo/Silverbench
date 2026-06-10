@@ -114,7 +114,6 @@
         const anchor = state.multiSelectAnchorIndex ?? state.currentIndex;
         selectGalleryRange(anchor, index);
         renderGallery();
-        if (typeof poolLabelSyncCopySelectedButton === "function") poolLabelSyncCopySelectedButton();
         updateReviewControls();
         updateSelectedClassPanel();
         return;
@@ -124,14 +123,12 @@
         else state.shiftSelectedPaths.add(pair.imagePath);
         state.multiSelectAnchorIndex = index;
         renderGallery();
-        if (typeof poolLabelSyncCopySelectedButton === "function") poolLabelSyncCopySelectedButton();
         updateReviewControls();
         updateSelectedClassPanel();
         return;
       }
       state.multiSelectAnchorIndex = index;
       state.shiftSelectedPaths.clear();
-      if (typeof poolLabelSyncCopySelectedButton === "function") poolLabelSyncCopySelectedButton();
       await selectIndex(index);
     }
 
@@ -164,6 +161,16 @@
         rowExtra: 36
       });
       const row = Math.max(0, Math.floor(Math.max(0, Math.min(index, state.pairs.length - 1)) / Math.max(1, layout.columns)));
+      if (options.onlyIfNeeded) {
+        const viewportTop = el.galleryScroll.scrollTop || 0;
+        const viewportBottom = viewportTop + (el.galleryScroll.clientHeight || 0);
+        const rowTop = row * layout.rowHeight;
+        const rowBottom = rowTop + layout.rowHeight;
+        if (rowTop >= viewportTop && rowBottom <= viewportBottom) {
+          if (options.render !== false) renderGallery();
+          return;
+        }
+      }
       const targetTop = Math.max(0, Math.round(row * layout.rowHeight - (el.galleryScroll.clientHeight || 0) * 0.35));
       el.galleryScroll.scrollTop = targetTop;
       state.galleryScrollTop = targetTop;
@@ -216,7 +223,7 @@
       updateReviewControls();
       updateSelectedClassPanel();
       updateClassifierResultPanel();
-      if (isPoolLabelActive()) updatePoolLabelPanel().catch(error => console.warn("Pool Label panel:", error));
+      if (isPoolLabelActive()) updatePoolLabelPanel().catch(error => console.warn("Box Label panel:", error));
     }
 
     async function renderCurrentImage() {

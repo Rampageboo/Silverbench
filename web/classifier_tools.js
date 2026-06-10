@@ -44,8 +44,8 @@
       classifierState.running = true;
       setClassifierBusy(true);
       try {
-        const topK = Math.max(1, Math.min(20, parseInt(el.classifierTopKInput.value || "5", 10)));
-        el.classifierResult.textContent = `Classifying ${paths.length} image(s) on CPU...`;
+        const topK = Math.max(1, Math.min(20, parseInt(el.classifierTopKInput?.value || "5", 10)));
+        if (el.classifierResult) el.classifierResult.textContent = `Classifying ${paths.length} image(s) on CPU...`;
         const raw = await backendCall(
           "classifyDatasetImages",
           state.datasetBackendRoot,

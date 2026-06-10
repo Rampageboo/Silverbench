@@ -574,35 +574,32 @@
 		    .app.pool-label .pool-label-shortcuts-panel {
 		      grid-column: 1 / -1;
 		      display: grid;
-		      gap: 8px;
 		      background: var(--panel);
 		      border: 1px solid var(--line);
 		      border-radius: 8px;
 		      box-shadow: var(--shadow);
-		      padding: 10px 12px;
-		    }
-		    .pool-label-shortcuts-head {
-		      display: flex;
-		      align-items: center;
-		      justify-content: space-between;
-		      gap: 10px;
-		      font-weight: 700;
-		    }
-		    .pool-label-shortcuts-head.compact {
-		      margin-top: 2px;
-		      font-size: 12px;
-		      color: var(--muted);
+		      padding: 8px 10px;
 		    }
 		    .pool-label-shortcuts {
 		      display: grid;
-		      grid-template-columns: repeat(10, minmax(70px, 1fr));
+		      grid-template-columns: repeat(10, minmax(86px, 1fr));
 		      gap: 6px;
 		    }
 		    .pool-label-shortcut-slot {
 		      min-width: 0;
 		      border-radius: 8px;
-		      padding: 2px;
+		      padding: 4px;
+		      display: grid;
+		      grid-template-rows: 16px 1fr 1fr;
+		      gap: 4px;
 		      transition: background-color 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
+		    }
+		    .pool-label-shortcut-number {
+		      color: var(--muted);
+		      font-size: 12px;
+		      font-weight: 700;
+		      line-height: 16px;
+		      text-align: center;
 		    }
 		    .pool-label-shortcut-dropdown {
 		      position: relative;
@@ -611,7 +608,8 @@
 		    .pool-label-shortcut-button {
 		      width: 100%;
 		      min-width: 0;
-		      padding: 8px 8px;
+		      height: 30px;
+		      padding: 6px 8px;
 		      border: 1px solid var(--line);
 		      border-radius: 6px;
 		      background: var(--panel);
@@ -633,10 +631,8 @@
 		      opacity: 0.75;
 		    }
 		    .pool-label-shortcut-menu {
-		      position: absolute;
-		      z-index: 30;
-		      top: calc(100% + 4px);
-		      left: 0;
+		      position: fixed;
+		      z-index: 2147483000;
 		      width: max(100%, 230px);
 		      max-height: 310px;
 		      overflow: auto;
@@ -647,7 +643,7 @@
 		      background: var(--panel);
 		      box-shadow: var(--shadow);
 		    }
-		    .pool-label-shortcut-dropdown.open .pool-label-shortcut-menu {
+		    .pool-label-shortcut-menu.open {
 		      display: grid;
 		      gap: 2px;
 		    }
@@ -668,29 +664,31 @@
 		      background: var(--surface-active);
 		      color: var(--blue);
 		    }
-		    .pool-label-shortcut-slot.active .pool-label-shortcut-button {
+		    .pool-label-shortcut-dropdown.active .pool-label-shortcut-button {
 		      border-color: var(--blue);
 		      color: var(--blue);
 		    }
-		    .pool-label-shortcut-slot.active,
-		    .pool-label-shortcuts-panel.class-mode #poolLabelShortcuts .pool-label-shortcut-slot,
-		    .pool-label-shortcuts-panel.fixed-mode #poolLabelFixedBoxes .pool-label-shortcut-slot {
+		    .pool-label-shortcut-dropdown.active,
+		    .pool-label-shortcuts-panel.class-mode .pool-label-shortcut-dropdown.class-slot,
+		    .pool-label-shortcuts-panel.fixed-mode .pool-label-shortcut-dropdown.fixed-slot {
 		      background: var(--surface-active);
+		      border-radius: 8px;
 		      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
 		    }
-		    .pool-label-shortcuts-panel.fixed-mode #poolLabelShortcuts .pool-label-shortcut-slot,
-		    .pool-label-shortcuts-panel.class-mode #poolLabelFixedBoxes .pool-label-shortcut-slot {
+		    .pool-label-shortcuts-panel.fixed-mode .pool-label-shortcut-dropdown.class-slot,
+		    .pool-label-shortcuts-panel.class-mode .pool-label-shortcut-dropdown.fixed-slot {
 		      opacity: 0.58;
 		    }
-		    .pool-label-shortcuts-panel.fixed-mode #poolLabelFixedBoxes .pool-label-shortcut-button {
+		    .pool-label-shortcuts-panel.fixed-mode .pool-label-shortcut-dropdown.fixed-slot .pool-label-shortcut-button {
 		      border-color: var(--blue);
 		      color: var(--blue);
 		    }
-		    .pool-label-shortcut-slot.recording {
+		    .pool-label-shortcut-dropdown.recording {
 		      background: rgba(245, 158, 11, 0.12);
+		      border-radius: 8px;
 		      box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.22);
 		    }
-		    .pool-label-shortcut-slot.recording .pool-label-shortcut-button {
+		    .pool-label-shortcut-dropdown.recording .pool-label-shortcut-button {
 		      border-color: #f59e0b;
 		    }
 	    .app.pool-label .review-only,
@@ -772,15 +770,6 @@
 		      min-height: 150px;
 		      max-height: 180px;
 		      overflow: auto;
-		    }
-		    .pool-label-panel-actions {
-		      display: flex;
-		      align-items: center;
-		      gap: 6px;
-		    }
-		    .pool-label-box-panel .panel-header button {
-		      padding: 5px 9px;
-		      font-size: 12px;
 		    }
 		    .pool-label-tools > .row input {
 		      min-width: 160px;
@@ -1506,6 +1495,25 @@
 	    }
 	    .inbox-detect-assign-hint {
 	      margin: 0;
+	    }
+	    .inbox-create-assign-row {
+	      display: grid;
+	      grid-template-columns: minmax(0, 1fr) auto;
+	      align-items: end;
+	      gap: 8px;
+	    }
+	    .inbox-create-class-field {
+	      min-width: 0;
+	    }
+	    .inbox-assign-action-row {
+	      display: flex;
+	      align-items: center;
+	    }
+	    .inbox-assign-action-row.is-detect {
+	      margin-top: 4px;
+	    }
+	    .inbox-build-actions {
+	      margin-top: 0;
 	    }
 	    .inbox-assign-body .inbox-class-field {
 	      flex: 1;

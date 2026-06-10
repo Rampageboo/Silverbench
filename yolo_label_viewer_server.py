@@ -23,7 +23,8 @@ WEB_DIR = APP_DIR / "web"
 SESSION_DIR = APP_DIR / "Sessions"
 SESSION_FILE = SESSION_DIR / "yolo_label_viewer_session.json"
 API_TOKEN = secrets.token_urlsafe(32)
-API_TOKEN_HEADER = "X-Yolo-Label-Viewer-Token"
+API_TOKEN_HEADER = "X-Yolo-WorkBench-Token"
+LEGACY_API_TOKEN_HEADER = "X-Yolo-Label-Viewer-Token"
 PATH_ACCESS = PathAccess([SESSION_DIR])
 HEARTBEAT_METHOD = "__heartbeat"
 HEARTBEAT_TIMEOUT_SECONDS = 60 * 60 * 6
@@ -214,7 +215,7 @@ def start_heartbeat_watchdog(server: ThreadingHTTPServer) -> threading.Thread:
         while True:
             time.sleep(HEARTBEAT_CHECK_SECONDS)
             if should_shutdown_for_browser_state():
-                print("Browser page closed or idle timeout reached; shutting down YOLO Label Viewer server.")
+                print("Browser page closed or idle timeout reached; shutting down YoloWorkBench server.")
                 server.shutdown()
                 return
 
@@ -266,7 +267,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def _has_valid_api_token(self) -> bool:
-        token = self.headers.get(API_TOKEN_HEADER, "")
+        token = self.headers.get(API_TOKEN_HEADER, "") or self.headers.get(LEGACY_API_TOKEN_HEADER, "")
         return hmac.compare_digest(token, API_TOKEN)
 
     def log_message(self, format: str, *args) -> None:
@@ -285,7 +286,7 @@ def main() -> None:
     port = int(sys.argv[1]) if len(sys.argv) > 1 else free_port()
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     url = f"http://127.0.0.1:{port}/?apiToken={API_TOKEN}"
-    print(f"YOLO Label Viewer server: {url}")
+    print(f"YoloWorkBench server: {url}")
     torch_info = torch_runtime_info()
     print(
         "Torch runtime: "

@@ -259,7 +259,7 @@ def workspace_info(workspace_root: Path) -> dict[str, Any]:
 
 
 def list_workspace_files(workspace_root: Path) -> list[str]:
-    """Relative paths under workspace root for Pool Label / workspace annotation UI."""
+    """Relative paths under workspace root for Box Label / workspace annotation UI."""
     paths = load_workspace_config(workspace_root)
     files: list[str] = []
     if paths.image_pool.is_dir():
@@ -396,7 +396,7 @@ clf_dataset/         Generated classification dataset (hard links).
 App workflow
 ------------
 1. Add images to image_pool/
-2. Annotate in YOLO Label Viewer (labels save to detect_labels/)
+2. Annotate in YoloWorkBench (labels save to detect_labels/)
 3. Edit metadata.csv
 4. Build datasets:
    python build_yolo_links.py build --workspace "{workspace_root}" --rebuild

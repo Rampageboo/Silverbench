@@ -72,6 +72,10 @@ function isImageWorkspaceTab(tab) {
   return tab === "image-pool" || tab === "inbox" || tab === "yolo";
 }
 
+function isCurrentImageStateTab(tab) {
+  return isImageWorkspaceTab(tab) || tab === "pool-label";
+}
+
 function createImageWorkspaceModeControls(activeTab) {
   const wrap = document.createElement("div");
   wrap.className = "inbox-target-toggle image-workspace-mode-toggle";
@@ -79,7 +83,7 @@ function createImageWorkspaceModeControls(activeTab) {
   wrap.setAttribute("aria-label", "Image workspace mode");
 
   const modes = [
-    ["image-pool", "Library"],
+    ["image-pool", "Pool"],
     ["inbox", "Assign"],
     ["yolo", "Review"]
   ];
@@ -100,13 +104,13 @@ function topbarStatusForTab(tab) {
     if (!state.workspaceRoot) return "Open a workspace, then assign NEW images to dataset targets.";
     const visible = typeof inboxState !== "undefined" ? inboxState.pairs.length : 0;
     const newCount = imagePoolState.summary?.newCount ?? 0;
-    return `Images / Assign: ${visible} visible, ${newCount} NEW.`;
+    return `Image Assign: ${visible} visible, ${newCount} NEW.`;
   }
   if (tab === "image-pool") {
     if (!state.workspaceRoot) return "Open a workspace folder to manage image_pool.";
     const summary = imagePoolState.summary;
     if (summary) {
-      return `Images / Library: ${summary.total} images, ${summary.newCount} NEW, ${summary.usedCount} linked, ${summary.unusedCount} unused.`;
+      return `Image Pool: ${summary.total} images, ${summary.newCount} NEW, ${summary.usedCount} linked, ${summary.unusedCount} unused.`;
     }
     return "Workspace bound. Refresh the scan to update the image_pool list.";
   }
@@ -136,7 +140,7 @@ function topbarStatusForTab(tab) {
   }
   if (tab === "pool-label") {
     return hasDatasetOpen()
-      ? `${state.rootName} | Pool Label | ${state.pairs.length}/${state.allPairs.length}`
+      ? `${state.rootName} | Box Label | ${state.pairs.length}/${state.allPairs.length}`
       : "Open a workspace with image_pool to label detection boxes.";
   }
   if (tab === "yolo") return null;
@@ -162,7 +166,7 @@ function syncImageWorkspacePanelsForTab(isPoolLabel) {
 
 function switchTab(tab) {
   const switchSeq = ++appShellTabSwitchSeq;
-  if (isImageWorkspaceTab(state.activeTab)) {
+  if (isCurrentImageStateTab(state.activeTab)) {
     state.currentImagePath = state.pairs[state.currentIndex]?.imagePath || state.currentImagePath;
     state.galleryScrollTop = Math.max(0, Math.round(el.galleryScroll?.scrollTop || state.galleryScrollTop || 0));
   }
@@ -199,23 +203,27 @@ function switchTab(tab) {
   el.maskNoiseTabBtn.classList.toggle("active", isMaskNoise);
   el.mergeTabBtn.classList.toggle("active", isMerge);
   renderTopbarActions(tab);
-  el.activeToolTitle.textContent = isImageWorkspace
-    ? "Images"
-    : isVideo
-      ? "Video Screenshot"
-      : isMerge
-        ? "Dataset Merge"
-        : isTrainPrep
-          ? "Dataset Prep"
-          : isTrain
-            ? "Auto Label"
-            : isCrop
-              ? "Crop"
-	              : isMaskNoise
-	                ? "Mask Noise"
-	                : isPoolLabel
-	                  ? "Pool Label"
-	                  : "YOLO View";
+  el.activeToolTitle.textContent = isImagePool
+    ? "Image Pool"
+    : isInbox
+      ? "Image Assign"
+      : tab === "yolo"
+        ? "Dataset Review"
+        : isVideo
+          ? "Video Capture"
+          : isMerge
+            ? "Dataset Merge"
+            : isTrainPrep
+              ? "Dataset Prep"
+              : isTrain
+                ? "Auto Label"
+                : isCrop
+                  ? "Batch Crop"
+	                : isMaskNoise
+	                  ? "Mask Cleanup"
+	                  : isPoolLabel
+	                    ? "Box Label"
+	                    : "Dataset Review";
   applyTopbarStatusForTab(tab);
   if (isInbox) {
     requestAnimationFrame(() => {
@@ -267,7 +275,7 @@ function switchTab(tab) {
   if (tab === "yolo" || tab === "pool-label") {
     requestAnimationFrame(() => {
       if (switchSeq !== appShellTabSwitchSeq) return;
-      refreshYoloOrPoolLabelView(tab, switchSeq).catch(error => console.warn("YOLO/Pool Label refresh:", error));
+      refreshYoloOrPoolLabelView(tab, switchSeq).catch(error => console.warn("YOLO/Box Label refresh:", error));
     });
   }
 }
@@ -310,6 +318,9 @@ async function refreshYoloOrPoolLabelView(tab, switchSeq = appShellTabSwitchSeq)
   if (isPoolLabel && state.workspaceRoot && typeof loadFromBackendDatasetPath === "function") {
     await ensurePoolLabelDetectDatasetLoaded();
     if (switchSeq !== appShellTabSwitchSeq) return;
+    if (typeof loadPoolLabelSessionFields === "function") {
+      await loadPoolLabelSessionFields();
+    }
   } else if (isPoolLabel && state.allPairs.length && typeof buildLabelIndex === "function") {
     await buildLabelIndex();
     if (typeof applyFilter === "function") applyFilter(false);
@@ -323,7 +334,7 @@ async function refreshYoloOrPoolLabelView(tab, switchSeq = appShellTabSwitchSeq)
   await renderCurrentImage();
   applyTopbarStatusForTab(tab);
   if (isPoolLabel && typeof updatePoolLabelPanel === "function") {
-    await updatePoolLabelPanel().catch(error => console.warn("Pool Label panel:", error));
+    await updatePoolLabelPanel().catch(error => console.warn("Box Label panel:", error));
   }
   refreshImagePoolBackupHint().catch(() => {});
 }

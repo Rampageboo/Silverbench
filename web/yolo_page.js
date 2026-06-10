@@ -36,7 +36,9 @@ function bindYoloPageEvents() {
     renderGallery();
     saveSessionSoon();
   });
-  bindGalleryResize(el.galleryScroll, galleryVirtual, () => renderGallery());
+  bindGalleryResize(el.galleryScroll, galleryVirtual, () => {
+    scrollGalleryNearIndex(state.currentIndex, { onlyIfNeeded: true });
+  });
   el.canvas.addEventListener("pointerdown", onPointerDown);
   el.canvas.addEventListener("pointermove", onPointerMove);
   el.canvas.addEventListener("pointerup", onPointerUp);

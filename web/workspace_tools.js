@@ -50,10 +50,18 @@ async function restoreLastOpenedFolderOnStartup() {
     await bindWorkspaceToImagePool(result.root, { silent: true });
     const session = await readWorkspaceSessionData();
     applyAppSessionData(session);
-    switchTab(validSessionTab(session.activeTab || "image-pool"));
+    await restoreWorkspaceSessionTab(session);
     setStatus(`已恢复工作区：${result.root.split(/[\\/]/).pop()}`);
   } catch (error) {
     console.warn("Restore last folder skipped:", error);
+  }
+}
+
+async function restoreWorkspaceSessionTab(session) {
+  const tab = validSessionTab(session?.activeTab || "image-pool");
+  switchTab(tab);
+  if (tab === "pool-label" && typeof refreshYoloOrPoolLabelView === "function") {
+    await refreshYoloOrPoolLabelView("pool-label", appShellTabSwitchSeq);
   }
 }
 

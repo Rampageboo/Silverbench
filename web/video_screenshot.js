@@ -1,4 +1,4 @@
-// ===== Video Screenshot: backend import & drag-drop =====
+// ===== Video Capture: backend import & drag-drop =====
 	    let skipNextWebVideoDrop = false;
 
 	    function backendVideoItemsFromInfoList(infoList) {

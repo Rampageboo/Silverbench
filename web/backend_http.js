@@ -1,9 +1,9 @@
-const HTTP_API_TOKEN_KEY = "yolo_label_viewer_http_api_token";
+const HTTP_API_TOKEN_KEY = "yolo_workbench_http_api_token";
 
 function httpBackendHeaders() {
   const headers = { "Content-Type": "application/json" };
   const token = httpBackendToken();
-  if (token) headers["X-Yolo-Label-Viewer-Token"] = token;
+  if (token) headers["X-Yolo-WorkBench-Token"] = token;
   return headers;
 }
 

@@ -362,6 +362,8 @@ async function openDatasetFolder() {
         }
       } else if (restoreSession) {
         await loadSessionFromDefault(preferredPath);
+        resumePath = state.currentImagePath || preferredPath;
+        fallbackIndex = state.currentIndex || 0;
       }
       buildFilterList();
       updateSelectedClassActions();

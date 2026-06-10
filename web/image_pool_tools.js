@@ -232,7 +232,7 @@ function updateImagePoolTabBadge() {
 
   const count = imagePoolState.summary?.newCount || 0;
 
-  btn.textContent = count > 0 ? `Images (${count})` : "Images";
+  btn.textContent = count > 0 ? `Image Pool (${count})` : "Image Pool";
   if (typeof updateInboxTabBadge === "function") updateInboxTabBadge();
 
 }
@@ -457,7 +457,7 @@ async function deleteSelectedImagePoolFiles() {
 function openSelectedImagePoolInYolo() {
   const filenames = imagePoolSelectedFilenames();
   if (filenames.length !== 1) {
-    alert("Select exactly 1 image before opening it in Pool Label.");
+    alert("Select exactly 1 image before opening it in Box Label.");
     return;
   }
   openImageInYoloView(filenames[0]).catch(showError);

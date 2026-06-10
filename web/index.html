@@ -3,26 +3,26 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>YOLO Label Viewer Web</title>
+  <title>YoloWorkBench</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 		  <div class="app video" id="app">
 		    <nav class="tabbar">
-			      <div class="brand">YOLO Tools</div>
-			      <button id="imagePoolTabBtn">Images</button>
-				      <button id="poolLabelTabBtn">Pool Label</button>
-			      <button id="inboxTabBtn" hidden>Assign</button>
-			      <button id="videoTabBtn" class="active">Video Screenshot</button>
-				      <button id="yoloTabBtn" hidden>Review</button>
+			      <div class="brand">YoloWorkBench</div>
+			      <button id="imagePoolTabBtn">Image Pool</button>
+				      <button id="poolLabelTabBtn">Box Label</button>
+			      <button id="inboxTabBtn" hidden>Image Assign</button>
+			      <button id="videoTabBtn" class="active">Video Capture</button>
+				      <button id="yoloTabBtn" hidden>Dataset Review</button>
 				      <button id="trainPrepTabBtn">Dataset Prep</button>
 				      <button id="trainTabBtn">Auto Label</button>
-				      <button id="cropTabBtn">Crop</button>
-				      <button id="maskNoiseTabBtn">Mask Noise</button>
+				      <button id="cropTabBtn">Batch Crop</button>
+				      <button id="maskNoiseTabBtn">Mask Cleanup</button>
 			      <button id="mergeTabBtn">Dataset Merge</button>
 		    </nav>
 			    <header class="topbar">
-			      <div class="brand" id="activeToolTitle">Video Screenshot</div>
+			      <div class="brand" id="activeToolTitle">Video Capture</div>
 		      <div class="topbar-actions" id="topbarActions">
 		        <div class="yolo-mode-controls" id="yoloModeControls" hidden>
 		          <div class="inbox-target-toggle yolo-dataset-toggle" id="yoloViewModes" role="group" aria-label="YOLO dataset mode">
@@ -47,7 +47,7 @@
 	            <button id="imagePoolMarkSeenBtn">Mark All Seen</button>
 	            <button id="imagePoolSelectAllBtn">Select Visible</button>
 	            <button id="imagePoolClearSelectionBtn">Clear Selection</button>
-	            <button id="imagePoolOpenYoloBtn">Pool Label</button>
+	            <button id="imagePoolOpenYoloBtn">Box Label</button>
 	            <button class="danger" id="imagePoolDeleteSelectedBtn">Delete Selected</button>
 	          </div>
 	          <div class="hint image-pool-select-hint">Click to select; use Ctrl/Shift for multi-select. Double-click to preview. Delete removes image_pool files, hard links, labels, and metadata.</div>
@@ -109,6 +109,7 @@
 	          <div class="inbox-filters">
 	            <button id="inboxFilterNewBtn" class="active">NEW</button>
 	            <button id="inboxFilterUnassignedBtn">No Metadata</button>
+	            <button id="inboxFilterRandomUnusedBtn">Random 100</button>
 	            <button id="inboxFilterAllBtn">All</button>
 	          </div>
 	          <div class="inbox-grid-wrap" id="inboxGridWrap">
@@ -143,7 +144,12 @@
 	                  <div class="empty">Open a workspace to load classes</div>
 	                </div>
 	              </div>
-	              <label>Or create class <input id="inboxNewClassInput" type="text" placeholder="class_name"></label>
+	              <div class="inbox-create-assign-row" id="inboxCreateAssignRow">
+	                <label class="inbox-create-class-field">Or create class <input id="inboxNewClassInput" type="text" placeholder="class_name"></label>
+	                <div class="inbox-assign-action-row" id="inboxAssignActionRow">
+	                  <button id="inboxApplyAssignBtn">Apply to Selected</button>
+	                </div>
+	              </div>
 	            </div>
 	            <div class="inbox-assign-target-panel" id="inboxDetectAssignPanel" hidden>
 	              <div class="inbox-class-field">
@@ -154,18 +160,15 @@
 	                  <div class="empty">Open a workspace to load detect classes</div>
 	                </div>
 	              </div>
-	              <div class="hint inbox-detect-assign-hint">Select images, then click a class chip or Apply to Selected. Box labels stay in Pool Label.</div>
+	              <div class="hint inbox-detect-assign-hint">Select images, then click a class chip or Apply to Selected. Box labels stay in Box Label.</div>
 	            </div>
 	          </div>
-	          <div class="row" style="margin-top:12px">
-	            <button id="inboxApplyAssignBtn">Apply to Selected</button>
-	          </div>
-	          <div class="row" style="margin-top:8px">
+	          <div class="merge-log inbox-log" id="inboxLog">Ready.</div>
+	          <div class="row inbox-build-actions">
 	            <button class="primary" id="inboxBuildPendingBtn">Build Pending</button>
 	            <button id="inboxBuildLinksBtn">Build All</button>
 	            <label class="inbox-check"><input type="checkbox" id="inboxRebuildInput"> rebuild</label>
 	          </div>
-	          <div class="merge-log inbox-log" id="inboxLog">Ready.</div>
 	        </div>
 	      </aside>
 	    </main>
@@ -269,7 +272,7 @@
           <div class="canvas-wrap" id="dropZone">
             <canvas id="previewCanvas"></canvas>
           </div>
-          <div class="pool-label-preview-toolbar" id="poolLabelPreviewToolbar" aria-label="Pool Label tools">
+          <div class="pool-label-preview-toolbar" id="poolLabelPreviewToolbar" aria-label="Box Label tools">
             <button id="poolLabelPointerToolBtn" class="pool-label-icon-tool" type="button" title="Cursor (V)" aria-label="Cursor" aria-pressed="false">
               <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
                 <path d="M6 3l10 10-5 1.5L8.5 20 6 3z" />
@@ -410,24 +413,12 @@
 	    </main>
 	    <main class="workspace pool-label-workspace" id="poolLabelWorkspace">
 	      <section class="pool-label-shortcuts-panel" id="poolLabelShortcutsPanel">
-	        <div class="pool-label-shortcuts-head">
-	          <span>Class Shortcuts</span>
-	          <span id="poolLabelShortcutHint" class="status">Number keys use class shortcuts. Hold Shift to switch to fixed boxes.</span>
-	        </div>
 	        <div class="pool-label-shortcuts" id="poolLabelShortcuts"></div>
-	        <div class="pool-label-shortcuts-head compact">
-	          <span>Fixed Box Shortcuts</span>
-	        </div>
-	        <div class="pool-label-shortcuts" id="poolLabelFixedBoxes"></div>
 	      </section>
 	      <aside class="side-stack pool-label-side-stack" id="poolLabelSideStack">
 	        <section class="panel pool-label-box-panel" id="poolLabelBoxPanel">
 	          <div class="panel-header">
 	            <span>Current Boxes</span>
-	            <div class="pool-label-panel-actions">
-	              <button id="poolLabelCopySelectedBtn" type="button">Copy Selected</button>
-	              <button id="poolLabelUndoBtn" type="button">Undo</button>
-	            </div>
 	          </div>
 	          <div class="panel-body pool-label-box-panel-body">
 	            <div class="hint" id="poolLabelStatus">Drag to create. A/D or arrows navigate. 0-9 assigns class.</div>
@@ -651,7 +642,7 @@
 	    <main class="mask-noise-workspace">
 	      <section class="panel">
 	        <div class="panel-header">
-	          <span>Black Area Noise</span>
+	          <span>Mask Cleanup</span>
 	          <span id="maskNoiseStatus" class="status">No image loaded</span>
 	        </div>
 	        <div class="panel-body mask-noise-stack">

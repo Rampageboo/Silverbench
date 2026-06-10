@@ -1,11 +1,11 @@
     async function duplicateSelectedImages() {
       if (!maskNoiseState.folderBackendRoot || !maskNoiseState.folderItems.length) {
-        alert("Import a Mask Noise image folder first.");
+        alert("Import a Mask Cleanup image folder first.");
         return;
       }
       const items = maskNoiseSelectedItems();
       if (!items.length) {
-        alert("Select image thumbnails in the Mask Noise grid first.");
+        alert("Select image thumbnails in the Mask Cleanup grid first.");
         return;
       }
       const minCopies = Math.max(0, numberInputValue(el.duplicateMinInput, 1));
@@ -13,7 +13,7 @@
       const low = Math.min(minCopies, maxCopies);
       const high = Math.max(minCopies, maxCopies);
       el.duplicateStatus.textContent = `Duplicating ${items.length} image(s)...`;
-      setMaskNoiseLog(`Duplicating ${items.length} Mask Noise selected image(s).\nRange: ${low}-${high} copies per image.`);
+      setMaskNoiseLog(`Duplicating ${items.length} Mask Cleanup selected image(s).\nRange: ${low}-${high} copies per image.`);
       const result = JSON.parse(await backendCall(
         "duplicateImages",
         maskNoiseState.folderBackendRoot,
@@ -34,7 +34,7 @@ async function importMaskNoiseFolder() {
       maskNoiseState.gridCards.clear();
       el.maskFolderGrid.innerHTML = "";
       if (!await ensurePythonBackend()) {
-        alert("Mask Noise folder import now requires the Python backend.");
+        alert("Mask Cleanup folder import now requires the Python backend.");
         return;
       }
       const rootPath = await backendCall("chooseDirectory", "Choose Image Folder");
@@ -72,13 +72,13 @@ async function importMaskNoiseFolder() {
 
     async function chooseMaskNoiseOutputFolder() {
       if (await ensurePythonBackend()) {
-        const path = await backendCall("chooseDirectory", "Choose Mask Noise Output Folder");
+        const path = await backendCall("chooseDirectory", "Choose Mask Cleanup Output Folder");
         if (!path) return;
         maskNoiseState.outputBackendRoot = path;
         maskNoiseState.outputHandle = null;
         maskNoiseState.outputName = path;
       } else {
-        alert("Mask Noise output now requires the Python backend.");
+        alert("Mask Cleanup output now requires the Python backend.");
         return;
       }
       setMaskNoiseLog(`${maskNoiseSummary()}\nOutput: ${maskNoiseState.outputName}`);
@@ -196,14 +196,14 @@ async function importMaskNoiseFolder() {
 
     async function deleteMaskFolderItem(item) {
       if (!maskNoiseState.folderBackendRoot) {
-        alert("Import a Mask Noise image folder first.");
+        alert("Import a Mask Cleanup image folder first.");
         return;
       }
       const selected = maskNoiseState.selectedPaths.has(item.path) ? maskNoiseSelectedItems() : [item];
       if (!selected.length) return;
       const preview = selected.slice(0, 8).map(entry => entry.path).join("\n");
       const more = selected.length > 8 ? `\n...and ${selected.length - 8} more` : "";
-      if (!confirm(`Delete ${selected.length} image(s) from the Mask Noise folder?\nMatching .txt labels will also be deleted.\n\n${preview}${more}`)) {
+      if (!confirm(`Delete ${selected.length} image(s) from the Mask Cleanup folder?\nMatching .txt labels will also be deleted.\n\n${preview}${more}`)) {
         return;
       }
       const deletePaths = selected.map(entry => entry.path);
@@ -221,7 +221,7 @@ async function importMaskNoiseFolder() {
       await loadMaskNoiseFolderFromRoot(maskNoiseState.folderBackendRoot, keepSelected);
       const skipped = result.skipped?.length ? `\nSkipped: ${result.skipped.length}` : "";
       setMaskNoiseLog(`Deleted ${result.deletedImages} image(s) and ${result.deletedLabels} label(s).${skipped}`);
-      setStatus(`Deleted ${result.deletedImages} Mask Noise image(s).`);
+      setStatus(`Deleted ${result.deletedImages} Mask Cleanup image(s).`);
     }
 
     function maskNoiseSelectedItems() {
@@ -261,7 +261,7 @@ async function importMaskNoiseFolder() {
 
     async function chooseMaskNoiseImage(kind) {
       if (!await ensurePythonBackend()) {
-        alert("Mask Noise image selection now requires the Python backend.");
+        alert("Mask Cleanup image selection now requires the Python backend.");
         return;
       }
       const title = kind === "mask" ? "Choose Black/White Mask" : "Choose Photo";
@@ -296,7 +296,7 @@ async function importMaskNoiseFolder() {
         return;
       }
       if (!await ensurePythonBackend()) {
-        alert("Mask Noise now requires the Python backend.");
+        alert("Mask Cleanup now requires the Python backend.");
         return;
       }
       const bitmap = await createImageBitmap(file);

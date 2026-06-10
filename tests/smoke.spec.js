@@ -53,8 +53,8 @@ test('web UI loads and connects to local backend', async ({ page }) => {
 
   try {
     await page.goto(url);
-    await expect(page).toHaveTitle(/YOLO Label Viewer/);
-    await expect(page.locator('#activeToolTitle')).toHaveText('Video Screenshot');
+    await expect(page).toHaveTitle(/YoloWorkBench/);
+    await expect(page.locator('#activeToolTitle')).toHaveText('Video Capture');
     await expect(page.locator('#status')).toContainText('Local backend connected.');
     await expect(page.locator('#openVideoBtn')).toBeVisible();
     await expect(page.locator('#yoloTabBtn')).toBeVisible();

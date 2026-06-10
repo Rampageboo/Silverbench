@@ -91,6 +91,97 @@ function applyAppSessionData(data) {
   if (typeof imagePoolState !== "undefined") applyImagePoolSessionData(data);
 }
 
+function sessionPathStem(path) {
+  return String(path || "").split("/").pop().replace(/\.[^.]+$/, "").toLowerCase();
+}
+
+function resolveSessionImagePath(path, validPaths) {
+  if (!path) return "";
+  if (validPaths.has(path)) return path;
+  const stem = sessionPathStem(path);
+  if (!stem) return "";
+  const matches = [...validPaths].filter(candidate => sessionPathStem(candidate) === stem);
+  if (!matches.length) return "";
+  matches.sort((a, b) => {
+    const aScore = (a.startsWith("image_pool/") ? 0 : 1) + (a.includes("/train/") ? 0 : 1);
+    const bScore = (b.startsWith("image_pool/") ? 0 : 1) + (b.includes("/train/") ? 0 : 1);
+    return aScore - bScore || naturalCompare(a, b);
+  });
+  return matches[0];
+}
+
+function hasPoolLabelDatasetLoaded() {
+  return hasDatasetOpen()
+    && Array.isArray(state.allPairs)
+    && state.allPairs.length > 0
+    && typeof poolLabelState !== "undefined";
+}
+
+function poolLabelSessionData() {
+  if (!hasPoolLabelDatasetLoaded()) return {};
+  return {
+    workspaceRoot: state.workspaceRoot || "",
+    datasetRoot: state.datasetBackendRoot || "",
+    savedAt: new Date().toISOString(),
+    poolLabelShortcuts: normalizePoolLabelShortcuts(poolLabelState.shortcutSlots),
+    poolLabelShortcutAssigned: normalizePoolLabelShortcutAssigned(poolLabelState.shortcutSlots),
+    poolLabelFixedBoxes: normalizePoolLabelFixedBoxes(poolLabelState.fixedBoxSlots),
+    poolLabelPointerToolEnabled: !!poolLabelState.pointerToolEnabled,
+    poolLabelAutoFitEnabled: !!poolLabelState.autoFitEnabled
+  };
+}
+
+function normalizeSessionRootPath(path) {
+  return String(path || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+
+function sessionsRootMatches(a, b) {
+  const left = normalizeSessionRootPath(a);
+  const right = normalizeSessionRootPath(b);
+  return Boolean(left && right && left === right);
+}
+
+function applyPoolLabelSessionFields(data) {
+  if (typeof poolLabelState === "undefined") return;
+  const source = data || {};
+  const sourceTime = Date.parse(source?.savedAt || "") || 0;
+  if (poolLabelState.shortcutChangedAt && sourceTime < poolLabelState.shortcutChangedAt) {
+    return;
+  }
+  poolLabelState.shortcutSlots = normalizePoolLabelShortcutsFromSession(source);
+  poolLabelState.fixedBoxSlots = normalizePoolLabelFixedBoxes(source.poolLabelFixedBoxes);
+  poolLabelState.activeFixedBoxSlot = null;
+  poolLabelState.recordingFixedBoxSlot = null;
+  poolLabelState.pointerToolEnabled = !!source?.poolLabelPointerToolEnabled;
+  poolLabelState.autoFitEnabled = !!source?.poolLabelAutoFitEnabled;
+  if (poolLabelState.pointerToolEnabled) poolLabelState.autoFitEnabled = false;
+  if (typeof poolLabelSyncAutoFitTool === "function") poolLabelSyncAutoFitTool();
+}
+
+async function readCurrentSessionData() {
+  if (!await ensurePythonBackend()) return {};
+  try {
+    let text = "";
+    if (usesWorkspaceSession()) {
+      text = await backendCall("readWorkspaceSession", state.workspaceRoot);
+    } else {
+      text = await backendCall("readSessionFile");
+    }
+    if (!text?.trim()) return {};
+    let data = JSON.parse(text);
+    if (usesWorkspaceSession() && data.workspaceRoot && !sessionsRootMatches(data.workspaceRoot, state.workspaceRoot)) {
+      return {};
+    }
+    return data && typeof data === "object" ? data : {};
+  } catch {
+    return {};
+  }
+}
+
+async function loadPoolLabelSessionFields() {
+  applyPoolLabelSessionFields(await readCurrentSessionData());
+}
+
 function defaultInboxSession() {
   return {
     assignBatches: [],
@@ -110,7 +201,7 @@ function normalizeInboxSession(data) {
     assignBatches: Array.isArray(data.assignBatches) ? data.assignBatches.slice(-2000) : [],
     buildRuns: Array.isArray(data.buildRuns) ? data.buildRuns.slice(-500) : [],
     ui: {
-      filter: ["new", "unassigned", "all"].includes(ui.filter) ? ui.filter : base.ui.filter,
+      filter: ["new", "unassigned", "random-unused", "all"].includes(ui.filter) ? ui.filter : base.ui.filter,
       assignTarget: ui.assignTarget === "detect"
         ? "detect"
         : (ui.detectEnabled && !ui.clfEnabled ? "detect" : "clf")
@@ -200,7 +291,8 @@ async function saveInboxSession(inbox) {
 }
 
 function sessionData() {
-  return {
+  const currentPairPath = state.pairs[state.currentIndex]?.imagePath || "";
+  const data = {
     version: 3,
     yoloSource: state.yoloSource || "",
     workspaceRoot: state.workspaceRoot || "",
@@ -208,17 +300,19 @@ function sessionData() {
     rootName: state.rootName,
     datasetRoot: state.datasetBackendRoot || "",
     savedAt: new Date().toISOString(),
-    currentImagePath: state.currentImagePath || state.pairs[state.currentIndex]?.imagePath || "",
     galleryScrollTop: Math.max(0, Math.round(el.galleryScroll?.scrollTop || state.galleryScrollTop || 0)),
     imageViewMode: state.imageViewMode,
-    poolLabelShortcuts: typeof poolLabelState !== "undefined" ? normalizePoolLabelShortcuts(poolLabelState.shortcutSlots) : undefined,
-    poolLabelFixedBoxes: typeof poolLabelState !== "undefined" ? normalizePoolLabelFixedBoxes(poolLabelState.fixedBoxSlots) : undefined,
-    poolLabelPointerToolEnabled: typeof poolLabelState !== "undefined" ? !!poolLabelState.pointerToolEnabled : undefined,
-    poolLabelAutoFitEnabled: typeof poolLabelState !== "undefined" ? !!poolLabelState.autoFitEnabled : undefined,
     imagePoolUi: typeof imagePoolState !== "undefined" ? imagePoolSessionData() : undefined,
     reviewedPaths: [...state.reviewedPaths].sort(),
     flaggedPaths: [...state.flaggedPaths].sort()
   };
+  const currentImagePath = currentPairPath || state.currentImagePath || "";
+  if (currentImagePath) {
+    data.currentImagePath = currentImagePath;
+    data.poolLabelCurrentImagePath = currentImagePath;
+  }
+  Object.assign(data, poolLabelSessionData());
+  return data;
 }
 
 function applySessionData(data, preferredPath = null) {
@@ -229,45 +323,20 @@ function applySessionData(data, preferredPath = null) {
   state.flaggedPaths = new Set((data.flaggedPaths || []).filter(path => validPaths.has(path)));
   state.imageViewMode = ["all", "hideReviewed", "flagged"].includes(data.imageViewMode) ? data.imageViewMode : "all";
   if (typeof poolLabelState !== "undefined") {
-    const localPoolLabel = typeof poolLabelLoadShortcutLocalSession === "function"
-      ? poolLabelLoadShortcutLocalSession()
-      : null;
-    const localTime = Date.parse(localPoolLabel?.savedAt || "") || 0;
-    const sessionTime = Date.parse(data.savedAt || "") || 0;
-    const poolLabelSource = localPoolLabel && localTime >= sessionTime ? localPoolLabel : data;
-    poolLabelState.shortcutSlots = normalizePoolLabelShortcuts(poolLabelSource.poolLabelShortcuts || poolLabelSource.shortcutSlots);
-    poolLabelState.fixedBoxSlots = normalizePoolLabelFixedBoxes(poolLabelSource.poolLabelFixedBoxes || poolLabelSource.fixedBoxSlots);
-    poolLabelState.activeFixedBoxSlot = null;
-    poolLabelState.recordingFixedBoxSlot = null;
-    poolLabelState.pointerToolEnabled = !!data.poolLabelPointerToolEnabled;
-    poolLabelState.autoFitEnabled = !!data.poolLabelAutoFitEnabled;
-    if (poolLabelState.pointerToolEnabled) poolLabelState.autoFitEnabled = false;
-    if (typeof poolLabelSyncAutoFitTool === "function") poolLabelSyncAutoFitTool();
+    applyPoolLabelSessionFields(data);
   }
-  const currentPath = preferredPath || data.currentImagePath;
-  if (currentPath && validPaths.has(currentPath)) state.currentImagePath = currentPath;
+  const currentPath = resolveSessionImagePath(
+    preferredPath || data.poolLabelCurrentImagePath || data.currentImagePath,
+    validPaths
+  );
+  if (currentPath) state.currentImagePath = currentPath;
   state.galleryScrollTop = Math.max(0, Math.round(Number(data.galleryScrollTop) || 0));
   return true;
 }
 
 async function loadSessionFromDefault(preferredPath = null) {
-  if (!await ensurePythonBackend()) return false;
-  try {
-    let text = "";
-    if (usesWorkspaceSession()) {
-      text = await backendCall("readWorkspaceSession", state.workspaceRoot);
-    } else {
-      text = await backendCall("readSessionFile");
-    }
-    if (!text) return false;
-    const data = JSON.parse(text);
-    if (usesWorkspaceSession() && data.workspaceRoot && data.workspaceRoot !== state.workspaceRoot) {
-      return false;
-    }
-    return applySessionData(data, preferredPath);
-  } catch {
-    return false;
-  }
+  const data = await readCurrentSessionData();
+  return Object.keys(data).length ? applySessionData(data, preferredPath) : false;
 }
 
 function saveSessionSoon() {
@@ -278,13 +347,14 @@ function saveSessionSoon() {
 
 function flushSessionSoon() {
   if (!hasDatasetOpen() && !hasWorkspaceRoot()) return;
-  state.currentImagePath = state.currentImagePath || state.pairs[state.currentIndex]?.imagePath || "";
+  state.currentImagePath = state.pairs[state.currentIndex]?.imagePath || state.currentImagePath || "";
   state.galleryScrollTop = Math.max(0, Math.round(el.galleryScroll?.scrollTop || state.galleryScrollTop || 0));
   clearTimeout(sessionSaveTimer);
   saveSession({ manual: false }).catch(error => console.warn("Session flush failed:", error));
 }
 
 window.addEventListener("pagehide", flushSessionSoon);
+window.addEventListener("beforeunload", flushSessionSoon);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") flushSessionSoon();
 });
@@ -294,6 +364,7 @@ async function saveSession({ manual = false } = {}) {
     if (manual) alert("Open a workspace or dataset first.");
     return;
   }
+  const snapshot = sessionData();
   try {
     if (!await ensurePythonBackend()) {
       throw new Error("Fixed session save only works inside the Python app. Start yolo_label_viewer_web_app.py instead of opening web/index.html directly in Chrome/Edge.");
@@ -301,11 +372,11 @@ async function saveSession({ manual = false } = {}) {
     let path = "";
     if (usesWorkspaceSession()) {
       const existing = await readWorkspaceSessionData();
-      const data = { ...existing, ...sessionData(), inbox: existing.inbox };
+      const data = { ...existing, ...snapshot, inbox: existing.inbox };
       path = await writeWorkspaceSessionData(data);
       await rememberLastOpenedWorkspace(state.workspaceRoot);
     } else {
-      path = await backendCall("writeSessionFile", JSON.stringify(sessionData(), null, 2));
+      path = await backendCall("writeSessionFile", JSON.stringify(snapshot, null, 2));
       if (state.yoloSource === "dataset" && state.datasetBackendRoot) {
         await rememberLastOpenedYoloFolder(state.datasetBackendRoot);
       }
@@ -319,4 +390,19 @@ async function saveSession({ manual = false } = {}) {
     if (manual) alert(`Session save failed: ${error.message}`);
     else console.warn("Session autosave failed:", error);
   }
+}
+
+async function savePoolLabelSessionNow(poolLabelData = null) {
+  const snapshot = {
+    workspaceRoot: state.workspaceRoot || "",
+    datasetRoot: state.datasetBackendRoot || "",
+    savedAt: new Date().toISOString(),
+    ...(poolLabelData || poolLabelSessionData())
+  };
+  if (!Object.keys(snapshot).length || !hasWorkspaceRoot() || !await ensurePythonBackend()) return;
+  const existing = await readWorkspaceSessionData();
+  await writeWorkspaceSessionData({
+    ...existing,
+    ...snapshot
+  });
 }
