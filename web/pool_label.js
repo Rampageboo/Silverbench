@@ -10,6 +10,8 @@ const poolLabelState = {
   tracking: false,
   pointerToolEnabled: false,
   autoFitEnabled: false,
+  boxAdjustMode: "grow",
+  keyboardAdjusting: false,
   cursorPoint: null
 };
 const POOL_LABEL_SLOT_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
@@ -18,14 +20,23 @@ const POOL_LABEL_SUBJECT_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://
 function bindPoolLabelPageEvents() {
   el.poolLabelPointerToolBtn?.addEventListener("click", () => poolLabelTogglePointerTool());
   el.poolLabelAutoFitToolBtn?.addEventListener("click", () => poolLabelToggleAutoFit());
+  el.poolLabelGrowBoxBtn?.addEventListener("click", () => poolLabelSetBoxAdjustMode("grow"));
+  el.poolLabelShrinkBoxBtn?.addEventListener("click", () => poolLabelSetBoxAdjustMode("shrink"));
   el.poolLabelTrackBtn?.addEventListener("click", () => poolLabelTrackForward().catch(showError));
   el.poolLabelCsrtBtn?.addEventListener("click", () => poolLabelTrackCsrtForward().catch(showError));
   el.poolLabelAddClassBtn?.addEventListener("click", () => poolLabelAddClass().catch(showError));
   el.poolLabelRenameClassBtn?.addEventListener("click", () => poolLabelRenameSelectedClass().catch(showError));
   el.poolLabelBindSlotBtn?.addEventListener("click", () => poolLabelBindSelectedToSlot().catch(showError));
+  el.poolLabelClassSearchInput?.addEventListener("input", () => renderPoolLabelClassManager());
   window.addEventListener("keydown", poolLabelUpdateFixedShortcutModeFromEvent);
-  window.addEventListener("keyup", poolLabelUpdateFixedShortcutModeFromEvent);
-  window.addEventListener("blur", () => poolLabelSetFixedShortcutMode(false));
+  window.addEventListener("keyup", event => {
+    poolLabelUpdateFixedShortcutModeFromEvent(event);
+    poolLabelState.keyboardAdjusting = false;
+  });
+  window.addEventListener("blur", () => {
+    poolLabelSetFixedShortcutMode(false);
+    poolLabelState.keyboardAdjusting = false;
+  });
   document.addEventListener("pointerdown", poolLabelCloseShortcutMenusOnOutsideClick);
 }
 
@@ -75,6 +86,20 @@ function poolLabelAfterToolChange() {
   updatePoolLabelPanel().catch(showError);
 }
 
+function poolLabelSwitchToDrawBoxTool() {
+  const changed = poolLabelState.pointerToolEnabled || poolLabelState.autoFitEnabled;
+  poolLabelState.pointerToolEnabled = false;
+  poolLabelState.autoFitEnabled = false;
+  poolLabelState.cursorPoint = null;
+  poolLabelSyncPointerTool();
+  poolLabelSyncAutoFitTool();
+  if (el.canvas) el.canvas.style.cursor = poolLabelDefaultCursor();
+  if (changed) {
+    redrawPreviewOverlays();
+    saveSessionSoon();
+  }
+}
+
 function poolLabelSaveSessionNow() {
   const poolLabelData = typeof poolLabelSessionData === "function" ? poolLabelSessionData() : null;
   poolLabelState.shortcutChangedAt = Date.now();
@@ -94,6 +119,21 @@ function poolLabelSyncAutoFitTool() {
   if (!el.poolLabelAutoFitToolBtn) return;
   el.poolLabelAutoFitToolBtn.classList.toggle("active", poolLabelState.autoFitEnabled);
   el.poolLabelAutoFitToolBtn.setAttribute("aria-pressed", poolLabelState.autoFitEnabled ? "true" : "false");
+  poolLabelSyncBoxAdjustTool();
+}
+
+function poolLabelSetBoxAdjustMode(mode) {
+  poolLabelState.boxAdjustMode = mode === "shrink" ? "shrink" : "grow";
+  poolLabelSyncBoxAdjustTool();
+  saveSessionSoon();
+}
+
+function poolLabelSyncBoxAdjustTool() {
+  const grow = poolLabelState.boxAdjustMode !== "shrink";
+  el.poolLabelGrowBoxBtn?.classList.toggle("active", grow);
+  el.poolLabelGrowBoxBtn?.setAttribute("aria-pressed", grow ? "true" : "false");
+  el.poolLabelShrinkBoxBtn?.classList.toggle("active", !grow);
+  el.poolLabelShrinkBoxBtn?.setAttribute("aria-pressed", grow ? "false" : "true");
 }
 
 function poolLabelDefaultCursor() {
@@ -280,7 +320,8 @@ function onPoolLabelKeyDown(event) {
   const tag = event.target?.tagName?.toLowerCase();
   if (tag === "input" || tag === "textarea" || event.target?.isContentEditable) return false;
   const key = event.key.toLowerCase();
-  const digitSlot = poolLabelKeyDigit(event);
+  const topRowDigitSlot = poolLabelTopRowDigit(event);
+  const numpadDigit = poolLabelNumpadDigit(event);
   if (event.ctrlKey && key === "s") {
     event.preventDefault();
     poolLabelSaveCurrent().then(() => updatePoolLabelPanel("Saved current TXT.")).catch(showError);
@@ -301,10 +342,25 @@ function onPoolLabelKeyDown(event) {
     renderCurrentImage().then(() => updatePoolLabelPanel("Selection cleared.")).catch(showError);
     return true;
   }
-  if (digitSlot !== null) {
+  if (topRowDigitSlot !== null) {
     event.preventDefault();
-    if (event.altKey) poolLabelUseFixedBoxSlot(digitSlot).catch(showError);
-    else poolLabelUseShortcutSlot(digitSlot).catch(showError);
+    if (event.altKey) poolLabelUseFixedBoxSlot(topRowDigitSlot).catch(showError);
+    else poolLabelUseShortcutSlot(topRowDigitSlot).catch(showError);
+    return true;
+  }
+  if (event.code === "NumpadAdd") {
+    event.preventDefault();
+    poolLabelSetBoxAdjustMode("grow");
+    return true;
+  }
+  if (event.code === "NumpadSubtract") {
+    event.preventDefault();
+    poolLabelSetBoxAdjustMode("shrink");
+    return true;
+  }
+  if (poolLabelArrowKeyDelta(key) || numpadDigit !== null) {
+    event.preventDefault();
+    poolLabelKeyboardAdjustSelectedBox(event, { key, numpadDigit }).catch(showError);
     return true;
   }
   if (key === "delete" || key === "backspace") {
@@ -337,12 +393,12 @@ function onPoolLabelKeyDown(event) {
     markYoloJunkSelected().catch(showError);
     return true;
   }
-  if (key === "arrowleft" || key === "arrowup" || key === "a") {
+  if (key === "a") {
     event.preventDefault();
     poolLabelNavigate(-1).catch(showError);
     return true;
   }
-  if (key === "arrowright" || key === "arrowdown" || key === "d") {
+  if (key === "d") {
     event.preventDefault();
     poolLabelNavigate(1).catch(showError);
     return true;
@@ -350,13 +406,96 @@ function onPoolLabelKeyDown(event) {
   return false;
 }
 
-function poolLabelKeyDigit(event) {
-  if (/^[0-9]$/.test(event.key)) return Number(event.key);
+function poolLabelTopRowDigit(event) {
   const digit = /^Digit([0-9])$/.exec(event.code || "");
-  if (digit) return Number(digit[1]);
+  return digit ? Number(digit[1]) : null;
+}
+
+function poolLabelNumpadDigit(event) {
   const numpad = /^Numpad([0-9])$/.exec(event.code || "");
-  if (numpad) return Number(numpad[1]);
+  return numpad ? Number(numpad[1]) : null;
+}
+
+function poolLabelArrowKeyDelta(key) {
+  if (key === "arrowleft") return { dx: -1, dy: 0 };
+  if (key === "arrowright") return { dx: 1, dy: 0 };
+  if (key === "arrowup") return { dx: 0, dy: -1 };
+  if (key === "arrowdown") return { dx: 0, dy: 1 };
   return null;
+}
+
+async function poolLabelKeyboardAdjustSelectedBox(event, { key, numpadDigit }) {
+  const pair = state.pairs[state.currentIndex];
+  if (!pair || state.selectedBoxIndex === null || !state.displayRect) return;
+  const boxes = await editableBoxesFor(pair);
+  const box = boxes[state.selectedBoxIndex];
+  if (!box) return;
+
+  const rect = boxToImageRect(box);
+  const before = { ...rect };
+  const step = event.shiftKey ? 10 : 1;
+  const arrowDelta = poolLabelArrowKeyDelta(key);
+  if (numpadDigit !== null) {
+    poolLabelResizeImageRectByNumpad(rect, numpadDigit, step);
+  } else if (arrowDelta) {
+    poolLabelMoveImageRect(rect, arrowDelta.dx * step, arrowDelta.dy * step);
+  }
+  if (poolLabelRectsEqual(before, rect)) return;
+
+  const shouldPushUndo = !event.repeat && !poolLabelState.keyboardAdjusting;
+  if (shouldPushUndo) {
+    poolLabelPushUndo(pair, boxes, "keyboard adjust box");
+    poolLabelState.keyboardAdjusting = true;
+  }
+  boxes[state.selectedBoxIndex] = rectToBox(rect, box.classId);
+  state.labelEdits.set(pair.imagePath, boxes);
+  populateBoxEditor(boxes[state.selectedBoxIndex]);
+  await persistLabelBoxes(pair, boxes);
+  const synced = await poolLabelSyncBoxToSelected(pair, boxes[state.selectedBoxIndex], "sync keyboard adjusted box", { pushUndo: shouldPushUndo });
+  await poolLabelRefreshAfterEdit(poolLabelSyncMessage("Box adjusted.", synced));
+}
+
+function poolLabelMoveImageRect(rect, dx, dy) {
+  const maxW = state.displayRect.imageW;
+  const maxH = state.displayRect.imageH;
+  const w = rect.x2 - rect.x1;
+  const h = rect.y2 - rect.y1;
+  rect.x1 = Math.max(0, Math.min(maxW - w, rect.x1 + dx));
+  rect.y1 = Math.max(0, Math.min(maxH - h, rect.y1 + dy));
+  rect.x2 = rect.x1 + w;
+  rect.y2 = rect.y1 + h;
+}
+
+function poolLabelResizeImageRectByNumpad(rect, digit, step) {
+  const handlesByDigit = {
+    8: ["n"],
+    2: ["s"],
+    4: ["w"],
+    6: ["e"],
+    5: ["n", "s", "w", "e"]
+  };
+  const handles = handlesByDigit[digit];
+  if (!handles) return;
+  const grow = poolLabelState.boxAdjustMode !== "shrink";
+  const maxW = state.displayRect.imageW;
+  const maxH = state.displayRect.imageH;
+  const minSize = 2;
+  if (handles.includes("w")) rect.x1 = grow
+    ? Math.max(0, rect.x1 - step)
+    : Math.min(rect.x2 - minSize, rect.x1 + step);
+  if (handles.includes("e")) rect.x2 = grow
+    ? Math.min(maxW, rect.x2 + step)
+    : Math.max(rect.x1 + minSize, rect.x2 - step);
+  if (handles.includes("n")) rect.y1 = grow
+    ? Math.max(0, rect.y1 - step)
+    : Math.min(rect.y2 - minSize, rect.y1 + step);
+  if (handles.includes("s")) rect.y2 = grow
+    ? Math.min(maxH, rect.y2 + step)
+    : Math.max(rect.y1 + minSize, rect.y2 - step);
+}
+
+function poolLabelRectsEqual(a, b) {
+  return a.x1 === b.x1 && a.y1 === b.y1 && a.x2 === b.x2 && a.y2 === b.y2;
 }
 
 async function poolLabelAssignClass(classId, options = {}) {
@@ -365,6 +504,7 @@ async function poolLabelAssignClass(classId, options = {}) {
   poolLabelState.activeFixedBoxSlot = null;
   poolLabelState.currentClassId = classId;
   el.poolLabelClassNameInput.value = state.classNames.get(classId) || "";
+  poolLabelSwitchToDrawBoxTool();
   const pair = state.pairs[state.currentIndex];
   if (pair && state.selectedBoxIndex !== null) {
     const boxes = await editableBoxesFor(pair);
@@ -417,8 +557,7 @@ async function poolLabelStartFixedBoxRecording(slot, classId) {
   poolLabelState.recordingFixedBoxSlot = slot;
   poolLabelState.fixedBoxSlots[slot] = { classId, x: null, y: null, w: null, h: null };
   el.poolLabelClassNameInput.value = state.classNames.get(classId) || "";
-  poolLabelState.pointerToolEnabled = false;
-  poolLabelState.autoFitEnabled = false;
+  poolLabelSwitchToDrawBoxTool();
   poolLabelSaveSessionNow();
   await updatePoolLabelPanel(`Draw one ${classDisplay(classId)} box to record fixed box ${slot}. Hold Alt and press ${slot} to create it.`);
 }
@@ -1038,7 +1177,7 @@ function poolLabelSelectedTargetPairs(sourceImagePath) {
   return state.pairs.filter(pair => state.shiftSelectedPaths.has(pair.imagePath) && pair.imagePath !== sourceImagePath);
 }
 
-async function poolLabelSyncBoxToSelected(sourcePair, box, action = "sync box") {
+async function poolLabelSyncBoxToSelected(sourcePair, box, action = "sync box", options = {}) {
   if (!sourcePair || !box || poolLabelState.tracking) return 0;
   const targets = poolLabelSelectedTargetPairs(sourcePair.imagePath);
   if (!targets.length) return 0;
@@ -1059,7 +1198,7 @@ async function poolLabelSyncBoxToSelected(sourcePair, box, action = "sync box") 
       changed += 1;
     }
     if (changed) {
-      poolLabelPushBatchUndo(undoItems, action);
+      if (options.pushUndo !== false) poolLabelPushBatchUndo(undoItems, action);
       await buildFilterList();
       syncFilterInputs();
       renderGallery();
@@ -1304,11 +1443,12 @@ function renderPoolLabelShortcuts() {
 }
 
 function poolLabelShortcutOptions(selectedClassId = null, ready = false) {
-  const options = [{ value: "", label: "empty", selected: selectedClassId == null }];
+  const options = [{ value: "", label: "empty", searchText: "empty none clear", selected: selectedClassId == null }];
   for (const [id, name] of [...state.classNames.entries()].sort((a, b) => a[0] - b[0])) {
     options.push({
       value: String(id),
       label: `${id}: ${name}${ready && id === selectedClassId ? " ready" : ""}`,
+      searchText: `${id} ${name}`,
       selected: id === selectedClassId
     });
   }
@@ -1364,17 +1504,36 @@ function poolLabelFixedBoxDropdown(slot) {
 function poolLabelShortcutDropdown({ label, title, options, onSelect }) {
   const wrap = document.createElement("div");
   wrap.className = "pool-label-shortcut-dropdown";
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "pool-label-shortcut-button";
-  button.title = title;
-  button.textContent = label;
-  button.addEventListener("pointerdown", event => {
+  const input = document.createElement("input");
+  input.type = "search";
+  input.className = "pool-label-shortcut-button";
+  input.title = title;
+  input.value = label;
+  input.dataset.label = label;
+  input.setAttribute("aria-label", title);
+  input.addEventListener("pointerdown", event => {
     event.stopPropagation();
   });
-  button.addEventListener("click", event => {
+  input.addEventListener("focus", event => {
     event.stopPropagation();
-    poolLabelToggleShortcutMenu(wrap);
+    input.select();
+    poolLabelOpenShortcutMenu(wrap);
+  });
+  input.addEventListener("click", event => {
+    event.stopPropagation();
+    poolLabelOpenShortcutMenu(wrap);
+  });
+  input.addEventListener("input", event => {
+    event.stopPropagation();
+    poolLabelOpenShortcutMenu(wrap);
+    poolLabelFilterShortcutOptions(wrap, input.value);
+  });
+  input.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      input.value = label;
+      poolLabelCloseShortcutMenus();
+    }
   });
   const menu = document.createElement("div");
   menu.className = "pool-label-shortcut-menu";
@@ -1383,6 +1542,7 @@ function poolLabelShortcutDropdown({ label, title, options, onSelect }) {
     item.type = "button";
     item.className = `pool-label-shortcut-option${option.selected ? " selected" : ""}`;
     item.textContent = option.label;
+    item.dataset.searchText = normalizePoolLabelSearchText(option.searchText || option.label);
     item.addEventListener("click", event => {
       event.stopPropagation();
       poolLabelCloseShortcutMenus();
@@ -1390,7 +1550,7 @@ function poolLabelShortcutDropdown({ label, title, options, onSelect }) {
     });
     menu.appendChild(item);
   }
-  wrap.append(button, menu);
+  wrap.append(input, menu);
   return wrap;
 }
 
@@ -1402,7 +1562,7 @@ function poolLabelToggleShortcutMenu(wrap) {
 
 function poolLabelOpenShortcutMenu(wrap) {
   const button = wrap.querySelector(".pool-label-shortcut-button");
-  const menu = wrap.querySelector(".pool-label-shortcut-menu");
+  const menu = poolLabelShortcutMenuForWrap(wrap);
   if (!button || !menu) return;
   wrap.classList.add("open");
   if (!menu.dataset.ownerId) {
@@ -1412,7 +1572,34 @@ function poolLabelOpenShortcutMenu(wrap) {
   menu.classList.add("open");
   document.body.appendChild(menu);
   poolLabelPositionShortcutMenu(button, menu);
+  const query = button.value === button.dataset.label ? "" : button.value;
+  poolLabelFilterShortcutOptions(wrap, query);
   requestAnimationFrame(() => poolLabelPositionShortcutMenu(button, menu));
+}
+
+function poolLabelFilterShortcutOptions(wrap, query) {
+  const menu = poolLabelShortcutMenuForWrap(wrap);
+  if (!menu) return;
+  const terms = poolLabelSearchTerms(query);
+  let shown = 0;
+  for (const option of menu.querySelectorAll(".pool-label-shortcut-option")) {
+    const match = !terms.length || terms.every(term => option.dataset.searchText?.includes(term));
+    option.hidden = !match;
+    if (match) shown += 1;
+  }
+  let empty = menu.querySelector(".pool-label-shortcut-empty");
+  if (!empty) {
+    empty = document.createElement("div");
+    empty.className = "pool-label-shortcut-empty";
+    empty.textContent = "No matching classes";
+    menu.appendChild(empty);
+  }
+  empty.hidden = shown > 0;
+}
+
+function poolLabelShortcutMenuForWrap(wrap) {
+  return wrap.querySelector(".pool-label-shortcut-menu")
+    || document.querySelector(`.pool-label-shortcut-menu[data-owner-id="${wrap.dataset.menuId || ""}"]`);
 }
 
 function poolLabelPositionShortcutMenu(button, menu) {
@@ -1458,9 +1645,14 @@ function renderPoolLabelClassManager() {
   if (!el.poolLabelClassList) return;
   renderPoolLabelSlotSelect();
   el.poolLabelClassList.replaceChildren();
-  const classes = [...state.classNames.entries()].sort((a, b) => a[0] - b[0]);
+  const terms = poolLabelSearchTerms(el.poolLabelClassSearchInput?.value || "");
+  const classes = [...state.classNames.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .filter(([classId, className]) => poolLabelClassMatchesSearch(classId, className, terms));
   if (!classes.length) {
-    el.poolLabelClassList.innerHTML = `<div class="empty">No classes yet. Add one to start labeling.</div>`;
+    el.poolLabelClassList.innerHTML = state.classNames.size
+      ? `<div class="empty">No matching classes.</div>`
+      : `<div class="empty">No classes yet. Add one to start labeling.</div>`;
     return;
   }
   for (const [classId, className] of classes) {
@@ -1471,6 +1663,20 @@ function renderPoolLabelClassManager() {
     row.addEventListener("click", () => poolLabelAssignClass(classId).catch(showError));
     el.poolLabelClassList.appendChild(row);
   }
+}
+
+function poolLabelClassMatchesSearch(classId, className, terms) {
+  if (!terms.length) return true;
+  const text = normalizePoolLabelSearchText(`${classId} ${className}`);
+  return terms.every(term => text.includes(term));
+}
+
+function poolLabelSearchTerms(query) {
+  return normalizePoolLabelSearchText(query).split(" ").filter(Boolean);
+}
+
+function normalizePoolLabelSearchText(value) {
+  return String(value || "").trim().toLowerCase();
 }
 
 function renderPoolLabelSlotSelect() {

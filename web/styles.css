@@ -619,6 +619,10 @@
 		      text-overflow: ellipsis;
 		      white-space: nowrap;
 		    }
+		    input.pool-label-shortcut-button {
+		      cursor: text;
+		      font-size: 12px;
+		    }
 		    .pool-label-shortcut-button::after {
 		      content: "";
 		      float: right;
@@ -663,6 +667,11 @@
 		    .pool-label-shortcut-option.selected {
 		      background: var(--surface-active);
 		      color: var(--blue);
+		    }
+		    .pool-label-shortcut-empty {
+		      padding: 7px 8px;
+		      color: var(--muted);
+		      font-size: 12px;
 		    }
 		    .pool-label-shortcut-dropdown.active .pool-label-shortcut-button {
 		      border-color: var(--blue);
@@ -756,6 +765,11 @@
 	      stroke-linecap: round;
 	      stroke-linejoin: round;
 	    }
+	    .pool-label-adjust-tool {
+	      font-size: 20px;
+	      font-weight: 700;
+	      line-height: 1;
+	    }
 	    .pool-label-icon-tool.active {
 	      border-color: var(--blue);
 	      color: var(--blue);
@@ -774,6 +788,9 @@
 		    .pool-label-tools > .row input {
 		      min-width: 160px;
 		      flex: 1;
+		    }
+		    .pool-label-class-search {
+		      width: 100%;
 		    }
 		    .pool-label-class-list {
 		      display: flex;

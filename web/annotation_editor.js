@@ -349,9 +349,6 @@
         const rect = boxToImageRect(boxes[selected]);
         const handle = hitBoxHandleAtCanvasPoint(canvasPoint, rect);
         if (handle) return { index: selected, handle };
-        if (pointInCanvasRect(canvasPoint, imageRectToCanvasRect(rect))) {
-          return { index: selected, handle: "move" };
-        }
       }
       const index = hitBoxIndexAtCanvasPoint(canvasPoint, boxes);
       return { index, handle: index >= 0 ? "move" : null };
@@ -413,17 +410,37 @@
     }
 
     function hitBoxIndexAtPoint(point, boxes) {
+      let bestIndex = -1;
+      let bestArea = Infinity;
       for (let index = boxes.length - 1; index >= 0; index--) {
-        if (pointInRect(point, boxToImageRect(boxes[index]))) return index;
+        const rect = boxToImageRect(boxes[index]);
+        if (!pointInRect(point, rect)) continue;
+        const area = rectArea(rect);
+        if (area < bestArea) {
+          bestArea = area;
+          bestIndex = index;
+        }
       }
-      return -1;
+      return bestIndex;
     }
 
     function hitBoxIndexAtCanvasPoint(point, boxes) {
+      let bestIndex = -1;
+      let bestArea = Infinity;
       for (let index = boxes.length - 1; index >= 0; index--) {
-        if (pointInCanvasRect(point, imageRectToCanvasRect(boxToImageRect(boxes[index])))) return index;
+        const rect = imageRectToCanvasRect(boxToImageRect(boxes[index]));
+        if (!pointInCanvasRect(point, rect)) continue;
+        const area = rectArea(rect);
+        if (area < bestArea) {
+          bestArea = area;
+          bestIndex = index;
+        }
       }
-      return -1;
+      return bestIndex;
+    }
+
+    function rectArea(rect) {
+      return Math.abs((rect.x2 - rect.x1) * (rect.y2 - rect.y1));
     }
 
     function pointInRect(point, rect) {
