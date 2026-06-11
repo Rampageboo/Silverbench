@@ -5,6 +5,7 @@ const thumbObserver = new IntersectionObserver(onThumbIntersect, {
 });
 
 bindAppShellEvents();
+if (typeof bindJunkActionEvents === "function") bindJunkActionEvents();
 bindImagePoolPageEvents();
 bindYoloPageEvents();
 bindPoolLabelPageEvents();

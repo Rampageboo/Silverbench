@@ -5,6 +5,7 @@ function createTopbarControls() {
     ["markReviewedBtn", "Reviewed", "yolo-control"],
     ["flagBtn", "Flag", "yolo-control"],
     ["markJunkBtn", "标记废片", "danger yolo-control"],
+    ["undoMarkJunkBtn", "撤回废片", "yolo-control"],
     ["nextIssueBtn", "Next Issue", "yolo-control"]
   ];
   const controls = { order: [] };
@@ -15,6 +16,7 @@ function createTopbarControls() {
     button.className = className;
     button.textContent = text;
     if (id === "markJunkBtn") button.hidden = true;
+    if (id === "undoMarkJunkBtn") button.hidden = true;
     controls[id] = button;
     controls.order.push(button);
   }
@@ -35,6 +37,7 @@ function buildEl(topbarControls) {
     inboxSelectAllBtn: document.getElementById("inboxSelectAllBtn"),
     inboxClearSelectionBtn: document.getElementById("inboxClearSelectionBtn"),
     inboxMarkJunkBtn: document.getElementById("inboxMarkJunkBtn"),
+    inboxUndoJunkBtn: document.getElementById("inboxUndoJunkBtn"),
     inboxFilterNewBtn: document.getElementById("inboxFilterNewBtn"),
     inboxFilterUnassignedBtn: document.getElementById("inboxFilterUnassignedBtn"),
     inboxFilterRandomUnusedBtn: document.getElementById("inboxFilterRandomUnusedBtn"),
@@ -71,6 +74,11 @@ function buildEl(topbarControls) {
     imagePoolClearSelectionBtn: document.getElementById("imagePoolClearSelectionBtn"),
     imagePoolOpenYoloBtn: document.getElementById("imagePoolOpenYoloBtn"),
     imagePoolDeleteSelectedBtn: document.getElementById("imagePoolDeleteSelectedBtn"),
+    imagePoolJunkScopeDetectBtn: document.getElementById("imagePoolJunkScopeDetectBtn"),
+    imagePoolJunkScopeClfBtn: document.getElementById("imagePoolJunkScopeClfBtn"),
+    imagePoolMarkJunkBtn: document.getElementById("imagePoolMarkJunkBtn"),
+    imagePoolClearJunkBtn: document.getElementById("imagePoolClearJunkBtn"),
+    imagePoolUndoJunkBtn: document.getElementById("imagePoolUndoJunkBtn"),
     imagePoolFilterAllBtn: document.getElementById("imagePoolFilterAllBtn"),
     imagePoolFilterNewBtn: document.getElementById("imagePoolFilterNewBtn"),
     imagePoolFilterUnusedBtn: document.getElementById("imagePoolFilterUnusedBtn"),
@@ -119,12 +127,14 @@ function buildEl(topbarControls) {
     poolLabelWorkspace: document.getElementById("poolLabelWorkspace"),
     imagePanel: document.getElementById("imagePanel"),
     previewPanel: document.getElementById("previewPanel"),
+    previewViewer: document.getElementById("previewViewer"),
     yoloSideStack: document.getElementById("yoloSideStack"),
     poolLabelSideStack: document.getElementById("poolLabelSideStack"),
     gallery: document.getElementById("gallery"),
     galleryScroll: document.getElementById("galleryScroll"),
     canvas: document.getElementById("previewCanvas"),
     poolLabelZoomView: document.getElementById("poolLabelZoomView"),
+    poolLabelZoomSide: document.getElementById("poolLabelZoomSide"),
     poolLabelZoomCanvas: document.getElementById("poolLabelZoomCanvas"),
     poolLabelZoomClass: document.getElementById("poolLabelZoomClass"),
     dropZone: document.getElementById("dropZone"),
@@ -269,6 +279,7 @@ function buildEl(topbarControls) {
     markReviewedBtn: topbarControls.markReviewedBtn,
     flagBtn: topbarControls.flagBtn,
     markJunkBtn: topbarControls.markJunkBtn,
+    undoMarkJunkBtn: topbarControls.undoMarkJunkBtn,
     yoloTabBtn: document.getElementById("yoloTabBtn"),
     trainTabBtn: document.getElementById("trainTabBtn"),
     mergeTabBtn: document.getElementById("mergeTabBtn"),

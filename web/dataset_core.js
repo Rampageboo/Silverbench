@@ -78,11 +78,6 @@ async function openDatasetFolder() {
         if (onPoolLabelKeyDown(event)) return;
         const tag = event.target?.tagName?.toLowerCase();
         if (tag === "input" || tag === "textarea" || event.target?.isContentEditable) return;
-        if (event.key.toLowerCase() === "j" && typeof canMarkYoloJunk === "function" && canMarkYoloJunk()) {
-          event.preventDefault();
-          markYoloJunkSelected().catch(showError);
-          return;
-        }
         event.preventDefault();
         return;
       }
@@ -112,9 +107,6 @@ async function openDatasetFolder() {
       } else if (key === "f") {
         event.preventDefault();
         toggleFlagged().catch(showError);
-      } else if (key === "j" && canMarkYoloJunk()) {
-        event.preventDefault();
-        markYoloJunkSelected().catch(showError);
       } else if (key === "n") {
         event.preventDefault();
         nextIssue();
@@ -1185,40 +1177,48 @@ async function openDatasetFolder() {
     }
 
     function isYoloJunkFilename(filename) {
-      return typeof isInboxJunkFile === "function" && isInboxJunkFile(filename);
+      const scope = typeof yoloJunkScope === "function" ? yoloJunkScope() : "detect";
+      return typeof isInboxJunkFile === "function" && isInboxJunkFile(filename, scope);
     }
 
-    async function markYoloJunkSelected() {
-      if (!canMarkYoloJunk()) {
-        alert("标记废片需要已绑定的工作区（含 metadata.csv）。");
-        return null;
+    function resumePathAfterJunk(removedFilenames) {
+      const removed = new Set(removedFilenames);
+      const currentBasename = state.currentImagePath?.split("/").pop();
+      if (currentBasename && !removed.has(currentBasename)) {
+        return state.currentImagePath;
       }
-      const filenames = yoloSelectedFilenames();
-      if (!filenames.length) {
-        setStatus("请先选择图片，再点「标记废片」。");
-        return null;
+      for (let offset = 1; offset <= state.pairs.length; offset += 1) {
+        const index = (state.currentIndex + offset) % Math.max(state.pairs.length, 1);
+        const pair = state.pairs[index];
+        const basename = pair?.imagePath?.split("/").pop();
+        if (basename && !removed.has(basename)) return pair.imagePath;
       }
-      if (typeof markInboxJunkFilenames !== "function") {
-        alert("标记废片功能不可用。");
-        return null;
+      for (const pair of state.pairs) {
+        const basename = pair.imagePath.split("/").pop();
+        if (!removed.has(basename)) return pair.imagePath;
       }
-      const pending = filenames.filter(name => !isYoloJunkFilename(name));
-      if (!pending.length) {
-        setStatus("所选图片已是废片。");
-        return null;
-      }
-      const result = await markInboxJunkFilenames(pending, {
-        clearSelection: false,
-        skipGridRender: true,
-        quiet: false
-      });
-      if (result) {
-        renderGallery({ patchVisible: true });
-        updateReviewControls();
-        updateStatus();
-      }
-      return result;
+      return null;
     }
+
+    async function reloadDatasetViewAfterJunk(removedFilenames = [], preferredFilename = null) {
+      if (!state.datasetBackendRoot || !hasDatasetOpen()) return;
+      let resumePath = resumePathAfterJunk(removedFilenames);
+      if (!resumePath && preferredFilename) {
+        resumePath = state.pairs.find(pair => pair.imagePath.split("/").pop() === preferredFilename)?.imagePath || null;
+      }
+      await loadFromBackendDatasetPath(state.datasetBackendRoot, resumePath, { restoreSession: false });
+      if (!resumePath && preferredFilename) {
+        const index = state.pairs.findIndex(pair => pair.imagePath.split("/").pop() === preferredFilename);
+        if (index >= 0) await selectIndex(index);
+      }
+      renderGallery({ patchVisible: true });
+      updateReviewControls();
+      updateStatus();
+      if (el.app?.classList.contains("pool-label") && typeof updatePoolLabelPanel === "function") {
+        await updatePoolLabelPanel().catch(error => console.warn("Box Label panel:", error));
+      }
+    }
+    window.reloadDatasetViewAfterJunk = reloadDatasetViewAfterJunk;
 
     function canSendSelectedToDetect() {
       return hasWorkspaceRoot()
@@ -1411,7 +1411,7 @@ async function openDatasetFolder() {
       const showJunk = canMarkYoloJunk();
       if (el.markJunkBtn) {
         el.markJunkBtn.hidden = !showJunk;
-        if (!showJunk) return;
+        if (showJunk) {
         const filenames = yoloSelectedFilenames();
         const pendingCount = filenames.filter(name => !isYoloJunkFilename(name)).length;
         if (selected.length > 1) {
@@ -1425,6 +1425,13 @@ async function openDatasetFolder() {
         }
         el.markJunkBtn.disabled = !pendingCount;
         el.markJunkBtn.classList.toggle("is-junk", Boolean(filenames.length) && !pendingCount);
+        }
+      }
+      if (el.undoMarkJunkBtn && typeof updateJunkUndoUi === "function") {
+        const junkContext = typeof resolveActiveJunkContext === "function" ? resolveActiveJunkContext() : null;
+        const showUndo = canMarkYoloJunk();
+        el.undoMarkJunkBtn.hidden = !showUndo;
+        if (junkContext) updateJunkUndoUi(junkContext);
       }
     }
 

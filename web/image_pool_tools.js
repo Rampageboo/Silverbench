@@ -316,8 +316,7 @@ function updateImagePoolJunkSelectionUI() {
       ? (pendingClear ? `Clear ${scopeLabel} Junk (${pendingClear})` : `Clear ${scopeLabel} Junk`)
       : `Clear ${scopeLabel} Junk`;
   }
-  const canUndo = typeof hasJunkUndo === "function" && hasJunkUndo() && !inboxState?.assigning;
-  if (el.imagePoolUndoJunkBtn) el.imagePoolUndoJunkBtn.disabled = !canUndo || imagePoolState.deleting;
+  if (typeof updateJunkUndoUi === "function") updateJunkUndoUi("image-pool");
 }
 
 function updateImagePoolSelectionUI() {
@@ -530,41 +529,6 @@ function buildImagePoolPreviewContext(index, pair) {
     showFilmstrip: true
   };
 }
-
-async function markImagePoolJunkSelected() {
-  const filenames = imagePoolSelectedFilenames();
-  if (!filenames.length) {
-    setStatus("Select images before marking junk.");
-    return null;
-  }
-  if (typeof markInboxJunkFilenames !== "function") return null;
-  return markInboxJunkFilenames(filenames, {
-    scope: imagePoolJunkScope(),
-    clearSelection: false,
-    skipGridRender: true
-  });
-}
-
-async function unmarkImagePoolJunkSelected() {
-  const filenames = imagePoolSelectedFilenames();
-  if (!filenames.length) {
-    setStatus("Select images before clearing junk.");
-    return null;
-  }
-  if (typeof unmarkInboxJunkFilenames !== "function") return null;
-  return unmarkInboxJunkFilenames(filenames, {
-    scope: imagePoolJunkScope(),
-    clearSelection: false,
-    skipGridRender: true
-  });
-}
-
-async function undoImagePoolJunkAction() {
-  if (typeof undoLastJunkAction !== "function") return null;
-  return undoLastJunkAction({ skipGridRender: true });
-}
-
-
 
 function renderImagePoolStats() {
 
@@ -1049,12 +1013,6 @@ function bindImagePoolPageEvents() {
   el.imagePoolHideClfJunkBtn?.addEventListener("click", () => setImagePoolHideJunk("clf"));
 
   el.imagePoolHideBothJunkBtn?.addEventListener("click", () => setImagePoolHideJunk("both"));
-
-  el.imagePoolMarkJunkBtn?.addEventListener("click", () => markImagePoolJunkSelected().catch(showError));
-
-  el.imagePoolClearJunkBtn?.addEventListener("click", () => unmarkImagePoolJunkSelected().catch(showError));
-
-  el.imagePoolUndoJunkBtn?.addEventListener("click", () => undoImagePoolJunkAction().catch(showError));
 
   if (el.imagePoolGridWrap) {
     bindGalleryScroll(el.imagePoolGridWrap, () => renderImagePoolGrid());

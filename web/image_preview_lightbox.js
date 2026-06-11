@@ -521,30 +521,30 @@ async function markCurrentPreviewAsJunk() {
   if (ctx === "yolo" && (typeof hasWorkspaceRoot !== "function" || !hasWorkspaceRoot())) return;
   const filename = currentPreviewFilename();
   if (!filename) return;
-  const scope = typeof previewJunkScope === "function" ? previewJunkScope() : "clf";
+  const junkContext = typeof resolveJunkContextFromPreview === "function"
+    ? resolveJunkContextFromPreview(ctx)
+    : null;
+  if (!junkContext) return;
+  const scope = typeof resolveJunkScope === "function" ? resolveJunkScope(junkContext) : "clf";
   const scopeLabel = scope === "detect" ? "Detect" : "Clf";
   const isJunk = typeof isInboxJunkFile === "function" && isInboxJunkFile(filename, scope);
-  const action = isJunk ? "unmarkInboxJunkFilenames" : "markInboxJunkFilenames";
-  if (typeof window[action] !== "function") return;
+  const runner = isJunk ? runJunkUnmark : runJunkMark;
+  if (typeof runner !== "function") return;
 
   imagePreviewLightboxState.markingJunk = true;
   updatePreviewJunkButton();
   try {
-    const result = await window[action]([filename], {
+    const result = await runner(junkContext, {
+      filenames: [filename],
       clearSelection: false,
       skipGridRender: true,
-      quiet: true,
-      scope
+      quiet: true
     });
     if (!result) return;
-    const scopeAfter = typeof previewJunkScope === "function" ? previewJunkScope() : "clf";
-    patchPreviewFilmstripJunkState(filename, isInboxJunkFile(filename, scopeAfter));
-    if (ctx === "inbox" && typeof renderInboxGrid === "function") renderInboxGrid({ selectionOnly: true });
-    if (ctx === "yolo" && typeof renderGallery === "function") renderGallery({ patchVisible: true });
+    patchPreviewFilmstripJunkState(filename, isInboxJunkFile(filename, scope));
     if (ctx === "image-pool" && typeof refreshImagePoolAfterJunkChange === "function") {
       refreshImagePoolAfterJunkChange({ selectionOnly: true });
     }
-    if (typeof updateReviewControls === "function") updateReviewControls();
     updatePreviewNavControls();
     setStatus(isJunk ? `已取消 ${scopeLabel} 废片：${filename}` : `已标记 ${scopeLabel} 废片：${filename}`);
   } catch (error) {

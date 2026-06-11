@@ -104,6 +104,25 @@ function poolLabelCursorForBoxHandle(handle) {
   return "move";
 }
 
+function poolLabelComputeDisplayRect(bitmap = state.currentImage) {
+  if (!bitmap || !el.canvas?.width || !el.canvas?.height) return null;
+  clampPreviewView();
+  const baseScale = Math.min(el.canvas.width / bitmap.width, el.canvas.height / bitmap.height, 1);
+  const scale = baseScale * state.viewZoom;
+  const w = Math.max(1, Math.floor(bitmap.width * scale));
+  const h = Math.max(1, Math.floor(bitmap.height * scale));
+  const x = Math.floor((el.canvas.width - w) / 2 + state.viewPanX);
+  const y = Math.floor((el.canvas.height - h) / 2 + state.viewPanY);
+  return { x, y, w, h, imageW: bitmap.width, imageH: bitmap.height };
+}
+
+function poolLabelEnsureDisplayRect() {
+  const rect = poolLabelComputeDisplayRect();
+  if (!rect) return false;
+  state.displayRect = rect;
+  return true;
+}
+
 function poolLabelSyncDisplayRect() {
   const bitmap = state.currentImage;
   if (!bitmap || !el.canvas?.parentElement) return false;
@@ -112,14 +131,9 @@ function poolLabelSyncDisplayRect() {
   const nextHeight = Math.max(1, Math.floor(canvasBox.height));
   if (el.canvas.width !== nextWidth) el.canvas.width = nextWidth;
   if (el.canvas.height !== nextHeight) el.canvas.height = nextHeight;
-  clampPreviewView();
-  const baseScale = Math.min(el.canvas.width / bitmap.width, el.canvas.height / bitmap.height, 1);
-  const scale = baseScale * state.viewZoom;
-  const w = Math.max(1, Math.floor(bitmap.width * scale));
-  const h = Math.max(1, Math.floor(bitmap.height * scale));
-  const x = Math.floor((el.canvas.width - w) / 2 + state.viewPanX);
-  const y = Math.floor((el.canvas.height - h) / 2 + state.viewPanY);
-  state.displayRect = { x, y, w, h, imageW: bitmap.width, imageH: bitmap.height };
+  const rect = poolLabelComputeDisplayRect(bitmap);
+  if (!rect) return false;
+  state.displayRect = rect;
   return true;
 }
 
@@ -134,57 +148,12 @@ function poolLabelBoxToImageRect(box) {
   };
 }
 
-function poolLabelImagePixelsFromCanvas(px) {
-  const r = state.displayRect;
-  if (!r?.w || !r?.h) return px;
-  return px * Math.max(r.imageW / r.w, r.imageH / r.h);
-}
-
-function poolLabelPointInImageRect(point, rect, pad = 0) {
-  return point.x >= rect.x1 - pad && point.x <= rect.x2 + pad
-    && point.y >= rect.y1 - pad && point.y <= rect.y2 + pad;
-}
-
-function poolLabelHitHandleAtImagePoint(point, rect) {
-  const edge = Math.max(6, Math.round(poolLabelImagePixelsFromCanvas(10)));
-  const nearN = point.y - rect.y1 <= edge;
-  const nearS = rect.y2 - point.y <= edge;
-  const nearW = point.x - rect.x1 <= edge;
-  const nearE = rect.x2 - point.x <= edge;
-  if (!nearN && !nearS && !nearW && !nearE) return "move";
-  if (nearN && nearW) return "nw";
-  if (nearN && nearE) return "ne";
-  if (nearS && nearW) return "sw";
-  if (nearS && nearE) return "se";
-  if (nearN) return "n";
-  if (nearS) return "s";
-  if (nearW) return "w";
-  if (nearE) return "e";
-  return "move";
-}
-
 function poolLabelHitBoxAtEvent(event, boxes) {
-  poolLabelSyncDisplayRect();
-  const point = poolLabelPointerImagePointFromEvent(event);
-  if (!point || !Array.isArray(boxes) || !boxes.length) return { index: -1, handle: null };
-  const pad = Math.max(2, Math.round(poolLabelImagePixelsFromCanvas(4)));
-  let bestIndex = -1;
-  let bestArea = Infinity;
-  for (let index = boxes.length - 1; index >= 0; index--) {
-    const rect = poolLabelBoxToImageRect(boxes[index]);
-    if (!rect || !poolLabelPointInImageRect(point, rect, pad)) continue;
-    const area = Math.max(1, (rect.x2 - rect.x1) * (rect.y2 - rect.y1));
-    if (area < bestArea) {
-      bestArea = area;
-      bestIndex = index;
-    }
+  poolLabelEnsureDisplayRect();
+  if (typeof hitBoxInteractionAtEvent === "function") {
+    return hitBoxInteractionAtEvent(event, boxes);
   }
-  if (bestIndex < 0) return { index: -1, handle: null };
-  const rect = poolLabelBoxToImageRect(boxes[bestIndex]);
-  return {
-    index: bestIndex,
-    handle: poolLabelHitHandleAtImagePoint(point, rect)
-  };
+  return { index: -1, handle: null };
 }
 
 function poolLabelPreviewBoxes() {
@@ -219,7 +188,7 @@ function poolLabelScheduleOverlayRefresh(boxes) {
 }
 
 function poolLabelPointerImagePointFromEvent(event) {
-  poolLabelSyncDisplayRect();
+  poolLabelEnsureDisplayRect();
   if (typeof canvasToImageClamped === "function") return canvasToImageClamped(event);
   if (typeof canvasToImage === "function") return canvasToImage(event);
   return null;
@@ -232,7 +201,17 @@ function poolLabelAfterToolChange() {
   poolLabelSyncCanvasModeClasses();
   redrawPreviewOverlays();
   saveSessionSoon();
-  updatePoolLabelPanel().catch(showError);
+  if (el.poolLabelStatus) {
+    const modeText = poolLabelState.pointerToolEnabled
+      ? "Pointer mode (V). Select, move, and resize boxes."
+      : poolLabelState.autoFitEnabled
+      ? "Subject Select (W). Click a color, or drag to limit the color search."
+      : "Manual box mode. V pointer, W subject select.";
+    const fixedText = Number.isInteger(poolLabelState.recordingFixedBoxSlot)
+      ? ` Recording fixed box ${poolLabelState.recordingFixedBoxSlot}.`
+      : "";
+    el.poolLabelStatus.textContent = `New class: ${classDisplay(poolLabelState.currentClassId)}. ${modeText} T copies, Shift+T CSRT. Hold Alt for fixed boxes.${fixedText}`;
+  }
 }
 
 function poolLabelSwitchToDrawBoxTool() {
@@ -251,11 +230,11 @@ function poolLabelSwitchToDrawBoxTool() {
 }
 
 function poolLabelSaveSessionNow() {
-  const poolLabelData = typeof poolLabelSessionData === "function" ? poolLabelSessionData() : null;
+  if (!hasWorkspaceRoot() || typeof savePoolLabelSessionNow !== "function" || typeof poolLabelSessionData !== "function") return;
+  const poolLabelData = poolLabelSessionData();
+  if (!Object.keys(poolLabelData).length) return;
   poolLabelState.shortcutChangedAt = Date.now();
-  if (typeof savePoolLabelSessionNow === "function" && poolLabelData) {
-    savePoolLabelSessionNow(poolLabelData).catch(error => console.warn("Pool label shortcut save failed:", error));
-  }
+  savePoolLabelSessionNow(poolLabelData).catch(error => console.warn("Pool label shortcut save failed:", error));
 }
 
 function poolLabelSyncPointerTool() {
@@ -326,7 +305,7 @@ function poolLabelClearCursorGuide() {
 }
 
 function drawPoolLabelAxisGuide() {
-  if (!isPoolLabelActive() || poolLabelState.pointerToolEnabled || poolLabelState.autoFitEnabled || !poolLabelState.crosshairPoint) return;
+  if (!isPoolLabelActive() || poolLabelState.autoFitEnabled || !poolLabelState.crosshairPoint) return;
   if (!state.displayRect || state.boxDrag || state.viewPanDrag) return;
   const r = state.displayRect;
   const point = poolLabelState.crosshairPoint;
@@ -348,8 +327,12 @@ function drawPoolLabelAxisGuide() {
   ctx.restore();
 }
 
-function poolLabelZoomShouldShow() {
-  return isPoolLabelActive()
+function poolLabelZoomSideActive() {
+  return isPoolLabelActive();
+}
+
+function poolLabelZoomShouldDraw() {
+  return poolLabelZoomSideActive()
     && !poolLabelState.pointerToolEnabled
     && !state.viewPanDrag
     && !state.boxDrag
@@ -361,9 +344,14 @@ function poolLabelZoomCenterPoint() {
   return poolLabelState.cursorPoint;
 }
 
+function poolLabelFillZoomCanvas(zoomCtx) {
+  zoomCtx.fillStyle = "#111827";
+  zoomCtx.fillRect(0, 0, POOL_LABEL_ZOOM.width, POOL_LABEL_ZOOM.height);
+}
+
 function poolLabelSyncZoomClassLabel() {
   if (!el.poolLabelZoomClass) return;
-  el.poolLabelZoomClass.textContent = poolLabelZoomShouldShow()
+  el.poolLabelZoomClass.textContent = poolLabelZoomSideActive()
     ? poolLabelZoomClassLabel()
     : "";
 }
@@ -429,6 +417,25 @@ function poolLabelDrawZoomCrosshair(zoomCtx, x, y, color, alpha = 1) {
   zoomCtx.restore();
 }
 
+function poolLabelDrawZoomFullCrosshair(zoomCtx, x, y, color, alpha = 0.9) {
+  const w = POOL_LABEL_ZOOM.width;
+  const h = POOL_LABEL_ZOOM.height;
+  zoomCtx.save();
+  zoomCtx.strokeStyle = color;
+  zoomCtx.lineWidth = 1.5;
+  zoomCtx.globalAlpha = alpha;
+  zoomCtx.setLineDash([]);
+  zoomCtx.beginPath();
+  zoomCtx.moveTo(0, y);
+  zoomCtx.lineTo(w, y);
+  zoomCtx.moveTo(x, 0);
+  zoomCtx.lineTo(x, h);
+  zoomCtx.stroke();
+  zoomCtx.fillStyle = color;
+  zoomCtx.fillRect(x - 2, y - 2, 4, 4);
+  zoomCtx.restore();
+}
+
 function poolLabelRectIntersectsZoomSource(rect, sourceRect) {
   return rect.x2 > sourceRect.x1 && rect.x1 < sourceRect.x2
     && rect.y2 > sourceRect.y1 && rect.y1 < sourceRect.y2;
@@ -469,21 +476,20 @@ function poolLabelDrawZoomBoxes(zoomCtx, boxes, sourceRect) {
 }
 
 function drawPoolLabelZoomView() {
-  const show = poolLabelZoomShouldShow();
-  if (el.poolLabelZoomView) el.poolLabelZoomView.hidden = !show;
-  poolLabelSyncZoomClassLabel();
-  if (!show) return;
+  if (!poolLabelZoomSideActive()) return;
 
-  const center = poolLabelZoomCenterPoint();
   const zoomCanvas = el.poolLabelZoomCanvas;
   const zoomCtx = poolLabelZoomContext();
   if (!zoomCanvas || !zoomCtx) return;
 
   if (zoomCanvas.width !== POOL_LABEL_ZOOM.width) zoomCanvas.width = POOL_LABEL_ZOOM.width;
   if (zoomCanvas.height !== POOL_LABEL_ZOOM.height) zoomCanvas.height = POOL_LABEL_ZOOM.height;
-  zoomCtx.fillStyle = "#111827";
-  zoomCtx.fillRect(0, 0, POOL_LABEL_ZOOM.width, POOL_LABEL_ZOOM.height);
+  poolLabelFillZoomCanvas(zoomCtx);
+  poolLabelSyncZoomClassLabel();
 
+  if (!poolLabelZoomShouldDraw()) return;
+
+  const center = poolLabelZoomCenterPoint();
   if (!center) return;
 
   const sourceRect = poolLabelZoomSourceRect(center);
@@ -503,7 +509,7 @@ function drawPoolLabelZoomView() {
     poolLabelDrawZoomRect(zoomCtx, state.selection, sourceRect, "#2563eb", true);
   }
 
-  poolLabelDrawZoomCrosshair(
+  poolLabelDrawZoomFullCrosshair(
     zoomCtx,
     POOL_LABEL_ZOOM.width / 2,
     POOL_LABEL_ZOOM.height / 2,
@@ -618,9 +624,9 @@ async function onPoolLabelPointerMove(event) {
   poolLabelUpdateCursorPoint(event);
   if (poolLabelState.pointerToolEnabled) {
     poolLabelUpdateBoxCursor(event);
-    return;
+  } else {
+    el.canvas.style.cursor = poolLabelDefaultCursor();
   }
-  el.canvas.style.cursor = poolLabelDefaultCursor();
   redrawPreviewOverlays();
 }
 
@@ -766,11 +772,6 @@ function onPoolLabelKeyDown(event) {
     poolLabelTrackForward().catch(showError);
     return true;
   }
-  if (key === "j" && typeof canMarkYoloJunk === "function" && canMarkYoloJunk()) {
-    event.preventDefault();
-    markYoloJunkSelected().catch(showError);
-    return true;
-  }
   if (key === "a") {
     event.preventDefault();
     poolLabelNavigate(-1).catch(showError);
@@ -891,6 +892,7 @@ async function poolLabelAssignClass(classId, options = {}) {
   if (document.activeElement?.closest?.(".pool-label-tools, .pool-label-class-list")) {
     document.activeElement.blur();
   }
+  poolLabelSwitchToDrawBoxTool();
   const pair = state.pairs[state.currentIndex];
   if (pair && state.selectedBoxIndex !== null) {
     const boxes = await editableBoxesFor(pair);
@@ -1830,9 +1832,13 @@ function renderPoolLabelShortcuts() {
   }
 }
 
+function poolLabelSortedClassEntries() {
+  return [...state.classNames.entries()].sort((a, b) => naturalCompare(a[1], b[1]) || a[0] - b[0]);
+}
+
 function poolLabelShortcutOptions(selectedClassId = null, ready = false) {
   const options = [{ value: "", label: "empty", searchText: "empty none clear", selected: selectedClassId == null }];
-  for (const [id, name] of [...state.classNames.entries()].sort((a, b) => a[0] - b[0])) {
+  for (const [id, name] of poolLabelSortedClassEntries()) {
     options.push({
       value: String(id),
       label: `${id}: ${name}${ready && id === selectedClassId ? " ready" : ""}`,
@@ -2039,8 +2045,7 @@ function renderPoolLabelClassManager() {
   renderPoolLabelSlotSelect();
   el.poolLabelClassList.replaceChildren();
   const terms = poolLabelSearchTerms(el.poolLabelClassSearchInput?.value || "");
-  const classes = [...state.classNames.entries()]
-    .sort((a, b) => a[0] - b[0])
+  const classes = poolLabelSortedClassEntries()
     .filter(([classId, className]) => poolLabelClassMatchesSearch(classId, className, terms));
   if (!classes.length) {
     el.poolLabelClassList.innerHTML = state.classNames.size

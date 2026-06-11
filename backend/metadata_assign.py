@@ -271,6 +271,102 @@ def _estimate_build_total(valid_rows: list[dict[str, Any]], rebuild: bool) -> in
     return max(total, 1)
 
 
+def remove_detect_dataset_links(
+    workspace_root: Path,
+    filenames: list[str] | None = None,
+) -> dict[str, Any]:
+    """Remove detect_dataset image/label hard links for the given pool filenames."""
+    paths = load_workspace_config(workspace_root)
+    detect_out = paths.detect_out
+    allowed = {
+        Path(str(name).replace("\\", "/")).name
+        for name in (filenames or [])
+        if str(name or "").strip()
+    }
+    if not allowed:
+        return {
+            "ok": False,
+            "removedImages": 0,
+            "removedLabels": 0,
+            "errors": ["No filenames provided."],
+        }
+
+    removed_images = 0
+    removed_labels = 0
+    errors: list[str] = []
+    for split in ("train", "val"):
+        images_dir = detect_out / "images" / split
+        labels_dir = detect_out / "labels" / split
+        if not images_dir.is_dir():
+            continue
+        for candidate in images_dir.iterdir():
+            if not candidate.is_file() or candidate.name not in allowed:
+                continue
+            try:
+                candidate.unlink()
+                removed_images += 1
+            except OSError as exc:
+                errors.append(f"remove image {candidate}: {exc}")
+            label_path = labels_dir / f"{candidate.stem}.txt"
+            if label_path.is_file():
+                try:
+                    label_path.unlink()
+                    removed_labels += 1
+                except OSError as exc:
+                    errors.append(f"remove label {label_path}: {exc}")
+
+    return {
+        "ok": not errors,
+        "removedImages": removed_images,
+        "removedLabels": removed_labels,
+        "errors": errors,
+    }
+
+
+def remove_clf_dataset_links(
+    workspace_root: Path,
+    filenames: list[str] | None = None,
+) -> dict[str, Any]:
+    """Remove clf_dataset hard links for the given pool filenames."""
+    paths = load_workspace_config(workspace_root)
+    clf_out = paths.clf_out
+    allowed = {
+        Path(str(name).replace("\\", "/")).name
+        for name in (filenames or [])
+        if str(name or "").strip()
+    }
+    if not allowed:
+        return {
+            "ok": False,
+            "removedImages": 0,
+            "errors": ["No filenames provided."],
+        }
+
+    removed_images = 0
+    errors: list[str] = []
+    for split in ("train", "val", "test"):
+        split_dir = clf_out / split
+        if not split_dir.is_dir():
+            continue
+        for class_dir in split_dir.iterdir():
+            if not class_dir.is_dir():
+                continue
+            for candidate in class_dir.iterdir():
+                if not candidate.is_file() or candidate.name not in allowed:
+                    continue
+                try:
+                    candidate.unlink()
+                    removed_images += 1
+                except OSError as exc:
+                    errors.append(f"remove image {candidate}: {exc}")
+
+    return {
+        "ok": not errors,
+        "removedImages": removed_images,
+        "errors": errors,
+    }
+
+
 def build_workspace_links(
     workspace_root: Path,
     *,

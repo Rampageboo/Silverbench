@@ -3,7 +3,6 @@ function bindYoloPageEvents() {
   el.reviewModeBtn.addEventListener("click", toggleReviewMode);
   el.markReviewedBtn.addEventListener("click", () => toggleReviewed().catch(showError));
   el.flagBtn.addEventListener("click", () => toggleFlagged().catch(showError));
-  el.markJunkBtn?.addEventListener("click", () => markYoloJunkSelected().catch(showError));
   el.sendToCropBtn?.addEventListener("click", () => sendFilteredPairsToCrop());
   el.showAllImagesBtn.addEventListener("click", () => setImageViewMode("all"));
   el.hideReviewedImagesBtn.addEventListener("click", () => setImageViewMode("hideReviewed"));

@@ -1,9 +1,5 @@
 const INBOX_JUNK_CLASS = "__junk__";
 
-const junkActionState = {
-  undoStack: []
-};
-
 const inboxState = {
   filter: "new",
   selected: new Set(),
@@ -293,7 +289,7 @@ function updateInboxSelectionCount() {
       ? (pendingMark ? `Mark ${scopeLabel} Junk (${pendingMark})` : `Mark ${scopeLabel} Junk`)
       : `Mark ${scopeLabel} Junk`;
   }
-  updateJunkUndoButtons();
+  if (typeof updateJunkUndoUi === "function") updateJunkUndoUi("inbox");
   renderInboxClassPicker();
 }
 
@@ -771,21 +767,54 @@ function metadataRowToUpdate(filename, row) {
 }
 
 function pushJunkUndo(filenames, options = {}) {
-  if (options.skipUndo) return;
-  junkActionState.undoStack.push(snapshotMetadataForFiles(filenames));
-  if (junkActionState.undoStack.length > 10) junkActionState.undoStack.shift();
-  updateJunkUndoButtons();
+  if (options.skipUndo || !options.junkContext) return;
+  if (typeof junkPushUndo === "function") junkPushUndo(options.junkContext, filenames);
 }
 
-function hasJunkUndo() {
-  return junkActionState.undoStack.length > 0;
+async function removeDatasetLinksForFilenames(filenames, scope) {
+  const names = [...new Set((filenames || []).map(name => String(name || "").trim()).filter(Boolean))];
+  if (!names.length || !state.workspaceRoot) return null;
+  const method = scope === "detect" ? "removeDetectDatasetLinks" : "removeClfDatasetLinks";
+  const raw = await backendCall(method, inboxWorkspaceRoot(), JSON.stringify(names));
+  const result = JSON.parse(raw || "{}");
+  if (!result.ok && result.errors?.length) {
+    throw new Error(result.errors.join("\n"));
+  }
+  return result;
 }
 
-function updateJunkUndoButtons() {
-  const canUndo = hasJunkUndo() && !inboxState.assigning;
-  if (el.inboxUndoJunkBtn) el.inboxUndoJunkBtn.disabled = !canUndo;
-  if (el.undoJunkBtn) el.undoJunkBtn.disabled = !canUndo;
-  if (el.imagePoolUndoJunkBtn) el.imagePoolUndoJunkBtn.disabled = !canUndo || imagePoolState?.deleting;
+async function rebuildDatasetLinksForFilenames(filenames, scope) {
+  const names = [...new Set((filenames || []).map(name => String(name || "").trim()).filter(Boolean))];
+  if (!names.length || typeof runBuildYoloLinksJob !== "function") return null;
+  return runBuildYoloLinksJob(inboxWorkspaceRoot(), false, JSON.stringify(names));
+}
+
+function filenamesNeedingDatasetRebuild(updates) {
+  const detect = [];
+  const clf = [];
+  for (const item of updates || []) {
+    const filename = String(item?.filename || "").trim();
+    if (!filename) continue;
+    if (item.detect_enabled && !item.detect_junk) detect.push(filename);
+    const clfClass = String(item.clf_class || "").trim();
+    if (item.clf_enabled && clfClass && clfClass !== INBOX_JUNK_CLASS) clf.push(filename);
+  }
+  return { detect, clf };
+}
+
+async function refreshViewsAfterJunkMetadataChange(options = {}) {
+  const { removedFilenames = [], preferredFilename = null, junkScope = null } = options;
+  const datasetViewActive = el.app?.classList.contains("pool-label") || el.app?.classList.contains("yolo");
+  if (datasetViewActive && typeof reloadDatasetViewAfterJunk === "function") {
+    await reloadDatasetViewAfterJunk(removedFilenames, preferredFilename);
+    return;
+  }
+  if (el.app?.classList.contains("yolo") && typeof reloadActiveYoloDatasetView === "function") {
+    await reloadActiveYoloDatasetView({ silent: true }).catch(error => console.warn("YOLO reload after junk:", error));
+  }
+  if (junkScope && datasetViewActive) {
+    console.warn("reloadDatasetViewAfterJunk is unavailable after junk metadata change.");
+  }
 }
 
 function inboxClassTagForFile(filename) {
@@ -1266,6 +1295,9 @@ async function applyJunkMetadataUpdates(updates, options = {}) {
     skipGridRender = false,
     quiet = false,
     scopeLabel = "",
+    junkScope = null,
+    pruneDatasetLinks = false,
+    restoreFromUndo = false,
     verifyJunk,
     verifyNotJunk,
     actionLabel = "Update junk",
@@ -1305,6 +1337,15 @@ async function applyJunkMetadataUpdates(updates, options = {}) {
         throw new Error(`Failed to clear${scopeLabel ? ` ${scopeLabel}` : ""} junk for: ${failed.join(", ")}`);
       }
     }
+    let pruneResult = null;
+    if (pruneDatasetLinks && junkScope) {
+      pruneResult = await removeDatasetLinksForFilenames(names, junkScope);
+    }
+    if (restoreFromUndo) {
+      const { detect, clf } = filenamesNeedingDatasetRebuild(updates);
+      if (detect.length) await rebuildDatasetLinksForFilenames(detect, "detect");
+      if (clf.length) await rebuildDatasetLinksForFilenames(clf, "clf");
+    }
     rebuildInboxPairs();
     invalidateVirtualGallery(inboxVirtual);
     if (clearSelection) {
@@ -1314,13 +1355,20 @@ async function applyJunkMetadataUpdates(updates, options = {}) {
     updateInboxSelectionCount();
     if (!skipGridRender) renderInboxGrid();
     if (typeof refreshImagePoolAfterJunkChange === "function") {
-      refreshImagePoolAfterJunkChange({ selectionOnly: skipGridRender });
+      await refreshImagePoolAfterJunkChange({ selectionOnly: skipGridRender });
+    }
+    if (pruneDatasetLinks || restoreFromUndo) {
+      await refreshViewsAfterJunkMetadataChange({
+        removedFilenames: pruneDatasetLinks ? names : [],
+        preferredFilename: restoreFromUndo ? names[0] : null,
+        junkScope
+      });
     }
     if (!quiet) {
       if (successLog) setInboxLog(successLog);
       if (successStatus) setStatus(successStatus);
     }
-    return { ...result, filenames: names };
+    return { ...result, filenames: names, pruneResult };
   } finally {
     inboxState.assigning = false;
     updateInboxSelectionCount();
@@ -1335,7 +1383,8 @@ async function markInboxJunkFilenames(filenames, options = {}) {
     skipGridRender = false,
     quiet = false,
     scope = "clf",
-    skipUndo = false
+    skipUndo = false,
+    junkContext = null
   } = options;
   const junkScope = scope === "detect" ? "detect" : "clf";
   const scopeLabel = inboxJunkScopeLabel(junkScope);
@@ -1345,7 +1394,7 @@ async function markInboxJunkFilenames(filenames, options = {}) {
     if (!quiet) setInboxLog(`Selected images are already ${scopeLabel} junk.`);
     return null;
   }
-  pushJunkUndo(pending, { skipUndo });
+  pushJunkUndo(pending, { skipUndo, junkContext });
   const updates = pending.map(filename => (
     junkScope === "detect"
       ? { filename, detect_junk: true, detect_enabled: false }
@@ -1356,9 +1405,11 @@ async function markInboxJunkFilenames(filenames, options = {}) {
     skipGridRender,
     quiet,
     scopeLabel,
+    junkScope,
+    pruneDatasetLinks: true,
     verifyJunk: name => isInboxJunkFile(name, junkScope),
     actionLabel: `Mark ${scopeLabel} junk`,
-    successLog: `Marked ${pending.length} image(s) as ${scopeLabel} junk.\nmetadata.csv was updated; this side will not be built.`,
+    successLog: `Marked ${pending.length} image(s) as ${scopeLabel} junk.\nmetadata.csv was updated; existing ${scopeLabel} dataset links were removed when present.`,
     successStatus: `Marked ${pending.length} image(s) as ${scopeLabel} junk.`
   });
 }
@@ -1369,7 +1420,8 @@ async function unmarkInboxJunkFilenames(filenames, options = {}) {
     skipGridRender = false,
     quiet = false,
     scope = "clf",
-    skipUndo = false
+    skipUndo = false,
+    junkContext = null
   } = options;
   const junkScope = scope === "detect" ? "detect" : "clf";
   const scopeLabel = inboxJunkScopeLabel(junkScope);
@@ -1379,7 +1431,7 @@ async function unmarkInboxJunkFilenames(filenames, options = {}) {
     if (!quiet) setInboxLog(`Selected images are not ${scopeLabel} junk.`);
     return null;
   }
-  pushJunkUndo(junked, { skipUndo });
+  pushJunkUndo(junked, { skipUndo, junkContext });
   const updates = junked.map(filename => (
     junkScope === "detect"
       ? { filename, detect_junk: false }
@@ -1394,32 +1446,6 @@ async function unmarkInboxJunkFilenames(filenames, options = {}) {
     actionLabel: `Clear ${scopeLabel} junk`,
     successLog: `Cleared ${scopeLabel} junk from ${junked.length} image(s).`,
     successStatus: `Cleared ${scopeLabel} junk from ${junked.length} image(s).`
-  });
-}
-
-async function undoLastJunkAction(options = {}) {
-  const { quiet = false, skipGridRender = false } = options;
-  const snapshots = junkActionState.undoStack.pop();
-  updateJunkUndoButtons();
-  if (!snapshots?.length) {
-    if (!quiet) setInboxLog("No junk action to undo.");
-    return null;
-  }
-  const updates = snapshots.map(({ filename, row }) => metadataRowToUpdate(filename, row));
-  return applyJunkMetadataUpdates(updates, {
-    clearSelection: false,
-    skipGridRender,
-    quiet,
-    actionLabel: "Undo junk",
-    successLog: "Undid the last junk action.",
-    successStatus: "Undid the junk action."
-  });
-}
-
-async function markInboxJunkSelected() {
-  await markInboxJunkFilenames(inboxSelectedFilenames(), {
-    clearSelection: true,
-    scope: inboxJunkScope()
   });
 }
 
@@ -1522,7 +1548,6 @@ function bindInboxEvents() {
   el.inboxRefreshBtn?.addEventListener("click", () => refreshInboxView({ force: true }).catch(showError));
   el.inboxSelectAllBtn?.addEventListener("click", inboxSelectAllVisible);
   el.inboxClearSelectionBtn?.addEventListener("click", inboxClearSelection);
-  el.inboxMarkJunkBtn?.addEventListener("click", () => markInboxJunkSelected().catch(showError));
   el.inboxFilterNewBtn?.addEventListener("click", () => setInboxFilter("new"));
   el.inboxFilterUnassignedBtn?.addEventListener("click", () => setInboxFilter("unassigned"));
   el.inboxFilterRandomUnusedBtn?.addEventListener("click", () => setInboxFilter("random-unused"));
@@ -1546,16 +1571,6 @@ function bindInboxEvents() {
   });
 }
 
-function previewJunkScope() {
-  const ctx = typeof imagePreviewLightboxState !== "undefined"
-    ? imagePreviewLightboxState.previewContext
-    : "";
-  if (ctx === "yolo" && typeof yoloJunkScope === "function") return yoloJunkScope();
-  if (ctx === "inbox") return inboxJunkScope();
-  if (ctx === "image-pool" && typeof imagePoolJunkScope === "function") return imagePoolJunkScope();
-  return "clf";
-}
-
 window.resetInboxState = resetInboxState;
 window.refreshInboxView = refreshInboxView;
 window.updateInboxTabBadge = updateInboxTabBadge;
@@ -1573,8 +1588,6 @@ window.inboxJunkLabelForFile = inboxJunkLabelForFile;
 window.reloadInboxMetadataIndex = reloadInboxMetadataIndex;
 window.markInboxJunkFilenames = markInboxJunkFilenames;
 window.unmarkInboxJunkFilenames = unmarkInboxJunkFilenames;
-window.undoLastJunkAction = undoLastJunkAction;
 window.isInboxJunkFile = isInboxJunkFile;
 window.inboxJunkScope = inboxJunkScope;
-window.previewJunkScope = previewJunkScope;
 window.inboxClassTagForFile = inboxClassTagForFile;

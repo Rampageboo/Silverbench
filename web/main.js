@@ -17,6 +17,7 @@ const APP_SCRIPTS = [
   "image_pool_backup.js",
   "image_pool_duplicates.js",
   "inbox_tools.js",
+  "junk_actions.js",
   "yolo_view_modes.js",
   "annotation_editor.js",
   "pool_label.js",

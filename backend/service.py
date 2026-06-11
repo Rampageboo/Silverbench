@@ -37,6 +37,8 @@ from .metadata_assign import (
     get_workspace_classes,
     list_clf_dataset_classes,
     read_metadata_rows,
+    remove_clf_dataset_links,
+    remove_detect_dataset_links,
     upsert_metadata_rows,
 )
 from .image_pool_backup import (
@@ -144,6 +146,8 @@ class BackendService:
             "buildYoloLinks": self._handle_buildYoloLinks,
             "startBuildYoloLinks": self._handle_startBuildYoloLinks,
             "getBuildJob": self._handle_getBuildJob,
+            "removeDetectDatasetLinks": self._handle_removeDetectDatasetLinks,
+            "removeClfDatasetLinks": self._handle_removeClfDatasetLinks,
             "readImagePoolThumb": self._handle_readImagePoolThumb,
             "ensureImagePoolBackup": self._handle_ensureImagePoolBackup,
             "ensureImagePoolLabelBackup": self._handle_ensureImagePoolLabelBackup,
@@ -484,6 +488,22 @@ class BackendService:
                 filenames = json.loads(args[2] or "[]")
             return json.dumps(
                 build_workspace_links(Path(root), rebuild=rebuild, filenames=filenames),
+                ensure_ascii=False,
+            )
+
+    def _handle_removeDetectDatasetLinks(self, args: list[Any]) -> object:
+            root = self.path_access.require_path(args[0])
+            filenames = json.loads(args[1] or "[]") if len(args) > 1 else []
+            return json.dumps(
+                remove_detect_dataset_links(Path(root), filenames=filenames),
+                ensure_ascii=False,
+            )
+
+    def _handle_removeClfDatasetLinks(self, args: list[Any]) -> object:
+            root = self.path_access.require_path(args[0])
+            filenames = json.loads(args[1] or "[]") if len(args) > 1 else []
+            return json.dumps(
+                remove_clf_dataset_links(Path(root), filenames=filenames),
                 ensure_ascii=False,
             )
 

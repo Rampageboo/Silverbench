@@ -118,7 +118,7 @@ function hasPoolLabelDatasetLoaded() {
 }
 
 function poolLabelSessionData() {
-  if (!hasPoolLabelDatasetLoaded()) return {};
+  if (typeof poolLabelState === "undefined" || !hasWorkspaceRoot()) return {};
   return {
     workspaceRoot: state.workspaceRoot || "",
     datasetRoot: state.datasetBackendRoot || "",
@@ -350,6 +350,10 @@ function flushSessionSoon() {
   state.currentImagePath = state.pairs[state.currentIndex]?.imagePath || state.currentImagePath || "";
   state.galleryScrollTop = Math.max(0, Math.round(el.galleryScroll?.scrollTop || state.galleryScrollTop || 0));
   clearTimeout(sessionSaveTimer);
+  const poolLabelData = poolLabelSessionData();
+  if (Object.keys(poolLabelData).length) {
+    savePoolLabelSessionNow(poolLabelData).catch(error => console.warn("Pool label session flush failed:", error));
+  }
   saveSession({ manual: false }).catch(error => console.warn("Session flush failed:", error));
 }
 
@@ -399,7 +403,11 @@ async function savePoolLabelSessionNow(poolLabelData = null) {
     savedAt: new Date().toISOString(),
     ...(poolLabelData || poolLabelSessionData())
   };
-  if (!Object.keys(snapshot).length || !hasWorkspaceRoot() || !await ensurePythonBackend()) return;
+  const hasPoolLabelPayload = Array.isArray(snapshot.poolLabelShortcuts)
+    || Array.isArray(snapshot.poolLabelFixedBoxes)
+    || snapshot.poolLabelPointerToolEnabled
+    || snapshot.poolLabelAutoFitEnabled;
+  if (!hasWorkspaceRoot() || !hasPoolLabelPayload || !await ensurePythonBackend()) return;
   const existing = await readWorkspaceSessionData();
   await writeWorkspaceSessionData({
     ...existing,

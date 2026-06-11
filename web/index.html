@@ -51,6 +51,15 @@
 	            <button class="danger" id="imagePoolDeleteSelectedBtn">Delete Selected</button>
 	          </div>
 	          <div class="hint image-pool-select-hint">Click to select; use Ctrl/Shift for multi-select. Double-click to preview. Delete removes image_pool files, hard links, labels, and metadata.</div>
+	          <div class="row image-pool-junk-toolbar">
+	            <div class="inbox-target-toggle" role="group" aria-label="Junk scope">
+	              <button type="button" class="inbox-target-option active" id="imagePoolJunkScopeDetectBtn">Detect</button>
+	              <button type="button" class="inbox-target-option" id="imagePoolJunkScopeClfBtn">Clf</button>
+	            </div>
+	            <button class="danger" id="imagePoolMarkJunkBtn">标记废片</button>
+	            <button id="imagePoolClearJunkBtn">取消废片</button>
+	            <button id="imagePoolUndoJunkBtn" disabled>撤回废片</button>
+	          </div>
 	          <div class="image-pool-filters">
 	            <button id="imagePoolFilterAllBtn" class="active">All</button>
 	            <button id="imagePoolFilterNewBtn">NEW</button>
@@ -104,7 +113,8 @@
 	            <button id="inboxRefreshBtn">Refresh</button>
 	            <button id="inboxSelectAllBtn">Select Visible</button>
 	            <button id="inboxClearSelectionBtn">Clear Selection</button>
-	            <button class="danger inbox-toolbar-end" id="inboxMarkJunkBtn" disabled>Mark Junk</button>
+	            <button class="danger" id="inboxMarkJunkBtn" disabled>标记废片</button>
+	            <button id="inboxUndoJunkBtn" disabled>撤回废片</button>
 	          </div>
 	          <div class="inbox-filters">
 	            <button id="inboxFilterNewBtn" class="active">NEW</button>
@@ -268,14 +278,16 @@
           <span>Preview</span>
           <span id="boxCount" class="status"></span>
         </div>
-        <div class="panel-body viewer">
+        <div class="panel-body viewer" id="previewViewer">
           <div class="canvas-wrap" id="dropZone">
             <canvas id="previewCanvas"></canvas>
-            <div class="pool-label-zoom-view" id="poolLabelZoomView" hidden>
+          </div>
+          <aside class="pool-label-zoom-side" id="poolLabelZoomSide">
+            <div class="pool-label-zoom-view" id="poolLabelZoomView">
               <canvas id="poolLabelZoomCanvas" width="500" height="600"></canvas>
               <div class="pool-label-zoom-class" id="poolLabelZoomClass"></div>
             </div>
-          </div>
+          </aside>
           <div class="pool-label-preview-toolbar" id="poolLabelPreviewToolbar" aria-label="Box Label tools">
             <button id="poolLabelPointerToolBtn" class="pool-label-icon-tool" type="button" title="Cursor (V)" aria-label="Cursor" aria-pressed="false">
               <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -427,7 +439,7 @@
 	            <span>Current Boxes</span>
 	          </div>
 	          <div class="panel-body pool-label-box-panel-body">
-	            <div class="hint" id="poolLabelStatus">Drag to create. A/D or arrows navigate. 0-9 assigns class.</div>
+	            <div class="hint" id="poolLabelStatus">拖框创建。A/D 切换图片，0-9 分配类别。J 标记废片，Ctrl+Shift+Z 撤回（仅本页操作）。</div>
 	            <div class="pool-label-box-list" id="poolLabelBoxList"></div>
 	          </div>
 	        </section>

@@ -54,15 +54,19 @@ function renderTopbarActions(tab) {
     if (el.yoloModeControls) el.topbarActions.append(el.yoloModeControls);
     el.topbarActions.append(...topbarControls.order);
     if (typeof updateYoloViewModesVisibility === "function") updateYoloViewModesVisibility();
+    if (typeof updateJunkUndoUi === "function") updateJunkUndoUi("yolo-review");
     return;
   }
   if (tab === "pool-label") {
     const buttons = [topbarControls.openFolderBtn];
     if (typeof canMarkYoloJunk === "function" && canMarkYoloJunk()) {
       topbarControls.markJunkBtn.hidden = false;
-      buttons.push(topbarControls.markJunkBtn);
-    } else if (topbarControls.markJunkBtn) {
-      topbarControls.markJunkBtn.hidden = true;
+      topbarControls.undoMarkJunkBtn.hidden = false;
+      buttons.push(topbarControls.markJunkBtn, topbarControls.undoMarkJunkBtn);
+      if (typeof updateJunkUndoUi === "function") updateJunkUndoUi("pool-label");
+    } else {
+      if (topbarControls.markJunkBtn) topbarControls.markJunkBtn.hidden = true;
+      if (topbarControls.undoMarkJunkBtn) topbarControls.undoMarkJunkBtn.hidden = true;
     }
     el.topbarActions.append(...buttons);
   }
@@ -231,7 +235,10 @@ function switchTab(tab) {
       refreshInboxView({ silent: true, preferCache: true })
         .catch(error => console.warn("Inbox refresh:", error))
         .finally(() => {
-          if (switchSeq === appShellTabSwitchSeq) applyTopbarStatusForTab("inbox");
+          if (switchSeq === appShellTabSwitchSeq) {
+            if (typeof updateJunkUndoUi === "function") updateJunkUndoUi("inbox");
+            applyTopbarStatusForTab("inbox");
+          }
         });
     });
   } else if (isImagePool) {
@@ -244,6 +251,7 @@ function switchTab(tab) {
         if (switchSeq !== appShellTabSwitchSeq) return;
         rebuildImagePoolPairs();
         renderImagePoolGrid();
+        if (typeof updateJunkUndoUi === "function") updateJunkUndoUi("image-pool");
         if (state.workspaceRoot && !imagePoolState.summary && !imagePoolState.scanning) {
           scanImagePool({ silent: true, fast: true })
             .catch(error => console.warn("Image pool scan:", error))
