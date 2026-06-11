@@ -143,7 +143,11 @@
       state.currentImagePath = state.pairs[state.currentIndex]?.imagePath || null;
       state.selection = null;
       state.selectedBoxIndex = null;
-      if (typeof poolLabelState !== "undefined") poolLabelState.cursorPoint = null;
+      state.dragStart = null;
+      if (typeof poolLabelState !== "undefined") {
+        poolLabelState.cursorPoint = null;
+        poolLabelState.crosshairPoint = null;
+      }
       state.smartCropPreviewPlans = [];
       populateBoxEditor(null);
       await renderCurrentImage();
@@ -182,8 +186,10 @@
 
     function paintPreviewFrame(bitmap, pair, boxes) {
       const canvasBox = el.canvas.parentElement.getBoundingClientRect();
-      el.canvas.width = Math.max(1, Math.floor(canvasBox.width));
-      el.canvas.height = Math.max(1, Math.floor(canvasBox.height));
+      const nextWidth = Math.max(1, Math.floor(canvasBox.width));
+      const nextHeight = Math.max(1, Math.floor(canvasBox.height));
+      if (el.canvas.width !== nextWidth) el.canvas.width = nextWidth;
+      if (el.canvas.height !== nextHeight) el.canvas.height = nextHeight;
       ctx.clearRect(0, 0, el.canvas.width, el.canvas.height);
       ctx.fillStyle = "#111827";
       ctx.fillRect(0, 0, el.canvas.width, el.canvas.height);
@@ -195,12 +201,15 @@
       const x = Math.floor((el.canvas.width - w) / 2 + state.viewPanX);
       const y = Math.floor((el.canvas.height - h) / 2 + state.viewPanY);
       state.displayRect = { x, y, w, h, imageW: bitmap.width, imageH: bitmap.height };
+      state.previewBoxes = boxes;
+      state.previewBoxesImagePath = pair.imagePath;
       ctx.drawImage(bitmap, x, y, w, h);
       if (state.datasetTask !== "classify") drawYoloBoxes(boxes);
       drawClassifierPredictionBadge(pair);
       drawSmartCropPreview();
       drawPendingBlackPreview();
       if (typeof drawPoolLabelAxisGuide === "function") drawPoolLabelAxisGuide();
+      if (typeof drawPoolLabelZoomView === "function") drawPoolLabelZoomView();
       drawSelection();
     }
 
@@ -209,6 +218,27 @@
       const pair = state.pairs[state.currentIndex];
       if (!pair) return;
       paintPreviewFrame(state.currentImage, pair, previewBoxesCache);
+    }
+
+    function refreshPreviewBoxesOverlay(boxes) {
+      if (Array.isArray(boxes)) {
+        previewBoxesCache = boxes;
+        const pair = state.pairs[state.currentIndex];
+        if (pair) {
+          state.previewBoxes = boxes;
+          state.previewBoxesImagePath = pair.imagePath;
+        }
+      }
+      redrawPreviewOverlays();
+    }
+
+    function previewBoxesForCurrentPair() {
+      if (previewBoxesCache.length) return previewBoxesCache;
+      const pair = state.pairs[state.currentIndex];
+      if (!pair) return [];
+      if (state.labelEdits.has(pair.imagePath)) return state.labelEdits.get(pair.imagePath);
+      if (state.labelCache.has(pair.imagePath)) return state.labelCache.get(pair.imagePath);
+      return [];
     }
 
     function updatePreviewMeta(pair, boxes) {

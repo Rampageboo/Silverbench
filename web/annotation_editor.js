@@ -261,7 +261,12 @@
       boxes[drag.index] = rectToBox(rect, boxes[drag.index].classId);
       state.labelEdits.set(pair.imagePath, boxes);
       populateBoxEditor(boxes[drag.index]);
-      await renderCurrentImage();
+      if (typeof isPoolLabelActive === "function" && isPoolLabelActive()) {
+        if (typeof refreshPreviewBoxesOverlay === "function") refreshPreviewBoxesOverlay(boxes);
+        else redrawPreviewOverlays();
+      } else {
+        await renderCurrentImage();
+      }
     }
 
     function boxToImageRect(box) {
@@ -344,14 +349,18 @@
 
     function hitBoxInteractionAtEvent(event, boxes) {
       const canvasPoint = canvasEventPoint(event);
-      const selected = state.selectedBoxIndex;
-      if (selected !== null && boxes[selected]) {
-        const rect = boxToImageRect(boxes[selected]);
-        const handle = hitBoxHandleAtCanvasPoint(canvasPoint, rect);
-        if (handle) return { index: selected, handle };
-      }
       const index = hitBoxIndexAtCanvasPoint(canvasPoint, boxes);
-      return { index, handle: index >= 0 ? "move" : null };
+      if (index < 0) return { index: -1, handle: null };
+      const handle = hitBoxHandleAtCanvasPoint(canvasPoint, boxToImageRect(boxes[index]));
+      return { index, handle: handle || "move" };
+    }
+
+    function canvasRectInterior(canvasRect, inset) {
+      const left = Math.min(canvasRect.x1, canvasRect.x2);
+      const right = Math.max(canvasRect.x1, canvasRect.x2);
+      const top = Math.min(canvasRect.y1, canvasRect.y2);
+      const bottom = Math.max(canvasRect.y1, canvasRect.y2);
+      return { x1: left + inset, y1: top + inset, x2: right - inset, y2: bottom - inset };
     }
 
     function hitBoxHandleAtCanvasPoint(point, rect) {
@@ -370,6 +379,8 @@
         }
       }
       if (best) return best;
+      const interior = canvasRectInterior(canvasRect, cornerTolerance + 2);
+      if (interior.x2 > interior.x1 && interior.y2 > interior.y1 && pointInCanvasRect(point, interior)) return null;
       return hitBoxEdgeAtCanvasPoint(point, canvasRect, cornerTolerance);
     }
 

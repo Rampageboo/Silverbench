@@ -23,6 +23,8 @@ var state = {
   currentImagePath: null,
   galleryScrollTop: 0,
   currentImage: null,
+  previewBoxes: [],
+  previewBoxesImagePath: null,
   displayRect: null,
   viewZoom: 1,
   viewPanX: 0,
