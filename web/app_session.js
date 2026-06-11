@@ -1,4 +1,5 @@
 var sessionSaveTimer = null;
+var workspaceSessionWriteQueue = Promise.resolve();
 
 function hasWorkspaceRoot() {
   return Boolean(state.workspaceRoot);
@@ -118,11 +119,12 @@ function hasPoolLabelDatasetLoaded() {
 }
 
 function poolLabelSessionData() {
-  if (typeof poolLabelState === "undefined" || !hasWorkspaceRoot()) return {};
+  if (!hasPoolLabelDatasetLoaded()) return {};
+  const savedAt = new Date().toISOString();
   return {
     workspaceRoot: state.workspaceRoot || "",
     datasetRoot: state.datasetBackendRoot || "",
-    savedAt: new Date().toISOString(),
+    poolLabelSavedAt: savedAt,
     poolLabelShortcuts: normalizePoolLabelShortcuts(poolLabelState.shortcutSlots),
     poolLabelShortcutAssigned: normalizePoolLabelShortcutAssigned(poolLabelState.shortcutSlots),
     poolLabelFixedBoxes: normalizePoolLabelFixedBoxes(poolLabelState.fixedBoxSlots),
@@ -144,7 +146,7 @@ function sessionsRootMatches(a, b) {
 function applyPoolLabelSessionFields(data) {
   if (typeof poolLabelState === "undefined") return;
   const source = data || {};
-  const sourceTime = Date.parse(source?.savedAt || "") || 0;
+  const sourceTime = Date.parse(source?.poolLabelSavedAt || source?.savedAt || "") || 0;
   if (poolLabelState.shortcutChangedAt && sourceTime < poolLabelState.shortcutChangedAt) {
     return;
   }
@@ -277,17 +279,33 @@ async function writeWorkspaceSessionData(session) {
   return backendCall("writeWorkspaceSession", state.workspaceRoot, JSON.stringify(payload, null, 2));
 }
 
+function updateWorkspaceSessionData(mutator) {
+  if (!hasWorkspaceRoot()) return Promise.resolve("");
+  const write = async () => {
+    const existing = await readWorkspaceSessionData();
+    const next = await mutator(existing && typeof existing === "object" ? existing : {});
+    if (!next || typeof next !== "object") return "";
+    return writeWorkspaceSessionData(next);
+  };
+  const queued = workspaceSessionWriteQueue.then(write, write);
+  workspaceSessionWriteQueue = queued.catch(() => {});
+  return queued;
+}
+
 async function readInboxSessionData() {
   const session = await readWorkspaceSessionData();
   return inboxSessionSummary(session.inbox);
 }
 
 async function saveInboxSession(inbox) {
-  const session = await readWorkspaceSessionData();
-  session.inbox = normalizeInboxSession(inbox);
-  const path = await writeWorkspaceSessionData(session);
+  let summary = null;
+  const path = await updateWorkspaceSessionData(session => {
+    const next = { ...session, inbox: normalizeInboxSession(inbox) };
+    summary = inboxSessionSummary(next.inbox);
+    return next;
+  });
   if (!path) throw new Error("无法写入工作区 .yolo_label_viewer/session.json");
-  return inboxSessionSummary(session.inbox);
+  return summary;
 }
 
 function sessionData() {
@@ -350,10 +368,6 @@ function flushSessionSoon() {
   state.currentImagePath = state.pairs[state.currentIndex]?.imagePath || state.currentImagePath || "";
   state.galleryScrollTop = Math.max(0, Math.round(el.galleryScroll?.scrollTop || state.galleryScrollTop || 0));
   clearTimeout(sessionSaveTimer);
-  const poolLabelData = poolLabelSessionData();
-  if (Object.keys(poolLabelData).length) {
-    savePoolLabelSessionNow(poolLabelData).catch(error => console.warn("Pool label session flush failed:", error));
-  }
   saveSession({ manual: false }).catch(error => console.warn("Session flush failed:", error));
 }
 
@@ -375,9 +389,7 @@ async function saveSession({ manual = false } = {}) {
     }
     let path = "";
     if (usesWorkspaceSession()) {
-      const existing = await readWorkspaceSessionData();
-      const data = { ...existing, ...snapshot, inbox: existing.inbox };
-      path = await writeWorkspaceSessionData(data);
+      path = await updateWorkspaceSessionData(existing => ({ ...existing, ...snapshot, inbox: existing.inbox }));
       await rememberLastOpenedWorkspace(state.workspaceRoot);
     } else {
       path = await backendCall("writeSessionFile", JSON.stringify(snapshot, null, 2));
@@ -397,20 +409,17 @@ async function saveSession({ manual = false } = {}) {
 }
 
 async function savePoolLabelSessionNow(poolLabelData = null) {
+  const savedAt = new Date().toISOString();
   const snapshot = {
+    ...(poolLabelData || poolLabelSessionData()),
     workspaceRoot: state.workspaceRoot || "",
     datasetRoot: state.datasetBackendRoot || "",
-    savedAt: new Date().toISOString(),
-    ...(poolLabelData || poolLabelSessionData())
+    poolLabelSavedAt: savedAt
   };
   const hasPoolLabelPayload = Array.isArray(snapshot.poolLabelShortcuts)
     || Array.isArray(snapshot.poolLabelFixedBoxes)
     || snapshot.poolLabelPointerToolEnabled
     || snapshot.poolLabelAutoFitEnabled;
   if (!hasWorkspaceRoot() || !hasPoolLabelPayload || !await ensurePythonBackend()) return;
-  const existing = await readWorkspaceSessionData();
-  await writeWorkspaceSessionData({
-    ...existing,
-    ...snapshot
-  });
+  await updateWorkspaceSessionData(existing => ({ ...existing, ...snapshot }));
 }

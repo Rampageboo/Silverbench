@@ -10,10 +10,12 @@ const poolLabelState = {
   tracking: false,
   pointerToolEnabled: false,
   autoFitEnabled: false,
+  blackBoxToolEnabled: false,
   boxAdjustMode: "grow",
   keyboardAdjusting: false,
   cursorPoint: null,
-  crosshairPoint: null
+  crosshairPoint: null,
+  lastZoomCenter: null
 };
 const POOL_LABEL_SLOT_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
 const POOL_LABEL_SUBJECT_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Crect x='5.5' y='5.5' width='13' height='13' fill='none' stroke='%23ef4444' stroke-width='2'/%3E%3C/svg%3E") 12 12, crosshair`;
@@ -23,8 +25,8 @@ let poolLabelZoomCtx = null;
 function bindPoolLabelPageEvents() {
   el.poolLabelPointerToolBtn?.addEventListener("click", () => poolLabelTogglePointerTool());
   el.poolLabelAutoFitToolBtn?.addEventListener("click", () => poolLabelToggleAutoFit());
-  el.poolLabelGrowBoxBtn?.addEventListener("click", () => poolLabelSetBoxAdjustMode("grow"));
-  el.poolLabelShrinkBoxBtn?.addEventListener("click", () => poolLabelSetBoxAdjustMode("shrink"));
+  el.poolLabelBlackBoxToolBtn?.addEventListener("click", () => poolLabelToggleBlackBoxTool());
+  el.poolLabelAdjustModeBtn?.addEventListener("click", () => poolLabelToggleBoxAdjustMode());
   el.poolLabelTrackBtn?.addEventListener("click", () => poolLabelTrackForward().catch(showError));
   el.poolLabelCsrtBtn?.addEventListener("click", () => poolLabelTrackCsrtForward().catch(showError));
   el.poolLabelAddClassBtn?.addEventListener("click", () => poolLabelAddClass().catch(showError));
@@ -69,13 +71,28 @@ function poolLabelSetFixedShortcutMode(enabled) {
 
 function poolLabelTogglePointerTool() {
   poolLabelState.pointerToolEnabled = !poolLabelState.pointerToolEnabled;
-  if (poolLabelState.pointerToolEnabled) poolLabelState.autoFitEnabled = false;
+  if (poolLabelState.pointerToolEnabled) {
+    poolLabelState.autoFitEnabled = false;
+    poolLabelState.blackBoxToolEnabled = false;
+  }
   poolLabelAfterToolChange();
 }
 
 function poolLabelToggleAutoFit() {
   poolLabelState.autoFitEnabled = !poolLabelState.autoFitEnabled;
-  if (poolLabelState.autoFitEnabled) poolLabelState.pointerToolEnabled = false;
+  if (poolLabelState.autoFitEnabled) {
+    poolLabelState.pointerToolEnabled = false;
+    poolLabelState.blackBoxToolEnabled = false;
+  }
+  poolLabelAfterToolChange();
+}
+
+function poolLabelToggleBlackBoxTool() {
+  poolLabelState.blackBoxToolEnabled = !poolLabelState.blackBoxToolEnabled;
+  if (poolLabelState.blackBoxToolEnabled) {
+    poolLabelState.pointerToolEnabled = false;
+    poolLabelState.autoFitEnabled = false;
+  }
   poolLabelAfterToolChange();
 }
 
@@ -93,6 +110,7 @@ function poolLabelSyncCanvasModeClasses() {
   const active = isPoolLabelActive();
   el.app.classList.toggle("pool-label-pointer-tool", active && poolLabelState.pointerToolEnabled);
   el.app.classList.toggle("pool-label-subject-select", active && poolLabelState.autoFitEnabled);
+  el.app.classList.toggle("pool-label-black-box-tool", active && poolLabelState.blackBoxToolEnabled);
   if (el.canvas && active) el.canvas.style.cursor = poolLabelDefaultCursor();
 }
 
@@ -104,25 +122,6 @@ function poolLabelCursorForBoxHandle(handle) {
   return "move";
 }
 
-function poolLabelComputeDisplayRect(bitmap = state.currentImage) {
-  if (!bitmap || !el.canvas?.width || !el.canvas?.height) return null;
-  clampPreviewView();
-  const baseScale = Math.min(el.canvas.width / bitmap.width, el.canvas.height / bitmap.height, 1);
-  const scale = baseScale * state.viewZoom;
-  const w = Math.max(1, Math.floor(bitmap.width * scale));
-  const h = Math.max(1, Math.floor(bitmap.height * scale));
-  const x = Math.floor((el.canvas.width - w) / 2 + state.viewPanX);
-  const y = Math.floor((el.canvas.height - h) / 2 + state.viewPanY);
-  return { x, y, w, h, imageW: bitmap.width, imageH: bitmap.height };
-}
-
-function poolLabelEnsureDisplayRect() {
-  const rect = poolLabelComputeDisplayRect();
-  if (!rect) return false;
-  state.displayRect = rect;
-  return true;
-}
-
 function poolLabelSyncDisplayRect() {
   const bitmap = state.currentImage;
   if (!bitmap || !el.canvas?.parentElement) return false;
@@ -131,29 +130,45 @@ function poolLabelSyncDisplayRect() {
   const nextHeight = Math.max(1, Math.floor(canvasBox.height));
   if (el.canvas.width !== nextWidth) el.canvas.width = nextWidth;
   if (el.canvas.height !== nextHeight) el.canvas.height = nextHeight;
-  const rect = poolLabelComputeDisplayRect(bitmap);
-  if (!rect) return false;
-  state.displayRect = rect;
+  clampPreviewView();
+  const baseScale = Math.min(el.canvas.width / bitmap.width, el.canvas.height / bitmap.height, 1);
+  const scale = baseScale * state.viewZoom;
+  const w = Math.max(1, Math.floor(bitmap.width * scale));
+  const h = Math.max(1, Math.floor(bitmap.height * scale));
+  const x = Math.floor((el.canvas.width - w) / 2 + state.viewPanX);
+  const y = Math.floor((el.canvas.height - h) / 2 + state.viewPanY);
+  state.displayRect = { x, y, w, h, imageW: bitmap.width, imageH: bitmap.height };
   return true;
 }
 
 function poolLabelBoxToImageRect(box) {
-  const r = state.displayRect;
-  if (!r || !box) return null;
-  return {
-    x1: Math.round((box.x - box.w / 2) * r.imageW),
-    y1: Math.round((box.y - box.h / 2) * r.imageH),
-    x2: Math.round((box.x + box.w / 2) * r.imageW),
-    y2: Math.round((box.y + box.h / 2) * r.imageH)
-  };
+  return boxEditorBoxToImageRect(box, state.displayRect);
+}
+
+function poolLabelImagePixelsFromCanvas(px) {
+  return boxEditorCanvasPixelsToImagePixels(px, state.displayRect);
+}
+
+function poolLabelPointInImageRect(point, rect, pad = 0) {
+  return boxEditorPointInRect(point, rect, pad);
+}
+
+function poolLabelHitHandleAtImagePoint(point, rect) {
+  return boxEditorHitHandleAtImagePoint(point, rect, state.displayRect);
 }
 
 function poolLabelHitBoxAtEvent(event, boxes) {
-  poolLabelEnsureDisplayRect();
-  if (typeof hitBoxInteractionAtEvent === "function") {
-    return hitBoxInteractionAtEvent(event, boxes);
-  }
-  return { index: -1, handle: null };
+  poolLabelSyncDisplayRect();
+  const point = poolLabelPointerImagePointFromEvent(event);
+  if (!point || !Array.isArray(boxes) || !boxes.length) return { index: -1, handle: null };
+  const pad = Math.max(1, Math.round(poolLabelImagePixelsFromCanvas(2)));
+  const index = boxEditorBestHitIndexAtImagePoint(point, boxes, state.displayRect, pad);
+  if (index < 0) return { index: -1, handle: null };
+  const rect = poolLabelBoxToImageRect(boxes[index]);
+  return {
+    index,
+    handle: poolLabelHitHandleAtImagePoint(point, rect)
+  };
 }
 
 function poolLabelPreviewBoxes() {
@@ -188,7 +203,7 @@ function poolLabelScheduleOverlayRefresh(boxes) {
 }
 
 function poolLabelPointerImagePointFromEvent(event) {
-  poolLabelEnsureDisplayRect();
+  poolLabelSyncDisplayRect();
   if (typeof canvasToImageClamped === "function") return canvasToImageClamped(event);
   if (typeof canvasToImage === "function") return canvasToImage(event);
   return null;
@@ -201,32 +216,42 @@ function poolLabelAfterToolChange() {
   poolLabelSyncCanvasModeClasses();
   redrawPreviewOverlays();
   saveSessionSoon();
-  if (el.poolLabelStatus) {
-    const modeText = poolLabelState.pointerToolEnabled
-      ? "Pointer mode (V). Select, move, and resize boxes."
-      : poolLabelState.autoFitEnabled
-      ? "Subject Select (W). Click a color, or drag to limit the color search."
-      : "Manual box mode. V pointer, W subject select.";
-    const fixedText = Number.isInteger(poolLabelState.recordingFixedBoxSlot)
-      ? ` Recording fixed box ${poolLabelState.recordingFixedBoxSlot}.`
-      : "";
-    el.poolLabelStatus.textContent = `New class: ${classDisplay(poolLabelState.currentClassId)}. ${modeText} T copies, Shift+T CSRT. Hold Alt for fixed boxes.${fixedText}`;
-  }
+  updatePoolLabelPanel().catch(showError);
+}
+
+function poolLabelExitPointerToolOnly() {
+  if (!poolLabelState.pointerToolEnabled) return;
+  poolLabelState.pointerToolEnabled = false;
+  poolLabelState.cursorPoint = null;
+  poolLabelState.crosshairPoint = null;
+  poolLabelSyncPointerTool();
+  poolLabelSyncCanvasModeClasses();
+  redrawPreviewOverlays();
+  saveSessionSoon();
 }
 
 function poolLabelSwitchToDrawBoxTool() {
-  const changed = poolLabelState.pointerToolEnabled || poolLabelState.autoFitEnabled;
+  const changed = poolLabelState.pointerToolEnabled || poolLabelState.autoFitEnabled || poolLabelState.blackBoxToolEnabled;
   poolLabelState.pointerToolEnabled = false;
   poolLabelState.autoFitEnabled = false;
+  poolLabelState.blackBoxToolEnabled = false;
   poolLabelState.cursorPoint = null;
   poolLabelState.crosshairPoint = null;
   poolLabelSyncPointerTool();
   poolLabelSyncAutoFitTool();
+  poolLabelSyncBlackBoxTool();
   poolLabelSyncCanvasModeClasses();
   if (changed) {
     redrawPreviewOverlays();
     saveSessionSoon();
   }
+}
+
+function poolLabelSelectionTooSmall(selection, { allowAutoFitClick = false } = {}) {
+  const w = selection.x2 - selection.x1;
+  const h = selection.y2 - selection.y1;
+  if (allowAutoFitClick && w < 2 && h < 2) return false;
+  return w < 2 || h < 2;
 }
 
 function poolLabelSaveSessionNow() {
@@ -249,8 +274,15 @@ function poolLabelSyncAutoFitTool() {
   if (!el.poolLabelAutoFitToolBtn) return;
   el.poolLabelAutoFitToolBtn.classList.toggle("active", poolLabelState.autoFitEnabled);
   el.poolLabelAutoFitToolBtn.setAttribute("aria-pressed", poolLabelState.autoFitEnabled ? "true" : "false");
+  poolLabelSyncBlackBoxTool();
   poolLabelSyncBoxAdjustTool();
   poolLabelSyncCanvasModeClasses();
+}
+
+function poolLabelSyncBlackBoxTool() {
+  if (!el.poolLabelBlackBoxToolBtn) return;
+  el.poolLabelBlackBoxToolBtn.classList.toggle("active", poolLabelState.blackBoxToolEnabled);
+  el.poolLabelBlackBoxToolBtn.setAttribute("aria-pressed", poolLabelState.blackBoxToolEnabled ? "true" : "false");
 }
 
 function poolLabelSetBoxAdjustMode(mode) {
@@ -259,26 +291,47 @@ function poolLabelSetBoxAdjustMode(mode) {
   saveSessionSoon();
 }
 
+function poolLabelToggleBoxAdjustMode() {
+  poolLabelSetBoxAdjustMode(poolLabelState.boxAdjustMode === "shrink" ? "grow" : "shrink");
+}
+
 function poolLabelSyncBoxAdjustTool() {
   const grow = poolLabelState.boxAdjustMode !== "shrink";
-  el.poolLabelGrowBoxBtn?.classList.toggle("active", grow);
-  el.poolLabelGrowBoxBtn?.setAttribute("aria-pressed", grow ? "true" : "false");
-  el.poolLabelShrinkBoxBtn?.classList.toggle("active", !grow);
-  el.poolLabelShrinkBoxBtn?.setAttribute("aria-pressed", grow ? "false" : "true");
+  const button = el.poolLabelAdjustModeBtn;
+  if (!button) return;
+  button.dataset.mode = grow ? "grow" : "shrink";
+  button.title = grow ? "Box adjust: grow (Numpad +/-)" : "Box adjust: shrink (Numpad +/-)";
+  button.setAttribute("aria-label", grow ? "Box adjust mode: grow" : "Box adjust mode: shrink");
 }
 
 function poolLabelDefaultCursor() {
   if (poolLabelState.pointerToolEnabled) return "default";
+  if (poolLabelState.blackBoxToolEnabled) return "crosshair";
   return poolLabelState.autoFitEnabled ? POOL_LABEL_SUBJECT_CURSOR : "crosshair";
+}
+
+function poolLabelRememberZoomCenter(point) {
+  if (!point) return;
+  poolLabelState.lastZoomCenter = { x: point.x, y: point.y };
 }
 
 function poolLabelUpdateCursorPoint(event) {
   poolLabelState.crosshairPoint = canvasToImage(event);
   poolLabelState.cursorPoint = poolLabelPointerImagePoint(event);
+  if (poolLabelState.cursorPoint) poolLabelRememberZoomCenter(poolLabelState.cursorPoint);
   if (!poolLabelState.cursorPoint && !poolLabelState.crosshairPoint) return;
   if (poolLabelState.autoFitEnabled && !state.boxDrag && !state.viewPanDrag) {
     el.canvas.style.cursor = poolLabelDefaultCursor();
   }
+}
+
+function poolLabelRefreshCursorAfterPointer(event) {
+  if (event?.type === "pointerleave") {
+    poolLabelClearCursorGuide();
+    return;
+  }
+  if (!event) return;
+  poolLabelUpdateCursorPoint(event);
 }
 
 function poolLabelPointerImagePoint(event) {
@@ -305,7 +358,7 @@ function poolLabelClearCursorGuide() {
 }
 
 function drawPoolLabelAxisGuide() {
-  if (!isPoolLabelActive() || poolLabelState.autoFitEnabled || !poolLabelState.crosshairPoint) return;
+  if (!isPoolLabelActive() || poolLabelState.pointerToolEnabled || poolLabelState.autoFitEnabled || !poolLabelState.crosshairPoint) return;
   if (!state.displayRect || state.boxDrag || state.viewPanDrag) return;
   const r = state.displayRect;
   const point = poolLabelState.crosshairPoint;
@@ -341,7 +394,7 @@ function poolLabelZoomShouldDraw() {
 }
 
 function poolLabelZoomCenterPoint() {
-  return poolLabelState.cursorPoint;
+  return poolLabelState.cursorPoint || poolLabelState.lastZoomCenter;
 }
 
 function poolLabelFillZoomCanvas(zoomCtx) {
@@ -351,7 +404,7 @@ function poolLabelFillZoomCanvas(zoomCtx) {
 
 function poolLabelSyncZoomClassLabel() {
   if (!el.poolLabelZoomClass) return;
-  el.poolLabelZoomClass.textContent = poolLabelZoomSideActive()
+  el.poolLabelZoomClass.textContent = poolLabelZoomShouldDraw()
     ? poolLabelZoomClassLabel()
     : "";
 }
@@ -506,7 +559,7 @@ function drawPoolLabelZoomView() {
   poolLabelDrawZoomBoxes(zoomCtx, poolLabelPreviewBoxes(), sourceRect);
 
   if (state.selection) {
-    poolLabelDrawZoomRect(zoomCtx, state.selection, sourceRect, "#2563eb", true);
+    poolLabelDrawZoomRect(zoomCtx, state.selection, sourceRect, poolLabelState.blackBoxToolEnabled ? "#ef4444" : "#2563eb", true);
   }
 
   poolLabelDrawZoomFullCrosshair(
@@ -615,6 +668,7 @@ async function onPoolLabelPointerMove(event) {
   if (state.dragStart) {
     poolLabelState.cursorPoint = poolLabelPointerImagePoint(event);
     poolLabelState.crosshairPoint = canvasToImage(event) || poolLabelState.cursorPoint;
+    if (poolLabelState.cursorPoint) poolLabelRememberZoomCenter(poolLabelState.cursorPoint);
     if (!poolLabelState.cursorPoint) return;
     const point = poolLabelState.crosshairPoint || poolLabelState.cursorPoint;
     state.selection = normalizeRect(state.dragStart, point);
@@ -624,9 +678,9 @@ async function onPoolLabelPointerMove(event) {
   poolLabelUpdateCursorPoint(event);
   if (poolLabelState.pointerToolEnabled) {
     poolLabelUpdateBoxCursor(event);
-  } else {
-    el.canvas.style.cursor = poolLabelDefaultCursor();
+    return;
   }
+  el.canvas.style.cursor = poolLabelDefaultCursor();
   redrawPreviewOverlays();
 }
 
@@ -639,9 +693,9 @@ async function onPoolLabelPointerUp(event) {
   }
   if (state.viewPanDrag) {
     state.viewPanDrag = null;
-    poolLabelState.cursorPoint = null;
-    poolLabelState.crosshairPoint = null;
+    poolLabelRefreshCursorAfterPointer(event);
     el.canvas.style.cursor = poolLabelDefaultCursor();
+    redrawPreviewOverlays();
     return;
   }
   const pair = state.pairs[state.currentIndex];
@@ -650,10 +704,10 @@ async function onPoolLabelPointerUp(event) {
     const dragIndex = drag.index;
     const boxes = pair ? state.labelEdits.get(pair.imagePath) : null;
     state.boxDrag = null;
-    poolLabelState.cursorPoint = null;
-    poolLabelState.crosshairPoint = null;
+    poolLabelRefreshCursorAfterPointer(event);
     if (pair && boxes && drag.moved) {
       let synced = 0;
+      redrawPreviewOverlays();
       await persistLabelBoxes(pair, boxes);
       if (boxes[dragIndex]) synced = await poolLabelSyncBoxToSelected(pair, boxes[dragIndex], "sync edited box");
       await poolLabelRefreshAfterEdit(poolLabelSyncMessage("", synced));
@@ -662,6 +716,7 @@ async function onPoolLabelPointerUp(event) {
     poolLabelScheduleOverlayRefresh(poolLabelPreviewBoxes());
     if (poolLabelState.pointerToolEnabled) poolLabelUpdateBoxCursor(event);
     else el.canvas.style.cursor = poolLabelDefaultCursor();
+    redrawPreviewOverlays();
     updatePoolLabelPanel().catch(showError);
     return;
   }
@@ -673,12 +728,18 @@ async function onPoolLabelPointerUp(event) {
   state.dragStart = null;
   const selection = state.selection;
   state.selection = null;
-  poolLabelState.cursorPoint = null;
-  poolLabelState.crosshairPoint = null;
-  const shouldAutoFit = poolLabelState.autoFitEnabled && !event?.shiftKey;
-  if (!pair || !selection || (!shouldAutoFit && (selection.x2 - selection.x1 < 2 || selection.y2 - selection.y1 < 2))) {
+  poolLabelRefreshCursorAfterPointer(event);
+  redrawPreviewOverlays();
+  const shouldBlackBox = poolLabelState.blackBoxToolEnabled;
+  const shouldAutoFit = poolLabelState.autoFitEnabled && !event?.shiftKey && !shouldBlackBox;
+  const tooSmall = poolLabelSelectionTooSmall(selection, { allowAutoFitClick: shouldAutoFit });
+  if (!pair || !selection || tooSmall) {
     await renderCurrentImage();
     await updatePoolLabelPanel();
+    return;
+  }
+  if (shouldBlackBox) {
+    await poolLabelApplyBlackBoxSelection(pair, selection);
     return;
   }
   const boxes = await editableBoxesFor(pair);
@@ -837,14 +898,7 @@ async function poolLabelKeyboardAdjustSelectedBox(event, { arrowDelta, numpadDig
 }
 
 function poolLabelMoveImageRect(rect, dx, dy) {
-  const maxW = state.displayRect.imageW;
-  const maxH = state.displayRect.imageH;
-  const w = rect.x2 - rect.x1;
-  const h = rect.y2 - rect.y1;
-  rect.x1 = Math.max(0, Math.min(maxW - w, rect.x1 + dx));
-  rect.y1 = Math.max(0, Math.min(maxH - h, rect.y1 + dy));
-  rect.x2 = rect.x1 + w;
-  rect.y2 = rect.y1 + h;
+  boxEditorMoveRect(rect, dx, dy, state.displayRect.imageW, state.displayRect.imageH);
 }
 
 function poolLabelResizeImageRectByNumpad(rect, digit, step) {
@@ -858,21 +912,21 @@ function poolLabelResizeImageRectByNumpad(rect, digit, step) {
   const handles = handlesByDigit[digit];
   if (!handles) return;
   const grow = poolLabelState.boxAdjustMode !== "shrink";
-  const maxW = state.displayRect.imageW;
-  const maxH = state.displayRect.imageH;
-  const minSize = 2;
-  if (handles.includes("w")) rect.x1 = grow
-    ? Math.max(0, rect.x1 - step)
-    : Math.min(rect.x2 - minSize, rect.x1 + step);
-  if (handles.includes("e")) rect.x2 = grow
-    ? Math.min(maxW, rect.x2 + step)
-    : Math.max(rect.x1 + minSize, rect.x2 - step);
-  if (handles.includes("n")) rect.y1 = grow
-    ? Math.max(0, rect.y1 - step)
-    : Math.min(rect.y2 - minSize, rect.y1 + step);
-  if (handles.includes("s")) rect.y2 = grow
-    ? Math.min(maxH, rect.y2 + step)
-    : Math.max(rect.y1 + minSize, rect.y2 - step);
+  boxEditorResizeRectByEdges(rect, handles, grow, step, state.displayRect.imageW, state.displayRect.imageH);
+}
+
+async function poolLabelApplyBlackBoxSelection(pair, selection) {
+  if (!pair || !selection) return;
+  if (typeof addPendingBlackToPair !== "function" || typeof applyBlackEditsForPair !== "function") {
+    throw new Error("Black box editing is not available.");
+  }
+  addPendingBlackToPair(pair, selection);
+  const count = await applyBlackEditsForPair(pair);
+  if (typeof updatePendingStatus === "function") updatePendingStatus();
+  if (typeof renderCurrentPendingList === "function") renderCurrentPendingList();
+  await renderCurrentImage();
+  renderGallery();
+  await updatePoolLabelPanel(count ? `Applied ${count} black box(es).` : "No black box applied.");
 }
 
 function poolLabelRectsEqual(a, b) {
@@ -892,7 +946,6 @@ async function poolLabelAssignClass(classId, options = {}) {
   if (document.activeElement?.closest?.(".pool-label-tools, .pool-label-class-list")) {
     document.activeElement.blur();
   }
-  poolLabelSwitchToDrawBoxTool();
   const pair = state.pairs[state.currentIndex];
   if (pair && state.selectedBoxIndex !== null) {
     const boxes = await editableBoxesFor(pair);
@@ -906,6 +959,7 @@ async function poolLabelAssignClass(classId, options = {}) {
       return;
     }
   }
+  poolLabelExitPointerToolOnly();
   await updatePoolLabelPanel(`Class ${classDisplay(classId)} selected for new boxes.`);
 }
 
@@ -985,7 +1039,6 @@ async function poolLabelUseFixedBoxSlot(slot) {
   poolLabelPushUndo(pair, boxes, "fixed box");
   boxes.push(box);
   state.selectedBoxIndex = boxes.length - 1;
-  poolLabelState.currentClassId = box.classId;
   poolLabelState.activeShortcutSlot = null;
   poolLabelState.activeFixedBoxSlot = slot;
   populateBoxEditor(box);
@@ -1741,6 +1794,8 @@ async function updatePoolLabelPanel(message = "") {
   poolLabelSyncAutoFitTool();
   const modeText = poolLabelState.pointerToolEnabled
     ? "Pointer mode (V). Select, move, and resize boxes."
+    : poolLabelState.blackBoxToolEnabled
+    ? "Black box mode. Drag to paint a black rectangle into the image."
     : poolLabelState.autoFitEnabled
     ? "Subject Select (W). Click a color, or drag to limit the color search."
     : "Manual box mode. V pointer, W subject select.";

@@ -244,18 +244,9 @@
       const maxW = state.displayRect.imageW;
       const maxH = state.displayRect.imageH;
       if (drag.handle === "move") {
-        const w = rect.x2 - rect.x1;
-        const h = rect.y2 - rect.y1;
-        rect.x1 = Math.max(0, Math.min(maxW - w, rect.x1 + dx));
-        rect.y1 = Math.max(0, Math.min(maxH - h, rect.y1 + dy));
-        rect.x2 = rect.x1 + w;
-        rect.y2 = rect.y1 + h;
+        boxEditorMoveRect(rect, dx, dy, maxW, maxH);
       } else {
-        const minSize = 2;
-        if (drag.handle.includes("w")) rect.x1 = Math.max(0, Math.min(rect.x2 - minSize, rect.x1 + dx));
-        if (drag.handle.includes("e")) rect.x2 = Math.min(maxW, Math.max(rect.x1 + minSize, rect.x2 + dx));
-        if (drag.handle.includes("n")) rect.y1 = Math.max(0, Math.min(rect.y2 - minSize, rect.y1 + dy));
-        if (drag.handle.includes("s")) rect.y2 = Math.min(maxH, Math.max(rect.y1 + minSize, rect.y2 + dy));
+        boxEditorResizeRectByHandle(rect, drag.handle, dx, dy, maxW, maxH);
       }
       normalizeImageRectInPlace(rect);
       boxes[drag.index] = rectToBox(rect, boxes[drag.index].classId);
@@ -270,53 +261,11 @@
     }
 
     function boxToImageRect(box) {
-      const imageW = state.displayRect.imageW;
-      const imageH = state.displayRect.imageH;
-      return {
-        x1: Math.round((box.x - box.w / 2) * imageW),
-        y1: Math.round((box.y - box.h / 2) * imageH),
-        x2: Math.round((box.x + box.w / 2) * imageW),
-        y2: Math.round((box.y + box.h / 2) * imageH)
-      };
+      return boxEditorBoxToImageRect(box, state.displayRect);
     }
 
     function rectToBox(rect, classId) {
-      const imageW = state.displayRect.imageW;
-      const imageH = state.displayRect.imageH;
-      return {
-        classId: Number.isFinite(classId) ? classId : 0,
-        x: clamp01(((rect.x1 + rect.x2) / 2) / imageW),
-        y: clamp01(((rect.y1 + rect.y2) / 2) / imageH),
-        w: clamp01((rect.x2 - rect.x1) / imageW),
-        h: clamp01((rect.y2 - rect.y1) / imageH)
-      };
-    }
-
-    function hitBoxHandle(point, rect) {
-      const handles = boxHandlePointsImage(rect);
-      const tolerance = Math.max(8, Math.round(canvasPixelsToImagePixels(10)));
-      let best = null;
-      let bestDistance = Infinity;
-      for (const [name, x, y] of handles) {
-        if (Math.abs(point.x - x) <= tolerance && Math.abs(point.y - y) <= tolerance) return name;
-        const distance = Math.hypot(point.x - x, point.y - y);
-        if (distance < bestDistance) {
-          best = name;
-          bestDistance = distance;
-        }
-      }
-      return bestDistance <= tolerance * 1.25 ? best : null;
-    }
-
-    function boxHandlePointsImage(rect) {
-      const midX = (rect.x1 + rect.x2) / 2;
-      const midY = (rect.y1 + rect.y2) / 2;
-      return [
-        ["nw", rect.x1, rect.y1], ["ne", rect.x2, rect.y1],
-        ["sw", rect.x1, rect.y2], ["se", rect.x2, rect.y2],
-        ["n", midX, rect.y1], ["s", midX, rect.y2],
-        ["w", rect.x1, midY], ["e", rect.x2, midY]
-      ];
+      return boxEditorRectToBox(rect, classId, state.displayRect);
     }
 
     function canvasEventPoint(event) {
@@ -328,23 +277,15 @@
     }
 
     function imagePointToCanvas(point) {
-      const r = state.displayRect;
-      return {
-        x: r.x + point.x * r.w / r.imageW,
-        y: r.y + point.y * r.h / r.imageH
-      };
+      return boxEditorImagePointToCanvas(point, state.displayRect);
     }
 
     function imageRectToCanvasRect(rect) {
-      const a = imagePointToCanvas({ x: rect.x1, y: rect.y1 });
-      const b = imagePointToCanvas({ x: rect.x2, y: rect.y2 });
-      return { x1: a.x, y1: a.y, x2: b.x, y2: b.y };
+      return boxEditorImageRectToCanvasRect(rect, state.displayRect);
     }
 
     function canvasPixelsToImagePixels(px) {
-      const r = state.displayRect;
-      if (!r || !r.w || !r.h) return px;
-      return px * Math.max(r.imageW / r.w, r.imageH / r.h);
+      return boxEditorCanvasPixelsToImagePixels(px, state.displayRect);
     }
 
     function hitBoxInteractionAtEvent(event, boxes) {
@@ -355,115 +296,20 @@
       return { index, handle: handle || "move" };
     }
 
-    function canvasRectInterior(canvasRect, inset) {
-      const left = Math.min(canvasRect.x1, canvasRect.x2);
-      const right = Math.max(canvasRect.x1, canvasRect.x2);
-      const top = Math.min(canvasRect.y1, canvasRect.y2);
-      const bottom = Math.max(canvasRect.y1, canvasRect.y2);
-      return { x1: left + inset, y1: top + inset, x2: right - inset, y2: bottom - inset };
-    }
-
     function hitBoxHandleAtCanvasPoint(point, rect) {
-      const canvasRect = imageRectToCanvasRect(rect);
-      const w = Math.abs(canvasRect.x2 - canvasRect.x1);
-      const h = Math.abs(canvasRect.y2 - canvasRect.y1);
-      const cornerTolerance = w < 24 || h < 24 ? 6 : 11;
-      const handles = editBoxHandlePointsCanvas(canvasRect);
-      let best = null;
-      let bestDistance = Infinity;
-      for (const [name, x, y] of handles) {
-        const distance = Math.hypot(point.x - x, point.y - y);
-        if (distance <= cornerTolerance && distance < bestDistance) {
-          best = name;
-          bestDistance = distance;
-        }
-      }
-      if (best) return best;
-      const interior = canvasRectInterior(canvasRect, cornerTolerance + 2);
-      if (interior.x2 > interior.x1 && interior.y2 > interior.y1 && pointInCanvasRect(point, interior)) return null;
-      return hitBoxEdgeAtCanvasPoint(point, canvasRect, cornerTolerance);
-    }
-
-    function editBoxHandlePointsCanvas(rect) {
-      const midX = (rect.x1 + rect.x2) / 2;
-      const midY = (rect.y1 + rect.y2) / 2;
-      return [
-        ["nw", rect.x1, rect.y1], ["ne", rect.x2, rect.y1],
-        ["sw", rect.x1, rect.y2], ["se", rect.x2, rect.y2],
-        ["n", midX, rect.y1], ["s", midX, rect.y2],
-        ["w", rect.x1, midY], ["e", rect.x2, midY]
-      ];
-    }
-
-    function hitBoxEdgeAtCanvasPoint(point, rect, tolerance) {
-      const left = Math.min(rect.x1, rect.x2);
-      const right = Math.max(rect.x1, rect.x2);
-      const top = Math.min(rect.y1, rect.y2);
-      const bottom = Math.max(rect.y1, rect.y2);
-      const nearX = point.x >= left - tolerance && point.x <= right + tolerance;
-      const nearY = point.y >= top - tolerance && point.y <= bottom + tolerance;
-      const candidates = [];
-      if (nearX) {
-        candidates.push(["n", Math.abs(point.y - top)]);
-        candidates.push(["s", Math.abs(point.y - bottom)]);
-      }
-      if (nearY) {
-        candidates.push(["w", Math.abs(point.x - left)]);
-        candidates.push(["e", Math.abs(point.x - right)]);
-      }
-      candidates.sort((a, b) => a[1] - b[1]);
-      return candidates[0]?.[1] <= tolerance ? candidates[0][0] : null;
+      return boxEditorHitHandleAtCanvasPoint(point, rect, state.displayRect);
     }
 
     function normalizeImageRectInPlace(rect) {
-      if (rect.x1 > rect.x2) [rect.x1, rect.x2] = [rect.x2, rect.x1];
-      if (rect.y1 > rect.y2) [rect.y1, rect.y2] = [rect.y2, rect.y1];
+      boxEditorNormalizeRectInPlace(rect);
     }
 
     function hitBoxIndexAtPoint(point, boxes) {
-      let bestIndex = -1;
-      let bestArea = Infinity;
-      for (let index = boxes.length - 1; index >= 0; index--) {
-        const rect = boxToImageRect(boxes[index]);
-        if (!pointInRect(point, rect)) continue;
-        const area = rectArea(rect);
-        if (area < bestArea) {
-          bestArea = area;
-          bestIndex = index;
-        }
-      }
-      return bestIndex;
+      return boxEditorBestHitIndexAtImagePoint(point, boxes, state.displayRect);
     }
 
     function hitBoxIndexAtCanvasPoint(point, boxes) {
-      let bestIndex = -1;
-      let bestArea = Infinity;
-      for (let index = boxes.length - 1; index >= 0; index--) {
-        const rect = imageRectToCanvasRect(boxToImageRect(boxes[index]));
-        if (!pointInCanvasRect(point, rect)) continue;
-        const area = rectArea(rect);
-        if (area < bestArea) {
-          bestArea = area;
-          bestIndex = index;
-        }
-      }
-      return bestIndex;
-    }
-
-    function rectArea(rect) {
-      return Math.abs((rect.x2 - rect.x1) * (rect.y2 - rect.y1));
-    }
-
-    function pointInRect(point, rect) {
-      return point.x >= rect.x1 && point.x <= rect.x2 && point.y >= rect.y1 && point.y <= rect.y2;
-    }
-
-    function pointInCanvasRect(point, rect) {
-      const pad = 3;
-      return point.x >= Math.min(rect.x1, rect.x2) - pad
-        && point.x <= Math.max(rect.x1, rect.x2) + pad
-        && point.y >= Math.min(rect.y1, rect.y2) - pad
-        && point.y <= Math.max(rect.y1, rect.y2) + pad;
+      return boxEditorBestHitIndexAtCanvasPoint(point, boxes, state.displayRect);
     }
 
     async function updateSelectedBox() {

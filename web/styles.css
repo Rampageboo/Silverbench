@@ -825,10 +825,18 @@
 	      stroke-linecap: round;
 	      stroke-linejoin: round;
 	    }
+	    #poolLabelBlackBoxToolBtn rect {
+	      fill: currentColor;
+	    }
 	    .pool-label-adjust-tool {
-	      font-size: 20px;
-	      font-weight: 700;
-	      line-height: 1;
+	      position: relative;
+	    }
+	    .pool-label-adjust-icon {
+	      display: none;
+	    }
+	    .pool-label-adjust-tool[data-mode="grow"] .pool-label-adjust-icon-grow,
+	    .pool-label-adjust-tool[data-mode="shrink"] .pool-label-adjust-icon-shrink {
+	      display: block;
 	    }
 	    .pool-label-icon-tool.active {
 	      border-color: var(--blue);

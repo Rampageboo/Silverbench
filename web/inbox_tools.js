@@ -211,7 +211,10 @@ function inboxPairsCacheKey() {
 function inboxIsUnusedForDataset(filename) {
   const sideState = inboxMetadataSideState(filename);
   const poolMeta = imagePoolState.metaByFile.get(filename);
-  return !sideState.detectInUse && !sideState.clfInUse && !poolMeta?.isUsed;
+  return !sideState.detectInUse
+    && !sideState.clfInUse
+    && !poolMeta?.isUsed
+    && !isInboxJunkFile(filename);
 }
 
 function inboxHasNoAssignmentMetadata(filename) {

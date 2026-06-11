@@ -19,6 +19,7 @@ const APP_SCRIPTS = [
   "inbox_tools.js",
   "junk_actions.js",
   "yolo_view_modes.js",
+  "box_editor_core.js",
   "annotation_editor.js",
   "pool_label.js",
   "classifier_tools.js",
