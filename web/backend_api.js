@@ -36,6 +36,7 @@ function wrapQtBackendBridge(raw) {
 
 function initPythonBackend() {
   if (pyBackend.readyPromise) return pyBackend.readyPromise;
+  window.setStartupProgress?.(90, "Connecting backend...", "Pinging Python backend");
   if (location.protocol === "http:" || location.protocol === "https:") {
     pyBackend.readyPromise = fetch("/api", {
       method: "POST",
@@ -51,28 +52,38 @@ function initPythonBackend() {
         if (ready) {
           startHttpBackendHeartbeat();
           setStatus("Local backend connected.");
-          restoreLastOpenedFolderOnStartup().catch(error => console.warn("Folder restore:", error));
+          window.setStartupProgress?.(95, "Restoring workspace...", "Loading previous workspace state");
+          restoreLastOpenedFolderOnStartup()
+            .catch(error => console.warn("Folder restore:", error))
+            .finally(() => window.finishStartupOverlay?.("Local backend connected"));
+        } else {
+          window.finishStartupOverlay?.("Backend unavailable");
         }
         return ready;
       })
       .catch(() => {
+        window.finishStartupOverlay?.("Backend unavailable");
         return false;
       });
     return pyBackend.readyPromise;
   }
   pyBackend.readyPromise = new Promise(resolve => {
     if (!window.qt || !window.QWebChannel) {
+      window.finishStartupOverlay?.("Backend unavailable");
       resolve(false);
       return;
     }
+    window.setStartupProgress?.(92, "Connecting backend...", "Opening Qt web channel");
     new QWebChannel(qt.webChannelTransport, channel => {
       const raw = channel.objects.backend;
       pyBackend.bridge = raw?.apiCall ? wrapQtBackendBridge(raw) : raw;
       pyBackend.ready = Boolean(pyBackend.bridge);
       if (!pyBackend.ready) {
+        window.finishStartupOverlay?.("Backend unavailable");
         resolve(false);
         return;
       }
+      window.setStartupProgress?.(94, "Connecting backend...", "Pinging Qt backend");
       pyBackend.bridge.ping(result => {
         const ready = result === "python-backend-ready";
         pyBackend.ready = ready;
@@ -80,7 +91,12 @@ function initPythonBackend() {
           setStatus("Python backend connected.");
           const browserBtn = document.getElementById("openBrowserWebBtn");
           if (browserBtn) browserBtn.hidden = false;
-          restoreLastOpenedFolderOnStartup().catch(error => console.warn("Folder restore:", error));
+          window.setStartupProgress?.(96, "Restoring workspace...", "Loading previous workspace state");
+          restoreLastOpenedFolderOnStartup()
+            .catch(error => console.warn("Folder restore:", error))
+            .finally(() => window.finishStartupOverlay?.("Python backend connected"));
+        } else {
+          window.finishStartupOverlay?.("Backend unavailable");
         }
         resolve(ready);
       });

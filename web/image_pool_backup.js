@@ -4,29 +4,35 @@ function isImagePoolWorkspacePair(pair) {
     && pair?.imagePath?.startsWith("image_pool/");
 }
 
+function imageEditBackupRoot() {
+  return state.datasetBackendRoot || state.workspaceRoot || "";
+}
+
 async function ensureImagePoolBackupBeforeEdit(pair, editMode = "") {
-  if (!isImagePoolWorkspacePair(pair)) return false;
+  const root = imageEditBackupRoot();
+  if (!root || !pair?.imagePath) return false;
   if (!await ensurePythonBackend()) return false;
   try {
-    await backendCall("ensureImagePoolBackup", state.workspaceRoot, pair.imagePath);
-    if (editMode === "crop" && pair.labelPath?.startsWith("detect_labels/")) {
-      await backendCall("ensureImagePoolLabelBackup", state.workspaceRoot, pair.labelPath);
+    await backendCall("ensureImagePoolBackup", root, pair.imagePath);
+    if (editMode === "crop" && pair.labelPath) {
+      await backendCall("ensureImagePoolLabelBackup", root, pair.labelPath);
     }
     return true;
   } catch (error) {
-    console.warn("Image pool backup failed:", error);
+    console.warn("Image edit backup failed:", error);
     return false;
   }
 }
 
 async function restoreImagePoolPairFromBackup(pair) {
-  if (!isImagePoolWorkspacePair(pair)) return null;
+  const root = imageEditBackupRoot();
+  if (!root || !pair?.imagePath) return null;
   if (!await ensurePythonBackend()) {
     alert("需要 Python 后端。");
     return null;
   }
   const result = JSON.parse(
-    await backendCall("restoreImagePoolBackup", state.workspaceRoot, pair.imagePath)
+    await backendCall("restoreImagePoolBackup", root, pair.imagePath)
   );
   if (!result?.ok) return null;
 

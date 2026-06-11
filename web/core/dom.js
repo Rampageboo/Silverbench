@@ -154,6 +154,7 @@ function buildEl(topbarControls) {
     poolLabelPointerToolBtn: document.getElementById("poolLabelPointerToolBtn"),
     poolLabelAutoFitToolBtn: document.getElementById("poolLabelAutoFitToolBtn"),
     poolLabelBlackBoxToolBtn: document.getElementById("poolLabelBlackBoxToolBtn"),
+    poolLabelRestoreBackupBtn: document.getElementById("poolLabelRestoreBackupBtn"),
     poolLabelAdjustModeBtn: document.getElementById("poolLabelAdjustModeBtn"),
     poolLabelTrackBtn: document.getElementById("poolLabelTrackBtn"),
     poolLabelCsrtBtn: document.getElementById("poolLabelCsrtBtn"),

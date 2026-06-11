@@ -7,6 +7,20 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <div id="startupOverlay" class="startup-overlay" role="status" aria-live="polite">
+    <section class="startup-panel" aria-label="YoloWorkBench startup">
+      <div class="startup-brand-mark">YWB</div>
+      <div class="startup-copy">
+        <h1>YoloWorkBench</h1>
+        <p id="startupStage">Preparing workspace...</p>
+      </div>
+      <progress id="startupProgress" value="0" max="100"></progress>
+      <div class="startup-progress-row">
+        <span id="startupDetail">Loading shell</span>
+        <span id="startupPercent">0%</span>
+      </div>
+    </section>
+  </div>
 		  <div class="app video" id="app">
 		    <nav class="tabbar">
 			      <div class="brand">YoloWorkBench</div>
@@ -32,6 +46,7 @@
 		        </div>
 		      </div>
 		      <div class="status" id="status">Open or drop a video. With a workspace bound, screenshots save to image_pool by default.</div>
+		      <div class="topbar-progress" id="topbarProgress" hidden><div id="topbarProgressFill"></div></div>
 		    </header>
 
 	    <main class="image-pool-workspace">
@@ -304,6 +319,14 @@
             <button id="poolLabelBlackBoxToolBtn" class="pool-label-icon-tool" type="button" title="Black box" aria-label="Black box" aria-pressed="false">
               <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
                 <rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor" stroke="currentColor" />
+              </svg>
+            </button>
+            <button id="poolLabelRestoreBackupBtn" class="pool-label-icon-tool danger" type="button" title="Restore Backup" aria-label="Restore Backup">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <path d="M3 12a9 9 0 1 0 3-6.7" />
+                <path d="M3 4v6h6" />
+                <path d="M8 12h8" />
+                <path d="M12 8v8" />
               </svg>
             </button>
             <button id="poolLabelAdjustModeBtn" class="pool-label-icon-tool active pool-label-adjust-tool" type="button" title="Box adjust: grow (Numpad +/-)" aria-label="Box adjust mode: grow" data-mode="grow">

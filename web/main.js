@@ -33,6 +33,44 @@ const APP_SCRIPTS = [
   "image_preview_lightbox.js"
 ];
 
+const startupUi = {
+  overlay: document.getElementById("startupOverlay"),
+  progress: document.getElementById("startupProgress"),
+  stage: document.getElementById("startupStage"),
+  detail: document.getElementById("startupDetail"),
+  percent: document.getElementById("startupPercent"),
+  value: 0,
+  hidden: false
+};
+window.startupUi = startupUi;
+
+function setStartupProgress(value, stage, detail) {
+  const requested = Math.max(0, Math.min(100, Math.round(value)));
+  const current = startupUi.value || 0;
+  if (requested < current) return;
+  const percent = Math.max(current, requested);
+  startupUi.value = percent;
+  if (startupUi.progress) startupUi.progress.value = percent;
+  if (startupUi.percent) startupUi.percent.textContent = `${percent}%`;
+  if (stage && startupUi.stage) startupUi.stage.textContent = stage;
+  if (detail && startupUi.detail) startupUi.detail.textContent = detail;
+}
+
+function finishStartupOverlay(detail = "Ready") {
+  if (startupUi.hidden) return;
+  startupUi.hidden = true;
+  setStartupProgress(100, "Ready", detail);
+  window.setTimeout(() => {
+    startupUi.overlay?.classList.add("is-done");
+    window.setTimeout(() => {
+      if (startupUi.overlay) startupUi.overlay.hidden = true;
+    }, 280);
+  }, 180);
+}
+
+window.setStartupProgress = setStartupProgress;
+window.finishStartupOverlay = finishStartupOverlay;
+
 function purgeLegacyLocalBrowserSessions() {
   try {
     const prefix = "yolo_label_viewer_session:";
@@ -83,20 +121,27 @@ function reportBootFailure(error) {
   const log = document.getElementById("videoLog");
   const message = `Failed to load app scripts: ${error.message}`;
   console.error(message, error);
+  setStartupProgress(startupUi.value || 1, "Startup failed", error.message || "Failed to load application module");
   if (log) log.textContent = message;
 }
 
 async function boot() {
   installGlobalErrorHandlers();
   purgeLegacyLocalBrowserSessions();
+  setStartupProgress(5, "Preparing workspace...", "Clearing stale browser session data");
 
   if (window.qt) {
+    setStartupProgress(8, "Loading application shell...", "Loading Qt web channel");
     await loadClassicScript("qrc:///qtwebchannel/qwebchannel.js");
   }
 
-  for (const src of APP_SCRIPTS) {
+  for (let i = 0; i < APP_SCRIPTS.length; i++) {
+    const src = APP_SCRIPTS[i];
+    const percent = 10 + (i / APP_SCRIPTS.length) * 58;
+    setStartupProgress(percent, "Loading application modules...", src);
     await loadClassicScript(src);
   }
+  setStartupProgress(76, "Starting workbench...", "Initializing UI");
 }
 
 boot().catch(reportBootFailure);

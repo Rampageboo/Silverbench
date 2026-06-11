@@ -1,9 +1,11 @@
 const ctx = el.canvas.getContext("2d");
+window.setStartupProgress?.(78, "Building workspace UI...", "Preparing image viewer");
 const thumbObserver = new IntersectionObserver(onThumbIntersect, {
   root: el.galleryScroll,
   rootMargin: "240px"
 });
 
+window.setStartupProgress?.(82, "Binding tools...", "Connecting workbench controls");
 bindAppShellEvents();
 if (typeof bindJunkActionEvents === "function") bindJunkActionEvents();
 bindImagePoolPageEvents();
@@ -15,6 +17,7 @@ bindClassifierPageEvents();
 bindTrainPageEvents();
 bindCropPageEvents();
 bindMaskNoisePageEvents();
+window.setStartupProgress?.(88, "Connecting backend...", "Checking Python service");
 
 function updateStatus() {
   const hidden = state.allPairs.length - state.pairs.length;
@@ -120,7 +123,43 @@ function startTrayResize(event) {
   window.addEventListener("pointerup", onUp, { once: true });
 }
 
-function setStatus(text) { el.status.textContent = text; }
+let topbarProgressHideTimer = 0;
+
+function syncTopbarProgress(text) {
+  const box = document.getElementById("topbarProgress");
+  const fill = document.getElementById("topbarProgressFill");
+  if (!box || !fill) return;
+  window.clearTimeout(topbarProgressHideTimer);
+  const message = String(text || "");
+  const numeric = message.match(/(?:^|[^\d])(\d+)\s*\/\s*(\d+)(?:[^\d]|$)/);
+  const active = numeric
+    || /正在|loading|scanning|indexing|exporting|merging|building|running|saving|opening|restoring|preparing|capture|duplicat/i.test(message);
+  const done = /complete|finished|connected|ready|loaded|已完成|完成|已打开|已加载|connected/i.test(message);
+  if (!active || done) {
+    topbarProgressHideTimer = window.setTimeout(() => {
+      box.hidden = true;
+      fill.style.width = "";
+      box.classList.remove("is-indeterminate");
+    }, 500);
+    return;
+  }
+  box.hidden = false;
+  if (numeric) {
+    const value = Number(numeric[1]);
+    const total = Math.max(1, Number(numeric[2]));
+    const percent = Math.max(3, Math.min(100, Math.round((value / total) * 100)));
+    box.classList.remove("is-indeterminate");
+    fill.style.width = `${percent}%`;
+  } else {
+    fill.style.width = "";
+    box.classList.add("is-indeterminate");
+  }
+}
+
+function setStatus(text) {
+  el.status.textContent = text;
+  syncTopbarProgress(text);
+}
 function classDisplay(id) { return state.classNames.has(id) ? `${id}: ${state.classNames.get(id)}` : String(id); }
 async function imageBitmap(handle) { return createImageBitmap(await handle.getFile()); }
 

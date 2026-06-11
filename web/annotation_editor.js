@@ -671,13 +671,13 @@
         return;
       }
 
-      if (isImagePoolWorkspacePair(pair)) {
+      if (imageEditBackupRoot()) {
         if (!confirm(`从 image_pool_backup 恢复当前图？\n\n${pair.imagePath}\n${pair.labelPath || "(无标签备份则只恢复图片)"}`)) {
           return;
         }
         const result = await restoreImagePoolPairFromBackup(pair);
         if (!result) {
-          alert("未找到该图的备份。首次 Crop/黑块保存前会自动备份到 image_pool_backup/。");
+          alert("未找到该图的备份。首次 Crop/黑块保存前会自动备份到当前目录的 image_pool_backup/。");
           return;
         }
         state.pending.delete(pair.imagePath);
@@ -692,14 +692,6 @@
         if (result.restored?.image) parts.push("图片");
         if (result.restored?.label) parts.push("标签");
         setStatus(`已从 image_pool_backup 恢复：${parts.join(" + ") || "无"}`);
-        return;
-      }
-
-      if (state.datasetBackendRoot) {
-        const wsHint = state.workspaceRoot
-          ? "\n\n当前为数据集审阅模式（如 clf_dataset / detect_dataset）。备份恢复请从 Image Pool 点图进入 workspace 标注，或标注 image_pool/ 下的原图。"
-          : "";
-        alert(`当前不是 workspace 标注模式（image_pool）。${wsHint}`.trim());
         return;
       }
       let backup = state.backupHandle;

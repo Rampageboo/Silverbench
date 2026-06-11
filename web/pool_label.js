@@ -26,6 +26,7 @@ function bindPoolLabelPageEvents() {
   el.poolLabelPointerToolBtn?.addEventListener("click", () => poolLabelTogglePointerTool());
   el.poolLabelAutoFitToolBtn?.addEventListener("click", () => poolLabelToggleAutoFit());
   el.poolLabelBlackBoxToolBtn?.addEventListener("click", () => poolLabelToggleBlackBoxTool());
+  el.poolLabelRestoreBackupBtn?.addEventListener("click", () => restoreFromBackup().catch(showError));
   el.poolLabelAdjustModeBtn?.addEventListener("click", () => poolLabelToggleBoxAdjustMode());
   el.poolLabelTrackBtn?.addEventListener("click", () => poolLabelTrackForward().catch(showError));
   el.poolLabelCsrtBtn?.addEventListener("click", () => poolLabelTrackCsrtForward().catch(showError));
@@ -920,13 +921,39 @@ async function poolLabelApplyBlackBoxSelection(pair, selection) {
   if (typeof addPendingBlackToPair !== "function" || typeof applyBlackEditsForPair !== "function") {
     throw new Error("Black box editing is not available.");
   }
-  addPendingBlackToPair(pair, selection);
+  const rect = await poolLabelNormalizeBlackBoxRect(pair, selection);
+  if (!rect) {
+    await updatePoolLabelPanel("Black box is outside the image.");
+    return;
+  }
+  const undoSnapshot = await poolLabelCreateImageUndoSnapshot(pair, "black box");
+  addPendingBlackToPair(pair, rect);
   const count = await applyBlackEditsForPair(pair);
+  if (count && undoSnapshot) poolLabelPushUndoSnapshot(undoSnapshot);
   if (typeof updatePendingStatus === "function") updatePendingStatus();
   if (typeof renderCurrentPendingList === "function") renderCurrentPendingList();
   await renderCurrentImage();
   renderGallery();
   await updatePoolLabelPanel(count ? `Applied ${count} black box(es).` : "No black box applied.");
+}
+
+async function poolLabelNormalizeBlackBoxRect(pair, selection) {
+  const previewW = state.displayRect?.imageW || state.currentImage?.width;
+  const previewH = state.displayRect?.imageH || state.currentImage?.height;
+  if (!previewW || !previewH) return null;
+  const previewRect = poolLabelClampRectToBitmap(selection, previewW, previewH);
+  if (!previewRect) return null;
+  const sourceBitmap = await imageBitmap(pair.imageHandle);
+  const sourceW = sourceBitmap.width;
+  const sourceH = sourceBitmap.height;
+  if (typeof sourceBitmap.close === "function") sourceBitmap.close();
+  if (sourceW === previewW && sourceH === previewH) return previewRect;
+  return poolLabelClampRectToBitmap({
+    x1: Math.floor(previewRect.x1 * sourceW / previewW),
+    y1: Math.floor(previewRect.y1 * sourceH / previewH),
+    x2: Math.ceil(previewRect.x2 * sourceW / previewW),
+    y2: Math.ceil(previewRect.y2 * sourceH / previewH)
+  }, sourceW, sourceH);
 }
 
 function poolLabelRectsEqual(a, b) {
@@ -1213,14 +1240,13 @@ async function poolLabelSaveCurrent() {
 
 function poolLabelPushUndo(pair, boxes, action = "edit") {
   if (!pair || !Array.isArray(boxes)) return;
-  poolLabelState.undoStack.push({
+  poolLabelPushUndoSnapshot({
     imagePath: pair.imagePath,
     selectedBoxIndex: state.selectedBoxIndex,
     classId: poolLabelState.currentClassId,
     action,
     boxes: boxes.map(box => ({ ...box }))
   });
-  if (poolLabelState.undoStack.length > 50) poolLabelState.undoStack.shift();
 }
 
 function poolLabelPushBatchUndo(items, action = "batch edit") {
@@ -1233,8 +1259,25 @@ function poolLabelPushBatchUndo(items, action = "batch edit") {
       boxes: item.boxes.map(box => ({ ...box }))
     }));
   if (!snapshots.length) return;
-  poolLabelState.undoStack.push({ action, snapshots });
+  poolLabelPushUndoSnapshot({ action, snapshots });
+}
+
+function poolLabelPushUndoSnapshot(snapshot) {
+  if (!snapshot) return;
+  poolLabelState.undoStack.push(snapshot);
   if (poolLabelState.undoStack.length > 50) poolLabelState.undoStack.shift();
+}
+
+async function poolLabelCreateImageUndoSnapshot(pair, action = "image edit") {
+  if (!pair?.imageHandle) return null;
+  const file = await pair.imageHandle.getFile();
+  return {
+    imagePath: pair.imagePath,
+    selectedBoxIndex: state.selectedBoxIndex,
+    classId: poolLabelState.currentClassId,
+    action,
+    imageBlob: file.slice(0, file.size, file.type || mimeFor(pair.imagePath))
+  };
 }
 
 async function poolLabelUndoLast() {
@@ -1263,6 +1306,10 @@ async function poolLabelUndoLast() {
     await updatePoolLabelPanel("Undo target image is no longer available.");
     return;
   }
+  if (snapshot.imageBlob) {
+    await poolLabelRestoreImageUndoSnapshot(pair, snapshot);
+    return;
+  }
   const boxes = snapshot.boxes.map(box => ({ ...box }));
   await persistLabelBoxes(pair, boxes);
   if (pair.imagePath === state.pairs[state.currentIndex]?.imagePath) {
@@ -1273,6 +1320,27 @@ async function poolLabelUndoLast() {
     poolLabelState.currentClassId = Number.isInteger(snapshot.classId) ? snapshot.classId : poolLabelState.currentClassId;
     populateBoxEditor(state.selectedBoxIndex !== null ? boxes[state.selectedBoxIndex] : null);
     await poolLabelRefreshAfterEdit(`Undid ${snapshot.action}.`);
+    return;
+  }
+  renderGallery();
+  await updatePoolLabelPanel(`Undid ${snapshot.action} on another image.`);
+}
+
+async function poolLabelRestoreImageUndoSnapshot(pair, snapshot) {
+  await writeBlob(pair.imageHandle, snapshot.imageBlob);
+  if (typeof invalidateImageCache === "function") {
+    invalidateImageCache(pair.imagePath);
+  } else {
+    bitmapCache.delete(pair.imagePath);
+    if (typeof removeCachedObjectUrl === "function") removeCachedObjectUrl(pair.imagePath);
+  }
+  if (pair.imagePath === state.pairs[state.currentIndex]?.imagePath) {
+    state.selectedBoxIndex = Number.isInteger(snapshot.selectedBoxIndex) ? snapshot.selectedBoxIndex : null;
+    poolLabelState.currentClassId = Number.isInteger(snapshot.classId) ? snapshot.classId : poolLabelState.currentClassId;
+    populateBoxEditor(null);
+    await renderCurrentImage();
+    renderGallery();
+    await updatePoolLabelPanel(`Undid ${snapshot.action}.`);
     return;
   }
   renderGallery();
