@@ -1,17 +1,9 @@
 let appShellTabSwitchSeq = 0;
 
 function bindAppShellEvents() {
-  el.imagePoolTabBtn?.addEventListener("click", () => switchTab("image-pool"));
   bindInboxEvents();
   bindYoloViewModeEvents();
-  el.videoTabBtn.addEventListener("click", () => switchTab("video"));
-  el.yoloTabBtn.addEventListener("click", () => switchTab("yolo"));
-  el.poolLabelTabBtn?.addEventListener("click", () => switchTab("pool-label"));
-  el.trainPrepTabBtn.addEventListener("click", () => switchTab("train-prep"));
-  el.trainTabBtn.addEventListener("click", () => switchTab("train"));
-  el.cropTabBtn.addEventListener("click", () => switchTab("crop"));
-  el.maskNoiseTabBtn.addEventListener("click", () => switchTab("mask-noise"));
-  el.mergeTabBtn.addEventListener("click", () => switchTab("merge"));
+  bindToolNavEvents();
   renderTopbarActions("video");
 
   window.addEventListener("resize", () => {
@@ -168,7 +160,8 @@ function syncImageWorkspacePanelsForTab(isPoolLabel) {
   target.insertBefore(el.previewPanel, sideStack);
 }
 
-function switchTab(tab) {
+function switchTab(tab, options = {}) {
+  const deferViewRefresh = options.deferViewRefresh !== false;
   const switchSeq = ++appShellTabSwitchSeq;
   if (isCurrentImageStateTab(state.activeTab)) {
     state.currentImagePath = state.pairs[state.currentIndex]?.imagePath || state.currentImagePath;
@@ -206,6 +199,7 @@ function switchTab(tab) {
   el.cropTabBtn.classList.toggle("active", isCrop);
   el.maskNoiseTabBtn.classList.toggle("active", isMaskNoise);
   el.mergeTabBtn.classList.toggle("active", isMerge);
+  syncToolNavActive(tab);
   renderTopbarActions(tab);
   el.activeToolTitle.textContent = isImagePool
     ? "Image Pool"
@@ -229,7 +223,7 @@ function switchTab(tab) {
 	                    ? "Box Label"
 	                    : "Dataset Review";
   applyTopbarStatusForTab(tab);
-  if (isInbox) {
+  if (deferViewRefresh && isInbox) {
     requestAnimationFrame(() => {
       if (switchSeq !== appShellTabSwitchSeq) return;
       refreshInboxView({ silent: true, preferCache: true })
@@ -241,7 +235,7 @@ function switchTab(tab) {
           }
         });
     });
-  } else if (isImagePool) {
+  } else if (deferViewRefresh && isImagePool) {
     requestAnimationFrame(() => {
       if (switchSeq !== appShellTabSwitchSeq) return;
       const refresh = typeof ensureInboxMetadataIndex === "function"
@@ -280,7 +274,7 @@ function switchTab(tab) {
     updateCropQueueUI();
     updateBatchCropStatus();
   }
-  if (tab === "yolo" || tab === "pool-label") {
+  if (deferViewRefresh && (tab === "yolo" || tab === "pool-label")) {
     requestAnimationFrame(() => {
       if (switchSeq !== appShellTabSwitchSeq) return;
       refreshYoloOrPoolLabelView(tab, switchSeq).catch(error => console.warn("YOLO/Box Label refresh:", error));

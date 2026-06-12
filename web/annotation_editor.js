@@ -45,21 +45,22 @@
       const y = r.y + rect.y1 * r.h / r.imageH;
       const w = (rect.x2 - rect.x1) * r.w / r.imageW;
       const h = (rect.y2 - rect.y1) * r.h / r.imageH;
-      ctx.save();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.setLineDash(dashed ? [6, 4] : []);
-      ctx.strokeRect(x, y, w, h);
+      const guideCtx = typeof previewGuideCtx === "function" ? previewGuideCtx() : ctx;
+      guideCtx.save();
+      guideCtx.strokeStyle = color;
+      guideCtx.lineWidth = 2;
+      guideCtx.setLineDash(dashed ? [6, 4] : []);
+      guideCtx.strokeRect(x, y, w, h);
       if (!dashed && color === "#2563eb") {
-        ctx.fillStyle = color;
+        guideCtx.fillStyle = color;
         for (const [hx, hy] of [
           [x, y], [x + w, y], [x, y + h], [x + w, y + h],
           [x + w / 2, y], [x + w / 2, y + h], [x, y + h / 2], [x + w, y + h / 2]
         ]) {
-          ctx.fillRect(hx - 4, hy - 4, 8, 8);
+          guideCtx.fillRect(hx - 4, hy - 4, 8, 8);
         }
       }
-      ctx.restore();
+      guideCtx.restore();
     }
 
 	    async function onPointerDown(event) {

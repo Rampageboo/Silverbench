@@ -4,37 +4,155 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>YoloWorkBench</title>
+  <link rel="icon" type="image/svg+xml" href="assets/app-icon.svg">
   <link rel="stylesheet" href="styles.css">
+  <script>
+    (function () {
+      var mode = "overview";
+      if (window.__YWB_STARTUP_OVERLAY_MODE__ === "minimal" || window.__YWB_STARTUP_OVERLAY_MODE__ === "overview") {
+        mode = window.__YWB_STARTUP_OVERLAY_MODE__;
+      } else {
+        try {
+          var stored = localStorage.getItem("ywb_startup_overlay_mode");
+          if (stored === "minimal" || stored === "overview") mode = stored;
+        } catch (e) {}
+        if (mode === "overview") {
+          try {
+            var xhr = new XMLHttpRequest();
+            xhr.open("GET", "../Sessions/yolo_app_settings.json", false);
+            xhr.send(null);
+            if (xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300)) {
+              var data = JSON.parse(xhr.responseText || "{}");
+              if (data.startupOverlayMode === "minimal") mode = "minimal";
+            }
+          } catch (e2) {}
+        }
+      }
+      document.documentElement.setAttribute("data-startup-overlay-mode", mode);
+      window.__YWB_STARTUP_OVERLAY_MODE__ = mode;
+    })();
+  </script>
 </head>
 <body>
   <div id="startupOverlay" class="startup-overlay" role="status" aria-live="polite">
     <section class="startup-panel" aria-label="YoloWorkBench startup">
-      <div class="startup-brand-mark">YWB</div>
-      <div class="startup-copy">
-        <h1>YoloWorkBench</h1>
-        <p id="startupStage">Preparing workspace...</p>
-      </div>
-      <progress id="startupProgress" value="0" max="100"></progress>
-      <div class="startup-progress-row">
-        <span id="startupDetail">Loading shell</span>
-        <span id="startupPercent">0%</span>
+      <header class="startup-hero">
+        <img class="startup-brand-mark startup-brand-image" src="assets/app-icon.svg" width="74" height="74" alt="">
+        <div class="startup-brand-mark startup-brand-abbrev" aria-hidden="true">YWB</div>
+        <div class="startup-copy">
+          <h1>YoloWorkBench</h1>
+          <p class="startup-tagline">YOLO 数据集全流程工作台</p>
+        </div>
+      </header>
+      <ul class="startup-features" id="startupFeaturesList" aria-label="Workbench features">
+        <li><strong>视频截帧</strong><span>从视频批量截取训练图片</span></li>
+        <li><strong>图片库</strong><span>管理 image_pool 素材与去重</span></li>
+        <li><strong>框标注</strong><span>检测框绘制、跟踪与备份恢复</span></li>
+        <li><strong>数据集审核</strong><span>浏览、标记与修正标注</span></li>
+        <li><strong>数据集准备</strong><span>划分 train/val、生成 data.yaml</span></li>
+        <li><strong>自动标注</strong><span>用 .pt 模型预标注或分类</span></li>
+        <li><strong>批量裁剪</strong><span>智能裁剪 YOLO 数据集</span></li>
+        <li><strong>掩码清理</strong><span>清理分割掩码噪点</span></li>
+        <li><strong>数据集合并</strong><span>合并多个数据源或 ZIP</span></li>
+      </ul>
+      <div class="startup-loading">
+        <p id="startupStage">正在准备工作区...</p>
+        <progress id="startupProgress" value="0" max="100"></progress>
+        <div class="startup-progress-row">
+          <span id="startupDetail">加载界面</span>
+          <span id="startupPercent">0%</span>
+        </div>
       </div>
     </section>
   </div>
 		  <div class="app video" id="app">
-		    <nav class="tabbar">
-			      <div class="brand">YoloWorkBench</div>
-			      <button id="imagePoolTabBtn">Image Pool</button>
-				      <button id="poolLabelTabBtn">Box Label</button>
-			      <button id="inboxTabBtn" hidden>Image Assign</button>
-			      <button id="videoTabBtn" class="active">Video Capture</button>
-				      <button id="yoloTabBtn" hidden>Dataset Review</button>
-				      <button id="trainPrepTabBtn">Dataset Prep</button>
-				      <button id="trainTabBtn">Auto Label</button>
-				      <button id="cropTabBtn">Batch Crop</button>
-				      <button id="maskNoiseTabBtn">Mask Cleanup</button>
-			      <button id="mergeTabBtn">Dataset Merge</button>
+		    <nav class="tabbar tabbar--rail" id="toolNav" aria-label="Workbench navigation">
+		      <div class="tabbar-surface">
+			      <div class="tabbar-head">
+			        <div class="brand" title="YoloWorkBench">
+			          <img class="brand-icon" src="assets/app-icon.svg" width="22" height="22" alt="">
+			          <span class="brand-text">YoloWorkBench</span>
+			        </div>
+			      </div>
+			      <label class="tool-nav-search-wrap">
+			        <span class="sr-only">搜索功能</span>
+			        <input id="toolNavSearch" class="tool-nav-search" type="search" placeholder="搜索功能…" autocomplete="off" spellcheck="false">
+			      </label>
+			      <div id="toolNavList" class="tool-nav-list" role="listbox" aria-label="功能列表"></div>
+			      <p id="toolNavEmpty" class="tool-nav-empty" hidden>没有匹配的功能</p>
+			      <button type="button" id="settingsOpenBtn" class="tabbar-settings-btn" title="设置">
+			        <span class="tabbar-settings-icon" aria-hidden="true"></span>
+			        <span class="tabbar-settings-label">设置</span>
+			      </button>
+		      </div>
+			      <div class="tabbar-legacy-buttons" hidden aria-hidden="true">
+			        <button id="imagePoolTabBtn">Image Pool</button>
+			        <button id="poolLabelTabBtn">Box Label</button>
+			        <button id="inboxTabBtn" hidden>Image Assign</button>
+			        <button id="videoTabBtn" class="active">Video Capture</button>
+			        <button id="yoloTabBtn" hidden>Dataset Review</button>
+			        <button id="trainPrepTabBtn">Dataset Prep</button>
+			        <button id="trainTabBtn">Auto Label</button>
+			        <button id="cropTabBtn">Batch Crop</button>
+			        <button id="maskNoiseTabBtn">Mask Cleanup</button>
+			        <button id="mergeTabBtn">Dataset Merge</button>
+			      </div>
 		    </nav>
+		    <div id="settingsOverlay" class="settings-overlay" hidden>
+		      <section class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+		        <header class="settings-header">
+		          <h2 id="settingsTitle">设置</h2>
+		          <button type="button" id="settingsCloseBtn" class="settings-close-btn" aria-label="关闭设置">×</button>
+		        </header>
+		        <div class="settings-body">
+		          <section class="settings-section">
+		            <h3>功能页（启动页）</h3>
+		            <p class="settings-hint">选择应用启动时加载遮罩的样式。</p>
+		            <div class="startup-style-options">
+		              <label class="startup-style-option">
+		                <input type="radio" name="startupOverlayMode" value="overview" checked>
+		                <span class="startup-style-option-copy">
+		                  <strong>功能概览</strong>
+		                  <span>展示 9 项核心功能与简介</span>
+		                </span>
+		                <div class="startup-style-preview startup-style-preview--overview" aria-hidden="true">
+		                  <div class="startup-style-preview-frame">
+		                    <div class="preview-hero">
+		                      <div class="preview-mark preview-mark--icon"></div>
+		                      <div class="preview-lines">
+		                        <i></i><i></i>
+		                      </div>
+		                    </div>
+		                    <div class="preview-grid">
+		                      <i></i><i></i><i></i><i></i><i></i><i></i>
+		                    </div>
+		                    <div class="preview-bar"></div>
+		                  </div>
+		                </div>
+		              </label>
+		              <label class="startup-style-option">
+		                <input type="radio" name="startupOverlayMode" value="minimal">
+		                <span class="startup-style-option-copy">
+		                  <strong>简洁式</strong>
+		                  <span>仅图标、标题与加载进度</span>
+		                </span>
+		                <div class="startup-style-preview startup-style-preview--minimal" aria-hidden="true">
+		                  <div class="startup-style-preview-frame startup-style-preview-frame--compact">
+		                    <div class="preview-hero preview-hero--compact">
+		                      <div class="preview-mark preview-mark--abbrev">YWB</div>
+		                      <div class="preview-lines">
+		                        <i></i><i></i>
+		                      </div>
+		                    </div>
+		                    <div class="preview-bar"></div>
+		                  </div>
+		                </div>
+		              </label>
+		            </div>
+		          </section>
+		        </div>
+		      </section>
+		    </div>
 			    <header class="topbar">
 			      <div class="brand" id="activeToolTitle">Video Capture</div>
 		      <div class="topbar-actions" id="topbarActions">
@@ -296,6 +414,7 @@
         <div class="panel-body viewer" id="previewViewer">
           <div class="canvas-wrap" id="dropZone">
             <canvas id="previewCanvas"></canvas>
+            <canvas id="previewOverlayCanvas" aria-hidden="true"></canvas>
           </div>
           <aside class="pool-label-zoom-side" id="poolLabelZoomSide">
             <div class="pool-label-zoom-view" id="poolLabelZoomView">

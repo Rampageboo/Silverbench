@@ -160,12 +160,15 @@ function applyPoolLabelSessionFields(data) {
   if (typeof poolLabelSyncAutoFitTool === "function") poolLabelSyncAutoFitTool();
 }
 
-async function readCurrentSessionData() {
+async function readCurrentSessionData(options = {}) {
   if (!await ensurePythonBackend()) return {};
+  const lite = options.lite === true;
   try {
     let text = "";
     if (usesWorkspaceSession()) {
-      text = await backendCall("readWorkspaceSession", state.workspaceRoot);
+      text = lite
+        ? await backendCall("readWorkspaceSession", state.workspaceRoot, "lite")
+        : await backendCall("readWorkspaceSession", state.workspaceRoot);
     } else {
       text = await backendCall("readSessionFile");
     }
@@ -255,14 +258,18 @@ function mergeInboxSessions(diskInbox, localInbox) {
   });
 }
 
-async function readWorkspaceSessionData() {
+async function readWorkspaceSessionData(options = {}) {
   if (!hasWorkspaceRoot() || !await ensurePythonBackend()) return {};
+  const lite = options.lite === true;
   try {
-    const text = await backendCall("readWorkspaceSession", state.workspaceRoot);
+    const text = lite
+      ? await backendCall("readWorkspaceSession", state.workspaceRoot, "lite")
+      : await backendCall("readWorkspaceSession", state.workspaceRoot);
     if (!text?.trim()) return {};
     const data = JSON.parse(text);
     return data && typeof data === "object" ? data : {};
-  } catch {
+  } catch (error) {
+    console.warn("readWorkspaceSession failed:", error);
     return {};
   }
 }
@@ -352,12 +359,13 @@ function applySessionData(data, preferredPath = null) {
   return true;
 }
 
-async function loadSessionFromDefault(preferredPath = null) {
-  const data = await readCurrentSessionData();
+async function loadSessionFromDefault(preferredPath = null, options = {}) {
+  const data = await readCurrentSessionData(options);
   return Object.keys(data).length ? applySessionData(data, preferredPath) : false;
 }
 
 function saveSessionSoon() {
+  if (window.startupRestoreInProgress) return;
   if (!hasDatasetOpen() && !hasWorkspaceRoot()) return;
   clearTimeout(sessionSaveTimer);
   sessionSaveTimer = setTimeout(() => saveSession({ manual: false }), 500);

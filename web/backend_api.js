@@ -36,7 +36,7 @@ function wrapQtBackendBridge(raw) {
 
 function initPythonBackend() {
   if (pyBackend.readyPromise) return pyBackend.readyPromise;
-  window.setStartupProgress?.(90, "Connecting backend...", "Pinging Python backend");
+  window.setStartupProgress?.(90, "连接后端...", "正在检测 Python 后端");
   if (location.protocol === "http:" || location.protocol === "https:") {
     pyBackend.readyPromise = fetch("/api", {
       method: "POST",
@@ -52,38 +52,39 @@ function initPythonBackend() {
         if (ready) {
           startHttpBackendHeartbeat();
           setStatus("Local backend connected.");
-          window.setStartupProgress?.(95, "Restoring workspace...", "Loading previous workspace state");
+          syncAppUiSettingsFromBackend?.().catch(error => console.warn("App settings sync:", error));
+          window.setStartupProgress?.(95, "恢复工作区...", "加载上次打开的状态");
           restoreLastOpenedFolderOnStartup()
             .catch(error => console.warn("Folder restore:", error))
-            .finally(() => window.finishStartupOverlay?.("Local backend connected"));
+            .finally(() => window.finishStartupOverlay?.("本地后端已连接"));
         } else {
-          window.finishStartupOverlay?.("Backend unavailable");
+          window.finishStartupOverlay?.("后端不可用");
         }
         return ready;
       })
       .catch(() => {
-        window.finishStartupOverlay?.("Backend unavailable");
+        window.finishStartupOverlay?.("后端不可用");
         return false;
       });
     return pyBackend.readyPromise;
   }
   pyBackend.readyPromise = new Promise(resolve => {
     if (!window.qt || !window.QWebChannel) {
-      window.finishStartupOverlay?.("Backend unavailable");
+      window.finishStartupOverlay?.("后端不可用");
       resolve(false);
       return;
     }
-    window.setStartupProgress?.(92, "Connecting backend...", "Opening Qt web channel");
+    window.setStartupProgress?.(92, "连接后端...", "打开 Qt WebChannel");
     new QWebChannel(qt.webChannelTransport, channel => {
       const raw = channel.objects.backend;
       pyBackend.bridge = raw?.apiCall ? wrapQtBackendBridge(raw) : raw;
       pyBackend.ready = Boolean(pyBackend.bridge);
       if (!pyBackend.ready) {
-        window.finishStartupOverlay?.("Backend unavailable");
+        window.finishStartupOverlay?.("后端不可用");
         resolve(false);
         return;
       }
-      window.setStartupProgress?.(94, "Connecting backend...", "Pinging Qt backend");
+      window.setStartupProgress?.(94, "连接后端...", "正在检测 Qt 后端");
       pyBackend.bridge.ping(result => {
         const ready = result === "python-backend-ready";
         pyBackend.ready = ready;
@@ -91,12 +92,13 @@ function initPythonBackend() {
           setStatus("Python backend connected.");
           const browserBtn = document.getElementById("openBrowserWebBtn");
           if (browserBtn) browserBtn.hidden = false;
-          window.setStartupProgress?.(96, "Restoring workspace...", "Loading previous workspace state");
+          syncAppUiSettingsFromBackend?.().catch(error => console.warn("App settings sync:", error));
+          window.setStartupProgress?.(96, "恢复工作区...", "加载上次打开的状态");
           restoreLastOpenedFolderOnStartup()
             .catch(error => console.warn("Folder restore:", error))
-            .finally(() => window.finishStartupOverlay?.("Python backend connected"));
+            .finally(() => window.finishStartupOverlay?.("Python 后端已连接"));
         } else {
-          window.finishStartupOverlay?.("Backend unavailable");
+          window.finishStartupOverlay?.("后端不可用");
         }
         resolve(ready);
       });

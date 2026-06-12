@@ -97,7 +97,8 @@ function resolvePreviewImageHandle(imagePath, imageHandle) {
 
 function revokePreviewObjectUrl(url = imagePreviewLightboxState.objectUrl) {
   if (!url) return;
-  URL.revokeObjectURL(url);
+  if (typeof releaseMediaUrl === "function") releaseMediaUrl(url);
+  else if (!String(url).startsWith("data:")) URL.revokeObjectURL(url);
   if (url === imagePreviewLightboxState.objectUrl) {
     imagePreviewLightboxState.objectUrl = null;
   }
@@ -115,6 +116,7 @@ async function createPreviewObjectUrl(imagePath, imageHandle) {
     if (url) return url;
   }
   const file = await handle.getFile();
+  if (typeof objectUrlForFile === "function") return objectUrlForFile(file);
   return URL.createObjectURL(file);
 }
 
@@ -443,12 +445,14 @@ async function showImageInPreviewLightbox(imagePath, imageHandle, options = {}) 
   try {
     nextUrl = await createPreviewObjectUrl(imagePath, imageHandle);
     if (token !== imagePreviewLightboxState.loadToken) {
-      URL.revokeObjectURL(nextUrl);
+      if (typeof releaseMediaUrl === "function") releaseMediaUrl(nextUrl);
+      else if (!String(nextUrl).startsWith("data:")) URL.revokeObjectURL(nextUrl);
       return;
     }
     await decodePreviewUrl(nextUrl);
     if (token !== imagePreviewLightboxState.loadToken) {
-      URL.revokeObjectURL(nextUrl);
+      if (typeof releaseMediaUrl === "function") releaseMediaUrl(nextUrl);
+      else if (!String(nextUrl).startsWith("data:")) URL.revokeObjectURL(nextUrl);
       return;
     }
 
@@ -459,13 +463,15 @@ async function showImageInPreviewLightbox(imagePath, imageHandle, options = {}) 
 
     await loadPreviewImageElement(targetImg, nextUrl);
     if (token !== imagePreviewLightboxState.loadToken) {
-      URL.revokeObjectURL(nextUrl);
+      if (typeof releaseMediaUrl === "function") releaseMediaUrl(nextUrl);
+      else if (!String(nextUrl).startsWith("data:")) URL.revokeObjectURL(nextUrl);
       return;
     }
 
     imagePreviewLightboxState.objectUrl = nextUrl;
     if (previousUrl && previousUrl !== nextUrl) {
-      URL.revokeObjectURL(previousUrl);
+      if (typeof releaseMediaUrl === "function") releaseMediaUrl(previousUrl);
+      else if (!String(previousUrl).startsWith("data:")) URL.revokeObjectURL(previousUrl);
     }
 
     setActivePreviewImg(targetImg === els.imgB ? "b" : "a");
@@ -473,10 +479,16 @@ async function showImageInPreviewLightbox(imagePath, imageHandle, options = {}) 
     syncPreviewFilmstripActive();
   } catch (error) {
     if (token !== imagePreviewLightboxState.loadToken) {
-      if (nextUrl) URL.revokeObjectURL(nextUrl);
+      if (nextUrl) {
+        if (typeof releaseMediaUrl === "function") releaseMediaUrl(nextUrl);
+        else if (!String(nextUrl).startsWith("data:")) URL.revokeObjectURL(nextUrl);
+      }
       return;
     }
-    if (nextUrl && nextUrl !== previousUrl) URL.revokeObjectURL(nextUrl);
+    if (nextUrl && nextUrl !== previousUrl) {
+      if (typeof releaseMediaUrl === "function") releaseMediaUrl(nextUrl);
+      else if (!String(nextUrl).startsWith("data:")) URL.revokeObjectURL(nextUrl);
+    }
     els.meta.textContent = "加载失败";
     setStatus(`预览加载失败: ${error?.message || error}`);
   }

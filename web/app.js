@@ -1,11 +1,18 @@
 const ctx = el.canvas.getContext("2d");
-window.setStartupProgress?.(78, "Building workspace UI...", "Preparing image viewer");
+const previewOverlayCtx = el.previewOverlayCanvas?.getContext("2d") || null;
+window.previewOverlayCtx = previewOverlayCtx;
+
+function previewGuideCtx() {
+  return previewOverlayCtx || ctx;
+}
+window.previewGuideCtx = previewGuideCtx;
+window.setStartupProgress?.(78, "构建工作区界面...", "准备图片查看器");
 const thumbObserver = new IntersectionObserver(onThumbIntersect, {
   root: el.galleryScroll,
   rootMargin: "240px"
 });
 
-window.setStartupProgress?.(82, "Binding tools...", "Connecting workbench controls");
+window.setStartupProgress?.(82, "绑定工具...", "连接工作台控件");
 bindAppShellEvents();
 if (typeof bindJunkActionEvents === "function") bindJunkActionEvents();
 bindImagePoolPageEvents();
@@ -17,7 +24,7 @@ bindClassifierPageEvents();
 bindTrainPageEvents();
 bindCropPageEvents();
 bindMaskNoisePageEvents();
-window.setStartupProgress?.(88, "Connecting backend...", "Checking Python service");
+window.setStartupProgress?.(88, "连接后端...", "检查 Python 服务");
 
 function updateStatus() {
   const hidden = state.allPairs.length - state.pairs.length;
@@ -198,7 +205,9 @@ function trimBitmapCache() {
 async function fileUrl(path, handle) {
   const cached = getCachedObjectUrl(path);
   if (cached) return cached;
-  const url = URL.createObjectURL(await handle.getFile());
+  const url = typeof objectUrlForFile === "function"
+    ? await objectUrlForFile(await handle.getFile())
+    : URL.createObjectURL(await handle.getFile());
   return setCachedObjectUrl(path, url);
 }
 

@@ -8,6 +8,10 @@ const thumbUrlCache = {
   map: new Map()
 };
 
+function prefersDataUrls() {
+  return location.protocol === "file:";
+}
+
 function base64ToBlob(base64, type) {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -15,7 +19,29 @@ function base64ToBlob(base64, type) {
   return new Blob([bytes], { type });
 }
 
+function releaseMediaUrl(url) {
+  if (!url || String(url).startsWith("data:")) return;
+  URL.revokeObjectURL(url);
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error("Failed to read file as data URL."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function objectUrlForFile(file) {
+  if (!file) return "";
+  if (prefersDataUrls()) return fileToDataUrl(file);
+  return URL.createObjectURL(file);
+}
+
 function base64JpegObjectUrl(base64) {
+  if (!base64) return "";
+  if (prefersDataUrls()) return `data:image/jpeg;base64,${base64}`;
   return URL.createObjectURL(base64ToBlob(base64, "image/jpeg"));
 }
 
@@ -30,7 +56,7 @@ function evictThumbUrlCache() {
     const path = thumbUrlCache.order.shift();
     if (!path) break;
     const url = thumbUrlCache.map.get(path);
-    if (url) URL.revokeObjectURL(url);
+    if (url) releaseMediaUrl(url);
     thumbUrlCache.map.delete(path);
   }
 }
@@ -42,7 +68,7 @@ function getCachedObjectUrl(path) {
 function setCachedObjectUrl(path, url) {
   if (!path || !url) return url;
   const existing = thumbUrlCache.map.get(path);
-  if (existing && existing !== url) URL.revokeObjectURL(existing);
+  if (existing && existing !== url) releaseMediaUrl(existing);
   thumbUrlCache.map.set(path, url);
   touchThumbUrlCache(path);
   evictThumbUrlCache();
@@ -51,14 +77,14 @@ function setCachedObjectUrl(path, url) {
 
 function removeCachedObjectUrl(path) {
   const url = thumbUrlCache.map.get(path);
-  if (url) URL.revokeObjectURL(url);
+  if (url) releaseMediaUrl(url);
   thumbUrlCache.map.delete(path);
   const index = thumbUrlCache.order.indexOf(path);
   if (index >= 0) thumbUrlCache.order.splice(index, 1);
 }
 
 function clearCachedObjectUrls() {
-  for (const url of thumbUrlCache.map.values()) URL.revokeObjectURL(url);
+  for (const url of thumbUrlCache.map.values()) releaseMediaUrl(url);
   thumbUrlCache.map.clear();
   thumbUrlCache.order.length = 0;
 }

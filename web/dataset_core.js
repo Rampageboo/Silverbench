@@ -353,7 +353,7 @@ async function openDatasetFolder() {
           state.multiSelectAnchorIndex = restored.multiSelectAnchorIndex;
         }
       } else if (restoreSession) {
-        await loadSessionFromDefault(preferredPath);
+        await loadSessionFromDefault(preferredPath, { lite: true });
         resumePath = state.currentImagePath || preferredPath;
         fallbackIndex = state.currentIndex || 0;
       }

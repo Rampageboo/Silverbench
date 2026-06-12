@@ -616,7 +616,10 @@ class BackendService:
 
     def _handle_readWorkspaceSession(self, args: list[Any]) -> object:
             root = self.path_access.require_path(args[0])
-            return read_workspace_session(root)
+            lite = False
+            if len(args) > 1:
+                lite = str(args[1]).lower() in {"1", "true", "yes", "lite"}
+            return read_workspace_session(root, lite=lite)
 
     def _handle_writeWorkspaceSession(self, args: list[Any]) -> object:
             root = self.path_access.require_path(args[0])

@@ -183,13 +183,35 @@
 
     let previewRenderToken = 0;
     let previewBoxesCache = [];
+    let previewGuideRaf = 0;
 
-    function paintPreviewFrame(bitmap, pair, boxes) {
+    function syncPreviewCanvasSize() {
       const canvasBox = el.canvas.parentElement.getBoundingClientRect();
       const nextWidth = Math.max(1, Math.floor(canvasBox.width));
       const nextHeight = Math.max(1, Math.floor(canvasBox.height));
       if (el.canvas.width !== nextWidth) el.canvas.width = nextWidth;
       if (el.canvas.height !== nextHeight) el.canvas.height = nextHeight;
+      if (el.previewOverlayCanvas) {
+        if (el.previewOverlayCanvas.width !== nextWidth) el.previewOverlayCanvas.width = nextWidth;
+        if (el.previewOverlayCanvas.height !== nextHeight) el.previewOverlayCanvas.height = nextHeight;
+      }
+    }
+
+    function clearPreviewOverlay() {
+      const overlayCtx = window.previewOverlayCtx;
+      if (!overlayCtx || !el.previewOverlayCanvas) return;
+      overlayCtx.clearRect(0, 0, el.previewOverlayCanvas.width, el.previewOverlayCanvas.height);
+    }
+
+    function paintPreviewGuides() {
+      clearPreviewOverlay();
+      if (typeof drawPoolLabelAxisGuide === "function") drawPoolLabelAxisGuide();
+      drawSelection();
+      if (typeof drawPoolLabelZoomView === "function") drawPoolLabelZoomView();
+    }
+
+    function paintPreviewFrame(bitmap, pair, boxes) {
+      syncPreviewCanvasSize();
       ctx.clearRect(0, 0, el.canvas.width, el.canvas.height);
       ctx.fillStyle = "#111827";
       ctx.fillRect(0, 0, el.canvas.width, el.canvas.height);
@@ -208,17 +230,28 @@
       drawClassifierPredictionBadge(pair);
       drawSmartCropPreview();
       drawPendingBlackPreview();
-      if (typeof drawPoolLabelAxisGuide === "function") drawPoolLabelAxisGuide();
-      if (typeof drawPoolLabelZoomView === "function") drawPoolLabelZoomView();
-      drawSelection();
+      paintPreviewGuides();
     }
 
-    function redrawPreviewOverlays() {
+    function redrawPreviewOverlays(options = {}) {
       if (!state.pairs.length || !state.currentImage) return;
       const pair = state.pairs[state.currentIndex];
       if (!pair) return;
+      if (options.guidesOnly) {
+        paintPreviewGuides();
+        return;
+      }
       paintPreviewFrame(state.currentImage, pair, previewBoxesCache);
     }
+
+    function schedulePreviewGuideRedraw() {
+      if (previewGuideRaf) return;
+      previewGuideRaf = requestAnimationFrame(() => {
+        previewGuideRaf = 0;
+        redrawPreviewOverlays({ guidesOnly: true });
+      });
+    }
+    window.schedulePreviewGuideRedraw = schedulePreviewGuideRedraw;
 
     function refreshPreviewBoxesOverlay(boxes) {
       if (Array.isArray(boxes)) {

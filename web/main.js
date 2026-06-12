@@ -8,8 +8,11 @@ const APP_SCRIPTS = [
   "backend_http.js",
   "backend_api.js",
   "app_session.js",
-  "app_shell.js",
   "workspace_tools.js",
+  "app_settings.js",
+  "tool_icons.js",
+  "tool_nav.js",
+  "app_shell.js",
   "virtual_gallery.js",
   "dataset_core.js",
   "gallery_view.js",
@@ -56,10 +59,11 @@ function setStartupProgress(value, stage, detail) {
   if (detail && startupUi.detail) startupUi.detail.textContent = detail;
 }
 
-function finishStartupOverlay(detail = "Ready") {
+function finishStartupOverlay(detail = "就绪") {
   if (startupUi.hidden) return;
   startupUi.hidden = true;
-  setStartupProgress(100, "Ready", detail);
+  setStartupProgress(100, "就绪", detail);
+  syncAppUiSettingsFromBackend?.().catch(error => console.warn("App settings sync:", error));
   window.setTimeout(() => {
     startupUi.overlay?.classList.add("is-done");
     window.setTimeout(() => {
@@ -121,27 +125,27 @@ function reportBootFailure(error) {
   const log = document.getElementById("videoLog");
   const message = `Failed to load app scripts: ${error.message}`;
   console.error(message, error);
-  setStartupProgress(startupUi.value || 1, "Startup failed", error.message || "Failed to load application module");
+  setStartupProgress(startupUi.value || 1, "启动失败", error.message || "应用模块加载失败");
   if (log) log.textContent = message;
 }
 
 async function boot() {
   installGlobalErrorHandlers();
   purgeLegacyLocalBrowserSessions();
-  setStartupProgress(5, "Preparing workspace...", "Clearing stale browser session data");
+  setStartupProgress(5, "正在准备工作区...", "清理浏览器缓存会话");
 
   if (window.qt) {
-    setStartupProgress(8, "Loading application shell...", "Loading Qt web channel");
+    setStartupProgress(8, "加载应用外壳...", "连接 Qt WebChannel");
     await loadClassicScript("qrc:///qtwebchannel/qwebchannel.js");
   }
 
   for (let i = 0; i < APP_SCRIPTS.length; i++) {
     const src = APP_SCRIPTS[i];
     const percent = 10 + (i / APP_SCRIPTS.length) * 58;
-    setStartupProgress(percent, "Loading application modules...", src);
+    setStartupProgress(percent, "加载功能模块...", src);
     await loadClassicScript(src);
   }
-  setStartupProgress(76, "Starting workbench...", "Initializing UI");
+  setStartupProgress(76, "启动工作台...", "初始化界面");
 }
 
 boot().catch(reportBootFailure);

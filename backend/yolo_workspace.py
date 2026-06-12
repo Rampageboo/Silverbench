@@ -428,10 +428,12 @@ def app_settings_path(session_dir: Path) -> Path:
 
 def read_app_settings(session_dir: Path) -> dict[str, Any]:
     defaults = {
-        "version": 2,
+        "version": 3,
         "lastOpenedFolder": "",
         "lastOpenedWorkspace": "",
         "lastOpenedYoloFolder": "",
+        "startupOverlayMode": "overview",
+        "sidebarCollapsed": False,
     }
     path = app_settings_path(session_dir)
     if not path.is_file():
@@ -444,17 +446,22 @@ def read_app_settings(session_dir: Path) -> dict[str, Any]:
     data = json.loads(raw)
     if not isinstance(data, dict):
         return {
-            "version": 2,
+            "version": 3,
             "lastOpenedFolder": "",
             "lastOpenedWorkspace": "",
             "lastOpenedYoloFolder": "",
+            "startupOverlayMode": "overview",
+            "sidebarCollapsed": False,
         }
-    data.setdefault("version", 2)
+    data.setdefault("version", 3)
     data["lastOpenedFolder"] = str(
         data.get("lastOpenedFolder") or data.get("lastWorkspace") or ""
     )
     data["lastOpenedWorkspace"] = str(data.get("lastOpenedWorkspace") or "")
     data["lastOpenedYoloFolder"] = str(data.get("lastOpenedYoloFolder") or "")
+    mode = str(data.get("startupOverlayMode") or "overview").strip().lower()
+    data["startupOverlayMode"] = "minimal" if mode == "minimal" else "overview"
+    data["sidebarCollapsed"] = bool(data.get("sidebarCollapsed"))
     return data
 
 
@@ -462,13 +469,16 @@ def write_app_settings(session_dir: Path, settings: dict[str, Any]) -> str:
     session_dir.mkdir(parents=True, exist_ok=True)
     current = read_app_settings(session_dir)
     current.update(settings if isinstance(settings, dict) else {})
+    mode = str(current.get("startupOverlayMode") or "overview").strip().lower()
     payload = {
-        "version": 2,
+        "version": 3,
         "lastOpenedFolder": str(
             current.get("lastOpenedFolder") or current.get("lastWorkspace") or ""
         ),
         "lastOpenedWorkspace": str(current.get("lastOpenedWorkspace") or ""),
         "lastOpenedYoloFolder": str(current.get("lastOpenedYoloFolder") or ""),
+        "startupOverlayMode": "minimal" if mode == "minimal" else "overview",
+        "sidebarCollapsed": bool(current.get("sidebarCollapsed")),
     }
     path = app_settings_path(session_dir)
     try:
@@ -540,8 +550,10 @@ def _migrate_legacy_inbox_workflow(workspace_root: Path, session: dict[str, Any]
 def read_workspace_session_dict(workspace_root: Path) -> dict[str, Any]:
     path = workspace_session_file(workspace_root)
     session: dict[str, Any] = {}
+    file_size = 0
     if path.is_file():
         try:
+            file_size = path.stat().st_size
             loaded = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(loaded, dict):
                 session = loaded
@@ -552,6 +564,10 @@ def read_workspace_session_dict(workspace_root: Path) -> dict[str, Any]:
         write_workspace_session_dict(workspace_root, session)
     if session.get("inbox"):
         session["inbox"] = normalize_inbox_session(session["inbox"])
+        if file_size > 500_000:
+            session = dict(session)
+            session["inbox"] = compact_inbox_session_for_storage(session["inbox"])
+            write_workspace_session_dict(workspace_root, session)
     return session
 
 
@@ -560,15 +576,60 @@ def write_workspace_session_dict(workspace_root: Path, session: dict[str, Any]) 
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = dict(session)
     if payload.get("inbox"):
-        payload["inbox"] = normalize_inbox_session(payload["inbox"])
+        payload["inbox"] = compact_inbox_session_for_storage(payload["inbox"])
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return str(path)
 
 
-def read_workspace_session(workspace_root: Path) -> str:
+def compact_inbox_session_for_storage(inbox: dict[str, Any] | None) -> dict[str, Any]:
+    """Keep pending assign batches plus a short history so session.json stays small."""
+    normalized = normalize_inbox_session(inbox)
+    batches = list(normalized.get("assignBatches") or [])
+    pending = [batch for batch in batches if not batch.get("built")]
+    built = [batch for batch in batches if batch.get("built")]
+    kept_built = []
+    for batch in built[-40:]:
+        slim = dict(batch)
+        filenames = list(slim.get("filenames") or [])
+        slim["filenameCount"] = len(filenames)
+        slim["filenames"] = []
+        kept_built.append(slim)
+    normalized["assignBatches"] = (pending + kept_built)[-MAX_INBOX_ASSIGN_BATCHES:]
+    compact_runs = []
+    for run in list(normalized.get("buildRuns") or [])[-20:]:
+        slim_run = dict(run)
+        filenames = list(slim_run.get("filenames") or [])
+        slim_run["filenameCount"] = len(filenames)
+        slim_run["filenames"] = []
+        compact_runs.append(slim_run)
+    normalized["buildRuns"] = compact_runs
+    return normalized
+
+
+def lite_workspace_session(session: dict[str, Any]) -> dict[str, Any]:
+    """UI restore payload without multi-megabyte inbox history."""
+    lite = dict(session)
+    inbox = session.get("inbox") if isinstance(session.get("inbox"), dict) else {}
+    ui = inbox.get("ui") if isinstance(inbox.get("ui"), dict) else {}
+    base = default_inbox_session()
+    lite["inbox"] = {
+        **base,
+        "ui": {
+            **base["ui"],
+            **ui,
+        },
+        "assignBatches": [],
+        "buildRuns": [],
+    }
+    return lite
+
+
+def read_workspace_session(workspace_root: Path, *, lite: bool = False) -> str:
     session = read_workspace_session_dict(workspace_root)
     if not session:
         return ""
+    if lite:
+        session = lite_workspace_session(session)
     return json.dumps(session, ensure_ascii=False)
 
 

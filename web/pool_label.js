@@ -355,7 +355,8 @@ function poolLabelClearCursorGuide() {
   if (!poolLabelState.cursorPoint && !poolLabelState.crosshairPoint) return;
   poolLabelState.cursorPoint = null;
   poolLabelState.crosshairPoint = null;
-  redrawPreviewOverlays();
+  if (typeof schedulePreviewGuideRedraw === "function") schedulePreviewGuideRedraw();
+  else redrawPreviewOverlays();
 }
 
 function drawPoolLabelAxisGuide() {
@@ -365,20 +366,21 @@ function drawPoolLabelAxisGuide() {
   const point = poolLabelState.crosshairPoint;
   const x = r.x + point.x * r.w / r.imageW;
   const y = r.y + point.y * r.h / r.imageH;
-  ctx.save();
-  ctx.strokeStyle = "#ef4444";
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([]);
-  ctx.globalAlpha = 0.9;
-  ctx.beginPath();
-  ctx.moveTo(r.x, y);
-  ctx.lineTo(r.x + r.w, y);
-  ctx.moveTo(x, r.y);
-  ctx.lineTo(x, r.y + r.h);
-  ctx.stroke();
-  ctx.fillStyle = "#ef4444";
-  ctx.fillRect(x - 2, y - 2, 4, 4);
-  ctx.restore();
+  const guideCtx = typeof previewGuideCtx === "function" ? previewGuideCtx() : ctx;
+  guideCtx.save();
+  guideCtx.strokeStyle = "#ef4444";
+  guideCtx.lineWidth = 1.5;
+  guideCtx.setLineDash([]);
+  guideCtx.globalAlpha = 0.9;
+  guideCtx.beginPath();
+  guideCtx.moveTo(r.x, y);
+  guideCtx.lineTo(r.x + r.w, y);
+  guideCtx.moveTo(x, r.y);
+  guideCtx.lineTo(x, r.y + r.h);
+  guideCtx.stroke();
+  guideCtx.fillStyle = "#ef4444";
+  guideCtx.fillRect(x - 2, y - 2, 4, 4);
+  guideCtx.restore();
 }
 
 function poolLabelZoomSideActive() {
@@ -673,7 +675,8 @@ async function onPoolLabelPointerMove(event) {
     if (!poolLabelState.cursorPoint) return;
     const point = poolLabelState.crosshairPoint || poolLabelState.cursorPoint;
     state.selection = normalizeRect(state.dragStart, point);
-    redrawPreviewOverlays();
+    if (typeof schedulePreviewGuideRedraw === "function") schedulePreviewGuideRedraw();
+    else redrawPreviewOverlays();
     return;
   }
   poolLabelUpdateCursorPoint(event);
@@ -682,7 +685,8 @@ async function onPoolLabelPointerMove(event) {
     return;
   }
   el.canvas.style.cursor = poolLabelDefaultCursor();
-  redrawPreviewOverlays();
+  if (typeof schedulePreviewGuideRedraw === "function") schedulePreviewGuideRedraw();
+  else redrawPreviewOverlays();
 }
 
 async function onPoolLabelPointerUp(event) {

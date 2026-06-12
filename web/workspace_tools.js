@@ -29,39 +29,65 @@ async function rememberLastOpenedYoloFolder(folderPath) {
 
 async function restoreLastOpenedFolderOnStartup() {
   if (!await ensurePythonBackend()) return;
+  window.startupRestoreInProgress = true;
   try {
     const settings = await readAppSettingsData();
     const savedPath = String(
       settings.lastOpenedWorkspace || settings.lastOpenedFolder || settings.lastWorkspace || ""
     ).trim();
-    if (!savedPath) return;
+    if (!savedPath) {
+      setStatus("未找到上次工作区记录，请手动打开工作区。");
+      return;
+    }
 
-    // openFolder registers the path in this app session (required before getWorkspaceInfo).
     const raw = await backendCall("openFolder", savedPath, false);
-    if (!raw?.trim()) return;
+    if (!raw?.trim()) {
+      setStatus(`无法打开上次工作区：${savedPath}`);
+      return;
+    }
     let result;
     try {
       result = JSON.parse(raw);
     } catch {
+      setStatus("恢复工作区失败：路径解析错误。");
       return;
     }
-    if (!result?.ok || result.kind !== "workspace") return;
+    if (!result?.ok) {
+      setStatus(`无法打开上次工作区：${result.error || savedPath}`);
+      return;
+    }
+    if (result.kind !== "workspace") {
+      setStatus("上次打开的路径不是工作区根目录，请重新选择。");
+      return;
+    }
 
     await bindWorkspaceToImagePool(result.root, { silent: true });
-    const session = await readWorkspaceSessionData();
-    applyAppSessionData(session);
+    const session = await readWorkspaceSessionData({ lite: true });
+    if (!session?.activeTab) {
+      console.warn("Workspace session lite read returned no UI state; continuing with defaults.");
+    }
     await restoreWorkspaceSessionTab(session);
     setStatus(`已恢复工作区：${result.root.split(/[\\/]/).pop()}`);
   } catch (error) {
     console.warn("Restore last folder skipped:", error);
+    setStatus(`恢复工作区失败：${error?.message || error}`);
+  } finally {
+    window.startupRestoreInProgress = false;
   }
 }
 
 async function restoreWorkspaceSessionTab(session) {
   const tab = validSessionTab(session?.activeTab || "image-pool");
-  switchTab(tab);
-  if (tab === "pool-label" && typeof refreshYoloOrPoolLabelView === "function") {
-    await refreshYoloOrPoolLabelView("pool-label", appShellTabSwitchSeq);
+  applyAppSessionData(session);
+  switchTab(tab, { deferViewRefresh: true });
+  if ((tab === "pool-label" || tab === "yolo") && typeof refreshYoloOrPoolLabelView === "function") {
+    await refreshYoloOrPoolLabelView(tab, appShellTabSwitchSeq);
+  } else if (tab === "image-pool" && typeof rebuildImagePoolPairs === "function") {
+    rebuildImagePoolPairs();
+    renderImagePoolGrid();
+    restoreImagePoolViewportIfNeeded();
+  } else if (tab === "inbox" && typeof refreshInboxView === "function") {
+    await refreshInboxView({ silent: true, preferCache: true });
   }
 }
 
