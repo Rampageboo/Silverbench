@@ -1015,8 +1015,10 @@ function bindImagePoolPageEvents() {
   el.imagePoolHideBothJunkBtn?.addEventListener("click", () => setImagePoolHideJunk("both"));
 
   if (el.imagePoolGridWrap) {
-    bindGalleryScroll(el.imagePoolGridWrap, () => renderImagePoolGrid());
-    el.imagePoolGridWrap.addEventListener("scroll", () => saveSessionSoon(), { passive: true });
+    bindGalleryScroll(el.imagePoolGridWrap, () => {
+      renderImagePoolGrid();
+      saveSessionSoon();
+    });
     bindGalleryResize(el.imagePoolGridWrap, imagePoolVirtual, () => renderImagePoolGrid());
   }
 

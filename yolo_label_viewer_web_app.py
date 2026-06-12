@@ -182,11 +182,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 def _configure_webengine() -> None:
-    """Reduce Qt WebEngine compositor tearing with large fixed overlays."""
-    flag = "--disable-gpu-compositing"
+    """Keep GPU compositing on by default; isolate startup overlay in CSS instead."""
+    flags: list[str] = []
+    if os.environ.get("YWB_DISABLE_GPU_COMPOSITING", "").strip().lower() in ("1", "true", "yes"):
+        flags.append("--disable-gpu-compositing")
     current = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
-    if flag not in current:
-        os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = f"{current} {flag}".strip()
+    for flag in flags:
+        if flag not in current:
+            current = f"{current} {flag}".strip()
+    if current != os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", ""):
+        os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = current
 
 
 def main() -> None:

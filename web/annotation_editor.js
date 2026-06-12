@@ -106,7 +106,7 @@
         state.viewPanX = state.viewPanDrag.panX + (event.clientX - state.viewPanDrag.startX);
         state.viewPanY = state.viewPanDrag.panY + (event.clientY - state.viewPanDrag.startY);
         clampPreviewView();
-        redrawPreviewOverlays();
+        schedulePreviewBaseRepaint?.();
         el.canvas.style.cursor = "grabbing";
         return;
       }
@@ -122,7 +122,8 @@
       const p = canvasToImage(event);
       if (!p) return;
       state.selection = normalizeRect(state.dragStart, p);
-      redrawPreviewOverlays();
+      if (typeof schedulePreviewGuideRedraw === "function") schedulePreviewGuideRedraw();
+      else schedulePreviewBaseRepaint?.();
       el.positionMeta.textContent = `x=${state.selection.x1}, y=${state.selection.y1}, w=${state.selection.x2 - state.selection.x1}, h=${state.selection.y2 - state.selection.y1}`;
     }
 	    async function onPointerUp(event) {
@@ -135,6 +136,9 @@
       }
       if (state.viewPanDrag) {
         state.viewPanDrag = null;
+        flushUiFrame?.();
+        schedulePreviewBaseRepaint?.();
+        redrawPreviewOverlays?.();
         el.canvas.style.cursor = "crosshair";
         return;
       }

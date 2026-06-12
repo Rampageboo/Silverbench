@@ -57,7 +57,7 @@ function toggleReviewMode() {
   el.reviewModeBtn.textContent = el.app.classList.contains("review")
     ? "Exit Review"
     : "Review Mode";
-  requestAnimationFrame(() => {
+  scheduleUiFrame(UI_FRAME.LAYOUT, () => {
     renderGallery();
     renderCurrentImage();
   });
@@ -83,12 +83,13 @@ function startViewerResize(event) {
     const viewerHeight = viewer.getBoundingClientRect().height;
     const nextHeight = Math.max(220, Math.min(viewerHeight - 380, startHeight - (moveEvent.clientY - startY)));
     viewer.style.setProperty("--tool-tray-height", `${Math.round(nextHeight)}px`);
-    renderCurrentImage();
+    schedulePreviewLayout(() => renderCurrentImage());
   };
   const onUp = () => {
     document.body.classList.remove("resizing-viewer");
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
+    flushUiFrame?.();
     renderCurrentImage();
   };
   window.addEventListener("pointermove", onMove);

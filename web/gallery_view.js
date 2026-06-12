@@ -183,7 +183,6 @@
 
     let previewRenderToken = 0;
     let previewBoxesCache = [];
-    let previewGuideRaf = 0;
 
     function syncPreviewCanvasSize() {
       const canvasBox = el.canvas.parentElement.getBoundingClientRect();
@@ -203,11 +202,19 @@
       overlayCtx.clearRect(0, 0, el.previewOverlayCanvas.width, el.previewOverlayCanvas.height);
     }
 
-    function paintPreviewGuides() {
+    function paintPreviewOverlayGuides() {
       clearPreviewOverlay();
       if (typeof drawPoolLabelAxisGuide === "function") drawPoolLabelAxisGuide();
       drawSelection();
+    }
+
+    function paintPreviewZoomGuide() {
       if (typeof drawPoolLabelZoomView === "function") drawPoolLabelZoomView();
+    }
+
+    function paintPreviewGuides() {
+      paintPreviewOverlayGuides();
+      paintPreviewZoomGuide();
     }
 
     function paintPreviewFrame(bitmap, pair, boxes) {
@@ -230,6 +237,7 @@
       drawClassifierPredictionBadge(pair);
       drawSmartCropPreview();
       drawPendingBlackPreview();
+      window.poolLabelInvalidateZoomBase?.();
       paintPreviewGuides();
     }
 
@@ -238,20 +246,30 @@
       const pair = state.pairs[state.currentIndex];
       if (!pair) return;
       if (options.guidesOnly) {
-        paintPreviewGuides();
+        if (options.overlayOnly) paintPreviewOverlayGuides();
+        else if (options.zoomOnly) paintPreviewZoomGuide();
+        else paintPreviewGuides();
         return;
       }
       paintPreviewFrame(state.currentImage, pair, previewBoxesCache);
     }
 
-    function schedulePreviewGuideRedraw() {
-      if (previewGuideRaf) return;
-      previewGuideRaf = requestAnimationFrame(() => {
-        previewGuideRaf = 0;
-        redrawPreviewOverlays({ guidesOnly: true });
-      });
+    function schedulePreviewZoomRedraw() {
+      scheduleUiFrame(UI_FRAME.PREVIEW_ZOOM, () => paintPreviewZoomGuide());
     }
+
+    function schedulePreviewGuideRedraw(options = {}) {
+      if (!options.zoomOnly) paintPreviewOverlayGuides();
+      if (!options.overlayOnly) schedulePreviewZoomRedraw();
+    }
+
+    function schedulePreviewBaseRepaint() {
+      scheduleUiFrame(UI_FRAME.PREVIEW_BASE, () => redrawPreviewOverlays());
+    }
+
     window.schedulePreviewGuideRedraw = schedulePreviewGuideRedraw;
+    window.schedulePreviewBaseRepaint = schedulePreviewBaseRepaint;
+    window.paintPreviewOverlayGuides = paintPreviewOverlayGuides;
 
     function refreshPreviewBoxesOverlay(boxes) {
       if (Array.isArray(boxes)) {
@@ -262,6 +280,7 @@
           state.previewBoxesImagePath = pair.imagePath;
         }
       }
+      window.poolLabelInvalidateZoomBase?.();
       redrawPreviewOverlays();
     }
 
@@ -346,7 +365,7 @@
       state.viewZoom = 1;
       state.viewPanX = 0;
       state.viewPanY = 0;
-      if (state.currentImage) redrawPreviewOverlays();
+      if (state.currentImage) schedulePreviewBaseRepaint();
       else renderCurrentImage();
     }
 
@@ -374,7 +393,7 @@
       const nextH = bitmap.height * baseScale * state.viewZoom;
       state.viewPanX = before.x - imageX * nextW - (el.canvas.width - nextW) / 2;
       state.viewPanY = before.y - imageY * nextH - (el.canvas.height - nextH) / 2;
-      if (state.currentImage) redrawPreviewOverlays();
+      if (state.currentImage) schedulePreviewBaseRepaint();
       else renderCurrentImage();
     }
 

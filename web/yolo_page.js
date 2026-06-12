@@ -30,7 +30,7 @@ function bindYoloPageEvents() {
   el.moveSelectedToClassBtn?.addEventListener("click", () => moveSelectedImagesToClass().catch(showError));
   document.getElementById("updateBoxBtn").addEventListener("click", updateSelectedBox);
   document.getElementById("deleteBoxBtn").addEventListener("click", deleteSelectedBox);
-  el.galleryScroll.addEventListener("scroll", () => {
+  bindGalleryScroll(el.galleryScroll, () => {
     state.galleryScrollTop = el.galleryScroll.scrollTop || 0;
     renderGallery();
     saveSessionSoon();

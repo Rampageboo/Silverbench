@@ -114,26 +114,18 @@ function renderVirtualGallery({
 }
 
 function bindGalleryScroll(scrollEl, renderFn) {
-  let rafId = 0;
+  const key = UI_FRAME?.GALLERY_SCROLL || "gallery-scroll";
   scrollEl.addEventListener("scroll", () => {
-    if (rafId) cancelAnimationFrame(rafId);
-    rafId = requestAnimationFrame(() => {
-      rafId = 0;
-      renderFn();
-    });
+    scheduleUiFrame(key, renderFn);
   }, { passive: true });
 }
 
 function bindGalleryResize(scrollEl, virtual, renderFn) {
   if (!scrollEl || typeof ResizeObserver === "undefined") return;
-  let rafId = 0;
+  const key = UI_FRAME?.GALLERY_RESIZE || "gallery-resize";
   const observer = new ResizeObserver(() => {
     invalidateVirtualGallery(virtual);
-    if (rafId) cancelAnimationFrame(rafId);
-    rafId = requestAnimationFrame(() => {
-      rafId = 0;
-      renderFn();
-    });
+    scheduleUiFrame(key, renderFn);
   });
   observer.observe(scrollEl);
 }

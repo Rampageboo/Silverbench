@@ -21,6 +21,9 @@ const POOL_LABEL_SLOT_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
 const POOL_LABEL_SUBJECT_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Crect x='5.5' y='5.5' width='13' height='13' fill='none' stroke='%23ef4444' stroke-width='2'/%3E%3C/svg%3E") 12 12, crosshair`;
 const POOL_LABEL_ZOOM = { width: 500, height: 600, factor: 2 };
 let poolLabelZoomCtx = null;
+let poolLabelZoomBaseCanvas = null;
+let poolLabelZoomBaseCtx = null;
+let poolLabelZoomBaseKey = "";
 
 function bindPoolLabelPageEvents() {
   el.poolLabelPointerToolBtn?.addEventListener("click", () => poolLabelTogglePointerTool());
@@ -197,7 +200,7 @@ function poolLabelUpdateBoxCursor(event) {
 }
 
 function poolLabelScheduleOverlayRefresh(boxes) {
-  requestAnimationFrame(() => {
+  scheduleUiFrame(UI_FRAME.PREVIEW_BASE, () => {
     if (typeof refreshPreviewBoxesOverlay === "function") refreshPreviewBoxesOverlay(boxes);
     else redrawPreviewOverlays();
   });
@@ -418,6 +421,42 @@ function poolLabelZoomContext() {
   return poolLabelZoomCtx;
 }
 
+function poolLabelZoomBaseContext() {
+  if (!poolLabelZoomBaseCanvas) {
+    poolLabelZoomBaseCanvas = document.createElement("canvas");
+    poolLabelZoomBaseCanvas.width = POOL_LABEL_ZOOM.width;
+    poolLabelZoomBaseCanvas.height = POOL_LABEL_ZOOM.height;
+    poolLabelZoomBaseCtx = poolLabelZoomBaseCanvas.getContext("2d");
+  }
+  return poolLabelZoomBaseCtx;
+}
+
+function poolLabelZoomBaseCacheKey(sourceRect) {
+  const pair = state.pairs[state.currentIndex];
+  const boxes = poolLabelPreviewBoxes();
+  const selection = state.selection;
+  const selectionKey = selection
+    ? `${selection.x1 | 0},${selection.y1 | 0},${selection.x2 | 0},${selection.y2 | 0}`
+    : "";
+  const boxKey = boxes.map(box => `${box.classId}:${box.x}:${box.y}:${box.w}:${box.h}`).join(";");
+  return [
+    pair?.imagePath || "",
+    state.selectedBoxIndex ?? "",
+    boxKey,
+    sourceRect.x1 | 0,
+    sourceRect.y1 | 0,
+    sourceRect.x2 | 0,
+    sourceRect.y2 | 0,
+    selectionKey,
+    poolLabelState.blackBoxToolEnabled ? "b" : "n"
+  ].join("|");
+}
+
+function poolLabelInvalidateZoomBase() {
+  poolLabelZoomBaseKey = "";
+}
+window.poolLabelInvalidateZoomBase = poolLabelInvalidateZoomBase;
+
 function poolLabelZoomClassLabel() {
   const classId = poolLabelState.currentClassId;
   const className = state.classNames.get(classId) || "";
@@ -540,31 +579,53 @@ function drawPoolLabelZoomView() {
 
   if (zoomCanvas.width !== POOL_LABEL_ZOOM.width) zoomCanvas.width = POOL_LABEL_ZOOM.width;
   if (zoomCanvas.height !== POOL_LABEL_ZOOM.height) zoomCanvas.height = POOL_LABEL_ZOOM.height;
-  poolLabelFillZoomCanvas(zoomCtx);
   poolLabelSyncZoomClassLabel();
 
-  if (!poolLabelZoomShouldDraw()) return;
-
-  const center = poolLabelZoomCenterPoint();
-  if (!center) return;
-
-  const sourceRect = poolLabelZoomSourceRect(center);
-  if (!sourceRect) return;
-
-  const srcW = sourceRect.x2 - sourceRect.x1;
-  const srcH = sourceRect.y2 - sourceRect.y1;
-  zoomCtx.drawImage(
-    state.currentImage,
-    sourceRect.x1, sourceRect.y1, srcW, srcH,
-    0, 0, POOL_LABEL_ZOOM.width, POOL_LABEL_ZOOM.height
-  );
-
-  poolLabelDrawZoomBoxes(zoomCtx, poolLabelPreviewBoxes(), sourceRect);
-
-  if (state.selection) {
-    poolLabelDrawZoomRect(zoomCtx, state.selection, sourceRect, poolLabelState.blackBoxToolEnabled ? "#ef4444" : "#2563eb", true);
+  if (!poolLabelZoomShouldDraw()) {
+    poolLabelFillZoomCanvas(zoomCtx);
+    poolLabelInvalidateZoomBase();
+    return;
   }
 
+  const center = poolLabelZoomCenterPoint();
+  if (!center) {
+    poolLabelFillZoomCanvas(zoomCtx);
+    poolLabelInvalidateZoomBase();
+    return;
+  }
+
+  const sourceRect = poolLabelZoomSourceRect(center);
+  if (!sourceRect) {
+    poolLabelFillZoomCanvas(zoomCtx);
+    poolLabelInvalidateZoomBase();
+    return;
+  }
+
+  const baseKey = poolLabelZoomBaseCacheKey(sourceRect);
+  const baseCtx = poolLabelZoomBaseContext();
+  if (baseKey !== poolLabelZoomBaseKey) {
+    poolLabelFillZoomCanvas(baseCtx);
+    const srcW = sourceRect.x2 - sourceRect.x1;
+    const srcH = sourceRect.y2 - sourceRect.y1;
+    baseCtx.drawImage(
+      state.currentImage,
+      sourceRect.x1, sourceRect.y1, srcW, srcH,
+      0, 0, POOL_LABEL_ZOOM.width, POOL_LABEL_ZOOM.height
+    );
+    poolLabelDrawZoomBoxes(baseCtx, poolLabelPreviewBoxes(), sourceRect);
+    if (state.selection) {
+      poolLabelDrawZoomRect(
+        baseCtx,
+        state.selection,
+        sourceRect,
+        poolLabelState.blackBoxToolEnabled ? "#ef4444" : "#2563eb",
+        true
+      );
+    }
+    poolLabelZoomBaseKey = baseKey;
+  }
+
+  zoomCtx.drawImage(poolLabelZoomBaseCanvas, 0, 0);
   poolLabelDrawZoomFullCrosshair(
     zoomCtx,
     POOL_LABEL_ZOOM.width / 2,
@@ -645,7 +706,7 @@ async function onPoolLabelPointerMove(event) {
     state.viewPanX = state.viewPanDrag.panX + (event.clientX - state.viewPanDrag.startX);
     state.viewPanY = state.viewPanDrag.panY + (event.clientY - state.viewPanDrag.startY);
     clampPreviewView();
-    redrawPreviewOverlays();
+    schedulePreviewBaseRepaint?.();
     el.canvas.style.cursor = "grabbing";
     return;
   }
@@ -700,6 +761,7 @@ async function onPoolLabelPointerUp(event) {
     state.viewPanDrag = null;
     poolLabelRefreshCursorAfterPointer(event);
     el.canvas.style.cursor = poolLabelDefaultCursor();
+    flushUiFrame?.();
     redrawPreviewOverlays();
     return;
   }

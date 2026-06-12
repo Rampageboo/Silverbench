@@ -80,7 +80,7 @@ function restoreImagePoolViewportIfNeeded() {
     if (index >= 0) top = Math.floor(index / columns) * rowHeight;
   }
   imagePoolState.restoreViewport = null;
-  requestAnimationFrame(() => {
+  scheduleUiFrame(UI_FRAME.GALLERY_SCROLL, () => {
     el.imagePoolGridWrap.scrollTop = top;
     renderImagePoolGrid();
   });
@@ -368,7 +368,9 @@ function saveSessionSoon() {
   if (window.startupRestoreInProgress) return;
   if (!hasDatasetOpen() && !hasWorkspaceRoot()) return;
   clearTimeout(sessionSaveTimer);
-  sessionSaveTimer = setTimeout(() => saveSession({ manual: false }), 500);
+  sessionSaveTimer = setTimeout(() => {
+    scheduleUiIdle(() => saveSession({ manual: false }));
+  }, 500);
 }
 
 function flushSessionSoon() {

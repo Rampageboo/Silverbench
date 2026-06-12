@@ -4,6 +4,7 @@ const APP_SCRIPTS = [
   "core/dom.js",
   "core/bootstrap.js",
   "app_utils.js",
+  "ui_scheduler.js",
   "media_cache.js",
   "backend_http.js",
   "backend_api.js",

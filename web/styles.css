@@ -3052,6 +3052,8 @@ progress::-webkit-progress-value {
   position: fixed;
   inset: 0;
   z-index: 2147483600;
+  isolation: isolate;
+  contain: layout paint style;
   display: grid;
   place-items: center;
   padding: 28px;

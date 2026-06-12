@@ -7,10 +7,12 @@ function bindAppShellEvents() {
   renderTopbarActions("video");
 
   window.addEventListener("resize", () => {
-    if (el.app.classList.contains("image-pool")) renderImagePoolGrid();
-    if (el.app.classList.contains("inbox")) renderInboxGrid();
-    renderCurrentImage();
-    renderSegments();
+    scheduleUiFrame(UI_FRAME.WINDOW_RESIZE, () => {
+      if (el.app.classList.contains("image-pool")) renderImagePoolGrid();
+      if (el.app.classList.contains("inbox")) renderInboxGrid();
+      renderCurrentImage();
+      renderSegments();
+    });
   });
   window.addEventListener("keydown", onKeyDown);
   initPythonBackend();
