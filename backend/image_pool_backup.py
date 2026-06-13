@@ -15,8 +15,15 @@ def image_pool_backup_dir(workspace_root: Path) -> Path:
     return workspace_root.expanduser().resolve() / IMAGE_POOL_BACKUP_DIRNAME
 
 
+def _basename(value: str, *, error_message: str) -> str:
+    name = Path(str(value).replace("\\", "/")).name
+    if not name:
+        raise ValueError(error_message)
+    return name
+
+
 def image_pool_backup_file(workspace_root: Path, filename: str) -> Path:
-    return image_pool_backup_dir(workspace_root) / Path(filename).name
+    return image_pool_backup_dir(workspace_root) / _basename(filename, error_message="Invalid image path.")
 
 
 def generic_backup_file(workspace_root: Path, relative_path: str) -> Path:
@@ -28,7 +35,10 @@ def generic_label_backup_file(workspace_root: Path, relative_path: str) -> Path:
 
 
 def image_pool_label_backup_file(workspace_root: Path, label_filename: str) -> Path:
-    return image_pool_backup_dir(workspace_root) / LABEL_BACKUP_SUBDIR / Path(label_filename).name
+    return image_pool_backup_dir(workspace_root) / LABEL_BACKUP_SUBDIR / _basename(
+        label_filename,
+        error_message="Invalid label path.",
+    )
 
 
 def _safe_relative_path(relative_path: str) -> Path:
@@ -50,17 +60,7 @@ def _workspace_file(root: Path, relative_path: str) -> Path:
 
 
 def _pool_filename(image_path: str) -> str:
-    name = Path(str(image_path).replace("\\", "/")).name
-    if not name:
-        raise ValueError("Invalid image path.")
-    return name
-
-
-def _label_filename(label_path: str) -> str:
-    name = Path(str(label_path).replace("\\", "/")).name
-    if not name:
-        raise ValueError("Invalid label path.")
-    return name
+    return _basename(image_path, error_message="Invalid image path.")
 
 
 def ensure_image_pool_backup(workspace_root: Path, image_path: str) -> dict[str, Any]:

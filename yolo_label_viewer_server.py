@@ -11,6 +11,7 @@ import time
 import webbrowser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any, Callable, TypeVar
 from urllib.parse import urlparse
 
 from backend.path_access import PathAccess
@@ -32,44 +33,43 @@ HEARTBEAT_CHECK_SECONDS = 2
 _heartbeat_lock = threading.Lock()
 _last_heartbeat = 0.0
 _heartbeat_started = False
+DialogResult = TypeVar("DialogResult")
 
 
-def _choose_directory(title: str) -> str:
-    # Use tkinter filedialog and ensure the dialog is top-most so it
-    # appears in front of other windows (fixes dialogs appearing behind browser).
+def _run_topmost_dialog(callback: Callable[[Any], DialogResult]) -> DialogResult:
+    """Run a Tk file dialog with a hidden topmost parent window."""
     import tkinter as tk
-    from tkinter import filedialog
 
     root = tk.Tk()
     root.withdraw()
-    # Make sure the dialog window is on top
     try:
-        root.attributes("-topmost", True)
-    except Exception:
-        pass
-    try:
-        folder = filedialog.askdirectory(title=title, parent=root)
-        return str(Path(folder)) if folder else ""
+        try:
+            root.attributes("-topmost", True)
+        except tk.TclError:
+            pass
+        return callback(root)
     finally:
         try:
             root.attributes("-topmost", False)
-        except Exception:
+        except tk.TclError:
             pass
         root.destroy()
 
 
-def _choose_video_files(title: str) -> list[Path]:
-    # Use tkinter filedialog for selecting video files and keep it top-most
-    import tkinter as tk
+def _choose_directory(title: str) -> str:
     from tkinter import filedialog
 
-    root = tk.Tk()
-    root.withdraw()
-    try:
-        root.attributes("-topmost", True)
-    except Exception:
-        pass
-    try:
+    def choose(root: Any) -> str:
+        folder = filedialog.askdirectory(title=title, parent=root)
+        return str(Path(folder)) if folder else ""
+
+    return _run_topmost_dialog(choose)
+
+
+def _choose_video_files(title: str) -> list[Path]:
+    from tkinter import filedialog
+
+    def choose(root: Any) -> list[Path]:
         paths = filedialog.askopenfilenames(
             title=title,
             parent=root,
@@ -79,25 +79,14 @@ def _choose_video_files(title: str) -> list[Path]:
             ],
         )
         return [Path(path) for path in paths]
-    finally:
-        try:
-            root.attributes("-topmost", False)
-        except Exception:
-            pass
-        root.destroy()
+
+    return _run_topmost_dialog(choose)
 
 
 def _choose_image_file(title: str) -> str:
-    import tkinter as tk
     from tkinter import filedialog
 
-    root = tk.Tk()
-    root.withdraw()
-    try:
-        root.attributes("-topmost", True)
-    except Exception:
-        pass
-    try:
+    def choose(root: Any) -> str:
         path = filedialog.askopenfilename(
             title=title,
             parent=root,
@@ -107,25 +96,14 @@ def _choose_image_file(title: str) -> str:
             ],
         )
         return str(Path(path)) if path else ""
-    finally:
-        try:
-            root.attributes("-topmost", False)
-        except Exception:
-            pass
-        root.destroy()
+
+    return _run_topmost_dialog(choose)
 
 
 def _choose_onnx_file(title: str) -> str:
-    import tkinter as tk
     from tkinter import filedialog
 
-    root = tk.Tk()
-    root.withdraw()
-    try:
-        root.attributes("-topmost", True)
-    except Exception:
-        pass
-    try:
+    def choose(root: Any) -> str:
         path = filedialog.askopenfilename(
             title=title,
             parent=root,
@@ -135,25 +113,14 @@ def _choose_onnx_file(title: str) -> str:
             ],
         )
         return str(Path(path)) if path else ""
-    finally:
-        try:
-            root.attributes("-topmost", False)
-        except Exception:
-            pass
-        root.destroy()
+
+    return _run_topmost_dialog(choose)
 
 
 def _choose_model_file(title: str) -> str:
-    import tkinter as tk
     from tkinter import filedialog
 
-    root = tk.Tk()
-    root.withdraw()
-    try:
-        root.attributes("-topmost", True)
-    except Exception:
-        pass
-    try:
+    def choose(root: Any) -> str:
         path = filedialog.askopenfilename(
             title=title,
             parent=root,
@@ -165,12 +132,8 @@ def _choose_model_file(title: str) -> str:
             ],
         )
         return str(Path(path)) if path else ""
-    finally:
-        try:
-            root.attributes("-topmost", False)
-        except Exception:
-            pass
-        root.destroy()
+
+    return _run_topmost_dialog(choose)
 
 
 def _open_directory(path: Path) -> bool:

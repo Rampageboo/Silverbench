@@ -11,6 +11,14 @@ APP_SETTINGS_FILENAME = "yolo_app_settings.json"
 WORKSPACE_SESSION_DIRNAME = ".yolo_label_viewer"
 WORKSPACE_SESSION_FILENAME = "session.json"
 LEGACY_INBOX_WORKFLOW_FILENAME = "inbox_workflow.json"
+DEFAULT_APP_SETTINGS = {
+    "version": 3,
+    "lastOpenedFolder": "",
+    "lastOpenedWorkspace": "",
+    "lastOpenedYoloFolder": "",
+    "startupOverlayMode": "overview",
+    "sidebarCollapsed": False,
+}
 MAX_INBOX_ASSIGN_BATCHES = 2000
 MAX_INBOX_BUILD_RUNS = 500
 DEFAULT_CLF_CLASSES = ("class_A", "class_B", "unknown", "background")
@@ -29,6 +37,30 @@ VALID_SPLITS = frozenset({"train", "val"})
 def is_dataset_index_file(path: Path) -> bool:
     suffix = path.suffix.lower()
     return suffix in IMAGE_EXTENSIONS or suffix in DATASET_META_EXTENSIONS
+
+
+def list_dataset_files(dataset_root: Path) -> list[str]:
+    """Return browsable dataset files relative to a YOLO dataset root."""
+    root = dataset_root.expanduser().resolve()
+    if not root.is_dir():
+        return []
+
+    files: list[str] = []
+    for path in root.rglob("*"):
+        if not is_dataset_index_file(path):
+            continue
+        relative_path = path.relative_to(root).as_posix()
+        if "originals_before_edit" in relative_path.lower():
+            continue
+        try:
+            if not path.is_file():
+                continue
+            if path.suffix.lower() in IMAGE_EXTENSIONS and path.stat().st_size <= 0:
+                continue
+        except OSError:
+            continue
+        files.append(relative_path)
+    return sorted(files)
 
 
 @dataclass
@@ -427,32 +459,17 @@ def app_settings_path(session_dir: Path) -> Path:
 
 
 def read_app_settings(session_dir: Path) -> dict[str, Any]:
-    defaults = {
-        "version": 3,
-        "lastOpenedFolder": "",
-        "lastOpenedWorkspace": "",
-        "lastOpenedYoloFolder": "",
-        "startupOverlayMode": "overview",
-        "sidebarCollapsed": False,
-    }
     path = app_settings_path(session_dir)
     if not path.is_file():
-        return dict(defaults)
+        return dict(DEFAULT_APP_SETTINGS)
     try:
         raw = path.read_text(encoding="utf-8")
-    except (OSError, PermissionError) as error:
+        data = json.loads(raw)
+    except (OSError, PermissionError, json.JSONDecodeError) as error:
         print(f"[backend] readAppSettings failed: {error}", file=sys.stderr, flush=True)
-        return dict(defaults)
-    data = json.loads(raw)
+        return dict(DEFAULT_APP_SETTINGS)
     if not isinstance(data, dict):
-        return {
-            "version": 3,
-            "lastOpenedFolder": "",
-            "lastOpenedWorkspace": "",
-            "lastOpenedYoloFolder": "",
-            "startupOverlayMode": "overview",
-            "sidebarCollapsed": False,
-        }
+        return dict(DEFAULT_APP_SETTINGS)
     data.setdefault("version", 3)
     data["lastOpenedFolder"] = str(
         data.get("lastOpenedFolder") or data.get("lastWorkspace") or ""
@@ -510,6 +527,17 @@ def default_inbox_session() -> dict[str, Any]:
     }
 
 
+def _json_list(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, list) else []
+
+
+def _session_version(value: Any, default: int = 2) -> int:
+    try:
+        return int(value or default)
+    except (TypeError, ValueError):
+        return default
+
+
 def normalize_inbox_session(data: dict[str, Any] | None) -> dict[str, Any]:
     base = default_inbox_session()
     if not isinstance(data, dict):
@@ -522,8 +550,8 @@ def normalize_inbox_session(data: dict[str, Any] | None) -> dict[str, Any]:
         "detectEnabled": bool(ui.get("detectEnabled", base["ui"]["detectEnabled"])),
         "clfEnabled": bool(ui.get("clfEnabled", base["ui"]["clfEnabled"])),
     }
-    base["assignBatches"] = list(data.get("assignBatches") or [])[-MAX_INBOX_ASSIGN_BATCHES:]
-    base["buildRuns"] = list(data.get("buildRuns") or [])[-MAX_INBOX_BUILD_RUNS:]
+    base["assignBatches"] = _json_list(data.get("assignBatches"))[-MAX_INBOX_ASSIGN_BATCHES:]
+    base["buildRuns"] = _json_list(data.get("buildRuns"))[-MAX_INBOX_BUILD_RUNS:]
     return base
 
 
@@ -543,7 +571,7 @@ def _migrate_legacy_inbox_workflow(workspace_root: Path, session: dict[str, Any]
         return session, False
     session = dict(session)
     session["inbox"] = normalize_inbox_session(legacy)
-    session["version"] = max(int(session.get("version") or 2), 3)
+    session["version"] = max(_session_version(session.get("version")), 3)
     return session, True
 
 
@@ -584,21 +612,22 @@ def write_workspace_session_dict(workspace_root: Path, session: dict[str, Any]) 
 def compact_inbox_session_for_storage(inbox: dict[str, Any] | None) -> dict[str, Any]:
     """Keep pending assign batches plus a short history so session.json stays small."""
     normalized = normalize_inbox_session(inbox)
-    batches = list(normalized.get("assignBatches") or [])
+    batches = [batch for batch in _json_list(normalized.get("assignBatches")) if isinstance(batch, dict)]
     pending = [batch for batch in batches if not batch.get("built")]
     built = [batch for batch in batches if batch.get("built")]
     kept_built = []
     for batch in built[-40:]:
         slim = dict(batch)
-        filenames = list(slim.get("filenames") or [])
+        filenames = _json_list(slim.get("filenames"))
         slim["filenameCount"] = len(filenames)
         slim["filenames"] = []
         kept_built.append(slim)
     normalized["assignBatches"] = (pending + kept_built)[-MAX_INBOX_ASSIGN_BATCHES:]
     compact_runs = []
-    for run in list(normalized.get("buildRuns") or [])[-20:]:
+    build_runs = [run for run in _json_list(normalized.get("buildRuns")) if isinstance(run, dict)]
+    for run in build_runs[-20:]:
         slim_run = dict(run)
-        filenames = list(slim_run.get("filenames") or [])
+        filenames = _json_list(slim_run.get("filenames"))
         slim_run["filenameCount"] = len(filenames)
         slim_run["filenames"] = []
         compact_runs.append(slim_run)

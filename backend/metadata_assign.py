@@ -57,6 +57,14 @@ def _workspace_detect_out(workspace_root: Path) -> Path:
         return _normalize_path(root / "detect_dataset")
 
 
+def _normalized_filename_set(filenames: list[str] | None) -> set[str]:
+    return {
+        Path(str(name).replace("\\", "/")).name
+        for name in (filenames or [])
+        if str(name or "").strip()
+    }
+
+
 def _parse_data_yaml_names(yaml_path: Path) -> list[dict[str, Any]]:
     if not yaml_path.is_file():
         return []
@@ -278,11 +286,7 @@ def remove_detect_dataset_links(
     """Remove detect_dataset image/label hard links for the given pool filenames."""
     paths = load_workspace_config(workspace_root)
     detect_out = paths.detect_out
-    allowed = {
-        Path(str(name).replace("\\", "/")).name
-        for name in (filenames or [])
-        if str(name or "").strip()
-    }
+    allowed = _normalized_filename_set(filenames)
     if not allowed:
         return {
             "ok": False,
@@ -330,11 +334,7 @@ def remove_clf_dataset_links(
     """Remove clf_dataset hard links for the given pool filenames."""
     paths = load_workspace_config(workspace_root)
     clf_out = paths.clf_out
-    allowed = {
-        Path(str(name).replace("\\", "/")).name
-        for name in (filenames or [])
-        if str(name or "").strip()
-    }
+    allowed = _normalized_filename_set(filenames)
     if not allowed:
         return {
             "ok": False,
@@ -387,7 +387,7 @@ def build_workspace_links(
     stats = BuildStats()
     rows = read_metadata(paths.metadata)
     if filenames:
-        allowed = {Path(str(name).replace("\\", "/")).name for name in filenames}
+        allowed = _normalized_filename_set(filenames)
         rows = [row for row in rows if (row.get("filename") or "").strip() in allowed]
         if not rows:
             return {

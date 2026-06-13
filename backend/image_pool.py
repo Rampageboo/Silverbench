@@ -14,6 +14,12 @@ from .yolo_workspace import (
 )
 
 SNAPSHOT_FILENAME = "image_pool_snapshot.json"
+DEFAULT_SNAPSHOT: dict[str, Any] = {
+    "version": 1,
+    "knownFiles": [],
+    "updatedAt": "",
+    "scanCache": None,
+}
 
 
 def snapshot_path(workspace_root: Path) -> Path:
@@ -27,10 +33,13 @@ def snapshot_path(workspace_root: Path) -> Path:
 def read_snapshot(workspace_root: Path) -> dict[str, Any]:
     path = snapshot_path(workspace_root)
     if not path.is_file():
-        return {"version": 1, "knownFiles": [], "updatedAt": "", "scanCache": None}
-    data = json.loads(path.read_text(encoding="utf-8"))
+        return dict(DEFAULT_SNAPSHOT)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return dict(DEFAULT_SNAPSHOT)
     if not isinstance(data, dict):
-        return {"version": 1, "knownFiles": [], "updatedAt": "", "scanCache": None}
+        return dict(DEFAULT_SNAPSHOT)
     known = data.get("knownFiles")
     if not isinstance(known, list):
         known = []

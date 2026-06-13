@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.path_access import PathAccess
 from backend.service import BackendService
+from backend.yolo_workspace import list_dataset_files
 
 
 class ListDatasetFilesTests(unittest.TestCase):
@@ -31,6 +32,20 @@ class ListDatasetFilesTests(unittest.TestCase):
             self.assertIn("labels/train/a.txt", paths)
             self.assertIn("labels/train/empty.txt", paths)
             self.assertIn("data.yaml", paths)
+
+    def test_skips_empty_images_backups_and_unknown_file_types(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "images").mkdir()
+            (root / "originals_before_edit").mkdir()
+            (root / "images" / "empty.jpg").write_bytes(b"")
+            (root / "images" / "valid.png").write_bytes(b"png")
+            (root / "images" / "notes.md").write_text("ignore me", encoding="utf-8")
+            (root / "originals_before_edit" / "old.txt").write_text("0 0.5 0.5 0.2 0.2\n", encoding="utf-8")
+
+            paths = list_dataset_files(root)
+
+            self.assertEqual(paths, ["images/valid.png"])
 
 
 if __name__ == "__main__":

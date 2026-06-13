@@ -53,12 +53,11 @@ from .image_pool_cleanup import (
     find_image_pool_duplicates,
 )
 from .yolo_workspace import (
-    IMAGE_EXTENSIONS,
     infer_dataset_task,
     create_workspace,
     init_stats_payload,
     is_workspace_root,
-    is_dataset_index_file,
+    list_dataset_files,
     list_workspace_files,
     parse_class_names,
     read_app_settings,
@@ -307,24 +306,7 @@ class BackendService:
 
     def _handle_listDatasetFiles(self, args: list[Any]) -> object:
             root_path = self.path_access.require_path(args[0])
-            if not root_path.is_dir():
-                return "[]"
-            files = []
-            for path in root_path.rglob("*"):
-                if not is_dataset_index_file(path):
-                    continue
-                rel = path.relative_to(root_path).as_posix()
-                if "originals_before_edit" in rel.lower():
-                    continue
-                try:
-                    if not path.is_file():
-                        continue
-                    if path.suffix.lower() in IMAGE_EXTENSIONS and path.stat().st_size <= 0:
-                        continue
-                except OSError:
-                    continue
-                files.append(rel)
-            return json.dumps(sorted(files), ensure_ascii=False)
+            return json.dumps(list_dataset_files(root_path), ensure_ascii=False)
 
     def _handle_readTextFile(self, args: list[Any]) -> object:
             return self.path_access.safe_child_path(args[0], args[1]).read_text(encoding="utf-8", errors="replace")
