@@ -22,6 +22,8 @@ var state = {
   currentIndex: 0,
   currentImagePath: null,
   galleryScrollTop: 0,
+  poolLabelResumeImagePath: null,
+  poolLabelResumeGalleryScrollTop: 0,
   currentImage: null,
   previewBoxes: [],
   previewBoxesImagePath: null,

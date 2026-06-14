@@ -2,3 +2,5 @@ numpy
 Pillow
 opencv-contrib-python
 PySide6
+fastapi
+uvicorn[standard]

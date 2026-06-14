@@ -14,6 +14,7 @@ const APP_SCRIPTS = [
   "tool_icons.js",
   "tool_nav.js",
   "app_shell.js",
+  "embed_boot.js",
   "virtual_gallery.js",
   "dataset_core.js",
   "gallery_view.js",

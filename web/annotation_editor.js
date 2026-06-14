@@ -186,17 +186,23 @@
     }
 
     function populateBoxEditor(box) {
+      if (!el.boxEditStatus) return;
       if (!box) {
         el.boxEditStatus.textContent = "Click a green YOLO box in Preview to edit it.";
-        for (const input of [el.boxClassInput, el.boxXInput, el.boxYInput, el.boxWInput, el.boxHInput]) input.value = "";
+        if (el.boxClassInput) {
+          for (const input of [el.boxClassInput, el.boxXInput, el.boxYInput, el.boxWInput, el.boxHInput]) {
+            if (input) input.value = "";
+          }
+        }
         return;
       }
       el.boxEditStatus.textContent = `Editing box ${state.selectedBoxIndex + 1}. TXT saves when you release the drag or click Update.`;
+      if (!el.boxClassInput) return;
       el.boxClassInput.value = box.classId;
-      el.boxXInput.value = fmt(box.x);
-      el.boxYInput.value = fmt(box.y);
-      el.boxWInput.value = fmt(box.w);
-      el.boxHInput.value = fmt(box.h);
+      if (el.boxXInput) el.boxXInput.value = fmt(box.x);
+      if (el.boxYInput) el.boxYInput.value = fmt(box.y);
+      if (el.boxWInput) el.boxWInput.value = fmt(box.w);
+      if (el.boxHInput) el.boxHInput.value = fmt(box.h);
     }
 
     async function addBoxFromSelection() {
@@ -259,9 +265,10 @@
       populateBoxEditor(boxes[drag.index]);
       if (typeof isPoolLabelActive === "function" && isPoolLabelActive()) {
         if (typeof refreshPreviewBoxesOverlay === "function") refreshPreviewBoxesOverlay(boxes);
-        else redrawPreviewOverlays();
+        else schedulePreviewBaseRepaint?.();
       } else {
-        await renderCurrentImage();
+        if (typeof refreshPreviewBoxesOverlay === "function") refreshPreviewBoxesOverlay(boxes);
+        else schedulePreviewBaseRepaint?.();
       }
     }
 
@@ -350,6 +357,7 @@
     }
 
     function readBoxEditor() {
+      if (!el.boxClassInput) return null;
       const box = {
         classId: Number.parseInt(el.boxClassInput.value, 10),
         x: Number.parseFloat(el.boxXInput.value),

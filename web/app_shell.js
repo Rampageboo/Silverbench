@@ -165,7 +165,11 @@ function syncImageWorkspacePanelsForTab(isPoolLabel) {
 function switchTab(tab, options = {}) {
   const deferViewRefresh = options.deferViewRefresh !== false;
   const switchSeq = ++appShellTabSwitchSeq;
-  if (isCurrentImageStateTab(state.activeTab)) {
+  if (state.activeTab === "pool-label" || state.activeTab === "yolo") {
+    if (typeof syncPoolLabelResumeSnapshotFromLiveView === "function") {
+      syncPoolLabelResumeSnapshotFromLiveView();
+    }
+  } else if (isCurrentImageStateTab(state.activeTab)) {
     state.currentImagePath = state.pairs[state.currentIndex]?.imagePath || state.currentImagePath;
     state.galleryScrollTop = Math.max(0, Math.round(el.galleryScroll?.scrollTop || state.galleryScrollTop || 0));
   }
@@ -273,6 +277,7 @@ function switchTab(tab, options = {}) {
     updatePtClassifyStatus();
   } else if (isCrop) {
     updateCropDatasetStatus();
+    restoreCropQueueFromSession().catch(error => console.warn("Crop queue restore:", error));
     updateCropQueueUI();
     updateBatchCropStatus();
   }
@@ -294,7 +299,7 @@ async function ensurePoolLabelDetectDatasetLoaded() {
   const cachedInfo = typeof yoloViewModeState !== "undefined" ? yoloViewModeState.workspaceInfo : null;
   const info = cachedInfo?.ok
     ? cachedInfo
-    : JSON.parse(await backendCall("getWorkspaceInfo", state.workspaceRoot) || "{}");
+    : parseBackendJson(await backendCall("getWorkspaceInfo", state.workspaceRoot), {});
   if (!info?.ok) throw new Error("Cannot read workspace info.");
   if (typeof yoloViewModeState !== "undefined") {
     yoloViewModeState.workspaceInfo = info;
@@ -303,9 +308,12 @@ async function ensurePoolLabelDetectDatasetLoaded() {
     && sameBackendPath(state.datasetBackendRoot, info.detectDataset)
     && state.datasetTask !== "classify") {
     if (typeof yoloViewModeState !== "undefined") yoloViewModeState.mode = "detect";
+    if (typeof restoreYoloViewFromWorkspaceSession === "function") {
+      await restoreYoloViewFromWorkspaceSession();
+    }
     return;
   }
-  await loadFromBackendDatasetPath(info.detectDataset, null, { restoreSession: true });
+  await loadFromBackendDatasetPath(info.detectDataset, state.currentImagePath || null, { restoreSession: true });
   state.workspaceRoot = info.root;
   if (typeof yoloViewModeState !== "undefined") {
     yoloViewModeState.mode = "detect";
@@ -315,6 +323,9 @@ async function ensurePoolLabelDetectDatasetLoaded() {
 
 async function refreshYoloOrPoolLabelView(tab, switchSeq = appShellTabSwitchSeq) {
   const isPoolLabel = tab === "pool-label";
+  if (isPoolLabel && typeof primePoolLabelResumeForView === "function") {
+    primePoolLabelResumeForView();
+  }
   if (tab === "yolo" && state.workspaceRoot && typeof ensureYoloDatasetViewLoaded === "function") {
     await ensureYoloDatasetViewLoaded().catch(error => console.warn("YOLO dataset load:", error));
     if (switchSeq !== appShellTabSwitchSeq) return;
@@ -335,10 +346,23 @@ async function refreshYoloOrPoolLabelView(tab, switchSeq = appShellTabSwitchSeq)
     if (switchSeq !== appShellTabSwitchSeq) return;
   }
   if (typeof renderGallery === "function") renderGallery({ patchVisible: true });
+  if (isPoolLabel && state.pairs.length && state.currentImagePath) {
+    const idx = state.pairs.findIndex(pair => pair.imagePath === state.currentImagePath);
+    if (idx >= 0 && idx !== state.currentIndex && typeof selectIndex === "function") {
+      await selectIndex(idx);
+    }
+    if (typeof restoreGalleryScrollForSession === "function") {
+      const scrollIdx = state.pairs.findIndex(pair => pair.imagePath === state.currentImagePath);
+      restoreGalleryScrollForSession(scrollIdx >= 0 ? scrollIdx : state.currentIndex);
+    }
+  }
   await renderCurrentImage();
   applyTopbarStatusForTab(tab);
   if (isPoolLabel && typeof updatePoolLabelPanel === "function") {
     await updatePoolLabelPanel().catch(error => console.warn("Box Label panel:", error));
+  }
+  if (isPoolLabel && typeof restoreYoloViewFromWorkspaceSession === "function") {
+    await restoreYoloViewFromWorkspaceSession();
   }
   refreshImagePoolBackupHint().catch(() => {});
 }

@@ -14,15 +14,18 @@ from pathlib import Path
 from typing import Any, Callable, TypeVar
 from urllib.parse import urlparse
 
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from backend.path_access import PathAccess
 from backend.service import BackendService
 from backend.torch_runtime import torch_runtime_info
 
 
-APP_DIR = Path(__file__).resolve().parent
-WEB_DIR = APP_DIR / "web"
-APP_SETTINGS_DIR = APP_DIR
-SESSION_DIR = APP_DIR / "Sessions"
+WEB_DIR = ROOT / "web"
+APP_SETTINGS_DIR = ROOT
+SESSION_DIR = ROOT / "Sessions"
 SESSION_FILE = SESSION_DIR / "yolo_label_viewer_session.json"
 API_TOKEN = secrets.token_urlsafe(32)
 API_TOKEN_HEADER = "X-Yolo-WorkBench-Token"

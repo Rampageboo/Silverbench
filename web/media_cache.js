@@ -1,4 +1,5 @@
 const PREVIEW_MAX_EDGE = 1280;
+const PREVIEW_FAST_EDGE = 960;
 const PREVIEW_JPEG_QUALITY = 70;
 const THUMB_JPEG_QUALITY = 54;
 const THUMB_URL_CACHE_MAX = 220;
@@ -7,6 +8,8 @@ const thumbUrlCache = {
   order: [],
   map: new Map()
 };
+
+const previewUrlCache = new Map();
 
 function prefersDataUrls() {
   return location.protocol === "file:";
@@ -106,9 +109,16 @@ async function previewBitmapForBackendHandle(handle, maxEdge = PREVIEW_MAX_EDGE,
   return createImageBitmap(base64ToBlob(base64, "image/jpeg"));
 }
 
+function previewUrlCacheKey(backend, maxEdge, quality) {
+  return `${backend.backendRoot}|${backend.backendPath}@${maxEdge}q${quality}`;
+}
+
 async function previewObjectUrlForBackendHandle(handle, maxEdge = PREVIEW_MAX_EDGE, quality = PREVIEW_JPEG_QUALITY) {
   const backend = backendImageHandle(handle);
   if (!backend) return null;
+  const cacheKey = previewUrlCacheKey(backend, maxEdge, quality);
+  const cached = previewUrlCache.get(cacheKey);
+  if (cached) return cached;
   const base64 = await backendCall(
     "readFilePreviewBase64",
     backend.backendRoot,
@@ -116,7 +126,9 @@ async function previewObjectUrlForBackendHandle(handle, maxEdge = PREVIEW_MAX_ED
     maxEdge,
     quality
   );
-  return base64JpegObjectUrl(base64);
+  const url = base64JpegObjectUrl(base64);
+  if (url) previewUrlCache.set(cacheKey, url);
+  return url;
 }
 
 async function thumbObjectUrlForImagePool(filename, maxSize = 128, quality = THUMB_JPEG_QUALITY) {

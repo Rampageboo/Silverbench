@@ -59,6 +59,8 @@ from .yolo_workspace import (
     is_workspace_root,
     list_dataset_files,
     list_workspace_files,
+    load_workspace_config,
+    looks_like_workspace,
     parse_class_names,
     read_app_settings,
     read_workspace_session,
@@ -308,7 +310,7 @@ class BackendService:
             return self.open_directory_callback(path)
 
     def _handle_listDatasetFiles(self, args: list[Any]) -> object:
-            root_path = self.path_access.require_path(args[0])
+            root_path = Path(self.path_access.remember_parent(str(args[0])))
             return json.dumps(list_dataset_files(root_path), ensure_ascii=False)
 
     def _handle_readTextFile(self, args: list[Any]) -> object:
@@ -375,14 +377,40 @@ class BackendService:
             return json.dumps(read_app_settings(self.app_settings_dir), ensure_ascii=False)
 
     def _handle_writeAppSettings(self, args: list[Any]) -> object:
-            write_app_settings(self.app_settings_dir, json.loads(args[0] or "{}"))
+            payload = args[0] if args else {}
+            if isinstance(payload, str):
+                settings = json.loads(payload or "{}")
+            elif isinstance(payload, dict):
+                settings = payload
+            else:
+                settings = {}
+            write_app_settings(self.app_settings_dir, settings)
             return True
 
+    def _remember_workspace_paths(self, workspace_root: Path | str) -> Path:
+        root = Path(self.path_access.remember_parent(workspace_root))
+        if not looks_like_workspace(root):
+            return root
+        try:
+            paths = load_workspace_config(root)
+        except (FileNotFoundError, ValueError, OSError):
+            return root
+        for path in (
+            paths.root,
+            paths.image_pool,
+            paths.metadata,
+            paths.detect_out,
+            paths.clf_out,
+            paths.label_source,
+        ):
+            self.path_access.remember_path(path)
+        return paths.root
+
     def _handle_openFolder(self, args: list[Any]) -> object:
-            root = self.path_access.remember_parent(str(args[0]))
+            root = self._remember_workspace_paths(str(args[0]))
             init_if_needed = bool(args[1]) if len(args) > 1 else True
             try:
-                payload = resolve_open_folder(Path(root), init_if_needed=init_if_needed)
+                payload = resolve_open_folder(root, init_if_needed=init_if_needed)
             except (NotADirectoryError, OSError, ValueError) as error:
                 payload = {"ok": False, "error": str(error), "root": str(root)}
             return json.dumps(payload, ensure_ascii=False)
@@ -400,7 +428,7 @@ class BackendService:
 
     def _handle_getWorkspaceInfo(self, args: list[Any]) -> object:
             try:
-                root = self.path_access.require_path(args[0])
+                root = self._remember_workspace_paths(str(args[0]))
                 return json.dumps(workspace_info(root), ensure_ascii=False)
             except (PermissionError, FileNotFoundError, ValueError, OSError) as error:
                 return json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False)

@@ -20,6 +20,10 @@ const imagePreviewLightboxState = {
   markingJunk: false
 };
 
+const PREVIEW_FILMSTRIP_ITEM_STEP = 72;
+const PREVIEW_FILMSTRIP_WINDOW_RADIUS = 36;
+let previewFilmstripScrollBound = false;
+
 let imagePreviewEls = null;
 
 function ensureImagePreviewLightboxEls() {
@@ -104,7 +108,55 @@ function revokePreviewObjectUrl(url = imagePreviewLightboxState.objectUrl) {
   }
 }
 
-async function createPreviewObjectUrl(imagePath, imageHandle) {
+function resolveInstantPreviewSrc(imagePath, imageHandle, options = {}) {
+  if (options.instantSrc) return options.instantSrc;
+  if (typeof getCachedObjectUrl === "function") {
+    const cached = getCachedObjectUrl(imagePath);
+    if (cached) return cached;
+  }
+  return null;
+}
+
+function showInstantPreviewImage(targetImg, instantSrc, token) {
+  if (!targetImg || !instantSrc) return false;
+  resetPreviewImageLayout(targetImg);
+  const applyFit = () => {
+    if (token !== imagePreviewLightboxState.loadToken) return;
+    const els = ensureImagePreviewLightboxEls();
+    imagePreviewLightboxState.zoom = 1;
+    imagePreviewLightboxState.panX = 0;
+    imagePreviewLightboxState.panY = 0;
+    imagePreviewLightboxState.fitZoom = computePreviewFitZoom(targetImg, els.stage);
+    applyPreviewTransform(targetImg);
+    if (!els.stage.clientWidth || !els.stage.clientHeight) schedulePreviewFit();
+  };
+  const onReady = () => {
+    targetImg.onload = null;
+    targetImg.onerror = null;
+    applyFit();
+  };
+  targetImg.onload = onReady;
+  targetImg.onerror = () => {
+    targetImg.onload = null;
+    targetImg.onerror = null;
+  };
+  if (targetImg.src === instantSrc && targetImg.complete && targetImg.naturalWidth > 0) {
+    targetImg.onload = null;
+    targetImg.onerror = null;
+    applyFit();
+    return true;
+  }
+  targetImg.src = instantSrc;
+  if (targetImg.complete && targetImg.naturalWidth > 0) {
+    targetImg.onload = null;
+    targetImg.onerror = null;
+    applyFit();
+  }
+  return true;
+}
+
+async function createPreviewObjectUrl(imagePath, imageHandle, options = {}) {
+  const maxEdge = options.maxEdge || PREVIEW_MAX_EDGE;
   const handle = resolvePreviewImageHandle(imagePath, imageHandle);
   if (!handle) throw new Error(`找不到图片: ${imagePath}`);
   if (
@@ -112,7 +164,7 @@ async function createPreviewObjectUrl(imagePath, imageHandle) {
     && typeof backendImageHandle === "function"
     && backendImageHandle(handle)
   ) {
-    const url = await previewObjectUrlForBackendHandle(handle, PREVIEW_MAX_EDGE, PREVIEW_JPEG_QUALITY);
+    const url = await previewObjectUrlForBackendHandle(handle, maxEdge, PREVIEW_JPEG_QUALITY);
     if (url) return url;
   }
   const file = await handle.getFile();
@@ -120,26 +172,7 @@ async function createPreviewObjectUrl(imagePath, imageHandle) {
   return URL.createObjectURL(file);
 }
 
-function decodePreviewUrl(url) {
-  return new Promise((resolve, reject) => {
-    const probe = new Image();
-    const cleanup = () => {
-      probe.onload = null;
-      probe.onerror = null;
-    };
-    probe.onload = () => {
-      cleanup();
-      resolve();
-    };
-    probe.onerror = () => {
-      cleanup();
-      reject(new Error("图片加载失败"));
-    };
-    probe.src = url;
-  });
-}
-
-function loadPreviewImageElement(img, url) {
+async function loadPreviewImageElement(img, url) {
   return new Promise((resolve, reject) => {
     const onLoad = () => {
       cleanup();
@@ -297,18 +330,68 @@ async function loadPreviewFilmstripThumb(img, imagePath, imageHandle) {
   }
 }
 
-function syncPreviewFilmstripActive() {
-  const els = ensureImagePreviewLightboxEls();
-  if (!els.filmstripTrack || els.filmstrip?.hidden) return;
-  const { index } = imagePreviewLightboxState;
-  const items = els.filmstripTrack.querySelectorAll(".image-preview-filmstrip-item");
-  items.forEach((item, itemIndex) => {
-    const active = itemIndex === index;
-    item.classList.toggle("active", active);
-    if (active) {
-      item.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
-    }
+function previewFilmstripWindowRange(center, total) {
+  const safeCenter = Math.max(0, Math.min(total - 1, Number.isInteger(center) ? center : 0));
+  const start = Math.max(0, safeCenter - PREVIEW_FILMSTRIP_WINDOW_RADIUS);
+  const end = Math.min(total, safeCenter + PREVIEW_FILMSTRIP_WINDOW_RADIUS + 1);
+  return { start, end, center: safeCenter };
+}
+
+function createPreviewFilmstripItem(pair, itemIndex) {
+  const filename = pair.imagePath.split("/").pop();
+  const isJunk = typeof isInboxJunkFile === "function" && isInboxJunkFile(filename);
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `image-preview-filmstrip-item${itemIndex === imagePreviewLightboxState.index ? " active" : ""}${isJunk ? " inbox-junk" : ""}`;
+  button.title = filename;
+  button.dataset.index = String(itemIndex);
+  const img = document.createElement("img");
+  img.alt = filename;
+  img.draggable = false;
+  button.appendChild(img);
+  if (isJunk) {
+    const overlay = document.createElement("span");
+    overlay.className = "image-preview-filmstrip-junk";
+    overlay.setAttribute("aria-hidden", "true");
+    overlay.textContent = "✕";
+    button.appendChild(overlay);
+  }
+  button.addEventListener("click", event => {
+    event.stopPropagation();
+    jumpPreviewLightboxTo(itemIndex);
   });
+  loadPreviewFilmstripThumb(img, pair.imagePath, pair.imageHandle);
+  return button;
+}
+
+function bindPreviewFilmstripScroll() {
+  if (previewFilmstripScrollBound) return;
+  const els = ensureImagePreviewLightboxEls();
+  if (!els.filmstrip) return;
+  els.filmstrip.addEventListener("scroll", () => {
+    if (!imagePreviewLightboxState.open || !imagePreviewLightboxState.showFilmstrip) return;
+    schedulePreviewFilmstripRefresh();
+  }, { passive: true });
+  previewFilmstripScrollBound = true;
+}
+
+let previewFilmstripRefreshTimer = null;
+function schedulePreviewFilmstripRefresh() {
+  clearTimeout(previewFilmstripRefreshTimer);
+  previewFilmstripRefreshTimer = setTimeout(() => {
+    previewFilmstripRefreshTimer = null;
+    updatePreviewFilmstrip({ preserveScroll: true });
+  }, 48);
+}
+
+function scrollPreviewFilmstripToIndex(index, behavior = "auto") {
+  const els = ensureImagePreviewLightboxEls();
+  if (!els.filmstrip || !imagePreviewLightboxState.pairs?.length) return;
+  const targetLeft = Math.max(
+    0,
+    index * PREVIEW_FILMSTRIP_ITEM_STEP - Math.max(0, (els.filmstrip.clientWidth - PREVIEW_FILMSTRIP_ITEM_STEP) / 2)
+  );
+  els.filmstrip.scrollTo({ left: targetLeft, behavior });
 }
 
 function clearPreviewFilmstrip() {
@@ -318,41 +401,54 @@ function clearPreviewFilmstrip() {
   if (els.dialog) els.dialog.classList.remove("has-filmstrip");
 }
 
-function updatePreviewFilmstrip() {
+function syncPreviewFilmstripActive() {
+  const els = ensureImagePreviewLightboxEls();
+  if (!els.filmstripTrack || els.filmstrip?.hidden) return;
+  const { index } = imagePreviewLightboxState;
+  const items = els.filmstripTrack.querySelectorAll(".image-preview-filmstrip-item");
+  items.forEach(item => {
+    const itemIndex = Number.parseInt(item.dataset.index || "", 10);
+    const active = itemIndex === index;
+    item.classList.toggle("active", active);
+  });
+}
+
+function updatePreviewFilmstrip(options = {}) {
   const els = ensureImagePreviewLightboxEls();
   const { pairs, showFilmstrip } = imagePreviewLightboxState;
-  clearPreviewFilmstrip();
-  if (!showFilmstrip || !Array.isArray(pairs) || pairs.length <= 1 || !els.filmstripTrack) return;
+  bindPreviewFilmstripScroll();
+  if (!showFilmstrip || !Array.isArray(pairs) || pairs.length <= 1 || !els.filmstripTrack) {
+    clearPreviewFilmstrip();
+    return;
+  }
+
+  const { start, end, center } = previewFilmstripWindowRange(imagePreviewLightboxState.index, pairs.length);
+  const preserveScroll = options.preserveScroll === true;
+  const previousScrollLeft = preserveScroll ? (els.filmstrip?.scrollLeft || 0) : null;
 
   els.filmstrip.hidden = false;
   els.dialog?.classList.add("has-filmstrip");
+  els.filmstripTrack.replaceChildren();
 
-  pairs.forEach((pair, itemIndex) => {
-    const filename = pair.imagePath.split("/").pop();
-    const isJunk = typeof isInboxJunkFile === "function" && isInboxJunkFile(filename);
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `image-preview-filmstrip-item${itemIndex === imagePreviewLightboxState.index ? " active" : ""}${isJunk ? " inbox-junk" : ""}`;
-    button.title = filename;
-    button.dataset.index = String(itemIndex);
-    const img = document.createElement("img");
-    img.alt = filename;
-    img.draggable = false;
-    button.appendChild(img);
-    if (isJunk) {
-      const overlay = document.createElement("span");
-      overlay.className = "image-preview-filmstrip-junk";
-      overlay.setAttribute("aria-hidden", "true");
-      overlay.textContent = "✕";
-      button.appendChild(overlay);
-    }
-    button.addEventListener("click", event => {
-      event.stopPropagation();
-      jumpPreviewLightboxTo(itemIndex);
-    });
-    els.filmstripTrack.appendChild(button);
-    loadPreviewFilmstripThumb(img, pair.imagePath, pair.imageHandle);
-  });
+  const spacerBefore = document.createElement("div");
+  spacerBefore.className = "image-preview-filmstrip-spacer";
+  spacerBefore.style.flex = `0 0 ${start * PREVIEW_FILMSTRIP_ITEM_STEP}px`;
+  els.filmstripTrack.appendChild(spacerBefore);
+
+  for (let itemIndex = start; itemIndex < end; itemIndex += 1) {
+    els.filmstripTrack.appendChild(createPreviewFilmstripItem(pairs[itemIndex], itemIndex));
+  }
+
+  const spacerAfter = document.createElement("div");
+  spacerAfter.className = "image-preview-filmstrip-spacer";
+  spacerAfter.style.flex = `0 0 ${Math.max(0, pairs.length - end) * PREVIEW_FILMSTRIP_ITEM_STEP}px`;
+  els.filmstripTrack.appendChild(spacerAfter);
+
+  if (preserveScroll && previousScrollLeft != null) {
+    els.filmstrip.scrollLeft = previousScrollLeft;
+  } else {
+    scrollPreviewFilmstripToIndex(center, "auto");
+  }
   syncPreviewFilmstripActive();
 }
 
@@ -362,7 +458,7 @@ function patchPreviewFilmstripJunkState(filename, isJunk) {
   const { pairs, index } = imagePreviewLightboxState;
   const pair = pairs?.[index];
   if (!pair || pair.imagePath.split("/").pop() !== filename) return;
-  const item = els.filmstripTrack.children[index];
+  const item = els.filmstripTrack.querySelector(`.image-preview-filmstrip-item[data-index="${index}"]`);
   if (!item) return;
   item.classList.toggle("inbox-junk", isJunk);
   let overlay = item.querySelector(".image-preview-filmstrip-junk");
@@ -383,6 +479,7 @@ function jumpPreviewLightboxTo(nextIndex) {
   if (nextIndex === index) return;
   imagePreviewLightboxState.index = nextIndex;
   const pair = pairs[nextIndex];
+  updatePreviewFilmstrip({ preserveScroll: false });
   showImageInPreviewLightbox(pair.imagePath, pair.imageHandle, { silent: true }).catch(showError);
 }
 
@@ -432,6 +529,7 @@ function closeImagePreviewLightbox() {
 
 async function showImageInPreviewLightbox(imagePath, imageHandle, options = {}) {
   const silent = Boolean(options.silent);
+  const instantSrc = resolveInstantPreviewSrc(imagePath, imageHandle, options);
   const els = ensureImagePreviewLightboxEls();
   const token = ++imagePreviewLightboxState.loadToken;
   const previousUrl = imagePreviewLightboxState.objectUrl;
@@ -441,15 +539,18 @@ async function showImageInPreviewLightbox(imagePath, imageHandle, options = {}) 
   els.title.textContent = imagePath.split("/").pop() || imagePath;
   updatePreviewNavControls();
 
+  if (!silent && instantSrc) {
+    showInstantPreviewImage(targetImg, instantSrc, token);
+  } else if (!silent) {
+    els.meta.textContent = "加载中…";
+  }
+
   let nextUrl = null;
+  const previewEdge = imagePreviewLightboxState.previewContext === "image-pool"
+    ? (typeof PREVIEW_FAST_EDGE !== "undefined" ? PREVIEW_FAST_EDGE : PREVIEW_MAX_EDGE)
+    : PREVIEW_MAX_EDGE;
   try {
-    nextUrl = await createPreviewObjectUrl(imagePath, imageHandle);
-    if (token !== imagePreviewLightboxState.loadToken) {
-      if (typeof releaseMediaUrl === "function") releaseMediaUrl(nextUrl);
-      else if (!String(nextUrl).startsWith("data:")) URL.revokeObjectURL(nextUrl);
-      return;
-    }
-    await decodePreviewUrl(nextUrl);
+    nextUrl = await createPreviewObjectUrl(imagePath, imageHandle, { maxEdge: previewEdge });
     if (token !== imagePreviewLightboxState.loadToken) {
       if (typeof releaseMediaUrl === "function") releaseMediaUrl(nextUrl);
       else if (!String(nextUrl).startsWith("data:")) URL.revokeObjectURL(nextUrl);
@@ -476,7 +577,35 @@ async function showImageInPreviewLightbox(imagePath, imageHandle, options = {}) 
 
     setActivePreviewImg(targetImg === els.imgB ? "b" : "a");
     schedulePreviewFit();
+    updatePreviewNavControls();
     syncPreviewFilmstripActive();
+
+    if (
+      previewEdge < PREVIEW_MAX_EDGE
+      && imagePreviewLightboxState.previewContext === "image-pool"
+      && token === imagePreviewLightboxState.loadToken
+    ) {
+      createPreviewObjectUrl(imagePath, imageHandle, { maxEdge: PREVIEW_MAX_EDGE })
+        .then(fullUrl => {
+          if (!fullUrl || token !== imagePreviewLightboxState.loadToken) {
+            if (fullUrl && fullUrl !== nextUrl && typeof releaseMediaUrl === "function") releaseMediaUrl(fullUrl);
+            return;
+          }
+          if (fullUrl === nextUrl) return;
+          const img = activePreviewImg();
+          return loadPreviewImageElement(img, fullUrl).then(() => {
+            if (token !== imagePreviewLightboxState.loadToken) {
+              if (typeof releaseMediaUrl === "function") releaseMediaUrl(fullUrl);
+              return;
+            }
+            const oldUrl = imagePreviewLightboxState.objectUrl;
+            imagePreviewLightboxState.objectUrl = fullUrl;
+            if (oldUrl && oldUrl !== fullUrl && typeof releaseMediaUrl === "function") releaseMediaUrl(oldUrl);
+            schedulePreviewFit();
+          });
+        })
+        .catch(() => {});
+    }
   } catch (error) {
     if (token !== imagePreviewLightboxState.loadToken) {
       if (nextUrl) {
@@ -503,7 +632,8 @@ function openImagePreviewLightbox(options = {}) {
     pairs = null,
     index = -1,
     previewContext = null,
-    showFilmstrip = false
+    showFilmstrip = false,
+    instantSrc = null
   } = options;
   if (!imagePath) return;
 
@@ -515,9 +645,13 @@ function openImagePreviewLightbox(options = {}) {
   imagePreviewLightboxState.markingJunk = false;
   els.root.hidden = false;
   document.body.classList.add("image-preview-open");
-  updatePreviewFilmstrip();
   updatePreviewJunkButton();
-  showImageInPreviewLightbox(imagePath, imageHandle, { silent: false }).catch(showError);
+  const resolvedInstant = resolveInstantPreviewSrc(imagePath, imageHandle, { instantSrc });
+  showImageInPreviewLightbox(imagePath, imageHandle, {
+    silent: false,
+    instantSrc: resolvedInstant
+  }).catch(showError);
+  requestAnimationFrame(() => updatePreviewFilmstrip());
 }
 
 function stepPreviewLightbox(delta) {
@@ -592,7 +726,12 @@ function bindImagePreviewLightbox(card, options = {}) {
   const onClick = options.onClick;
   const attachPreview = () => {
     const context = getContext();
-    openImagePreviewLightbox(context);
+    const cardImg = card.querySelector("img");
+    let instantSrc = null;
+    if (cardImg?.src && cardImg.dataset.srcPending !== "true" && cardImg.complete && cardImg.naturalWidth > 0) {
+      instantSrc = cardImg.src;
+    }
+    openImagePreviewLightbox({ ...context, instantSrc });
   };
   if (onClick) {
     bindDeferredThumbClick(card, onClick, attachPreview);
@@ -603,6 +742,16 @@ function bindImagePreviewLightbox(card, options = {}) {
       attachPreview();
     });
   }
+  card.addEventListener("mousedown", () => {
+    const context = getContext();
+    if (!context?.imagePath) return;
+    const instantSrc = resolveInstantPreviewSrc(context.imagePath, context.imageHandle, context);
+    if (instantSrc) return;
+    const edge = context.previewContext === "image-pool" && typeof PREVIEW_FAST_EDGE !== "undefined"
+      ? PREVIEW_FAST_EDGE
+      : PREVIEW_MAX_EDGE;
+    createPreviewObjectUrl(context.imagePath, context.imageHandle, { maxEdge: edge }).catch(() => {});
+  }, { passive: true });
   card.title = card.title
     ? `${card.title} · 双击放大预览`
     : "双击放大预览";

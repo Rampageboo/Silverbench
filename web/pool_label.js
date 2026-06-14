@@ -24,6 +24,9 @@ let poolLabelZoomCtx = null;
 let poolLabelZoomBaseCanvas = null;
 let poolLabelZoomBaseCtx = null;
 let poolLabelZoomBaseKey = "";
+let poolLabelShortcutsRenderKey = "";
+let poolLabelClassManagerRenderKey = "";
+let poolLabelBoxListRenderKey = "";
 
 function bindPoolLabelPageEvents() {
   el.poolLabelPointerToolBtn?.addEventListener("click", () => poolLabelTogglePointerTool());
@@ -34,8 +37,6 @@ function bindPoolLabelPageEvents() {
   el.poolLabelTrackBtn?.addEventListener("click", () => poolLabelTrackForward().catch(showError));
   el.poolLabelCsrtBtn?.addEventListener("click", () => poolLabelTrackCsrtForward().catch(showError));
   el.poolLabelAddClassBtn?.addEventListener("click", () => poolLabelAddClass().catch(showError));
-  el.poolLabelRenameClassBtn?.addEventListener("click", () => poolLabelRenameSelectedClass().catch(showError));
-  el.poolLabelBindSlotBtn?.addEventListener("click", () => poolLabelBindSelectedToSlot().catch(showError));
   el.poolLabelClassSearchInput?.addEventListener("input", () => renderPoolLabelClassManager());
   window.addEventListener("keydown", poolLabelUpdateFixedShortcutModeFromEvent);
   window.addEventListener("keyup", event => {
@@ -417,9 +418,12 @@ function poolLabelFillZoomCanvas(zoomCtx) {
 
 function poolLabelSyncZoomClassLabel() {
   if (!el.poolLabelZoomClass) return;
-  el.poolLabelZoomClass.textContent = poolLabelZoomShouldDraw()
+  const text = poolLabelZoomShouldDraw()
     ? poolLabelZoomClassLabel()
     : "";
+  if (el.poolLabelZoomClass.textContent !== text) {
+    el.poolLabelZoomClass.textContent = text;
+  }
 }
 
 function poolLabelZoomContext() {
@@ -1085,18 +1089,6 @@ async function poolLabelUseShortcutSlot(slot) {
   await poolLabelAssignClass(classId, { shortcutSlot: slot });
 }
 
-async function poolLabelBindSelectedToSlot() {
-  const slot = Number(el.poolLabelBindSlotSelect.value);
-  if (!Number.isInteger(slot) || slot < 0 || slot > 9) return;
-  if (!state.classNames.has(poolLabelState.currentClassId)) {
-    await updatePoolLabelPanel("Select or create a class before binding a shortcut slot.");
-    return;
-  }
-  poolLabelState.shortcutSlots[slot] = poolLabelState.currentClassId;
-  poolLabelSaveSessionNow();
-  await updatePoolLabelPanel(`Bound shortcut ${slot} to ${classDisplay(poolLabelState.currentClassId)}.`);
-}
-
 async function poolLabelStartFixedBoxRecording(slot, classId) {
   if (!Number.isInteger(slot) || slot < 0 || slot > 9) return;
   if (!Number.isInteger(classId) || !state.classNames.has(classId)) {
@@ -1178,24 +1170,6 @@ async function poolLabelAddClass() {
   await poolLabelWriteClassFiles();
   await poolLabelAssignClass(nextId);
   await updatePoolLabelPanel(`Created class ${classDisplay(nextId)}.`);
-}
-
-async function poolLabelRenameSelectedClass() {
-  const classId = poolLabelState.currentClassId;
-  if (!state.classNames.has(classId)) {
-    await updatePoolLabelPanel("Select a class before renaming.");
-    return;
-  }
-  const name = poolLabelClassInputName();
-  if (!name) {
-    await updatePoolLabelPanel("Enter a new class name first.");
-    return;
-  }
-  state.classNames.set(classId, name);
-  await poolLabelWriteClassFiles();
-  await renderCurrentImage();
-  renderGallery();
-  await updatePoolLabelPanel(`Renamed class ${classId} to ${name}.`);
 }
 
 function poolLabelClassInputName() {
@@ -1956,9 +1930,17 @@ async function updatePoolLabelPanel(message = "") {
   const fixedText = Number.isInteger(poolLabelState.recordingFixedBoxSlot)
     ? ` Recording fixed box ${poolLabelState.recordingFixedBoxSlot}.`
     : "";
-  el.poolLabelStatus.textContent = message || `New class: ${classDisplay(poolLabelState.currentClassId)} | ${boxes.length} box(es). ${modeText} T copies, Shift+T CSRT. Hold Alt for fixed boxes.${fixedText}`;
+  const statusText = message || `New class: ${classDisplay(poolLabelState.currentClassId)} | ${boxes.length} box(es). ${modeText} T copies, Shift+T CSRT. Hold Alt for fixed boxes.${fixedText}`;
+  if (el.poolLabelStatus.textContent !== statusText) el.poolLabelStatus.textContent = statusText;
   renderPoolLabelShortcuts();
   renderPoolLabelClassManager();
+  const boxListKey = [
+    pair?.imagePath || "",
+    state.selectedBoxIndex ?? "",
+    boxes.map(box => `${box.classId}:${fmt(box.x)}:${fmt(box.y)}:${fmt(box.w)}:${fmt(box.h)}`).join("|")
+  ].join("||");
+  if (poolLabelBoxListRenderKey === boxListKey) return;
+  poolLabelBoxListRenderKey = boxListKey;
   el.poolLabelBoxList.innerHTML = "";
   if (!boxes.length) {
     el.poolLabelBoxList.innerHTML = `<div class="empty">No boxes on this image.</div>`;
@@ -2033,6 +2015,23 @@ function poolLabelFixedBoxSlotReady(template) {
 
 function renderPoolLabelShortcuts() {
   if (!el.poolLabelShortcuts) return;
+  const classKey = poolLabelSortedClassEntries().map(([id, name]) => `${id}:${name}`).join("|");
+  const fixedKey = poolLabelState.fixedBoxSlots.map(slot => {
+    if (!slot) return "";
+    return `${slot.classId}:${slot.x}:${slot.y}:${slot.w}:${slot.h}`;
+  }).join("|");
+  const renderKey = [
+    classKey,
+    poolLabelState.shortcutSlots.join(","),
+    fixedKey,
+    poolLabelState.currentClassId,
+    poolLabelState.activeShortcutSlot ?? "",
+    poolLabelState.activeFixedBoxSlot ?? "",
+    poolLabelState.recordingFixedBoxSlot ?? "",
+    poolLabelState.fixedShortcutMode ? "fixed" : "class"
+  ].join("||");
+  if (poolLabelShortcutsRenderKey === renderKey) return;
+  poolLabelShortcutsRenderKey = renderKey;
   poolLabelCloseShortcutMenus();
   el.poolLabelShortcuts.replaceChildren();
   poolLabelSetFixedShortcutMode(poolLabelState.fixedShortcutMode);
@@ -2251,11 +2250,18 @@ function poolLabelShortcutSlotElement(slotNumber) {
 
 function renderPoolLabelClassManager() {
   if (!el.poolLabelClassList) return;
-  renderPoolLabelSlotSelect();
-  el.poolLabelClassList.replaceChildren();
   const terms = poolLabelSearchTerms(el.poolLabelClassSearchInput?.value || "");
   const classes = poolLabelSortedClassEntries()
     .filter(([classId, className]) => poolLabelClassMatchesSearch(classId, className, terms));
+  const renderKey = [
+    normalizePoolLabelSearchText(el.poolLabelClassSearchInput?.value || ""),
+    poolLabelState.currentClassId,
+    state.classNames.size,
+    classes.map(([classId, className]) => `${classId}:${className}`).join("|")
+  ].join("||");
+  if (poolLabelClassManagerRenderKey === renderKey) return;
+  poolLabelClassManagerRenderKey = renderKey;
+  el.poolLabelClassList.replaceChildren();
   if (!classes.length) {
     el.poolLabelClassList.innerHTML = state.classNames.size
       ? `<div class="empty">No matching classes.</div>`
@@ -2286,16 +2292,3 @@ function normalizePoolLabelSearchText(value) {
   return String(value || "").trim().toLowerCase();
 }
 
-function renderPoolLabelSlotSelect() {
-  if (!el.poolLabelBindSlotSelect) return;
-  const currentValue = el.poolLabelBindSlotSelect.value || "0";
-  el.poolLabelBindSlotSelect.replaceChildren();
-  for (const slot of POOL_LABEL_SLOT_ORDER) {
-    const classId = poolLabelState.shortcutSlots[slot];
-    const option = document.createElement("option");
-    option.value = String(slot);
-    option.textContent = `${slot}: ${Number.isInteger(classId) && state.classNames.has(classId) ? classDisplay(classId) : "empty"}`;
-    el.poolLabelBindSlotSelect.appendChild(option);
-  }
-  el.poolLabelBindSlotSelect.value = currentValue;
-}

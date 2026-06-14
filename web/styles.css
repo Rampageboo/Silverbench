@@ -3820,3 +3820,45 @@ html[data-startup-overlay-mode="overview"] #startupOverlay .startup-brand-abbrev
     grid-template-columns: 1fr;
   }
 }
+
+/* React shell embed mode: hide duplicate navigation and startup chrome */
+html.ywb-embed #startupOverlay,
+html.ywb-embed #toolNav {
+  display: none !important;
+}
+
+html.ywb-embed .app {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+html.ywb-embed .app > *:not(#toolNav) {
+  grid-column: 1 !important;
+}
+
+html.ywb-embed-image-workspace .topbar {
+  display: none !important;
+}
+
+html.ywb-embed-booting .topbar,
+html.ywb-embed-booting .app > main,
+html.ywb-embed-booting .image-pool-dup-overlay,
+html.ywb-embed-booting .settings-overlay {
+  visibility: hidden !important;
+}
+
+html.ywb-embed-booting #app::before {
+  content: "正在加载工具页…";
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  background: #0f172a;
+  color: #94a3b8;
+  font: 14px/1.4 "Segoe UI", system-ui, sans-serif;
+}
+
+html.ywb-embed-ready #app::before {
+  content: none;
+  display: none;
+}

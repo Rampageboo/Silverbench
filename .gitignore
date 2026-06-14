@@ -33,6 +33,8 @@ MANIFEST
 *.spec
 
 # Installer logs
+logs/*
+!logs/.gitkeep
 pip-log.txt
 pip-delete-this-directory.txt
 
@@ -188,3 +190,8 @@ session/
 cache/
 Cache/
 *.tmp
+
+# Node / Vite / Tauri
+node_modules/
+apps/desktop/dist/
+apps/desktop/src-tauri/target/

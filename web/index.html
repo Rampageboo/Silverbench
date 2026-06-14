@@ -31,6 +31,22 @@
       document.documentElement.setAttribute("data-startup-overlay-mode", mode);
       window.__YWB_STARTUP_OVERLAY_MODE__ = mode;
     })();
+    (function () {
+      try {
+        var params = new URLSearchParams(location.search);
+        if (params.get("embed") !== "1") return;
+        document.documentElement.classList.add("ywb-embed");
+        document.documentElement.classList.add("ywb-embed-booting");
+        var tab = params.get("tab") || "video";
+        window.__YWB_EMBED__ = {
+          tab: tab,
+          workspaceRoot: params.get("workspaceRoot") || ""
+        };
+        if (tab === "image-pool" || tab === "inbox" || tab === "yolo") {
+          document.documentElement.classList.add("ywb-embed-image-workspace");
+        }
+      } catch (e) {}
+    })();
   </script>
 </head>
 <body>
@@ -65,7 +81,32 @@
       </div>
     </section>
   </div>
-		  <div class="app video" id="app">
+		  <div class="app" id="app">
+		    <script>
+		      (function applyEmbedTabClassImmediately() {
+		        var app = document.getElementById("app");
+		        if (!app) return;
+		        if (!window.__YWB_EMBED__) {
+		          app.className = "app video";
+		          return;
+		        }
+		        var valid = {
+		          "image-pool": 1,
+		          inbox: 1,
+		          video: 1,
+		          yolo: 1,
+		          "pool-label": 1,
+		          "train-prep": 1,
+		          train: 1,
+		          crop: 1,
+		          "mask-noise": 1,
+		          merge: 1
+		        };
+		        var tab = window.__YWB_EMBED__.tab || "video";
+		        if (!valid[tab]) tab = "video";
+		        app.className = "app " + tab;
+		      })();
+		    </script>
 		    <nav class="tabbar tabbar--rail" id="toolNav" aria-label="Workbench navigation">
 		      <div class="tabbar-surface">
 			      <div class="tabbar-head">
@@ -475,82 +516,6 @@
               </svg>
             </button>
           </div>
-          <div class="viewer-splitter" id="viewerSplitter" title="Drag to resize preview and tools"></div>
-          <div class="edit-tray">
-            <div class="tool-card">
-              <div class="group-title">Image Edit</div>
-              <div class="segmented">
-                <label><input type="radio" name="editMode" value="none" checked>Off</label>
-                <label><input type="radio" name="editMode" value="crop">Crop</label>
-                <label><input type="radio" name="editMode" value="black">Black</label>
-                <label><input type="radio" name="editMode" value="box">Box</label>
-              </div>
-              <div class="row" style="margin-top:10px">
-                <button id="addEditBtn">Add</button>
-                <button id="clearSelectionBtn">Clear</button>
-                <button id="undoLastBtn">Undo Last</button>
-                <button class="danger" id="undoImageBtn">Undo Image</button>
-              </div>
-              <div class="row" style="margin-top:8px">
-                <button id="repeatOneBtn">Repeat x1</button>
-                <button id="repeatManyBtn">Repeat to Shift</button>
-              </div>
-              <div class="row" style="margin-top:8px">
-                <button class="primary" id="applyBlackBtn">Apply Blacks</button>
-                <button id="applyAllBlackBtn">Apply All Blacks</button>
-              </div>
-              <div class="row" style="margin-top:8px">
-                <button id="chooseBackupBtn" title="Browser folder mode: choose a manual backup folder">Source Copy Folder</button>
-                <button class="danger" id="restoreBackupBtn" title="Workspace: restore the current image from image_pool_backup">Restore Backup</button>
-              </div>
-              <div class="pending-line" id="pendingStatus">Black boxes: dashed preview until Apply.</div>
-              <div class="pending-list" id="currentPendingList">
-                <div class="pending-item"><span>No image edits on this image yet.</span></div>
-              </div>
-              <div class="hint" id="editHint">Workspace: before the first Crop/Black save, the original is backed up to image_pool_backup/. Black boxes preview as dashed outlines until Apply. Ctrl/Shift-click thumbnails for multi-select.</div>
-            </div>
-            <div class="tray-splitter" data-tray-splitter="imageCrop" title="Drag to resize tool cards"></div>
-
-            <div class="tool-card">
-              <div class="group-title">TXT / Box Edit</div>
-              <div class="hint" id="boxEditStatus">Click a green YOLO box to select. Drag inside to move; drag a corner to resize.</div>
-              <div class="box-form" style="margin-top:10px">
-                <label>Class <input id="boxClassInput" type="number" step="1"></label>
-                <label>X center <input id="boxXInput" type="number" step="0.001" min="0" max="1"></label>
-                <label>Y center <input id="boxYInput" type="number" step="0.001" min="0" max="1"></label>
-                <label>Width <input id="boxWInput" type="number" step="0.001" min="0" max="1"></label>
-                <label>Height <input id="boxHInput" type="number" step="0.001" min="0" max="1"></label>
-              </div>
-              <div class="row" style="margin-top:10px">
-	                <button id="updateBoxBtn">Update Box</button>
-	                <button class="danger" id="deleteBoxBtn">Delete Box</button>
-	              </div>
-            </div>
-            <div class="tray-splitter" data-tray-splitter="boxClasses" title="Drag to resize tool cards"></div>
-
-            <div class="tool-card selected-class-card">
-              <div class="tool-card-head">
-                <div class="group-title">Selected Classes</div>
-                <span id="selectedClassStatus" class="status">0 images</span>
-              </div>
-		              <div class="row selected-class-actions" data-selected-class-mode="detect">
-		                <button id="selectAllSelectedClassesBtn">Select All</button>
-		                <button id="clearSelectedClassesBtn">Clear</button>
-		                <button id="addSelectedClassesIncludeBtn" class="primary">Add Include</button>
-		                <button id="addSelectedClassesExcludeBtn">Add Exclude</button>
-		                <button id="removeSelectedClassesBtn" class="danger">Remove Class</button>
-		              </div>
-		              <div class="row selected-class-actions is-hidden" data-selected-class-mode="classify">
-		                <input id="classFolderNameInput" type="text" placeholder="class ID or folder name">
-		                <button id="addClassFolderBtn">Add Folder</button>
-		                <button id="moveSelectedToClassBtn" class="primary">Move Selected</button>
-		              </div>
-	              <div class="selected-class-list" id="selectedClassList">
-                <div class="empty">Select images to inspect classes.</div>
-              </div>
-              <div class="hint" id="selectedClassHint">Uses the current image plus Ctrl/Shift selected thumbnails.</div>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -607,15 +572,10 @@
 	          </div>
 	          <div class="panel-body filter-panel-body">
 	            <div class="pool-label-tools">
-	              <div class="row">
-	                <input id="poolLabelClassNameInput" type="text" placeholder="class name">
-	                <button id="poolLabelAddClassBtn" class="primary">Add Class</button>
-	                <button id="poolLabelRenameClassBtn">Rename Selected</button>
-	              </div>
-	              <div class="row" style="margin-top:8px">
-	                <select id="poolLabelBindSlotSelect"></select>
-	                <button id="poolLabelBindSlotBtn">Bind Current to Slot</button>
-	              </div>
+              <div class="row">
+                <input id="poolLabelClassNameInput" type="text" placeholder="class name">
+                <button id="poolLabelAddClassBtn" class="primary">Add Class</button>
+              </div>
 	              <input id="poolLabelClassSearchInput" class="pool-label-class-search" type="search" placeholder="search classes">
 	              <div class="pool-label-class-list" id="poolLabelClassList"></div>
 	            </div>

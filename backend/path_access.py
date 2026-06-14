@@ -44,11 +44,26 @@ class PathAccess:
             self.remember_path(resolved.parent)
         return resolved
 
+    def _path_is_allowed(self, resolved: Path, allowed: Path) -> bool:
+        if resolved == allowed:
+            return True
+        if allowed in resolved.parents:
+            return True
+        if sys.platform == "win32":
+            resolved_text = str(resolved).casefold()
+            allowed_text = str(allowed).casefold()
+            if resolved_text == allowed_text:
+                return True
+            prefix = allowed_text.rstrip("\\/") + "\\"
+            if resolved_text.startswith(prefix) or resolved_text.startswith(allowed_text.rstrip("\\/") + "/"):
+                return True
+        return False
+
     def require_path(self, path: Path | str) -> Path:
         resolved = _normalize_path(path)
         with self._lock:
             allowed_paths = tuple(self._allowed)
-        if not any(resolved == allowed or allowed in resolved.parents for allowed in allowed_paths):
+        if not any(self._path_is_allowed(resolved, allowed) for allowed in allowed_paths):
             raise PermissionError(f"Path was not selected through this app session: {resolved}")
         return resolved
 

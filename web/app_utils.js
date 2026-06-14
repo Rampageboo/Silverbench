@@ -59,3 +59,10 @@ function naturalCompare(a, b) {
 function escapeHtml(text) {
   return String(text).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
 }
+
+function parseBackendJson(raw, fallback = {}) {
+  if (raw == null || raw === "") return fallback;
+  if (typeof raw === "object") return raw;
+  if (typeof raw === "string") return JSON.parse(raw);
+  return fallback;
+}

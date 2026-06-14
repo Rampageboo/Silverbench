@@ -183,6 +183,8 @@ def read_metadata_rows(workspace_root: Path) -> dict[str, Any]:
                         "clf_enabled": _bool_to_csv(_csv_to_bool(raw.get("clf_enabled") or "")),
                         "clf_class": (raw.get("clf_class") or "").strip(),
                         "detect_junk": _bool_to_csv(_csv_to_bool(raw.get("detect_junk") or "")),
+                        "reviewed": _bool_to_csv(_csv_to_bool(raw.get("reviewed") or "")),
+                        "flagged": _bool_to_csv(_csv_to_bool(raw.get("flagged") or "")),
                     }
                 )
     detect_classes = list_detect_dataset_classes(root)
@@ -225,6 +227,8 @@ def upsert_metadata_rows(workspace_root: Path, updates: list[dict[str, Any]]) ->
                 "clf_enabled": "1",
                 "clf_class": "",
                 "detect_junk": "0",
+                "reviewed": "0",
+                "flagged": "0",
             }
         if "split" in item and item["split"]:
             split = str(item["split"]).strip().lower()
@@ -245,6 +249,10 @@ def upsert_metadata_rows(workspace_root: Path, updates: list[dict[str, Any]]) ->
                 row["clf_enabled"] = "0"
             else:
                 row["clf_class"] = sanitize_class_name(class_name) if class_name else ""
+        if "reviewed" in item:
+            row["reviewed"] = _bool_to_csv(bool(item["reviewed"]))
+        if "flagged" in item:
+            row["flagged"] = _bool_to_csv(bool(item["flagged"]))
         by_filename[filename] = row
         if is_new:
             created += 1
@@ -256,7 +264,16 @@ def upsert_metadata_rows(workspace_root: Path, updates: list[dict[str, Any]]) ->
     with metadata_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(
             handle,
-            fieldnames=["filename", "split", "detect_enabled", "clf_enabled", "clf_class", "detect_junk"],
+            fieldnames=[
+                "filename",
+                "split",
+                "detect_enabled",
+                "clf_enabled",
+                "clf_class",
+                "detect_junk",
+                "reviewed",
+                "flagged",
+            ],
         )
         writer.writeheader()
         writer.writerows(rows)

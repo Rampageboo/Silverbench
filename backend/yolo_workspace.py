@@ -25,7 +25,7 @@ DEFAULT_APP_SETTINGS = {
 MAX_INBOX_ASSIGN_BATCHES = 2000
 MAX_INBOX_BUILD_RUNS = 500
 DEFAULT_CLF_CLASSES = ("class_A", "class_B", "unknown", "background")
-METADATA_HEADER = "filename,split,detect_enabled,clf_enabled,clf_class,detect_junk\n"
+METADATA_HEADER = "filename,split,detect_enabled,clf_enabled,clf_class,detect_junk,reviewed,flagged\n"
 METADATA_EXAMPLE_ROWS = """img001.png,train,1,1,class_A
 img002.png,train,1,1,class_B
 img003.png,val,1,1,background

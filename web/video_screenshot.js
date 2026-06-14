@@ -49,7 +49,7 @@
 	    }
 
 	    async function openVideoSource() {
-	      // Same as yolo_label_viewer_web.html in Chrome/Edge: use the file picker + <video>.
+	      // Browser-only fallback: use the file picker + <video>.
 	      if (pyBackend.mode === "http") {
 	        if (pyBackend.ready && pyBackend.bridge?.chooseVideoFiles) {
 	          const raw = await backendCall("chooseVideoFiles", "Choose Videos");

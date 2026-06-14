@@ -6,7 +6,12 @@ const projectRoot = path.resolve(__dirname, '..');
 
 function startServer() {
   const code = [
-    'import yolo_label_viewer_server as s',
+    'import importlib.util, pathlib, sys',
+    'root = pathlib.Path(".").resolve()',
+    'spec = importlib.util.spec_from_file_location("yolo_label_viewer_server", root / "legacy" / "web" / "yolo_label_viewer_server.py")',
+    's = importlib.util.module_from_spec(spec)',
+    'sys.modules["yolo_label_viewer_server"] = s',
+    'spec.loader.exec_module(s)',
     "server=s.ThreadingHTTPServer(('127.0.0.1',0), s.Handler)",
     'port=server.server_address[1]',
     "print(f'URL=http://127.0.0.1:{port}/?apiToken={s.API_TOKEN}', flush=True)",

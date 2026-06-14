@@ -1,7 +1,7 @@
 async function readAppSettingsData() {
   if (!await ensurePythonBackend()) return {};
   try {
-    return JSON.parse(await backendCall("readAppSettings") || "{}");
+    return parseBackendJson(await backendCall("readAppSettings"), {});
   } catch {
     return {};
   }
@@ -47,7 +47,7 @@ async function restoreLastOpenedFolderOnStartup() {
     }
     let result;
     try {
-      result = JSON.parse(raw);
+      result = parseBackendJson(raw, null);
     } catch {
       setStatus("恢复工作区失败：路径解析错误。");
       return;
@@ -79,8 +79,10 @@ async function restoreLastOpenedFolderOnStartup() {
 async function restoreWorkspaceSessionTab(session) {
   const tab = validSessionTab(session?.activeTab || "image-pool");
   applyAppSessionData(session);
-  switchTab(tab, { deferViewRefresh: true });
+  switchTab(tab, { deferViewRefresh: false, notifyParent: false });
   if ((tab === "pool-label" || tab === "yolo") && typeof refreshYoloOrPoolLabelView === "function") {
+    applyPoolLabelResumeFieldsFromSession(session);
+    primePoolLabelResumeForView();
     await refreshYoloOrPoolLabelView(tab, appShellTabSwitchSeq);
   } else if (tab === "image-pool" && typeof rebuildImagePoolPairs === "function") {
     rebuildImagePoolPairs();
@@ -91,9 +93,11 @@ async function restoreWorkspaceSessionTab(session) {
   }
 }
 
+window.restoreWorkspaceSessionTab = restoreWorkspaceSessionTab;
+
 async function openYoloFolderFlow() {
   if (!await ensurePythonBackend()) {
-    alert("需要 Python 后端。请运行 yolo_label_viewer_web_app.py 或 yolo_label_viewer_server.py。");
+    alert("需要 Python 后端。请运行 run.bat，或使用 run_legacy_qt.bat / legacy/web/yolo_label_viewer_server.py。");
     return;
   }
   const path = await backendCall("chooseDirectory", "打开文件夹");
@@ -103,7 +107,7 @@ async function openYoloFolderFlow() {
 
 async function openImagePoolFolderFlow() {
   if (!await ensurePythonBackend()) {
-    alert("需要 Python 后端。请运行 yolo_label_viewer_web_app.py 或 yolo_label_viewer_server.py。");
+    alert("需要 Python 后端。请运行 run.bat，或使用 run_legacy_qt.bat / legacy/web/yolo_label_viewer_server.py。");
     return;
   }
   const path = await backendCall("chooseDirectory", "打开工作区");
@@ -122,7 +126,7 @@ window.importBackendFolderPath = async function importBackendFolderPath(path, op
   if (!await ensurePythonBackend()) throw new Error("Python backend is not available.");
 
   const raw = await backendCall("openFolder", path, true);
-  const result = JSON.parse(raw || "{}");
+  const result = parseBackendJson(raw, {});
   if (!result.ok) throw new Error("无法打开该文件夹。");
 
   if (result.kind === "workspace") {
@@ -178,11 +182,28 @@ window.importBackendWorkspacePath = async function importBackendWorkspacePath(pa
   }
 };
 
+window.restoreEmbedWorkspaceOnly = async function restoreEmbedWorkspaceOnly(workspaceRoot = "") {
+  if (!await ensurePythonBackend()) return;
+  let path = String(workspaceRoot || "").trim();
+  if (!path) {
+    const settings = await readAppSettingsData();
+    path = String(
+      settings.lastOpenedWorkspace || settings.lastOpenedFolder || settings.lastWorkspace || ""
+    ).trim();
+  }
+  if (!path || typeof window.importBackendWorkspacePath !== "function") return;
+  await window.importBackendWorkspacePath(path, {
+    silent: true,
+    restoreSession: false,
+    target: "image-pool"
+  });
+};
+
 async function bindWorkspaceToImagePool(workspaceRoot, options = {}) {
   const { silent = false } = options;
   if (!await ensurePythonBackend()) throw new Error("Python backend is not available.");
 
-  const info = JSON.parse(await backendCall("getWorkspaceInfo", workspaceRoot));
+  const info = parseBackendJson(await backendCall("getWorkspaceInfo", workspaceRoot), {});
   if (!info?.ok) throw new Error("无效的工作区路径。");
 
   const workspaceChanged = state.workspaceRoot !== info.root;
@@ -259,7 +280,7 @@ async function loadYoloWorkspaceAnnotation(workspaceRoot, preferredPath = null, 
   const { restoreSession = true, silent = false } = options;
   if (!await ensurePythonBackend()) throw new Error("Python backend is not available.");
 
-  const info = JSON.parse(await backendCall("getWorkspaceInfo", workspaceRoot));
+  const info = parseBackendJson(await backendCall("getWorkspaceInfo", workspaceRoot), {});
   if (!info?.ok) throw new Error("无效的工作区路径。");
 
   state.workspaceRoot = info.root;
@@ -314,7 +335,7 @@ async function loadYoloWorkspaceAnnotation(workspaceRoot, preferredPath = null, 
   if (typeof ensureInboxMetadataIndex === "function") {
     await ensureInboxMetadataIndex();
   }
-  const paths = JSON.parse(await backendCall("listWorkspaceFiles", info.root));
+  const paths = parseBackendJson(await backendCall("listWorkspaceFiles", info.root), []);
   for (const relPath of paths) state.files.set(relPath, backendFileHandle(info.root, relPath));
   state.classNames = await readClassNames();
   state.datasetTask = "detect";

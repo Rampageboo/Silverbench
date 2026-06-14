@@ -475,6 +475,37 @@ function clearCropQueue() {
   updateBatchCropStatus();
 }
 
+async function restoreCropQueueFromSession() {
+  if (!state.workspaceRoot || typeof readWorkspaceSessionData !== "function") return;
+  try {
+    const session = await readWorkspaceSessionData({ lite: true });
+    const queue = session?.cropQueue;
+    if (!queue || !Array.isArray(queue.items) || !queue.items.length) return;
+    if (!cropState.queue) cropState.queue = { items: [], sources: [] };
+    const existing = new Set(cropState.queue.items.map(item => item.absPath));
+    let added = 0;
+    for (const item of queue.items) {
+      if (!item?.absPath || existing.has(item.absPath)) continue;
+      cropState.queue.items.push(item);
+      existing.add(item.absPath);
+      added += 1;
+    }
+    if (Array.isArray(queue.sources)) {
+      for (const source of queue.sources) {
+        cropState.queue.sources.push(source);
+      }
+    }
+    if (added) {
+      updateCropQueueUI();
+      ensureDefaultCropOutput();
+      renderBatchCropClassAnchors();
+      updateBatchCropStatus();
+    }
+  } catch (error) {
+    console.warn("restoreCropQueueFromSession:", error);
+  }
+}
+
 function sendFilteredPairsToCrop() {
   if (!canSendToCrop()) {
     alert("请先在 YOLO View 打开分类数据集。");

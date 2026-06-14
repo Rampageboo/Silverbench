@@ -71,14 +71,102 @@ function applyImagePoolSessionData(data) {
 
 function restoreImagePoolViewportIfNeeded() {
   const restore = imagePoolState?.restoreViewport;
-  if (!restore || !el.imagePoolGridWrap || !imagePoolState.pairs.length) return;
+  if (!restore || !el.imagePoolGridWrap || !imagePoolState.pairs?.length) {
+    if (imagePoolState) imagePoolState.restoreViewport = null;
+    return;
+  }
+  let scrollTop = Math.max(0, Math.round(Number(restore.scrollTop) || 0));
+  const imagePath = typeof restore.imagePath === "string" ? restore.imagePath : "";
+  if (imagePath) {
+    const index = imagePoolState.pairs.findIndex(pair => pair.imagePath === imagePath);
+    if (index >= 0) {
+      const columns = Math.max(1, imagePoolVirtual?.columns || 1);
+      const rowHeight = Math.max(1, imagePoolVirtual?.rowHeight || 150);
+      const row = Math.floor(index / columns);
+      scrollTop = row * rowHeight;
+    }
+  }
   imagePoolState.restoreViewport = null;
+  const applyScroll = () => {
+    if (!el.imagePoolGridWrap) return;
+    el.imagePoolGridWrap.scrollTop = scrollTop;
+    if (typeof renderImagePoolGrid === "function") renderImagePoolGrid();
+  };
+  requestAnimationFrame(() => requestAnimationFrame(applyScroll));
 }
+
+function isPoolLabelSessionTab(tab = state.activeTab) {
+  return tab === "pool-label" || tab === "yolo";
+}
+
+function syncPoolLabelResumeSnapshotFromLiveView() {
+  const path = state.pairs[state.currentIndex]?.imagePath || state.currentImagePath || state.poolLabelResumeImagePath || "";
+  if (path) {
+    state.poolLabelResumeImagePath = path;
+    state.currentImagePath = path;
+  }
+  const scrollTop = Math.max(0, Math.round(el.galleryScroll?.scrollTop || state.galleryScrollTop || 0));
+  state.poolLabelResumeGalleryScrollTop = scrollTop;
+  state.galleryScrollTop = scrollTop;
+}
+
+function applyPoolLabelResumeFieldsFromSession(data) {
+  if (!data || typeof data !== "object") return;
+  const resumePath = data.poolLabelCurrentImagePath || data.currentImagePath || "";
+  if (resumePath) {
+    state.poolLabelResumeImagePath = resumePath;
+    state.currentImagePath = resumePath;
+  }
+  state.poolLabelResumeGalleryScrollTop = Math.max(0, Math.round(Number(data.galleryScrollTop) || 0));
+  state.galleryScrollTop = state.poolLabelResumeGalleryScrollTop;
+}
+
+function primePoolLabelResumeForView() {
+  const resumePath = state.poolLabelResumeImagePath || state.currentImagePath || "";
+  if (resumePath) state.currentImagePath = resumePath;
+  state.galleryScrollTop = Math.max(0, Math.round(Number(state.poolLabelResumeGalleryScrollTop ?? state.galleryScrollTop) || 0));
+}
+
+window.syncPoolLabelResumeSnapshotFromLiveView = syncPoolLabelResumeSnapshotFromLiveView;
+window.primePoolLabelResumeForView = primePoolLabelResumeForView;
+window.applyPoolLabelResumeFieldsFromSession = applyPoolLabelResumeFieldsFromSession;
+
+async function restoreYoloViewFromWorkspaceSession() {
+  if (!hasDatasetOpen() || !Array.isArray(state.allPairs) || !state.allPairs.length) return false;
+  primePoolLabelResumeForView();
+  const applied = await loadSessionFromDefault(null, { lite: true });
+  primePoolLabelResumeForView();
+  if (!applied && !state.poolLabelResumeImagePath) return false;
+  if (typeof applyFilter === "function") applyFilter(false);
+  if (typeof invalidateVirtualGallery === "function" && typeof galleryVirtual !== "undefined") {
+    invalidateVirtualGallery(galleryVirtual);
+  }
+  if (typeof renderGallery === "function") renderGallery({ patchVisible: true });
+  const resumePath = state.currentImagePath;
+  if (resumePath && state.pairs.length) {
+    const idx = state.pairs.findIndex(pair => pair.imagePath === resumePath);
+    if (idx >= 0 && typeof selectIndex === "function" && idx !== state.currentIndex) {
+      await selectIndex(idx);
+    }
+  }
+  if (typeof restoreGalleryScrollForSession === "function") {
+    const idx = state.pairs.findIndex(pair => pair.imagePath === state.currentImagePath);
+    restoreGalleryScrollForSession(idx >= 0 ? idx : null);
+  } else if (el.galleryScroll) {
+    el.galleryScroll.scrollTop = state.galleryScrollTop || 0;
+  }
+  if (typeof renderCurrentImage === "function") await renderCurrentImage();
+  return true;
+}
+
+window.restoreYoloViewFromWorkspaceSession = restoreYoloViewFromWorkspaceSession;
 
 function applyAppSessionData(data) {
   if (!data || typeof data !== "object") return;
   state.activeTab = validSessionTab(data.activeTab);
+  applyPoolLabelResumeFieldsFromSession(data);
   if (typeof imagePoolState !== "undefined") applyImagePoolSessionData(data);
+  if (typeof poolLabelState !== "undefined") applyPoolLabelSessionFields(data);
 }
 
 function sessionPathStem(path) {
@@ -162,15 +250,41 @@ async function readCurrentSessionData(options = {}) {
       text = await backendCall("readSessionFile");
     }
     if (!text?.trim()) return {};
-    let data = JSON.parse(text);
+    let data = parseBackendJson(text, {});
     return data && typeof data === "object" ? data : {};
   } catch {
     return {};
   }
 }
 
+function poolLabelSessionPayload(data) {
+  if (!data || typeof data !== "object") return null;
+  const hasPayload = Array.isArray(data.poolLabelShortcuts)
+    || Array.isArray(data.poolLabelFixedBoxes)
+    || data.poolLabelPointerToolEnabled != null
+    || data.poolLabelAutoFitEnabled != null;
+  return hasPayload ? data : null;
+}
+
+async function readPoolLabelSessionPayload() {
+  let data = await readCurrentSessionData();
+  if (poolLabelSessionPayload(data)) return data;
+  if (!hasWorkspaceRoot()) return data;
+  try {
+    const globalText = await backendCall("readSessionFile");
+    const global = parseBackendJson(globalText, {});
+    if (!poolLabelSessionPayload(global)) return data;
+    if (!sessionsRootMatches(global.workspaceRoot, state.workspaceRoot)) return data;
+    return { ...data, ...global };
+  } catch (error) {
+    console.warn("Global pool label session read:", error);
+    return data;
+  }
+}
+
 async function loadPoolLabelSessionFields() {
-  applyPoolLabelSessionFields(await readCurrentSessionData());
+  applyPoolLabelSessionFields(await readPoolLabelSessionPayload());
+  if (typeof renderPoolLabelShortcuts === "function") renderPoolLabelShortcuts();
 }
 
 function defaultInboxSession() {
@@ -252,7 +366,7 @@ async function readWorkspaceSessionData(options = {}) {
       ? await backendCall("readWorkspaceSession", state.workspaceRoot, "lite")
       : await backendCall("readWorkspaceSession", state.workspaceRoot);
     if (!text?.trim()) return {};
-    const data = JSON.parse(text);
+    const data = parseBackendJson(text, {});
     return data && typeof data === "object" ? data : {};
   } catch (error) {
     console.warn("readWorkspaceSession failed:", error);
@@ -302,7 +416,13 @@ async function saveInboxSession(inbox) {
 }
 
 function sessionData() {
-  const currentPairPath = state.pairs[state.currentIndex]?.imagePath || "";
+  if (isPoolLabelSessionTab()) {
+    syncPoolLabelResumeSnapshotFromLiveView();
+  }
+  const galleryScrollTop = isPoolLabelSessionTab()
+    ? Math.max(0, Math.round(el.galleryScroll?.scrollTop || state.galleryScrollTop || state.poolLabelResumeGalleryScrollTop || 0))
+    : Math.max(0, Math.round(state.poolLabelResumeGalleryScrollTop || state.galleryScrollTop || 0));
+  const poolLabelImagePath = state.poolLabelResumeImagePath || state.currentImagePath || "";
   const data = {
     version: 3,
     yoloSource: state.yoloSource || "",
@@ -311,16 +431,15 @@ function sessionData() {
     rootName: state.rootName,
     datasetRoot: state.datasetBackendRoot || "",
     savedAt: new Date().toISOString(),
-    galleryScrollTop: Math.max(0, Math.round(el.galleryScroll?.scrollTop || state.galleryScrollTop || 0)),
+    galleryScrollTop,
     imageViewMode: state.imageViewMode,
     imagePoolUi: typeof imagePoolState !== "undefined" ? imagePoolSessionData() : undefined,
     reviewedPaths: [...state.reviewedPaths].sort(),
     flaggedPaths: [...state.flaggedPaths].sort()
   };
-  const currentImagePath = currentPairPath || state.currentImagePath || "";
-  if (currentImagePath) {
-    data.currentImagePath = currentImagePath;
-    data.poolLabelCurrentImagePath = currentImagePath;
+  if (poolLabelImagePath) {
+    data.poolLabelCurrentImagePath = poolLabelImagePath;
+    if (isPoolLabelSessionTab()) data.currentImagePath = poolLabelImagePath;
   }
   Object.assign(data, poolLabelSessionData());
   return data;
@@ -340,8 +459,12 @@ function applySessionData(data, preferredPath = null) {
     preferredPath || data.poolLabelCurrentImagePath || data.currentImagePath,
     validPaths
   );
-  if (currentPath) state.currentImagePath = currentPath;
+  if (currentPath) {
+    state.currentImagePath = currentPath;
+    state.poolLabelResumeImagePath = currentPath;
+  }
   state.galleryScrollTop = Math.max(0, Math.round(Number(data.galleryScrollTop) || 0));
+  state.poolLabelResumeGalleryScrollTop = state.galleryScrollTop;
   return true;
 }
 
@@ -361,8 +484,12 @@ function saveSessionSoon() {
 
 function flushSessionSoon() {
   if (!hasDatasetOpen() && !hasWorkspaceRoot()) return;
-  state.currentImagePath = state.pairs[state.currentIndex]?.imagePath || state.currentImagePath || "";
-  state.galleryScrollTop = Math.max(0, Math.round(el.galleryScroll?.scrollTop || state.galleryScrollTop || 0));
+  if (isPoolLabelSessionTab()) {
+    syncPoolLabelResumeSnapshotFromLiveView();
+  } else {
+    state.currentImagePath = state.pairs[state.currentIndex]?.imagePath || state.currentImagePath || state.poolLabelResumeImagePath || "";
+    state.galleryScrollTop = Math.max(0, Math.round(el.galleryScroll?.scrollTop || state.galleryScrollTop || state.poolLabelResumeGalleryScrollTop || 0));
+  }
   clearTimeout(sessionSaveTimer);
   saveSession({ manual: false }).catch(error => console.warn("Session flush failed:", error));
 }
@@ -381,7 +508,7 @@ async function saveSession({ manual = false } = {}) {
   const snapshot = sessionData();
   try {
     if (!await ensurePythonBackend()) {
-      throw new Error("Fixed session save only works inside the Python app. Start yolo_label_viewer_web_app.py instead of opening web/index.html directly in Chrome/Edge.");
+      throw new Error("Fixed session save only works inside the Qt app. Use run_legacy_qt.bat instead of opening web/index.html directly in Chrome/Edge.");
     }
     let path = "";
     if (usesWorkspaceSession()) {

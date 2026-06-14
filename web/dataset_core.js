@@ -4,7 +4,7 @@ async function openDatasetFolder() {
 	        return;
 	      }
       if (location.protocol.startsWith("http")) {
-        alert("本地 Python 后端未连接。请通过 yolo_label_viewer_server.py 打开页面，不要直接打开 web/index.html 文件。");
+        alert("本地 Python 后端未连接。请通过 run.bat 启动，或使用 legacy/web/yolo_label_viewer_server.py 打开页面。");
         return;
       }
       if (!window.showDirectoryPicker) {
@@ -110,15 +110,6 @@ async function openDatasetFolder() {
       } else if (key === "n") {
         event.preventDefault();
         nextIssue();
-      } else if (key === "b") {
-        event.preventDefault();
-        setEditMode("black");
-      } else if (key === "x") {
-        event.preventDefault();
-        setEditMode("box");
-      } else if (key === "c") {
-        event.preventDefault();
-        setEditMode("crop");
       } else if (key === "escape") {
         event.preventDefault();
         setEditMode("none");
@@ -127,7 +118,8 @@ async function openDatasetFolder() {
 
     function setEditMode(mode) {
       const input = document.querySelector(`input[name=editMode][value="${mode}"]`);
-      if (input) input.checked = true;
+      if (!input) return;
+      input.checked = true;
     }
 
     async function loadFromDirectoryHandle(handle, preferredPath = null) {
@@ -904,6 +896,7 @@ async function openDatasetFolder() {
     }
 
     async function updateSelectedClassPanel() {
+      if (!el.selectedClassList) return;
       const token = ++selectedClassRenderToken;
       const pairs = selectedImagePairs();
       updateSelectedClassActions();

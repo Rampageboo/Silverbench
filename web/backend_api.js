@@ -34,16 +34,43 @@ function wrapQtBackendBridge(raw) {
   });
 }
 
+function sleep(ms) {
+  return new Promise(resolve => window.setTimeout(resolve, ms));
+}
+
+async function runEmbedBootWhenReady() {
+  for (let attempt = 0; attempt < 80; attempt++) {
+    if (typeof window.bootstrapEmbedWorkbench === "function") {
+      await window.bootstrapEmbedWorkbench();
+      return;
+    }
+    await sleep(100);
+  }
+  throw new Error("Embed bootstrap is not available.");
+}
+
+async function pingHttpBackend(attempt = 0) {
+  try {
+    const response = await fetch("/api", {
+      method: "POST",
+      headers: httpBackendHeaders(),
+      body: JSON.stringify({ method: "ping", args: [] })
+    });
+    const data = await response.json();
+    if (Boolean(data.ok && data.result === "python-backend-ready")) return data;
+  } catch {
+    // Backend may still be starting in the Tauri desktop shell.
+  }
+  if (attempt >= 40) return { ok: false };
+  await sleep(250);
+  return pingHttpBackend(attempt + 1);
+}
+
 function initPythonBackend() {
   if (pyBackend.readyPromise) return pyBackend.readyPromise;
   window.setStartupProgress?.(90, "连接后端...", "正在检测 Python 后端");
   if (location.protocol === "http:" || location.protocol === "https:") {
-    pyBackend.readyPromise = fetch("/api", {
-      method: "POST",
-      headers: httpBackendHeaders(),
-      body: JSON.stringify({ method: "ping", args: [] })
-    })
-      .then(response => response.json())
+    pyBackend.readyPromise = pingHttpBackend()
       .then(data => {
         const ready = Boolean(data.ok && data.result === "python-backend-ready");
         pyBackend.ready = ready;
@@ -53,10 +80,17 @@ function initPythonBackend() {
           startHttpBackendHeartbeat();
           setStatus("Local backend connected.");
           syncAppUiSettingsFromBackend?.().catch(error => console.warn("App settings sync:", error));
-          window.setStartupProgress?.(95, "恢复工作区...", "加载上次打开的状态");
-          restoreLastOpenedFolderOnStartup()
-            .catch(error => console.warn("Folder restore:", error))
-            .finally(() => window.finishStartupOverlay?.("本地后端已连接"));
+          if (window.__YWB_EMBED__) {
+            window.setStartupProgress?.(95, "嵌入模式...", "加载工具页");
+            runEmbedBootWhenReady()
+              .catch(error => console.warn("Embed boot:", error))
+              .finally(() => window.finishStartupOverlay?.("嵌入模式"));
+          } else {
+            window.setStartupProgress?.(95, "恢复工作区...", "加载上次打开的状态");
+            restoreLastOpenedFolderOnStartup()
+              .catch(error => console.warn("Folder restore:", error))
+              .finally(() => window.finishStartupOverlay?.("本地后端已连接"));
+          }
         } else {
           window.finishStartupOverlay?.("后端不可用");
         }
@@ -129,16 +163,23 @@ function startHttpBackendHeartbeat() {
   pyBackend.heartbeatTimer = setInterval(sendHeartbeat, 5000);
 }
 
+function normalizeBackendResult(result) {
+  if (result != null && typeof result === "object") {
+    return JSON.stringify(result);
+  }
+  return result;
+}
+
 function parseBackendPayload(raw, method) {
   const data = typeof raw === "string" ? JSON.parse(raw || "{}") : raw;
   if (!data.ok) {
     const error = data.error || `Backend call failed: ${method}`;
     if (error.includes("Unknown API method")) {
-      throw new Error(`${error}\n\nRestart yolo_label_viewer_server.py / yolo_label_viewer_web_app.py so the backend loads the latest API.`);
+      throw new Error(`${error}\n\nRestart run.bat (or the legacy server) so the backend loads the latest API.`);
     }
     throw new Error(error);
   }
-  return data.result;
+  return normalizeBackendResult(data.result);
 }
 
 function backendCall(method, ...args) {
@@ -168,9 +209,9 @@ async function httpBackendCall(method, args) {
   if (!data.ok) {
     const error = data.error || `Backend call failed: ${method}`;
     if (error.includes("Unknown API method")) {
-      throw new Error(`${error}\n\nRestart yolo_label_viewer_server.py / yolo_label_viewer_web_app.py so the backend loads the latest API.`);
+      throw new Error(`${error}\n\nRestart run.bat (or the legacy server) so the backend loads the latest API.`);
     }
     throw new Error(error);
   }
-  return data.result;
+  return normalizeBackendResult(data.result);
 }

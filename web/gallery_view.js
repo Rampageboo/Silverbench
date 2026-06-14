@@ -181,6 +181,24 @@
       if (options.render !== false) renderGallery();
     }
 
+    function restoreGalleryScrollForSession(index = null) {
+      if (!el.galleryScroll || !state.pairs.length) return;
+      const resolvedIndex = Number.isInteger(index)
+        ? index
+        : (state.currentIndex >= 0 && state.currentIndex < state.pairs.length
+          ? state.currentIndex
+          : state.pairs.findIndex(pair => pair.imagePath === state.currentImagePath));
+      const apply = () => {
+        if (resolvedIndex >= 0) {
+          scrollGalleryNearIndex(resolvedIndex);
+          return;
+        }
+        el.galleryScroll.scrollTop = Math.max(0, Math.round(Number(state.galleryScrollTop) || 0));
+        renderGallery({ patchVisible: true });
+      };
+      requestAnimationFrame(() => requestAnimationFrame(apply));
+    }
+
     let previewRenderToken = 0;
     let previewBoxesCache = [];
 
@@ -259,7 +277,9 @@
     }
 
     function schedulePreviewGuideRedraw(options = {}) {
-      if (!options.zoomOnly) paintPreviewOverlayGuides();
+      if (!options.zoomOnly) {
+        scheduleUiFrame(UI_FRAME.PREVIEW_OVERLAY, () => paintPreviewOverlayGuides());
+      }
       if (!options.overlayOnly) schedulePreviewZoomRedraw();
     }
 
@@ -281,7 +301,7 @@
         }
       }
       window.poolLabelInvalidateZoomBase?.();
-      redrawPreviewOverlays();
+      schedulePreviewBaseRepaint();
     }
 
     function previewBoxesForCurrentPair() {

@@ -11,19 +11,20 @@ from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineCore import QWebEnginePage
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from backend.bridge import APP_DIR as BACKEND_APP_DIR, BackendBridge
 from backend.video_screenshot import find_videos
 from backend.dataset_merge import VIDEO_EXTENSIONS
 from backend.yolo_workspace import read_app_settings
 
 
-APP_DIR = Path(__file__).resolve().parent
-ICON_ICO_PATH = APP_DIR / "assets" / "app-icon.ico"
-ICON_PNG_PATH = APP_DIR / "assets" / "app-icon.png"
+ICON_ICO_PATH = ROOT / "assets" / "app-icon.ico"
+ICON_PNG_PATH = ROOT / "assets" / "app-icon.png"
 WINDOWS_APP_ID = "YoloWorkBench.Desktop.1"
-HTML_PATH = APP_DIR / "web" / "index.html"
-if not HTML_PATH.exists():
-    HTML_PATH = APP_DIR / "yolo_label_viewer_web.html"
+HTML_PATH = ROOT / "web" / "index.html"
 
 
 def _configure_windows_taskbar_icon() -> None:
@@ -74,7 +75,7 @@ def _apply_app_icon(app: QtWidgets.QApplication, window: QtWidgets.QMainWindow) 
 def _collect_video_paths(urls: list[QtCore.QUrl]) -> list[str]:
     paths: list[str] = []
     for url in urls:
-        if not url.isLocalFile():
+        if not url.is_local_file():
             continue
         path = Path(url.toLocalFile())
         if path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS:
@@ -87,7 +88,7 @@ def _collect_video_paths(urls: list[QtCore.QUrl]) -> list[str]:
 def _collect_directory_paths(urls: list[QtCore.QUrl]) -> list[str]:
     paths: list[str] = []
     for url in urls:
-        if not url.isLocalFile():
+        if not url.is_local_file():
             continue
         path = Path(url.toLocalFile())
         if path.is_dir():
@@ -137,8 +138,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("YoloWorkBench")
         self.resize(1440, 900)
         self.setAcceptDrops(True)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_NoSystemBackground, True)
 
         self.view = VideoWebView(self)
+        self.view.setAttribute(QtCore.Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+        self.view.setAttribute(QtCore.Qt.WidgetAttribute.WA_NoSystemBackground, True)
         self.view.setPage(WebPage(self.view))
         self.view.setAcceptDrops(True)
         self.setCentralWidget(self.view)

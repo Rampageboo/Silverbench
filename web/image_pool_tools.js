@@ -932,7 +932,7 @@ async function openImageInYoloView(filename) {
 
   }
 
-  switchTab("pool-label");
+  switchTab("pool-label", window.__YWB_EMBED__ ? { notifyParent: true } : undefined);
 
   if (state.imageViewMode !== "all") {
 
