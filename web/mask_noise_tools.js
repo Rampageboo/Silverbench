@@ -300,7 +300,7 @@ async function importMaskNoiseFolder() {
         return;
       }
       const bitmap = await createImageBitmap(file);
-      const backendPath = options.backendPath || await backendCall("saveMaskNoiseTempImage", file.name || `${kind}.png`, await cropBlobToBase64(file));
+      const backendPath = options.backendPath || await backendCall("saveMaskNoiseTempImage", file.name || `${kind}.png`, await cropBlobToBase64(file), state.workspaceRoot || "");
       if (kind === "mask") {
         maskNoiseState.maskFile = file;
         maskNoiseState.maskBitmap = bitmap;

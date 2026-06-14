@@ -20,11 +20,11 @@ Example (dry run):
         --detect-label-source "Z:/Yolo/detect_labels" ^
         --dry-run
 
-Create a new workspace (folder scaffold + workspace.json):
+Create a new workspace (folder scaffold + workspace/workspace.json):
 
     python build_yolo_links.py init --workspace "Z:/Yolo/my_project"
 
-Build using workspace config (paths from workspace.json):
+Build using workspace config (paths from workspace/workspace.json):
 
     python build_yolo_links.py build --workspace "Z:/Yolo/my_project" --rebuild
 
@@ -845,7 +845,7 @@ def run_sync_metadata(args: argparse.Namespace) -> int:
 def _add_build_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--workspace",
-        help="Workspace root with workspace.json (fills other path arguments).",
+        help="Workspace root with workspace/workspace.json (fills other path arguments).",
     )
     parser.add_argument("--image-pool", help="Central source image folder.")
     parser.add_argument("--metadata", help="CSV metadata file.")
@@ -892,7 +892,7 @@ def main() -> int:
 
     init_parser = subparsers.add_parser(
         "init",
-        help="Create a new YOLO workspace folder structure and workspace.json.",
+        help="Create a new YOLO workspace folder structure and workspace/workspace.json.",
     )
     init_parser.add_argument(
         "--workspace",
@@ -908,7 +908,7 @@ def main() -> int:
     init_parser.add_argument(
         "--force",
         action="store_true",
-        help="Overwrite workspace.json / metadata template / README if present.",
+        help="Overwrite workspace/workspace.json / metadata template / README if present.",
     )
 
     build_parser = subparsers.add_parser(

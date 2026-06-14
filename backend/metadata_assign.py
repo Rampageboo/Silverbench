@@ -10,9 +10,9 @@ from .path_access import _normalize_path
 from .yolo_workspace import (
     DEFAULT_CLF_CLASSES,
     METADATA_HEADER,
-    WORKSPACE_CONFIG_FILENAME,
     load_workspace_config,
     sanitize_class_name,
+    workspace_config_file,
 )
 
 
@@ -145,7 +145,7 @@ def get_workspace_classes(workspace_root: Path) -> list[str]:
     classes: list[str] = []
     seen: set[str] = set()
 
-    config_path = root / WORKSPACE_CONFIG_FILENAME
+    config_path = workspace_config_file(root)
     if config_path.is_file():
         data = json.loads(config_path.read_text(encoding="utf-8"))
         for name in data.get("classification_classes") or []:

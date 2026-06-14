@@ -66,6 +66,7 @@ from .yolo_workspace import (
     workspace_info,
     write_app_settings,
     write_workspace_session,
+    workspace_meta_dir,
 )
 from .yolo_tracker import track_yolo_forward_from_json
 
@@ -77,6 +78,7 @@ class BackendService:
         session_dir: Path,
         session_file: Path,
         *,
+        app_settings_dir: Path | None = None,
         choose_directory: Callable[[str], str] | None = None,
         choose_image_file: Callable[[str], str] | None = None,
         choose_classifier_model: Callable[[str], str] | None = None,
@@ -87,6 +89,7 @@ class BackendService:
         self.path_access = path_access
         self.session_dir = session_dir
         self.session_file = session_file
+        self.app_settings_dir = app_settings_dir or session_dir
         self.choose_directory = choose_directory
         self.choose_image_file = choose_image_file
         self.choose_classifier_model = choose_classifier_model
@@ -369,10 +372,10 @@ class BackendService:
             return True
 
     def _handle_readAppSettings(self, args: list[Any]) -> object:
-            return json.dumps(read_app_settings(self.session_dir), ensure_ascii=False)
+            return json.dumps(read_app_settings(self.app_settings_dir), ensure_ascii=False)
 
     def _handle_writeAppSettings(self, args: list[Any]) -> object:
-            write_app_settings(self.session_dir, json.loads(args[0] or "{}"))
+            write_app_settings(self.app_settings_dir, json.loads(args[0] or "{}"))
             return True
 
     def _handle_openFolder(self, args: list[Any]) -> object:
@@ -560,12 +563,13 @@ class BackendService:
             root = self.path_access.require_path(args[0])
             max_size = int(args[2]) if len(args) > 2 else 128
             quality = int(args[3]) if len(args) > 3 else 54
+            cache_dir = workspace_meta_dir(Path(root))
             return image_pool_thumbnail_base64(
                 Path(root),
                 str(args[1]),
                 max_size=max_size,
                 quality=quality,
-                session_dir=self.session_dir,
+                session_dir=cache_dir,
             )
 
     def _handle_ensureImagePoolBackup(self, args: list[Any]) -> object:
@@ -617,8 +621,12 @@ class BackendService:
             return str(self.session_file)
 
     def _handle_saveMaskNoiseTempImage(self, args: list[Any]) -> object:
-            self.session_dir.mkdir(parents=True, exist_ok=True)
-            return mask_noise_save_temp_image(self.session_dir, args[0], args[1])
+            session_dir = self.session_dir
+            if len(args) > 2 and str(args[2] or "").strip():
+                workspace_root = self.path_access.require_path(args[2])
+                session_dir = workspace_meta_dir(Path(workspace_root))
+            session_dir.mkdir(parents=True, exist_ok=True)
+            return mask_noise_save_temp_image(session_dir, args[0], args[1])
 
     def _handle_maskNoisePreview(self, args: list[Any]) -> object:
             settings = mask_noise_settings_from_json(args[2] if len(args) > 2 else "{}")

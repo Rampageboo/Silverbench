@@ -29,6 +29,9 @@ class ListWorkspaceFilesTests(unittest.TestCase):
             self.assertIn("detect_dataset/labels/train/b.txt", paths)
             self.assertIn("detect_dataset/data.yaml", paths)
 
+            inner_paths = list_workspace_files(root / "workspace")
+            self.assertEqual(paths, inner_paths)
+
 
 if __name__ == "__main__":
     unittest.main()

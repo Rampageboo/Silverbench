@@ -19,7 +19,7 @@
         if (mode === "overview") {
           try {
             var xhr = new XMLHttpRequest();
-            xhr.open("GET", "../Sessions/yolo_app_settings.json", false);
+            xhr.open("GET", "../yolo_app_settings.json", false);
             xhr.send(null);
             if (xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300)) {
               var data = JSON.parse(xhr.responseText || "{}");
@@ -271,7 +271,7 @@
 	          <span id="inboxSelectionCount" class="status">0 selected</span>
 	        </div>
 	        <div class="panel-body inbox-assign-body">
-	          <div class="status inbox-workflow-status" id="inboxWorkflowStatus">Record file: .yolo_label_viewer/session.json</div>
+	          <div class="status inbox-workflow-status" id="inboxWorkflowStatus">Record file: workspace/session.json</div>
 	          <div class="inbox-target-toggle" role="group" aria-label="Assign to Detect or Clf">
 	            <button type="button" class="inbox-target-option" id="inboxTargetDetectBtn" data-target="detect">Detect</button>
 	            <button type="button" class="inbox-target-option active" id="inboxTargetClfBtn" data-target="clf">Clf</button>

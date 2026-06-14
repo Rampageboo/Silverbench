@@ -8,10 +8,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.yolo_workspace import (
+    LEGACY_WORKSPACE_SESSION_DIRNAME,
     WORKSPACE_SESSION_DIRNAME,
     compact_inbox_session_for_storage,
+    create_workspace,
+    is_workspace_root,
+    load_workspace_config,
     read_workspace_session_dict,
     normalize_inbox_session,
+    workspace_session_file,
     write_workspace_session_dict,
 )
 
@@ -56,7 +61,7 @@ class WorkspaceSessionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             write_workspace_session_dict(root, {"version": "old"})
-            legacy_dir = root / WORKSPACE_SESSION_DIRNAME
+            legacy_dir = root / LEGACY_WORKSPACE_SESSION_DIRNAME
             legacy_dir.mkdir(parents=True, exist_ok=True)
             (legacy_dir / "inbox_workflow.json").write_text(
                 '{"ui":{"filter":"all"},"assignBatches":[],"buildRuns":[]}',
@@ -67,6 +72,63 @@ class WorkspaceSessionTests(unittest.TestCase):
 
             self.assertEqual(session["version"], 3)
             self.assertEqual(session["inbox"]["ui"]["filter"], "all")
+
+    def test_legacy_root_config_and_session_still_load(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "image_pool").mkdir()
+            (root / "detect_labels").mkdir()
+            (root / "detect_dataset").mkdir()
+            (root / "clf_dataset").mkdir()
+            (root / "workspace.json").write_text(
+                (
+                    '{"version":1,"paths":{"image_pool":"image_pool",'
+                    '"detect_labels":"detect_labels","metadata":"metadata.csv",'
+                    '"detect_dataset":"detect_dataset","clf_dataset":"clf_dataset"}}'
+                ),
+                encoding="utf-8",
+            )
+            legacy_dir = root / LEGACY_WORKSPACE_SESSION_DIRNAME
+            legacy_dir.mkdir()
+            (legacy_dir / "session.json").write_text('{"version":3,"activeTab":"inbox"}', encoding="utf-8")
+
+            self.assertEqual(load_workspace_config(root).root, root.resolve())
+            session = read_workspace_session_dict(root)
+
+            self.assertEqual(session["activeTab"], "inbox")
+            self.assertTrue((root / WORKSPACE_SESSION_DIRNAME / "session.json").is_file())
+
+    def test_moved_app_session_filename_migrates_from_workspace_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_workspace(root)
+            moved_session = root / WORKSPACE_SESSION_DIRNAME / "yolo_label_viewer_session.json"
+            moved_session.write_text('{"version":3,"activeTab":"mask-noise"}', encoding="utf-8")
+
+            session = read_workspace_session_dict(root)
+
+            self.assertEqual(session["activeTab"], "mask-noise")
+            self.assertTrue((root / WORKSPACE_SESSION_DIRNAME / "session.json").is_file())
+
+    def test_workspace_metadata_lives_under_workspace_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_workspace(root)
+
+            self.assertTrue((root / WORKSPACE_SESSION_DIRNAME / "workspace.json").is_file())
+            self.assertFalse((root / "workspace.json").exists())
+
+            paths = load_workspace_config(root)
+            self.assertEqual(paths.image_pool, (root / "image_pool").resolve())
+
+            session_path = Path(write_workspace_session_dict(root, {"version": 3}))
+            self.assertEqual(session_path, workspace_session_file(root))
+            self.assertEqual(session_path, root / WORKSPACE_SESSION_DIRNAME / "session.json")
+
+            inner = root / WORKSPACE_SESSION_DIRNAME
+            self.assertTrue(is_workspace_root(inner))
+            self.assertEqual(load_workspace_config(inner).root, root.resolve())
+            self.assertEqual(workspace_session_file(inner), session_path)
 
 
 if __name__ == "__main__":

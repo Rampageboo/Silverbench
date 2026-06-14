@@ -7,9 +7,12 @@ from pathlib import Path
 from typing import Any
 
 WORKSPACE_CONFIG_FILENAME = "workspace.json"
+WORKSPACE_META_DIRNAME = "workspace"
 APP_SETTINGS_FILENAME = "yolo_app_settings.json"
-WORKSPACE_SESSION_DIRNAME = ".yolo_label_viewer"
+WORKSPACE_SESSION_DIRNAME = WORKSPACE_META_DIRNAME
+LEGACY_WORKSPACE_SESSION_DIRNAME = ".yolo_label_viewer"
 WORKSPACE_SESSION_FILENAME = "session.json"
+LEGACY_APP_SESSION_FILENAME = "yolo_label_viewer_session.json"
 LEGACY_INBOX_WORKFLOW_FILENAME = "inbox_workflow.json"
 DEFAULT_APP_SETTINGS = {
     "version": 3,
@@ -97,13 +100,45 @@ def parse_class_names(raw: str) -> list[str]:
     return classes
 
 
+def _has_workspace_data_dir(root: Path) -> bool:
+    return (
+        (root / "image_pool").is_dir()
+        or (root / "detect_labels").is_dir()
+        or (root / "detect_dataset").is_dir()
+        or (root / "clf_dataset").is_dir()
+    )
+
+
+def workspace_root_path(path: Path) -> Path:
+    root = path.expanduser().resolve()
+    if (
+        root.name == WORKSPACE_META_DIRNAME
+        and (root / WORKSPACE_CONFIG_FILENAME).is_file()
+        and _has_workspace_data_dir(root.parent)
+    ):
+        return root.parent
+    return root
+
+
+def workspace_meta_dir(workspace_root: Path) -> Path:
+    return workspace_root_path(workspace_root) / WORKSPACE_META_DIRNAME
+
+
+def workspace_config_file(workspace_root: Path) -> Path:
+    root = workspace_root_path(workspace_root)
+    new_path = workspace_meta_dir(root) / WORKSPACE_CONFIG_FILENAME
+    if new_path.is_file():
+        return new_path
+    return root / WORKSPACE_CONFIG_FILENAME
+
+
 def is_workspace_root(path: Path) -> bool:
-    return (path.expanduser().resolve() / WORKSPACE_CONFIG_FILENAME).is_file()
+    return workspace_config_file(path).is_file()
 
 
 def looks_like_workspace(root: Path) -> bool:
     """True when folder is (or should be) a YOLO hard-link workspace root."""
-    root = root.expanduser().resolve()
+    root = workspace_root_path(root)
     if is_workspace_root(root):
         return True
     if (root / "image_pool").is_dir():
@@ -117,7 +152,7 @@ def looks_like_workspace(root: Path) -> bool:
 
 def find_parent_workspace(path: Path) -> Path | None:
     """Return the nearest ancestor directory that is a YOLO workspace root."""
-    current = path.expanduser().resolve()
+    current = workspace_root_path(path)
     for parent in current.parents:
         if is_workspace_root(parent):
             return parent
@@ -167,7 +202,7 @@ def resolve_open_folder(root: Path, *, init_if_needed: bool = True) -> dict[str,
     VS Code-style open folder: pick one directory, auto-detect how to use it.
     Plain folders become YOLO workspaces (scaffold created when needed).
     """
-    root = root.expanduser().resolve()
+    root = workspace_root_path(root)
     if not root.is_dir():
         raise NotADirectoryError(f"Not a directory: {root}")
 
@@ -220,11 +255,11 @@ def resolve_open_folder(root: Path, *, init_if_needed: bool = True) -> dict[str,
 
 
 def load_workspace_config(workspace_root: Path) -> WorkspacePaths:
-    root = workspace_root.expanduser().resolve()
-    config_path = root / WORKSPACE_CONFIG_FILENAME
+    root = workspace_root_path(workspace_root)
+    config_path = workspace_config_file(root)
     if not config_path.is_file():
         raise FileNotFoundError(
-            f"Workspace config not found: {config_path}. Run init to create a workspace."
+            f"Workspace config not found under {root / WORKSPACE_META_DIRNAME}. Run init to create a workspace."
         )
 
     data = json.loads(config_path.read_text(encoding="utf-8"))
@@ -293,6 +328,7 @@ def workspace_info(workspace_root: Path) -> dict[str, Any]:
 def list_workspace_files(workspace_root: Path) -> list[str]:
     """Relative paths under workspace root for Box Label / workspace annotation UI."""
     paths = load_workspace_config(workspace_root)
+    root = paths.root
     files: list[str] = []
     if paths.image_pool.is_dir():
         for path in sorted(paths.image_pool.iterdir()):
@@ -310,14 +346,15 @@ def list_workspace_files(workspace_root: Path) -> list[str]:
             if path.is_file() and path.suffix.lower() == ".txt":
                 files.append(f"detect_dataset/labels/{split}/{path.name}")
     for rel in ("data.yaml", "classes.txt", Path("detect_dataset") / "data.yaml"):
-        candidate = workspace_root / rel
+        candidate = root / rel
         if candidate.is_file():
-            files.append(candidate.relative_to(workspace_root).as_posix())
+            files.append(candidate.relative_to(root).as_posix())
     return sorted(set(files))
 
 
 def _workspace_relative_dirs(classes: list[str]) -> list[Path]:
     rel_paths = [
+        Path(WORKSPACE_META_DIRNAME),
         Path("image_pool"),
         Path("image_pool_backup"),
         Path("image_pool_backup") / "labels",
@@ -363,7 +400,7 @@ def create_workspace(
     dry_run: bool = False,
     force: bool = False,
 ) -> InitStats:
-    workspace_root = workspace_root.expanduser().resolve()
+    workspace_root = workspace_root_path(workspace_root)
     if not dry_run:
         workspace_root.mkdir(parents=True, exist_ok=True)
     class_names = list(classes or DEFAULT_CLF_CLASSES)
@@ -393,7 +430,7 @@ def create_workspace(
         "classification_classes": class_names,
     }
     _write_text_file(
-        workspace_root / WORKSPACE_CONFIG_FILENAME,
+        workspace_meta_dir(workspace_root) / WORKSPACE_CONFIG_FILENAME,
         json.dumps(config, indent=2, ensure_ascii=False) + "\n",
         dry_run=dry_run,
         force=force,
@@ -507,11 +544,23 @@ def write_app_settings(session_dir: Path, settings: dict[str, Any]) -> str:
 
 
 def workspace_session_file(workspace_root: Path) -> Path:
-    return (
-        workspace_root.expanduser().resolve()
-        / WORKSPACE_SESSION_DIRNAME
-        / WORKSPACE_SESSION_FILENAME
-    )
+    return workspace_meta_dir(workspace_root) / WORKSPACE_SESSION_FILENAME
+
+
+def legacy_workspace_session_dir(workspace_root: Path) -> Path:
+    return workspace_root_path(workspace_root) / LEGACY_WORKSPACE_SESSION_DIRNAME
+
+
+def legacy_workspace_session_file(workspace_root: Path) -> Path:
+    return legacy_workspace_session_dir(workspace_root) / WORKSPACE_SESSION_FILENAME
+
+
+def legacy_workspace_session_files(workspace_root: Path) -> list[Path]:
+    root = workspace_root_path(workspace_root)
+    return [
+        workspace_meta_dir(root) / LEGACY_APP_SESSION_FILENAME,
+        legacy_workspace_session_file(root),
+    ]
 
 
 def default_inbox_session() -> dict[str, Any]:
@@ -559,8 +608,7 @@ def _migrate_legacy_inbox_workflow(workspace_root: Path, session: dict[str, Any]
     if session.get("inbox"):
         return session, False
     legacy_path = (
-        workspace_root.expanduser().resolve()
-        / WORKSPACE_SESSION_DIRNAME
+        legacy_workspace_session_dir(workspace_root)
         / LEGACY_INBOX_WORKFLOW_FILENAME
     )
     if not legacy_path.is_file():
@@ -577,17 +625,23 @@ def _migrate_legacy_inbox_workflow(workspace_root: Path, session: dict[str, Any]
 
 def read_workspace_session_dict(workspace_root: Path) -> dict[str, Any]:
     path = workspace_session_file(workspace_root)
+    legacy_paths = legacy_workspace_session_files(workspace_root)
     session: dict[str, Any] = {}
     file_size = 0
-    if path.is_file():
+    read_path = path
+    if not read_path.is_file():
+        read_path = next((candidate for candidate in legacy_paths if candidate.is_file()), path)
+    if read_path.is_file():
         try:
-            file_size = path.stat().st_size
-            loaded = json.loads(path.read_text(encoding="utf-8"))
+            file_size = read_path.stat().st_size
+            loaded = json.loads(read_path.read_text(encoding="utf-8"))
             if isinstance(loaded, dict):
                 session = loaded
         except (OSError, json.JSONDecodeError):
             session = {}
-    session, migrated = _migrate_legacy_inbox_workflow(workspace_root, session)
+    migrated_from_legacy_session = read_path in legacy_paths and bool(session)
+    session, migrated_inbox = _migrate_legacy_inbox_workflow(workspace_root, session)
+    migrated = migrated_from_legacy_session or migrated_inbox
     if migrated:
         write_workspace_session_dict(workspace_root, session)
     if session.get("inbox"):

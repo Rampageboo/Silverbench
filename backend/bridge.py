@@ -25,6 +25,7 @@ class BackendBridge(QtCore.QObject):
             self.path_access,
             SESSION_DIR,
             SESSION_FILE,
+            app_settings_dir=APP_DIR,
             choose_directory=self._choose_directory_dialog,
             choose_image_file=self._choose_image_file_dialog,
             choose_classifier_model=self._choose_classifier_model_dialog,

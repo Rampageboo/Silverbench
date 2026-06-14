@@ -11,7 +11,7 @@ from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineCore import QWebEnginePage
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
-from backend.bridge import BackendBridge, SESSION_DIR
+from backend.bridge import APP_DIR as BACKEND_APP_DIR, BackendBridge
 from backend.video_screenshot import find_videos
 from backend.dataset_merge import VIDEO_EXTENSIONS
 from backend.yolo_workspace import read_app_settings
@@ -47,7 +47,7 @@ def _load_app_icon() -> QtGui.QIcon | None:
 
 
 def _startup_overlay_mode() -> str:
-    mode = str(read_app_settings(SESSION_DIR).get("startupOverlayMode") or "overview").strip().lower()
+    mode = str(read_app_settings(BACKEND_APP_DIR).get("startupOverlayMode") or "overview").strip().lower()
     return "minimal" if mode == "minimal" else "overview"
 
 
@@ -182,10 +182,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 def _configure_webengine() -> None:
-    """Keep GPU compositing on by default; isolate startup overlay in CSS instead."""
+    """Keep GPU compositing on, but avoid Qt WebEngine's flaky accelerated 2D canvas path."""
     flags: list[str] = []
-    if os.environ.get("YWB_DISABLE_GPU_COMPOSITING", "").strip().lower() in ("1", "true", "yes"):
+    gpu_disabled = os.environ.get("YWB_DISABLE_GPU_COMPOSITING", "").strip().lower() in ("1", "true", "yes")
+    if gpu_disabled:
         flags.append("--disable-gpu-compositing")
+    else:
+        angle_backend = os.environ.get("YWB_WEBENGINE_ANGLE", "d3d11").strip().lower()
+        if angle_backend:
+            flags.append(f"--use-angle={angle_backend}")
+        if os.environ.get("YWB_ACCELERATED_2D_CANVAS", "").strip().lower() not in ("1", "true", "yes"):
+            flags.append("--disable-accelerated-2d-canvas")
+        if os.environ.get("YWB_WEBENGINE_ZERO_COPY", "").strip().lower() not in ("1", "true", "yes"):
+            flags.append("--disable-zero-copy")
     current = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
     for flag in flags:
         if flag not in current:

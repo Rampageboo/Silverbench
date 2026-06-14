@@ -21,6 +21,7 @@ from backend.torch_runtime import torch_runtime_info
 
 APP_DIR = Path(__file__).resolve().parent
 WEB_DIR = APP_DIR / "web"
+APP_SETTINGS_DIR = APP_DIR
 SESSION_DIR = APP_DIR / "Sessions"
 SESSION_FILE = SESSION_DIR / "yolo_label_viewer_session.json"
 API_TOKEN = secrets.token_urlsafe(32)
@@ -145,6 +146,7 @@ SERVICE = BackendService(
     PATH_ACCESS,
     SESSION_DIR,
     SESSION_FILE,
+    app_settings_dir=APP_SETTINGS_DIR,
     choose_directory=_choose_directory,
     choose_image_file=_choose_image_file,
     choose_classifier_model=_choose_onnx_file,

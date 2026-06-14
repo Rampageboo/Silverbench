@@ -72,18 +72,7 @@ function applyImagePoolSessionData(data) {
 function restoreImagePoolViewportIfNeeded() {
   const restore = imagePoolState?.restoreViewport;
   if (!restore || !el.imagePoolGridWrap || !imagePoolState.pairs.length) return;
-  const columns = Math.max(1, imagePoolVirtual?.columns || 1);
-  const rowHeight = Math.max(1, imagePoolVirtual?.rowHeight || 150);
-  let top = restore.scrollTop || 0;
-  if (restore.imagePath) {
-    const index = imagePoolState.pairs.findIndex(pair => pair.imagePath === restore.imagePath);
-    if (index >= 0) top = Math.floor(index / columns) * rowHeight;
-  }
   imagePoolState.restoreViewport = null;
-  scheduleUiFrame(UI_FRAME.GALLERY_SCROLL, () => {
-    el.imagePoolGridWrap.scrollTop = top;
-    renderImagePoolGrid();
-  });
 }
 
 function applyAppSessionData(data) {
@@ -174,9 +163,6 @@ async function readCurrentSessionData(options = {}) {
     }
     if (!text?.trim()) return {};
     let data = JSON.parse(text);
-    if (usesWorkspaceSession() && data.workspaceRoot && !sessionsRootMatches(data.workspaceRoot, state.workspaceRoot)) {
-      return {};
-    }
     return data && typeof data === "object" ? data : {};
   } catch {
     return {};
@@ -311,7 +297,7 @@ async function saveInboxSession(inbox) {
     summary = inboxSessionSummary(next.inbox);
     return next;
   });
-  if (!path) throw new Error("无法写入工作区 .yolo_label_viewer/session.json");
+  if (!path) throw new Error("无法写入工作区 workspace/session.json");
   return summary;
 }
 
@@ -409,7 +395,7 @@ async function saveSession({ manual = false } = {}) {
     }
     if (manual) {
       setStatus(usesWorkspaceSession()
-        ? `审阅进度已写入工作区（.yolo_label_viewer/session.json）`
+        ? `审阅进度已写入工作区（workspace/session.json）`
         : `审阅进度已保存：${path}`);
     }
   } catch (error) {

@@ -75,8 +75,8 @@ function updateInboxWorkflowSummary(summary = null) {
     const lastBuildAt = stats.lastBuildAt || (inboxState.workflow?.buildRuns || []).at(-1)?.at || "";
     const lastBuildText = lastBuildAt ? ` | last build ${lastBuildAt.replace("T", " ").replace("Z", " UTC")}` : "";
     el.inboxWorkflowStatus.textContent = pendingFiles
-      ? `pending ${pendingFiles} image(s) / ${pendingBatches} batch(es)${lastBuildText} | .yolo_label_viewer/session.json`
-      : `no pending batches${lastBuildText} | .yolo_label_viewer/session.json`;
+      ? `pending ${pendingFiles} image(s) / ${pendingBatches} batch(es)${lastBuildText} | workspace/session.json`
+      : `no pending batches${lastBuildText} | workspace/session.json`;
   }
   if (el.inboxBuildLinksBtn) {
     el.inboxBuildLinksBtn.disabled = Boolean(inboxState.assigning);

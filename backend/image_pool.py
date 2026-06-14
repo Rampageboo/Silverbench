@@ -9,8 +9,8 @@ from .image_preview import image_thumbnail_jpeg_base64
 
 from .yolo_workspace import (
     IMAGE_EXTENSIONS,
-    WORKSPACE_SESSION_DIRNAME,
     load_workspace_config,
+    workspace_meta_dir,
 )
 
 SNAPSHOT_FILENAME = "image_pool_snapshot.json"
@@ -23,11 +23,7 @@ DEFAULT_SNAPSHOT: dict[str, Any] = {
 
 
 def snapshot_path(workspace_root: Path) -> Path:
-    return (
-        workspace_root.expanduser().resolve()
-        / WORKSPACE_SESSION_DIRNAME
-        / SNAPSHOT_FILENAME
-    )
+    return workspace_meta_dir(workspace_root) / SNAPSHOT_FILENAME
 
 
 def read_snapshot(workspace_root: Path) -> dict[str, Any]:

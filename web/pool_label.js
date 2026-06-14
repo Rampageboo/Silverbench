@@ -134,6 +134,10 @@ function poolLabelSyncDisplayRect() {
   const nextHeight = Math.max(1, Math.floor(canvasBox.height));
   if (el.canvas.width !== nextWidth) el.canvas.width = nextWidth;
   if (el.canvas.height !== nextHeight) el.canvas.height = nextHeight;
+  if (el.previewOverlayCanvas) {
+    if (el.previewOverlayCanvas.width !== nextWidth) el.previewOverlayCanvas.width = nextWidth;
+    if (el.previewOverlayCanvas.height !== nextHeight) el.previewOverlayCanvas.height = nextHeight;
+  }
   clampPreviewView();
   const baseScale = Math.min(el.canvas.width / bitmap.width, el.canvas.height / bitmap.height, 1);
   const scale = baseScale * state.viewZoom;
@@ -404,8 +408,11 @@ function poolLabelZoomCenterPoint() {
 }
 
 function poolLabelFillZoomCanvas(zoomCtx) {
+  const width = zoomCtx.canvas?.width || POOL_LABEL_ZOOM.width;
+  const height = zoomCtx.canvas?.height || POOL_LABEL_ZOOM.height;
+  zoomCtx.clearRect(0, 0, width, height);
   zoomCtx.fillStyle = "#111827";
-  zoomCtx.fillRect(0, 0, POOL_LABEL_ZOOM.width, POOL_LABEL_ZOOM.height);
+  zoomCtx.fillRect(0, 0, width, height);
 }
 
 function poolLabelSyncZoomClassLabel() {
@@ -424,9 +431,15 @@ function poolLabelZoomContext() {
 function poolLabelZoomBaseContext() {
   if (!poolLabelZoomBaseCanvas) {
     poolLabelZoomBaseCanvas = document.createElement("canvas");
-    poolLabelZoomBaseCanvas.width = POOL_LABEL_ZOOM.width;
-    poolLabelZoomBaseCanvas.height = POOL_LABEL_ZOOM.height;
     poolLabelZoomBaseCtx = poolLabelZoomBaseCanvas.getContext("2d");
+  }
+  if (poolLabelZoomBaseCanvas.width !== POOL_LABEL_ZOOM.width) {
+    poolLabelZoomBaseCanvas.width = POOL_LABEL_ZOOM.width;
+    poolLabelZoomBaseKey = "";
+  }
+  if (poolLabelZoomBaseCanvas.height !== POOL_LABEL_ZOOM.height) {
+    poolLabelZoomBaseCanvas.height = POOL_LABEL_ZOOM.height;
+    poolLabelZoomBaseKey = "";
   }
   return poolLabelZoomBaseCtx;
 }
@@ -513,8 +526,8 @@ function poolLabelDrawZoomCrosshair(zoomCtx, x, y, color, alpha = 1) {
 }
 
 function poolLabelDrawZoomFullCrosshair(zoomCtx, x, y, color, alpha = 0.9) {
-  const w = POOL_LABEL_ZOOM.width;
-  const h = POOL_LABEL_ZOOM.height;
+  const w = zoomCtx.canvas?.width || POOL_LABEL_ZOOM.width;
+  const h = zoomCtx.canvas?.height || POOL_LABEL_ZOOM.height;
   zoomCtx.save();
   zoomCtx.strokeStyle = color;
   zoomCtx.lineWidth = 1.5;
@@ -577,8 +590,14 @@ function drawPoolLabelZoomView() {
   const zoomCtx = poolLabelZoomContext();
   if (!zoomCanvas || !zoomCtx) return;
 
-  if (zoomCanvas.width !== POOL_LABEL_ZOOM.width) zoomCanvas.width = POOL_LABEL_ZOOM.width;
-  if (zoomCanvas.height !== POOL_LABEL_ZOOM.height) zoomCanvas.height = POOL_LABEL_ZOOM.height;
+  if (zoomCanvas.width !== POOL_LABEL_ZOOM.width) {
+    zoomCanvas.width = POOL_LABEL_ZOOM.width;
+    poolLabelInvalidateZoomBase();
+  }
+  if (zoomCanvas.height !== POOL_LABEL_ZOOM.height) {
+    zoomCanvas.height = POOL_LABEL_ZOOM.height;
+    poolLabelInvalidateZoomBase();
+  }
   poolLabelSyncZoomClassLabel();
 
   if (!poolLabelZoomShouldDraw()) {
@@ -625,6 +644,7 @@ function drawPoolLabelZoomView() {
     poolLabelZoomBaseKey = baseKey;
   }
 
+  poolLabelFillZoomCanvas(zoomCtx);
   zoomCtx.drawImage(poolLabelZoomBaseCanvas, 0, 0);
   poolLabelDrawZoomFullCrosshair(
     zoomCtx,
