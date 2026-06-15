@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import * as api from "../../api";
 import type { ClassifierImageResult } from "../../api";
 import type { DatasetPair } from "./datasetCore";

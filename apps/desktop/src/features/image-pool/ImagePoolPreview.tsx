@@ -3,6 +3,7 @@ import * as api from "../../api";
 import { isJunkFile, junkLabelForFile } from "./metadata";
 import type { FilteredItem, JunkScope, MetadataRow } from "./types";
 
+const FILMSTRIP_ITEM_STEP = 72;
 type ImagePoolPreviewProps = {
   open: boolean;
   workspaceRoot: string;
@@ -38,6 +39,7 @@ export function ImagePoolPreview({
   onClearJunk
 }: ImagePoolPreviewProps) {
   const stageRef = useRef<HTMLDivElement>(null);
+  const filmstripRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const viewRef = useRef({
     zoom: 1,
@@ -107,9 +109,30 @@ export function ImagePoolPreview({
     [applyTransform]
   );
 
+  const goToIndex = useCallback(
+    (nextIndex: number) => {
+      const clamped = Math.max(0, Math.min(items.length - 1, nextIndex));
+      if (clamped === index) return;
+      onIndexChange(clamped);
+    },
+    [index, items.length, onIndexChange]
+  );
+
+  const scrollFilmstripToIndex = useCallback((targetIndex: number, behavior: ScrollBehavior = "auto") => {
+    const el = filmstripRef.current;
+    if (!el || items.length === 0) return;
+    const targetLeft = Math.max(
+      0,
+      targetIndex * FILMSTRIP_ITEM_STEP - Math.max(0, (el.clientWidth - FILMSTRIP_ITEM_STEP) / 2)
+    );
+    el.scrollTo({ left: targetLeft, behavior });
+  }, [items.length]);
+
   useEffect(() => {
     if (!open || !filename) return;
-    resetTransform(true);
+    // Only reset zoom/pan here; defer fit to onImageLoad so fitZoom is computed
+    // from the freshly loaded image rather than the previous one.
+    resetTransform(false);
     setPreviewSrc(thumbUrl);
     const full = new Image();
     full.onload = () => setPreviewSrc(previewUrl);
@@ -118,14 +141,32 @@ export function ImagePoolPreview({
 
   useEffect(() => {
     if (!open) return;
+    scrollFilmstripToIndex(index);
+  }, [open, index, scrollFilmstripToIndex]);
+
+  useEffect(() => {
+    if (!open) return;
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-      if (event.key === "ArrowLeft") onIndexChange(Math.max(0, index - 1));
-      if (event.key === "ArrowRight") onIndexChange(Math.min(items.length - 1, index + 1));
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName.toLowerCase();
+      if (tag === "input" || tag === "textarea" || target?.isContentEditable) return;
+      if (event.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        goToIndex(index - 1);
+        return;
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        goToIndex(index + 1);
+      }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose, onIndexChange, index, items.length]);
+  }, [open, onClose, goToIndex, index]);
 
   useEffect(() => {
     if (!open) return;
@@ -204,6 +245,16 @@ export function ImagePoolPreview({
     applyTransform();
   }, [applyTransform]);
 
+  useEffect(() => {
+    if (!open) return;
+    function onResize() {
+      resetTransform(true);
+      scrollFilmstripToIndex(index);
+    }
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [open, resetTransform, scrollFilmstripToIndex, index]);
+
   if (!open || !item) return null;
 
   const filmstripStart = Math.max(0, index - 36);
@@ -217,7 +268,7 @@ export function ImagePoolPreview({
 
   return (
     <div className="react-image-pool-preview image-preview-lightbox" role="dialog" aria-modal="true" aria-label="Image preview">
-      <div className="react-image-pool-preview-backdrop image-preview-shell" onClick={onClose} />
+      <div className="react-image-pool-preview-backdrop" onClick={onClose} aria-hidden="true" />
       <div className="react-image-pool-preview-dialog image-preview-dialog has-filmstrip">
         <header className="react-image-pool-preview-head image-preview-toolbar">
           <div className="image-preview-title">
@@ -257,18 +308,19 @@ export function ImagePoolPreview({
             </button>
           </div>
         </header>
+        <button
+          type="button"
+          className="react-image-pool-preview-nav image-preview-nav prev"
+          disabled={index <= 0}
+          onClick={() => goToIndex(index - 1)}
+          aria-label="Previous image"
+        >
+          ‹
+        </button>
         <div
           ref={stageRef}
           className="react-image-pool-preview-stage image-preview-stage"
         >
-          <button
-            type="button"
-            className="react-image-pool-preview-nav image-preview-nav prev"
-            disabled={index <= 0}
-            onClick={() => onIndexChange(index - 1)}
-          >
-            ‹
-          </button>
           {previewSrc ? (
             <img
               ref={imgRef}
@@ -278,19 +330,23 @@ export function ImagePoolPreview({
               onLoad={onImageLoad}
             />
           ) : null}
-          <button
-            type="button"
-            className="react-image-pool-preview-nav image-preview-nav next"
-            disabled={index >= items.length - 1}
-            onClick={() => onIndexChange(index + 1)}
-          >
-            ›
-          </button>
         </div>
-        <div className="react-image-pool-preview-filmstrip image-preview-filmstrip">
+        <button
+          type="button"
+          className="react-image-pool-preview-nav image-preview-nav next"
+          disabled={index >= items.length - 1}
+          onClick={() => goToIndex(index + 1)}
+          aria-label="Next image"
+        >
+          ›
+        </button>
+        <div
+          ref={filmstripRef}
+          className="react-image-pool-preview-filmstrip image-preview-filmstrip"
+        >
           <div className="image-preview-filmstrip-track">
             {filmstripStart > 0 ? (
-              <div className="image-preview-filmstrip-spacer" style={{ flex: `0 0 ${filmstripStart * 72}px` }} />
+              <div className="image-preview-filmstrip-spacer" style={{ flex: `0 0 ${filmstripStart * FILMSTRIP_ITEM_STEP}px` }} />
             ) : null}
             {filmstripItems.map((filmItem, offset) => {
               const filmIndex = filmstripStart + offset;
@@ -301,7 +357,7 @@ export function ImagePoolPreview({
                   key={filmItem.filename}
                   type="button"
                   className={`react-image-pool-preview-thumb image-preview-filmstrip-item${filmIndex === index ? " active" : ""}${filmJunk ? " inbox-junk" : ""}`}
-                  onClick={() => onIndexChange(filmIndex)}
+                  onClick={() => goToIndex(filmIndex)}
                 >
                   <img src={api.imagePoolThumbUrl(workspaceRoot, filmItem.filename)} alt={filmItem.filename} />
                   {filmJunk ? (
@@ -315,7 +371,7 @@ export function ImagePoolPreview({
             {filmstripEnd < items.length ? (
               <div
                 className="image-preview-filmstrip-spacer"
-                style={{ flex: `0 0 ${Math.max(0, items.length - filmstripEnd) * 72}px` }}
+                style={{ flex: `0 0 ${Math.max(0, items.length - filmstripEnd) * FILMSTRIP_ITEM_STEP}px` }}
               />
             ) : null}
           </div>

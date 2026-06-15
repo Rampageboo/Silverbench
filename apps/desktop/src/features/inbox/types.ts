@@ -1,5 +1,6 @@
 import type { ImagePoolItem } from "../../api";
 import type { JunkScope, MetadataRow } from "../image-pool/types";
+import { isClfJunk, isDetectJunk } from "../image-pool/metadata";
 
 export type InboxFilter = "new" | "unassigned" | "random-unused" | "all";
 export type AssignTarget = "detect" | "clf";
@@ -58,16 +59,12 @@ export type InboxUiState = {
 };
 
 export function metadataSideState(row: MetadataRow | undefined) {
-  const detectRejected = row?.detect_junk === true || row?.detect_junk === "1";
-  const clfRejected = row?.clf_class === "__junk__";
-  const detectInUse = Boolean(row && (row.detect_enabled === true || row.detect_enabled === "1") && !detectRejected);
+  const detectRejected = isDetectJunk(row);
+  const clfRejected = isClfJunk(row);
+  const detectInUse = Boolean(row && row.detect_enabled && !detectRejected);
   const clfClass = String(row?.clf_class || "").trim();
   const clfInUse = Boolean(
-    row &&
-      (row.clf_enabled === true || row.clf_enabled === "1") &&
-      clfClass &&
-      clfClass !== "__junk__" &&
-      !clfRejected
+    row && row.clf_enabled && clfClass && clfClass !== "__junk__" && !clfRejected
   );
   return { detectRejected, clfRejected, detectInUse, clfInUse };
 }

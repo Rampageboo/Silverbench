@@ -12,10 +12,13 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "YoloWorkBench",
         "width": 1200,
         "height": 800,
-        "resizable": true
+        "resizable": true,
+        "visible": false,
+        "backgroundColor": "#0f172a"
       }
     ],
     "security": {
@@ -25,6 +28,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all"
+    "targets": "all",
+    "resources": []
   }
 }

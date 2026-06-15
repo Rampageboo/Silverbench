@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useWorkspace } from "../../app/WorkspaceProvider";
+import { useWorkspace } from "../../app/useWorkspace";
+import { useToast } from "../../components/useToast";
+import { errMessage } from "../../lib/errors";
 import { ImagePoolPreview } from "../image-pool/ImagePoolPreview";
 import type { FilteredItem } from "../image-pool/types";
 import { BuildProgressOverlay } from "./BuildProgressOverlay";
 import { ImageAssignGrid } from "./ImageAssignGrid";
 import { ImageAssignPanel } from "./ImageAssignPanel";
 import { useImageAssign } from "./useImageAssign";
+import { useImagePoolBadge } from "../image-pool/useImagePoolBadge";
 
 type ImageAssignPageProps = {
   onReady?: () => void;
@@ -13,7 +16,13 @@ type ImageAssignPageProps = {
 };
 
 export function ImageAssignPage({ onReady, onStatusText }: ImageAssignPageProps) {
-  const { workspaceRoot, chooseWorkspaceFolder, setImagePoolNewCount } = useWorkspace();
+  const { workspaceRoot, chooseWorkspaceFolder } = useWorkspace();
+  const { setImagePoolNewCount } = useImagePoolBadge();
+  const { showToast } = useToast();
+  const showError = useCallback(
+    (err: unknown) => showToast(errMessage(err), { variant: "error" }),
+    [showToast]
+  );
   const onScanUpdate = useCallback(
     (count: number) => setImagePoolNewCount(count),
     [setImagePoolNewCount]
@@ -46,9 +55,9 @@ export function ImageAssignPage({ onReady, onStatusText }: ImageAssignPageProps)
   const handleApply = useCallback(
     (newClass?: string) => {
       const run = newClass ? assign.applyWithNewClass(newClass) : assign.applyAssignment();
-      run.catch((err) => window.alert(err instanceof Error ? err.message : String(err)));
+      run.catch(showError);
     },
-    [assign]
+    [assign, showError]
   );
 
   return (
@@ -63,7 +72,7 @@ export function ImageAssignPage({ onReady, onStatusText }: ImageAssignPageProps)
           </div>
           <div className="panel-body inbox-body">
             <div className="row inbox-toolbar">
-              <button type="button" className="primary" id="inboxOpenFolderBtn" onClick={() => chooseWorkspaceFolder().catch(() => {})}>
+              <button type="button" className="primary" id="inboxOpenFolderBtn" onClick={() => chooseWorkspaceFolder().catch(showError)}>
                 Open Workspace
               </button>
               <button type="button" id="inboxRefreshBtn" disabled={assign.pending} onClick={() => assign.refresh()}>
@@ -124,10 +133,11 @@ export function ImageAssignPage({ onReady, onStatusText }: ImageAssignPageProps)
               junkScope={assign.junkScope}
               selected={assign.selected}
               pendingFilenames={assign.pendingFilenames}
-              restoreScrollTop={assign.galleryScrollTop}
+              restoreScrollTop={assign.restoreGalleryScrollTop}
               onSelect={assign.handleSelect}
               onDoubleClick={setPreviewIndex}
               onScrollChange={assign.onGalleryScroll}
+              onViewportRestored={assign.clearGalleryRestore}
             />
           </div>
         </section>
@@ -141,6 +151,8 @@ export function ImageAssignPage({ onReady, onStatusText }: ImageAssignPageProps)
           rebuild={assign.rebuild}
           clfClasses={assign.clfClasses}
           detectClasses={assign.detectClasses}
+          clfClassCounts={assign.clfClassCounts}
+          detectClassCounts={assign.detectClassCounts}
           clfDatasetPath={assign.clfDatasetPath}
           detectDatasetPath={assign.detectDatasetPath}
           selectedClass={assign.selectedClass}
@@ -152,12 +164,12 @@ export function ImageAssignPage({ onReady, onStatusText }: ImageAssignPageProps)
           onClassSearchChange={assign.setClassSearch}
           onDetectClassSearchChange={assign.setDetectClassSearch}
           onSelectClass={assign.setSelectedClass}
-          onQuickAssignClass={(className) => assign.quickAssignClass(className).catch((err) => window.alert(err.message))}
+          onQuickAssignClass={(className) => assign.quickAssignClass(className).catch(showError)}
           onSelectDetectClass={assign.setSelectedDetectClassId}
-          onQuickAssignDetect={() => assign.quickAssignDetect().catch((err) => window.alert(err.message))}
+          onQuickAssignDetect={() => assign.quickAssignDetect().catch(showError)}
           onApplySelected={handleApply}
-          onBuildPending={() => assign.buildLinks("pending").catch((err) => window.alert(err.message))}
-          onBuildAll={() => assign.buildLinks("all").catch((err) => window.alert(err.message))}
+          onBuildPending={() => assign.buildLinks("pending").catch(showError)}
+          onBuildAll={() => assign.buildLinks("all").catch(showError)}
           onRebuildChange={assign.setRebuild}
         />
       </main>

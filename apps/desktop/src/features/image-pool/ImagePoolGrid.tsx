@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as api from "../../api";
 import { assignVisualState, thumbMediaClasses } from "./metadata";
 import type { FilteredItem, JunkScope, MetadataRow } from "./types";
@@ -163,13 +163,13 @@ export function ImagePoolGrid({
   const wrapRef = useRef<HTMLDivElement>(null);
   const [layout, setLayout] = useState(() => computeVirtualGridLayout(null, 0));
 
-  const recompute = () => {
+  const recompute = useCallback(() => {
     setLayout(computeVirtualGridLayout(wrapRef.current, items.length));
-  };
+  }, [items.length]);
 
   useLayoutEffect(() => {
     recompute();
-  }, [items.length]);
+  }, [recompute]);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -177,7 +177,7 @@ export function ImagePoolGrid({
     const observer = new ResizeObserver(() => recompute());
     observer.observe(el);
     return () => observer.disconnect();
-  }, [items.length]);
+  }, [recompute]);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -197,7 +197,7 @@ export function ImagePoolGrid({
       recompute();
       onViewportRestored();
     });
-  }, [restoreScrollTop, restoreImagePath, items, layout.columns, layout.rowHeight, onViewportRestored]);
+  }, [restoreScrollTop, restoreImagePath, items, layout.columns, layout.rowHeight, onViewportRestored, recompute]);
 
   const visibleItems = useMemo(
     () => items.slice(layout.startIndex, layout.endIndex),

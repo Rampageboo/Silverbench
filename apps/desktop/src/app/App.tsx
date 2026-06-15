@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useBackend } from "../hooks/useBackend";
-import { readStartupOverlayMode, StartupOverlay } from "./StartupOverlay";
+import { subscribeLegacyMessages } from "../lib/legacyBridge";
+import { BackendStatusBanner } from "../components/BackendStatusBanner";
+import { ToastProvider } from "../components/ToastProvider";
+import { ConfirmProvider } from "../components/ConfirmProvider";
+import { WorkspaceCacheProvider } from "../features/shared/WorkspaceCacheProvider";
+import { readStartupOverlayMode } from "./startupOverlayMode";
+import { inTauri, revealMainWindow } from "./splashscreen";
+import { StartupOverlay } from "./StartupOverlay";
 import { WorkspaceProvider } from "./WorkspaceProvider";
 import { WorkbenchBody } from "./WorkbenchBody";
-import { LEGACY_WORKBENCH_ORIGIN } from "../lib/legacyWorkbench";
 
 type StartupPhase = "active" | "done" | "hidden";
 
@@ -15,11 +21,36 @@ export function App() {
   const [startupDetail, setStartupDetail] = useState("加载界面");
   const [startupMode] = useState(readStartupOverlayMode);
   const bootFinishedRef = useRef(false);
+  const overlayPaintedRef = useRef(false);
+  const [overlayPainted, setOverlayPainted] = useState(false);
   const startupActive = startupPhase !== "hidden";
 
   const notifyNativeTabReady = useCallback(() => {
     window.dispatchEvent(new CustomEvent("ywb-native-tab-ready"));
   }, []);
+
+  const handleOverlayPainted = useCallback(() => {
+    if (overlayPaintedRef.current) return;
+    overlayPaintedRef.current = true;
+    setOverlayPainted(true);
+    document.documentElement.classList.add("app-startup-overlay-ready");
+  }, []);
+
+  // PS pre-splash stays up until the intro overlay has fully painted in the
+  // hidden main webview; then reveal with a short pause for a smooth handoff.
+  useEffect(() => {
+    if (!inTauri() || !overlayPainted) return;
+    const timer = window.setTimeout(() => {
+      void revealMainWindow();
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [overlayPainted]);
+
+  // Fallback: if painting never signals, reveal when boot finishes.
+  useEffect(() => {
+    if (!inTauri() || startupPhase !== "hidden") return;
+    void revealMainWindow();
+  }, [startupPhase]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("app-startup-active", startupActive);
@@ -60,40 +91,35 @@ export function App() {
       finishStartup("工具页已加载");
     }
 
-    function onEmbedBootMessage(event: MessageEvent) {
-      if (event.origin !== LEGACY_WORKBENCH_ORIGIN) return;
-      const payload = event.data;
-      if (!payload || typeof payload !== "object") return;
-
-      if (payload.type === "ywb-embed-progress") {
-        const progress = Number(payload.progress);
+    const unsubscribe = subscribeLegacyMessages((message) => {
+      if (message.type === "ywb-embed-progress") {
+        const progress = Number(message.progress);
         if (Number.isFinite(progress)) {
           setStartupProgress((value) => Math.max(value, Math.min(96, progress)));
         }
-        if (typeof payload.stage === "string" && payload.stage) setStartupStage(payload.stage);
-        if (typeof payload.detail === "string" && payload.detail) setStartupDetail(payload.detail);
+        if (typeof message.stage === "string" && message.stage) setStartupStage(message.stage);
+        if (typeof message.detail === "string" && message.detail) setStartupDetail(message.detail);
         return;
       }
-
-      if (payload.type !== "ywb-embed-ready") return;
-      finishStartup(typeof payload.detail === "string" ? payload.detail : "工具页已加载");
-    }
+      if (message.type !== "ywb-embed-ready") return;
+      finishStartup(typeof message.detail === "string" ? message.detail : "工具页已加载");
+    });
 
     const fallbackTimer = window.setTimeout(() => {
       finishStartup("加载超时，已进入工作台");
     }, 90000);
 
-    window.addEventListener("message", onEmbedBootMessage);
     window.addEventListener("ywb-native-tab-ready", onNativeTabReady as EventListener);
     return () => {
       window.clearTimeout(fallbackTimer);
-      window.removeEventListener("message", onEmbedBootMessage);
+      unsubscribe();
       window.removeEventListener("ywb-native-tab-ready", onNativeTabReady as EventListener);
     };
   }, [startupActive]);
 
   return (
     <>
+      <BackendStatusBanner visible={!startupActive && !connected} />
       <StartupOverlay
         visible={startupActive}
         done={startupPhase === "done"}
@@ -101,11 +127,18 @@ export function App() {
         progress={startupProgress}
         stage={startupStage}
         detail={startupDetail}
+        onPainted={handleOverlayPainted}
       />
       <div className={`app-workbench-root${startupActive ? " app-workbench-root--booting" : ""}`}>
-        <WorkspaceProvider connected={connected}>
-          <WorkbenchBody onNativeTabReady={notifyNativeTabReady} />
-        </WorkspaceProvider>
+        <ToastProvider>
+          <ConfirmProvider>
+            <WorkspaceCacheProvider>
+              <WorkspaceProvider connected={connected}>
+                <WorkbenchBody onNativeTabReady={notifyNativeTabReady} />
+              </WorkspaceProvider>
+            </WorkspaceCacheProvider>
+          </ConfirmProvider>
+        </ToastProvider>
       </div>
     </>
   );

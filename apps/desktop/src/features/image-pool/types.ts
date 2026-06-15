@@ -14,12 +14,12 @@ export type HideJunkMode = "detect" | "clf" | "both" | null;
 
 export type MetadataRow = {
   filename: string;
-  detect_junk?: boolean | string;
+  detect_junk?: boolean;
   clf_class?: string;
-  detect_enabled?: boolean | string;
-  clf_enabled?: boolean | string;
-  reviewed?: boolean | string;
-  flagged?: boolean | string;
+  detect_enabled?: boolean;
+  clf_enabled?: boolean;
+  reviewed?: boolean;
+  flagged?: boolean;
 };
 
 export type ImagePoolUiSession = {

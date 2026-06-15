@@ -12,6 +12,8 @@ type ImageAssignPanelProps = {
   rebuild: boolean;
   clfClasses: string[];
   detectClasses: DetectClass[];
+  clfClassCounts: Map<string, number>;
+  detectClassCounts: Map<number, number>;
   clfDatasetPath: string;
   detectDatasetPath: string;
   selectedClass: string;
@@ -42,6 +44,8 @@ export function ImageAssignPanel({
   rebuild,
   clfClasses,
   detectClasses,
+  clfClassCounts,
+  detectClassCounts,
   clfDatasetPath,
   detectDatasetPath,
   selectedClass,
@@ -118,25 +122,31 @@ export function ImageAssignPanel({
                   {!clfClasses.length ? (
                     <div className="empty">No classes found. Create a class below.</div>
                   ) : (
-                    clfClasses.map((className) => (
-                      <button
-                        key={className}
-                        type="button"
-                        className={`inbox-class-chip${canQuickAssign ? " quick-assign" : ""}${selectedClass === className ? " active" : ""}`}
-                        disabled={assigning}
-                        title={
-                          canQuickAssign
-                            ? `Write ${selectedCount} selected image(s) to metadata -> ${className}`
-                            : "Select images, then click a class for quick assignment"
-                        }
-                        onClick={() => {
-                          if (canQuickAssign) onQuickAssignClass(className);
-                          else onSelectClass(className);
-                        }}
-                      >
-                        {className}
-                      </button>
-                    ))
+                    clfClasses.map((className) => {
+                      const count = clfClassCounts.get(className) || 0;
+                      return (
+                        <button
+                          key={className}
+                          type="button"
+                          className={`inbox-class-chip${canQuickAssign ? " quick-assign" : ""}${selectedClass === className ? " active" : ""}`}
+                          disabled={assigning}
+                          title={
+                            canQuickAssign
+                              ? `Write ${selectedCount} selected image(s) to metadata -> ${className}`
+                              : "Select images, then click a class for quick assignment"
+                          }
+                          onClick={() => {
+                            if (canQuickAssign) onQuickAssignClass(className);
+                            else onSelectClass(className);
+                          }}
+                        >
+                          {className}
+                          <span className="inbox-class-chip-count" aria-hidden="true">
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -186,6 +196,7 @@ export function ImageAssignPanel({
                     detectClasses.map((item) => {
                       const classId = Number(item.id);
                       const label = detectClassChipLabel(item);
+                      const count = detectClassCounts.get(classId) || 0;
                       return (
                         <button
                           key={`${classId}-${item.name}`}
@@ -198,6 +209,9 @@ export function ImageAssignPanel({
                           }}
                         >
                           {label}
+                          <span className="inbox-class-chip-count" aria-hidden="true">
+                            {count}
+                          </span>
                         </button>
                       );
                     })

@@ -1,12 +1,12 @@
-import { useEffect, useState } from "react";
-import { useWorkspace } from "../../app/WorkspaceProvider";
+import { useCallback, useEffect, useState } from "react";
+import { useWorkspace } from "../../app/useWorkspace";
+import { useToast } from "../../components/useToast";
+import { errMessage } from "../../lib/errors";
 import type { LabelBox } from "../../api";
-import { DatasetReviewClassifierPanel } from "./DatasetReviewClassifierPanel";
 import { DatasetReviewEditor } from "./DatasetReviewEditor";
 import { DatasetReviewGallery } from "./DatasetReviewGallery";
 import { DatasetReviewLightbox } from "./DatasetReviewLightbox";
 import { DatasetReviewPreview } from "./DatasetReviewPreview";
-import { useDatasetClassifier } from "./useDatasetClassifier";
 import { useDatasetReview } from "./useDatasetReview";
 
 type DatasetReviewPageProps = {
@@ -16,8 +16,12 @@ type DatasetReviewPageProps = {
 
 export function DatasetReviewPage({ onReady, onStatusText }: DatasetReviewPageProps) {
   const { workspaceRoot, chooseWorkspaceFolder, setActiveTab } = useWorkspace();
+  const { showToast } = useToast();
+  const showError = useCallback(
+    (err: unknown) => showToast(errMessage(err), { variant: "error" }),
+    [showToast]
+  );
   const review = useDatasetReview({ workspaceRoot, onReady });
-  const classifier = useDatasetClassifier(review.datasetRoot);
 
   const [reviewMode, setReviewMode] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
@@ -35,10 +39,6 @@ export function DatasetReviewPage({ onReady, onStatusText }: DatasetReviewPagePr
   useEffect(() => {
     onStatusText?.(review.status || review.error);
   }, [onStatusText, review.status, review.error]);
-
-  useEffect(() => {
-    classifier.updateCurrentResultText(currentPair);
-  }, [classifier, currentPair]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -124,7 +124,7 @@ export function DatasetReviewPage({ onReady, onStatusText }: DatasetReviewPagePr
             </button>
           </div>
           <div className="row yolo-toolbar">
-            <button type="button" className="primary" onClick={() => chooseWorkspaceFolder().catch(() => {})}>
+            <button type="button" className="primary" onClick={() => chooseWorkspaceFolder().catch(showError)}>
               Open Workspace
             </button>
             <button type="button" disabled={review.pending} onClick={() => review.reload()}>
@@ -167,7 +167,7 @@ export function DatasetReviewPage({ onReady, onStatusText }: DatasetReviewPagePr
               id="sendToCropBtn"
               disabled={!review.canSendToCrop}
               onClick={() =>
-                review.sendFilteredToCrop().then(() => setActiveTab("crop")).catch((err) => window.alert(err.message))
+                review.sendFilteredToCrop().then(() => setActiveTab("crop")).catch(showError)
               }
             >
               Send to Crop
@@ -206,9 +206,10 @@ export function DatasetReviewPage({ onReady, onStatusText }: DatasetReviewPagePr
           flaggedPaths={review.flaggedPaths}
           metadata={review.metadata}
           junkScope={review.junkScope}
-          restoreScrollTop={review.galleryScrollTop}
+          restoreScrollTop={review.restoreGalleryScrollTop}
           onSelect={review.selectGallery}
           onScrollChange={review.onGalleryScroll}
+          onViewportRestored={review.clearGalleryRestore}
           onDoubleClick={(index) => setLightboxIndex(index)}
           onContextMenu={(index, event) => {
             if (!review.canSendToDetect) return;
@@ -216,7 +217,6 @@ export function DatasetReviewPage({ onReady, onStatusText }: DatasetReviewPagePr
             review.selectGallery(index, { ctrlKey: event.ctrlKey, shiftKey: event.shiftKey, metaKey: event.metaKey });
             setDetectMenu({ x: event.clientX, y: event.clientY });
           }}
-          classifierResults={classifier.results}
         />
 
         {editablePreview ? (
@@ -225,7 +225,6 @@ export function DatasetReviewPage({ onReady, onStatusText }: DatasetReviewPagePr
             pair={currentPair}
             boxes={editBoxes}
             selectedBoxIndex={review.selectedBoxIndex}
-            classifierResult={classifier.resultForPair(currentPair)}
             onBoxesChange={setEditBoxes}
             onSelectBox={review.setSelectedBoxIndex}
             onPersist={review.persistBoxes}
@@ -267,28 +266,6 @@ export function DatasetReviewPage({ onReady, onStatusText }: DatasetReviewPagePr
               </div>
             </section>
 
-            <DatasetReviewClassifierPanel
-              modelStatus={classifier.modelStatus}
-              topK={classifier.topK}
-              resultText={classifier.resultText}
-              running={classifier.running}
-              onTopKChange={classifier.setTopK}
-              onChooseModel={() => classifier.chooseModel().catch((err) => window.alert(err.message))}
-              onClassifyCurrent={() =>
-                currentPair
-                  ? classifier.classifyPaths([currentPair.imagePath]).catch((err) => window.alert(err.message))
-                  : undefined
-              }
-              onClassifySelected={() =>
-                classifier
-                  .classifyPaths(review.selectedPairs.map((pair) => pair.imagePath))
-                  .catch((err) => window.alert(err.message))
-              }
-              onClassifyVisible={() =>
-                classifier.classifyPaths(pairs.map((pair) => pair.imagePath)).catch((err) => window.alert(err.message))
-              }
-            />
-
             <section className="panel filter-panel">
               <div className="panel-header">
                 <span>Filter</span>
@@ -307,35 +284,52 @@ export function DatasetReviewPage({ onReady, onStatusText }: DatasetReviewPagePr
                 </div>
                 <div className="yolo-filter-tools filter-list" id="filterList">
                   {review.classFilterItems.length ? (
-                    review.classFilterItems.map((item) => (
-                      <label
-                        key={item.id}
-                        className="filter-row"
-                        onContextMenu={(event) => {
-                          if (!review.canSendToCrop) return;
-                          event.preventDefault();
-                          setCropMenu({ x: event.clientX, y: event.clientY, classId: item.id });
-                        }}
-                      >
-                        <span>
-                          {item.id}: {item.name} ({item.imageCount})
+                    <>
+                      <div className="filter-head">
+                        <span className="filter-icon-head" title="Include">
+                          +
                         </span>
-                        <span>
-                          <input
-                            type="checkbox"
-                            checked={review.include.has(item.id)}
-                            onChange={(event) => review.toggleInclude(item.id, event.target.checked)}
-                          />{" "}
-                          inc
-                          <input
-                            type="checkbox"
-                            checked={review.exclude.has(item.id)}
-                            onChange={(event) => review.toggleExclude(item.id, event.target.checked)}
-                          />{" "}
-                          exc
+                        <span className="filter-icon-head" title="Exclude">
+                          −
                         </span>
-                      </label>
-                    ))
+                        <span>Class</span>
+                        <span className="filter-count-head" title="Images">
+                          Img
+                        </span>
+                      </div>
+                      {review.classFilterItems.map((item) => (
+                        <div key={item.id} className="filter-row">
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={review.include.has(item.id)}
+                              onChange={(event) => review.toggleInclude(item.id, event.target.checked)}
+                            />
+                          </label>
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={review.exclude.has(item.id)}
+                              onChange={(event) => review.toggleExclude(item.id, event.target.checked)}
+                            />
+                          </label>
+                          <span
+                            className="filter-class-name"
+                            title={`${item.id}: ${item.name}`}
+                            onContextMenu={(event) => {
+                              if (!review.canSendToCrop) return;
+                              event.preventDefault();
+                              setCropMenu({ x: event.clientX, y: event.clientY, classId: item.id });
+                            }}
+                          >
+                            {item.id}: {item.name}
+                          </span>
+                          <span className="filter-count" title={`${item.imageCount} image(s)`}>
+                            {item.imageCount}
+                          </span>
+                        </div>
+                      ))}
+                    </>
                   ) : (
                     <div className="empty">No classes loaded.</div>
                   )}
@@ -355,7 +349,7 @@ export function DatasetReviewPage({ onReady, onStatusText }: DatasetReviewPagePr
             type="button"
             onClick={() => {
               setCropMenu(null);
-              review.sendClassToCrop(cropMenu.classId).then(() => setActiveTab("crop")).catch((err) => window.alert(err.message));
+              review.sendClassToCrop(cropMenu.classId).then(() => setActiveTab("crop")).catch(showError);
             }}
           >
             Send class to Crop
@@ -369,7 +363,7 @@ export function DatasetReviewPage({ onReady, onStatusText }: DatasetReviewPagePr
             type="button"
             onClick={() => {
               setDetectMenu(null);
-              review.sendSelectedToDetect().catch((err) => window.alert(err.message));
+              review.sendSelectedToDetect().catch(showError);
             }}
           >
             Send selected to Detect ({review.selectedPairs.length})

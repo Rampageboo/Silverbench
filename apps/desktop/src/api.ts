@@ -1,4 +1,39 @@
-export const API_BASE_URL = "http://127.0.0.1:8765";
+import { errMessage } from "./lib/errors";
+import { backendBaseUrl } from "./lib/backendConfig";
+
+export const API_BASE_URL = backendBaseUrl();
+
+export type BackendMethod =
+  | "markImagePoolSeen"
+  | "deletePoolImageCompletely"
+  | "findImagePoolDuplicates"
+  | "clearImagePoolDuplicates"
+  | "ensureImagePoolBackup"
+  | "restoreImagePoolBackup"
+  | "getImagePoolBackupStats"
+  | "ensureImagePoolLabelBackup"
+  | "chooseClassifierModel"
+  | "classifierModelInfo"
+  | "classifyDatasetImages"
+  | "createClassFolder"
+  | "moveImagesToClass"
+  | "writeFileBase64"
+  | "trackYoloForward"
+  | "getWorkspaceInfo"
+  | "listDatasetFiles"
+  | "readMetadataRows"
+  | "upsertMetadataRows"
+  | "removeDetectDatasetLinks"
+  | "removeClfDatasetLinks"
+  | "readFileBase64"
+  | "readTextFile"
+  | "writeTextFile"
+  | "readLabelTextsBatch"
+  | "listWorkspaceFiles"
+  | "startBuildYoloLinks"
+  | "getBuildJob"
+  | "writeWorkspaceSession"
+  | "readWorkspaceSession";
 
 export type ApiCallResponse<T = unknown> =
   | {
@@ -15,7 +50,34 @@ export type ApiCallResponse<T = unknown> =
       };
     };
 
-export async function call<T = unknown>(method: string, args: unknown[] = []) {
+/**
+ * The backend currently emits three different error-body shapes:
+ *   - RPC / _error_response:  { ok:false, error: { type, message } }
+ *   - FastAPI HTTPException:   { detail: "..." }
+ *   - legacy / openFolder:     { ok:false, error: "..." }
+ * Collapse all of them to a single message here so call sites don't each
+ * have to probe `data?.detail || data?.error?.message || ...`.
+ */
+function apiErrorMessage(data: unknown, status: number): string {
+  const body = (data ?? {}) as { detail?: unknown; error?: unknown };
+  if (body.error && typeof body.error === "object") {
+    const message = (body.error as { message?: unknown }).message;
+    if (typeof message === "string" && message) return message;
+  }
+  if (typeof body.error === "string" && body.error) return body.error;
+  if (typeof body.detail === "string" && body.detail) return body.detail;
+  return `HTTP ${status}`;
+}
+
+/** Throw a unified Error when an HTTP/JSON response is not ok. */
+function assertOk(data: unknown, response: Response): void {
+  const ok = (data as { ok?: unknown } | null)?.ok;
+  if (!response.ok || ok !== true) {
+    throw new Error(apiErrorMessage(data, response.status));
+  }
+}
+
+export async function call<T = unknown>(method: BackendMethod, args: unknown[] = []) {
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}/api/call`, {
@@ -26,21 +88,18 @@ export async function call<T = unknown>(method: string, args: unknown[] = []) {
       body: JSON.stringify({ method, args })
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errMessage(error);
     if (message === "Failed to fetch") {
       throw new Error(`Backend unreachable at ${API_BASE_URL}. Ensure FastAPI is running.`);
     }
     throw error instanceof Error ? error : new Error(message);
   }
   const data = (await response.json()) as ApiCallResponse<T>;
-  if (!response.ok || !data.ok) {
-    const message = data.ok ? `HTTP ${response.status}` : data.error.message;
-    throw new Error(message);
-  }
-  return data;
+  assertOk(data, response);
+  return data as Extract<ApiCallResponse<T>, { ok: true }>;
 }
 
-export async function callBackend(method: string, args: unknown[] = []) {
+export async function callBackend(method: BackendMethod, args: unknown[] = []) {
   const data = await call(method, args);
   const result = data.result;
   if (typeof result === "string") {
@@ -51,6 +110,11 @@ export async function callBackend(method: string, args: unknown[] = []) {
     }
   }
   return result;
+}
+
+export async function callJson<T>(method: BackendMethod, args: unknown[] = []): Promise<T> {
+  // callBackend already JSON.parses string results when valid; plain text/base64 stay as strings.
+  return (await callBackend(method, args)) as T;
 }
 
 export async function health() {
@@ -70,6 +134,7 @@ export type AppSettings = {
   lastOpenedWorkspace: string;
   lastOpenedFolder: string;
   lastOpenedYoloFolder: string;
+  startupOverlayMode?: "overview" | "minimal";
 };
 
 export type OpenWorkspaceResponse = {
@@ -149,74 +214,61 @@ export async function scanImagePool(workspaceRoot: string, options: { fast?: boo
     cache: "no-store"
   });
   const data = await response.json();
-  if (!response.ok || !data.ok) {
-    const message = data?.error?.message || `HTTP ${response.status}`;
-    throw new Error(message);
-  }
+  assertOk(data, response);
   return data as ImagePoolScan;
 }
 
 export async function markImagePoolSeen(workspaceRoot: string) {
-  return callBackend("markImagePoolSeen", [workspaceRoot]) as Promise<{ markedCount?: number }>;
+  return callJson<{ markedCount?: number }>("markImagePoolSeen", [workspaceRoot]);
 }
 
 export async function deletePoolImageCompletely(workspaceRoot: string, filename: string) {
-  return callBackend("deletePoolImageCompletely", [workspaceRoot, filename]) as Promise<{
-    failedPaths?: { error: string }[];
-  }>;
+  return callJson<{ failedPaths?: { error: string }[] }>("deletePoolImageCompletely", [
+    workspaceRoot,
+    filename
+  ]);
 }
 
 export async function findImagePoolDuplicates(workspaceRoot: string) {
-  return callBackend("findImagePoolDuplicates", [workspaceRoot]);
+  return callJson<unknown>("findImagePoolDuplicates", [workspaceRoot]);
 }
 
 export async function clearImagePoolDuplicates(workspaceRoot: string) {
-  return callBackend("clearImagePoolDuplicates", [workspaceRoot]) as Promise<{
+  return callJson<{
     removedCount?: number;
     failed?: unknown[];
     plan?: { remove?: string[] }[];
-  }>;
+  }>("clearImagePoolDuplicates", [workspaceRoot]);
 }
 
 export async function ensureImagePoolBackup(workspaceRoot: string, imagePath: string) {
-  return callBackend("ensureImagePoolBackup", [workspaceRoot, imagePath]) as Promise<{
-    ok?: boolean;
-    image?: string;
-    label?: string;
-    skipped?: boolean;
-  }>;
+  return callJson<{ ok?: boolean; image?: string; label?: string; skipped?: boolean }>(
+    "ensureImagePoolBackup",
+    [workspaceRoot, imagePath]
+  );
 }
 
 export async function restoreImagePoolBackup(workspaceRoot: string, imagePath: string) {
-  return callBackend("restoreImagePoolBackup", [workspaceRoot, imagePath]) as Promise<{
-    ok?: boolean;
-    restored?: { image?: boolean; label?: boolean };
-    labelPath?: string;
-  }>;
+  return callJson<{ ok?: boolean; restored?: { image?: boolean; label?: boolean }; labelPath?: string }>(
+    "restoreImagePoolBackup",
+    [workspaceRoot, imagePath]
+  );
 }
 
 export async function getImagePoolBackupStats(workspaceRoot: string) {
-  const raw = await callBackend("getImagePoolBackupStats", [workspaceRoot]);
-  if (typeof raw === "string") {
-    return JSON.parse(raw) as { imageCount?: number };
-  }
-  return raw as { imageCount?: number };
+  return callJson<{ imageCount?: number }>("getImagePoolBackupStats", [workspaceRoot]);
 }
 
 export async function ensureImagePoolLabelBackup(workspaceRoot: string, labelPath: string) {
-  return callBackend("ensureImagePoolLabelBackup", [workspaceRoot, labelPath]) as Promise<{ ok?: boolean }>;
+  return callJson<{ ok?: boolean }>("ensureImagePoolLabelBackup", [workspaceRoot, labelPath]);
 }
 
 export async function chooseClassifierModel(title = "Choose YOLO Classification ONNX Model") {
-  return (await callBackend("chooseClassifierModel", [title])) as string;
+  return callJson<string>("chooseClassifierModel", [title]);
 }
 
 export async function classifierModelInfo(modelPath: string) {
-  const raw = await callBackend("classifierModelInfo", [modelPath]);
-  if (typeof raw === "string") {
-    return JSON.parse(raw) as { classes?: string[] };
-  }
-  return raw as { classes?: string[] };
+  return callJson<{ classes?: string[] }>("classifierModelInfo", [modelPath]);
 }
 
 export type ClassifierPrediction = {
@@ -237,50 +289,29 @@ export async function classifyDatasetImages(
   imagePaths: string[],
   topK = 5
 ) {
-  const raw = await callBackend("classifyDatasetImages", [
-    datasetRoot,
-    modelPath,
-    JSON.stringify(imagePaths),
-    topK
-  ]);
-  if (typeof raw === "string") {
-    return JSON.parse(raw) as {
-      model?: { classes?: string[] };
-      results?: ClassifierImageResult[];
-      errors?: Array<{ relativePath: string; error: string }>;
-    };
-  }
-  return raw as {
+  return callJson<{
     model?: { classes?: string[] };
     results?: ClassifierImageResult[];
     errors?: Array<{ relativePath: string; error: string }>;
-  };
+  }>("classifyDatasetImages", [datasetRoot, modelPath, JSON.stringify(imagePaths), topK]);
 }
 
 export async function createClassFolder(datasetRoot: string, folderName: string) {
-  const raw = await callBackend("createClassFolder", [datasetRoot, folderName]);
-  if (typeof raw === "string") {
-    return JSON.parse(raw) as { ok?: boolean; relativePath?: string; className?: string };
-  }
-  return raw as { ok?: boolean; relativePath?: string; className?: string };
+  return callJson<{ ok?: boolean; relativePath?: string; className?: string }>("createClassFolder", [
+    datasetRoot,
+    folderName
+  ]);
 }
 
 export async function moveImagesToClass(datasetRoot: string, imagePaths: string[], className: string) {
-  const raw = await callBackend("moveImagesToClass", [datasetRoot, JSON.stringify(imagePaths), className]);
-  if (typeof raw === "string") {
-    return JSON.parse(raw) as {
-      moved?: Array<{ from: string; to: string }>;
-      skipped?: string[];
-    };
-  }
-  return raw as {
+  return callJson<{
     moved?: Array<{ from: string; to: string }>;
     skipped?: string[];
-  };
+  }>("moveImagesToClass", [datasetRoot, JSON.stringify(imagePaths), className]);
 }
 
 export async function writeFileBase64(root: string, relativePath: string, base64Data: string) {
-  return callBackend("writeFileBase64", [root, relativePath, base64Data]) as Promise<boolean>;
+  return callJson<boolean>("writeFileBase64", [root, relativePath, base64Data]);
 }
 
 export async function trackYoloForward(
@@ -290,41 +321,36 @@ export async function trackYoloForward(
   orderedImagePaths: string[],
   options: Record<string, unknown>
 ) {
-  const raw = await callBackend("trackYoloForward", [
+  return callJson<{
+    ok?: boolean;
+    saved?: number;
+    stoppedAt?: string;
+    reason?: string;
+    lastBox?: LabelBox;
+  }>("trackYoloForward", [
     workspaceRoot,
     startImagePath,
     JSON.stringify(box),
     JSON.stringify(orderedImagePaths),
     JSON.stringify(options)
   ]);
-  return raw as {
-    ok?: boolean;
-    saved?: number;
-    stoppedAt?: string;
-    reason?: string;
-    lastBox?: LabelBox;
-  };
 }
 
 export async function appSettings() {
   const response = await fetch(`${API_BASE_URL}/api/app-settings`, { cache: "no-store" });
   const data = await response.json();
-  if (!response.ok || !data.ok) {
-    throw new Error(data?.detail || data?.error?.message || `HTTP ${response.status}`);
-  }
+  assertOk(data, response);
   return data as AppSettings;
 }
 
-export async function writeAppSettings(settings: Partial<Pick<AppSettings, "lastOpenedWorkspace" | "lastOpenedFolder" | "lastOpenedYoloFolder">>) {
+export async function writeAppSettings(settings: Partial<Pick<AppSettings, "lastOpenedWorkspace" | "lastOpenedFolder" | "lastOpenedYoloFolder" | "startupOverlayMode">>) {
   const response = await fetch(`${API_BASE_URL}/api/app-settings`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(settings)
   });
   const data = await response.json();
-  if (!response.ok || !data.ok) {
-    throw new Error(data?.detail || data?.error?.message || `HTTP ${response.status}`);
-  }
+  assertOk(data, response);
   return data as { ok: true };
 }
 
@@ -335,9 +361,7 @@ export async function openWorkspace(workspaceRoot: string, initIfNeeded = true) 
     body: JSON.stringify({ workspaceRoot, initIfNeeded })
   });
   const data = await response.json();
-  if (!response.ok || !data.ok) {
-    throw new Error(data?.error || data?.detail || `HTTP ${response.status}`);
-  }
+  assertOk(data, response);
   return data as OpenWorkspaceResponse;
 }
 
@@ -359,9 +383,7 @@ export async function loadLabels(workspaceRoot: string, filename: string) {
     cache: "no-store"
   });
   const data = await response.json();
-  if (!response.ok || !data.ok) {
-    throw new Error(data?.detail || data?.error?.message || `HTTP ${response.status}`);
-  }
+  assertOk(data, response);
   return data as LabelLoadResponse;
 }
 
@@ -371,9 +393,7 @@ export async function loadLabelClasses(workspaceRoot: string) {
     cache: "no-store"
   });
   const data = await response.json();
-  if (!response.ok || !data.ok) {
-    throw new Error(data?.detail || data?.error?.message || `HTTP ${response.status}`);
-  }
+  assertOk(data, response);
   return data.classes as LabelClass[];
 }
 
@@ -386,9 +406,7 @@ export async function saveLabelClasses(workspaceRoot: string, classes: LabelClas
     body: JSON.stringify({ workspaceRoot, classes })
   });
   const data = await response.json();
-  if (!response.ok || !data.ok) {
-    throw new Error(data?.detail || data?.error?.message || `HTTP ${response.status}`);
-  }
+  assertOk(data, response);
   return data as LabelClassesSaveResponse;
 }
 
@@ -401,9 +419,7 @@ export async function saveLabels(workspaceRoot: string, filename: string, boxes:
     body: JSON.stringify({ workspaceRoot, filename, boxes })
   });
   const data = await response.json();
-  if (!response.ok || !data.ok) {
-    throw new Error(data?.detail || data?.error?.message || `HTTP ${response.status}`);
-  }
+  assertOk(data, response);
   return data as LabelSaveResponse;
 }
 
@@ -416,9 +432,7 @@ export async function markDetectJunk(workspaceRoot: string, filename: string, de
     body: JSON.stringify({ workspaceRoot, filename, detectJunk })
   });
   const data = await response.json();
-  if (!response.ok || !data.ok) {
-    throw new Error(data?.detail || data?.error?.message || `HTTP ${response.status}`);
-  }
+  assertOk(data, response);
   return data as { ok: true; workspaceRoot: string; filename: string; detectJunk: boolean };
 }
 
@@ -462,46 +476,41 @@ export type BuildJobState = {
 };
 
 export async function getWorkspaceInfo(workspaceRoot: string) {
-  const raw = await callBackend("getWorkspaceInfo", [workspaceRoot]);
-  return raw as WorkspaceInfo;
+  return callJson<WorkspaceInfo>("getWorkspaceInfo", [workspaceRoot]);
 }
 
 export async function listDatasetFiles(datasetRoot: string) {
-  const raw = await callBackend("listDatasetFiles", [datasetRoot]);
-  if (typeof raw === "string") {
-    return JSON.parse(raw) as string[];
-  }
-  return raw as string[];
+  return callJson<string[]>("listDatasetFiles", [datasetRoot]);
 }
 
 export async function readMetadataRows(workspaceRoot: string) {
-  const raw = await callBackend("readMetadataRows", [workspaceRoot]);
-  return raw as MetadataRowsResponse;
+  return callJson<MetadataRowsResponse>("readMetadataRows", [workspaceRoot]);
 }
 
 export async function upsertMetadataRows(workspaceRoot: string, updates: unknown[]) {
-  const raw = await callBackend("upsertMetadataRows", [workspaceRoot, JSON.stringify(updates)]);
-  return raw as { ok?: boolean; created?: number; updated?: number; error?: string };
+  return callJson<{ ok?: boolean; created?: number; updated?: number; error?: string }>(
+    "upsertMetadataRows",
+    [workspaceRoot, JSON.stringify(updates)]
+  );
 }
 
 export async function readFileBase64(root: string, relativePath: string) {
-  return (await callBackend("readFileBase64", [root, relativePath])) as string;
+  return callJson<string>("readFileBase64", [root, relativePath]);
 }
 
 export async function readTextFile(root: string, relativePath: string) {
-  return (await callBackend("readTextFile", [root, relativePath])) as string;
+  return callJson<string>("readTextFile", [root, relativePath]);
 }
 
 export async function writeTextFile(root: string, relativePath: string, text: string) {
-  return (await callBackend("writeTextFile", [root, relativePath, text])) as boolean | string;
+  return callJson<boolean | string>("writeTextFile", [root, relativePath, text]);
 }
 
 export async function readLabelTextsBatch(datasetRoot: string, labelPaths: string[]) {
-  const raw = await callBackend("readLabelTextsBatch", [datasetRoot, JSON.stringify(labelPaths)]);
-  if (typeof raw === "string") {
-    return JSON.parse(raw) as Record<string, string>;
-  }
-  return raw as Record<string, string>;
+  return callJson<Record<string, string>>("readLabelTextsBatch", [
+    datasetRoot,
+    JSON.stringify(labelPaths)
+  ]);
 }
 
 function parseClassIdsFromLabelText(text: string) {
@@ -516,8 +525,7 @@ function parseClassIdsFromLabelText(text: string) {
 }
 
 export async function loadPoolLabelClassIndex(workspaceRoot: string) {
-  const raw = await callBackend("listWorkspaceFiles", [workspaceRoot]);
-  const files: string[] = typeof raw === "string" ? JSON.parse(raw) : (raw as string[]);
+  const files = await callJson<string[]>("listWorkspaceFiles", [workspaceRoot]);
   const labelPaths = files.filter((path) => path.startsWith("detect_labels/") && path.endsWith(".txt"));
   if (!labelPaths.length) return new Map<string, Set<number>>();
   const texts = await readLabelTextsBatch(workspaceRoot, labelPaths);
@@ -534,19 +542,11 @@ export async function startBuildYoloLinks(
   rebuild: boolean,
   filenamesJson = ""
 ) {
-  const raw = await callBackend("startBuildYoloLinks", [workspaceRoot, rebuild, filenamesJson]);
-  if (typeof raw === "string") {
-    return JSON.parse(raw) as BuildJobState;
-  }
-  return raw as BuildJobState;
+  return callJson<BuildJobState>("startBuildYoloLinks", [workspaceRoot, rebuild, filenamesJson]);
 }
 
 export async function getBuildJob(jobId: string) {
-  const raw = await callBackend("getBuildJob", [jobId]);
-  if (typeof raw === "string") {
-    return JSON.parse(raw) as BuildJobState;
-  }
-  return raw as BuildJobState;
+  return callJson<BuildJobState>("getBuildJob", [jobId]);
 }
 
 export async function writeWorkspaceSession(workspaceRoot: string, session: Record<string, unknown>) {

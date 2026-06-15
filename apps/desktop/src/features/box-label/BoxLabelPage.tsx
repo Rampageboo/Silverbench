@@ -1,5 +1,7 @@
-import { useWorkspace } from "../../app/WorkspaceProvider";
+import { useWorkspace } from "../../app/useWorkspace";
+import { useToast } from "../../components/useToast";
 import { BoxLabelTopbar } from "../../components/BoxLabelTopbar";
+import { errMessage } from "../../lib/errors";
 import { isFlaggedFile, isReviewedFile } from "../image-pool/metadata";
 import { BoxLabelGallery } from "./BoxLabelGallery";
 import { BoxLabelView } from "./BoxLabelView";
@@ -11,6 +13,8 @@ type BoxLabelPageProps = {
 
 export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
   const { workspaceRoot, poolLabelFocusFilename, clearPoolLabelFocus, chooseWorkspaceFolder } = useWorkspace();
+  const { showToast } = useToast();
+  const showError = (err: unknown) => showToast(errMessage(err), { variant: "error" });
   const pool = useBoxLabel({
     workspaceRoot,
     focusFilename: poolLabelFocusFilename,
@@ -47,14 +51,18 @@ export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
     reviewedLabel,
     reviewedActive,
     flagged,
-    onToggleReviewed: () => pool.toggleReviewed().catch(() => {}),
-    onToggleFlagged: () => pool.toggleFlagged().catch(() => {})
+    onToggleReviewed: () => pool.toggleReviewed().catch(showError),
+    onToggleFlagged: () => pool.toggleFlagged().catch(showError)
   };
 
   if (pool.pending && !pool.entries.length) {
     return (
       <div className="app pool-label react-box-label-page react-box-label-page--loading">
-        <div className="empty">Loading detect_dataset for Box Label...</div>
+        <div className="page-loading" role="status" aria-live="polite">
+          <span className="page-loading-spinner" aria-hidden="true" />
+          <span className="page-loading-title">正在加载 Box Label</span>
+          <span className="page-loading-detail">读取 detect_dataset 中的图片…</span>
+        </div>
       </div>
     );
   }
@@ -68,9 +76,9 @@ export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
           canMarkJunk={Boolean(workspaceRoot.trim())}
           junkLabel={pool.junkButtonLabel}
           canUndoJunk={pool.canUndoJunk}
-          onOpenWorkspace={() => chooseWorkspaceFolder().catch(() => {})}
-          onMarkJunk={() => pool.markJunk().catch(() => {})}
-          onUndoJunk={() => pool.undoJunk().catch(() => {})}
+          onOpenWorkspace={() => chooseWorkspaceFolder().catch(showError)}
+          onMarkJunk={() => pool.markJunk().catch(showError)}
+          onUndoJunk={() => pool.undoJunk().catch(showError)}
           {...topbarCommon}
         />
         <div className="empty">{pool.error || "No images in detect_dataset."}</div>
@@ -86,9 +94,9 @@ export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
         canMarkJunk={Boolean(workspaceRoot.trim())}
         junkLabel={pool.junkButtonLabel}
         canUndoJunk={pool.canUndoJunk}
-        onOpenWorkspace={() => chooseWorkspaceFolder().catch(() => {})}
-        onMarkJunk={() => pool.markJunk().catch(() => {})}
-        onUndoJunk={() => pool.undoJunk().catch(() => {})}
+        onOpenWorkspace={() => chooseWorkspaceFolder().catch(showError)}
+        onMarkJunk={() => pool.markJunk().catch(showError)}
+        onUndoJunk={() => pool.undoJunk().catch(showError)}
         {...topbarCommon}
       />
       <main className="workspace pool-label-workspace" id="poolLabelWorkspace">
@@ -125,6 +133,7 @@ export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
           excludeClasses={pool.excludeClasses}
           imageViewMode={pool.imageViewMode}
           metadata={pool.metadata}
+          classImageCounts={pool.classImageCounts}
           onAddIncludeClass={pool.addIncludeClass}
           onAddExcludeClass={pool.addExcludeClass}
           onClearClassFilters={pool.clearClassFilters}

@@ -8,13 +8,18 @@ export type MetadataSnapshot = {
 const stacks = new Map<string, MetadataSnapshot[][]>();
 const LIMIT = 10;
 
-function stackKey(context: string) {
-  return context;
+function stackKey(context: string, workspaceRoot: string) {
+  return `${context}::${workspaceRoot.trim()}`;
 }
 
-export function pushJunkUndo(context: string, filenames: string[], metadata: Map<string, MetadataRow>) {
-  if (!filenames.length) return;
-  const key = stackKey(context);
+export function pushJunkUndo(
+  context: string,
+  workspaceRoot: string,
+  filenames: string[],
+  metadata: Map<string, MetadataRow>
+) {
+  if (!filenames.length || !workspaceRoot.trim()) return;
+  const key = stackKey(context, workspaceRoot);
   const stack = stacks.get(key) || [];
   stack.push(
     filenames.map((filename) => ({
@@ -26,15 +31,26 @@ export function pushJunkUndo(context: string, filenames: string[], metadata: Map
   stacks.set(key, stack);
 }
 
-export function hasJunkUndo(context: string) {
-  return Boolean(stacks.get(stackKey(context))?.length);
+export function hasJunkUndo(context: string, workspaceRoot: string) {
+  if (!workspaceRoot.trim()) return false;
+  return Boolean(stacks.get(stackKey(context, workspaceRoot))?.length);
 }
 
-export function popJunkUndo(context: string) {
-  const key = stackKey(context);
+export function popJunkUndo(context: string, workspaceRoot: string) {
+  if (!workspaceRoot.trim()) return null;
+  const key = stackKey(context, workspaceRoot);
   const stack = stacks.get(key);
   if (!stack?.length) return null;
   return stack.pop() || null;
+}
+
+/** Drop undo stacks for a workspace when switching away. */
+export function clearJunkUndoForWorkspace(workspaceRoot: string) {
+  const suffix = `::${workspaceRoot.trim()}`;
+  if (!suffix || suffix === "::") return;
+  for (const key of [...stacks.keys()]) {
+    if (key.endsWith(suffix)) stacks.delete(key);
+  }
 }
 
 export function metadataRowToUpdate(filename: string, row: MetadataRow | null) {
@@ -50,8 +66,8 @@ export function metadataRowToUpdate(filename: string, row: MetadataRow | null) {
   return {
     filename,
     clf_class: row.clf_class || "",
-    clf_enabled: row.clf_enabled === "1" || row.clf_enabled === true,
-    detect_enabled: row.detect_enabled === "1" || row.detect_enabled === true,
-    detect_junk: row.detect_junk === "1" || row.detect_junk === true
+    clf_enabled: row.clf_enabled,
+    detect_enabled: row.detect_enabled,
+    detect_junk: row.detect_junk
   };
 }

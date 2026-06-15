@@ -1,299 +1,462 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
 import * as api from "../api";
+
 import { chooseDirectory } from "../lib/tauri";
-import { tabUsesNativeReact, WORKBENCH_TOOLS, type ToolTab } from "../types/tools";
+
+import { errMessage } from "../lib/errors";
+
+import { useToast } from "../components/useToast";
+
+import { WORKBENCH_TOOLS, type ToolTab } from "../types/tools";
+
 import { readWorkspaceSessionLite, saveActiveTabSession } from "../features/image-pool/session";
+
 import {
+
   normalizeImageWorkspaceTab,
+
   type ImageWorkspaceTab
+
 } from "../features/image-pool/imageWorkspaceMode";
 
-type WorkspaceContextValue = {
-  workspaceRoot: string;
-  setWorkspaceRoot: (value: string) => void;
-  setWorkspaceRootInput: (value: string) => void;
-  scan: api.ImagePoolScan | null;
-  selected: api.ImagePoolItem | null;
-  setSelected: (item: api.ImagePoolItem | null) => void;
-  activeTab: ToolTab;
-  setActiveTab: (tab: ToolTab) => void;
-  imageWorkspaceTab: ImageWorkspaceTab;
-  setImageWorkspaceTab: (tab: ImageWorkspaceTab) => void;
-  imagePoolPending: boolean;
-  imagePoolError: string;
-  loadImagePool: () => Promise<void>;
-  openWorkspacePath: (path: string) => Promise<void>;
-  chooseWorkspaceFolder: () => Promise<void>;
-  selectByIndex: (index: number) => void;
-  openBoxLabel: (item: api.ImagePoolItem) => void;
-  poolLabelFocusFilename: string | null;
-  clearPoolLabelFocus: () => void;
-  imagePoolNewCount: number;
-  setImagePoolNewCount: (count: number) => void;
-  selectedIndex: number;
-};
+import { clearJunkUndoForWorkspace } from "../features/shared/junkUndo";
 
-const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
+import { useWorkspaceCache } from "../features/shared/useWorkspaceCache";
+
+import { WorkspaceContext } from "./workspaceContext";
+
+
+
+type WorkspaceInitPhase = "idle" | "bootstrapping" | "ready";
+
+
 
 function readInitialWorkspaceRoot() {
+
   const params = new URLSearchParams(window.location.search);
+
   return params.get("workspaceRoot") || window.localStorage.getItem("ywb.workspaceRoot") || "";
+
 }
+
+
+
+function applySessionTab(
+
+  session: Record<string, unknown> | null,
+
+  setActiveTab: (tab: ToolTab) => void,
+
+  setImageWorkspaceTabState: (tab: ImageWorkspaceTab) => void
+
+) {
+
+  const tab = String(session?.activeTab || "");
+
+  if (tab === "inbox" || tab === "yolo" || tab === "image-pool") {
+
+    setActiveTab("image-pool");
+
+    setImageWorkspaceTabState(normalizeImageWorkspaceTab(tab));
+
+    return;
+
+  }
+
+  if (WORKBENCH_TOOLS.some((tool) => tool.tab === tab)) {
+
+    setActiveTab(tab as ToolTab);
+
+  }
+
+}
+
+
+
+async function resolveStartupWorkspaceRoot(currentRoot: string) {
+
+  const trimmed = currentRoot.trim();
+
+  if (trimmed) return trimmed;
+
+  try {
+
+    const settings = await api.appSettings();
+
+    return (settings.lastOpenedWorkspace || settings.lastOpenedFolder || settings.lastOpenedYoloFolder || "").trim();
+
+  } catch {
+
+    return "";
+
+  }
+
+}
+
+
 
 export function WorkspaceProvider({
-  connected,
-  children
-}: {
-  connected: boolean;
-  children: React.ReactNode;
-}) {
-  const [workspaceRoot, setWorkspaceRoot] = useState(readInitialWorkspaceRoot);
-  const setWorkspaceRootInput = useCallback((value: string) => {
-    autoScanStarted.current = false;
-    setWorkspaceRoot(value);
-  }, []);
-  const [scan, setScan] = useState<api.ImagePoolScan | null>(null);
-  const [selected, setSelected] = useState<api.ImagePoolItem | null>(null);
-  const [activeTab, setActiveTab] = useState<ToolTab>("image-pool");
-  const [imageWorkspaceTab, setImageWorkspaceTabState] = useState<ImageWorkspaceTab>("image-pool");
-  const setImageWorkspaceTab = useCallback(
-    (tab: ImageWorkspaceTab) => {
-      setImageWorkspaceTabState(tab);
-      const root = workspaceRoot.trim();
-      if (root) saveActiveTabSession(root, tab).catch(() => {});
-    },
-    [workspaceRoot]
-  );
-  const [poolLabelFocusFilename, setPoolLabelFocusFilename] = useState<string | null>(null);
-  const [imagePoolNewCount, setImagePoolNewCount] = useState(0);
-  const [imagePoolPending, setImagePoolPending] = useState(false);
-  const [imagePoolError, setImagePoolError] = useState("");
-  const settingsLoaded = useRef(false);
-  const autoScanStarted = useRef(false);
-  const prevConnectedRef = useRef(false);
 
-  const loadImagePool = useCallback(async () => {
-    const root = workspaceRoot.trim();
-    if (!root) {
-      setImagePoolError("Enter a workspace root.");
-      return;
+  connected,
+
+  children
+
+}: {
+
+  connected: boolean;
+
+  children: React.ReactNode;
+
+}) {
+
+  const { invalidateImagePoolCache, invalidateBoxLabelCache } = useWorkspaceCache();
+
+  const { showToast } = useToast();
+
+  const [workspaceRoot, setWorkspaceRoot] = useState(readInitialWorkspaceRoot);
+
+  const [activeTab, setActiveTab] = useState<ToolTab>("image-pool");
+
+  const [imageWorkspaceTab, setImageWorkspaceTabState] = useState<ImageWorkspaceTab>("image-pool");
+
+  const [poolLabelFocusFilename, setPoolLabelFocusFilename] = useState<string | null>(null);
+
+  const [initPhase, setInitPhase] = useState<WorkspaceInitPhase>("idle");
+
+
+
+  const bootstrappedRef = useRef(false);
+
+  const prevWorkspaceRootRef = useRef(workspaceRoot);
+
+  const workspaceRootRef = useRef(workspaceRoot);
+
+
+
+  workspaceRootRef.current = workspaceRoot;
+
+
+
+  const setWorkspaceRootInput = useCallback((value: string) => {
+
+    setWorkspaceRoot(value);
+
+  }, []);
+
+
+
+  const setImageWorkspaceTab = useCallback(
+
+    (tab: ImageWorkspaceTab) => {
+
+      setImageWorkspaceTabState(tab);
+
+      const root = workspaceRoot.trim();
+
+      if (root) {
+
+        saveActiveTabSession(root, tab).catch(() => {
+
+          // Session persistence is best-effort.
+
+        });
+
+      }
+
+    },
+
+    [workspaceRoot]
+
+  );
+
+
+
+  const afterWorkspaceOpened = useCallback(async (resolved: string, options?: { restoreTab?: boolean }) => {
+
+    const { restoreTab = true } = options ?? {};
+
+    const root = resolved.trim();
+
+    if (!root) return;
+
+
+
+    window.localStorage.setItem("ywb.workspaceRoot", root);
+
+    setWorkspaceRoot(root);
+
+    await api.writeAppSettings({ lastOpenedWorkspace: root });
+
+
+
+    if (restoreTab) {
+
+      try {
+
+        const session = await readWorkspaceSessionLite(root);
+
+        applySessionTab(session, setActiveTab, setImageWorkspaceTabState);
+
+      } catch {
+
+        // Session tab restore is best-effort.
+
+      }
+
     }
-    setImagePoolPending(true);
-    setImagePoolError("");
-    try {
-      const result = await api.scanImagePool(root, { fast: true });
-      const resolved = result.workspaceRoot || root;
-      window.localStorage.setItem("ywb.workspaceRoot", resolved);
-      setWorkspaceRoot(resolved);
-      setScan(result);
-      setSelected((current) => {
-        if (current && result.files.some((item) => item.filename === current.filename)) return current;
-        return result.files[0] || null;
-      });
-      await api.writeAppSettings({ lastOpenedWorkspace: resolved });
-    } catch (err) {
-      setScan(null);
-      setSelected(null);
-      setImagePoolError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setImagePoolPending(false);
-    }
-  }, [workspaceRoot]);
+
+  }, []);
+
+
 
   const openWorkspacePath = useCallback(
+
     async (path: string) => {
+
       const trimmed = path.trim();
+
       if (!trimmed) return;
-      setImagePoolError("");
+
       try {
+
         const opened = await api.openWorkspace(trimmed);
-        const resolved = opened.root || trimmed;
-        autoScanStarted.current = false;
-        setWorkspaceRoot(resolved);
-        window.localStorage.setItem("ywb.workspaceRoot", resolved);
-        await api.writeAppSettings({ lastOpenedWorkspace: resolved });
+
+        await afterWorkspaceOpened(opened.root || trimmed);
+
+        bootstrappedRef.current = true;
+
+        setInitPhase("ready");
+
       } catch (err) {
-        setImagePoolError(err instanceof Error ? err.message : String(err));
+
+        showToast(errMessage(err), { variant: "error" });
+
       }
+
     },
-    []
+
+    [afterWorkspaceOpened, showToast]
+
   );
+
+
 
   const clearPoolLabelFocus = useCallback(() => {
+
     setPoolLabelFocusFilename(null);
+
   }, []);
+
+
 
   const chooseWorkspaceFolder = useCallback(async () => {
+
     const folder = await chooseDirectory("Choose YOLO workspace folder");
+
     if (folder) await openWorkspacePath(folder);
+
   }, [openWorkspacePath]);
 
-  useEffect(() => {
-    const wasConnected = prevConnectedRef.current;
-    prevConnectedRef.current = connected;
-    if (!connected || wasConnected) return;
-    const trimmed = workspaceRoot.trim();
-    if (!trimmed) return;
-    openWorkspacePath(trimmed).catch((err) => {
-      setImagePoolError(err instanceof Error ? err.message : String(err));
-    });
-  }, [connected, workspaceRoot, openWorkspacePath]);
+
 
   useEffect(() => {
-    if (!connected || settingsLoaded.current) return;
-    settingsLoaded.current = true;
-    const restoreWorkspace = (root: string) => {
-      const trimmed = root.trim();
-      if (!trimmed) return;
-      autoScanStarted.current = false;
-      setWorkspaceRoot(trimmed);
-      openWorkspacePath(trimmed).catch(() => {});
-    };
-    if (workspaceRoot.trim()) {
-      restoreWorkspace(workspaceRoot);
+
+    const previous = prevWorkspaceRootRef.current.trim();
+
+    const current = workspaceRoot.trim();
+
+    if (previous && previous !== current) {
+
+      clearJunkUndoForWorkspace(previous);
+
+      invalidateImagePoolCache(previous);
+
+      invalidateBoxLabelCache(previous);
+
+    }
+
+    prevWorkspaceRootRef.current = workspaceRoot;
+
+  }, [invalidateBoxLabelCache, invalidateImagePoolCache, workspaceRoot]);
+
+
+
+  useEffect(() => {
+
+    if (!connected) {
+
+      bootstrappedRef.current = false;
+
+      setInitPhase("idle");
+
       return;
+
     }
-    api
-      .appSettings()
-      .then((settings) => {
-        const root = settings.lastOpenedWorkspace || settings.lastOpenedFolder || settings.lastOpenedYoloFolder;
-        restoreWorkspace(root || "");
-      })
-      .catch(() => {
-        // Startup settings are optional.
-      });
-  }, [connected, workspaceRoot, openWorkspacePath]);
 
-  const sessionTabLoaded = useRef(false);
-  useEffect(() => {
-    if (!connected || sessionTabLoaded.current || !workspaceRoot.trim()) return;
-    sessionTabLoaded.current = true;
-    readWorkspaceSessionLite(workspaceRoot.trim())
-      .then((session) => {
-        const tab = String(session?.activeTab || "");
-        if (tab === "inbox" || tab === "yolo" || tab === "image-pool") {
-          setActiveTab("image-pool");
-          setImageWorkspaceTabState(normalizeImageWorkspaceTab(tab));
-          return;
-        }
-        if (WORKBENCH_TOOLS.some((tool) => tool.tab === tab)) {
-          setActiveTab(tab as ToolTab);
-        }
-      })
-      .catch(() => {});
-  }, [connected, workspaceRoot]);
+    if (bootstrappedRef.current) return;
 
-  useEffect(() => {
-    const root = workspaceRoot.trim();
-    if (!root) return;
-    if (activeTab === "image-pool") return;
-    saveActiveTabSession(root, activeTab).catch(() => {});
-  }, [activeTab, workspaceRoot]);
 
-  useEffect(() => {
-    const root = workspaceRoot.trim();
-    if (!connected || !root) return;
+
     let cancelled = false;
-    api
-      .scanImagePool(root, { fast: true })
-      .then((result) => {
-        if (!cancelled) setImagePoolNewCount(result.newCount ?? 0);
-      })
-      .catch(() => {});
+
+    setInitPhase("bootstrapping");
+
+
+
+    void (async () => {
+
+      try {
+
+        const candidate = await resolveStartupWorkspaceRoot(workspaceRootRef.current);
+
+        if (cancelled) return;
+
+
+
+        if (!candidate) {
+
+          bootstrappedRef.current = true;
+
+          setInitPhase("ready");
+
+          return;
+
+        }
+
+
+
+        const opened = await api.openWorkspace(candidate);
+
+        if (cancelled) return;
+
+
+
+        await afterWorkspaceOpened(opened.root || candidate);
+
+        if (cancelled) return;
+
+
+
+        bootstrappedRef.current = true;
+
+        setInitPhase("ready");
+
+      } catch (err) {
+
+        if (!cancelled) {
+
+          showToast(errMessage(err), { variant: "error" });
+
+          bootstrappedRef.current = true;
+
+          setInitPhase("ready");
+
+        }
+
+      }
+
+    })();
+
+
+
     return () => {
+
       cancelled = true;
+
     };
-  }, [connected, workspaceRoot, setImagePoolNewCount]);
+
+  }, [afterWorkspaceOpened, connected, showToast]);
+
+
 
   useEffect(() => {
-    if (!connected || autoScanStarted.current || !workspaceRoot.trim()) return;
-    if (tabUsesNativeReact(activeTab)) return;
-    autoScanStarted.current = true;
-    loadImagePool();
-  }, [connected, workspaceRoot, activeTab, loadImagePool]);
 
-  const previousTab = useRef(activeTab);
-  useEffect(() => {
-    if (!connected || !workspaceRoot.trim()) return;
-    if (tabUsesNativeReact(activeTab)) return;
-    const wasReact = tabUsesNativeReact(previousTab.current);
-    const isReact = tabUsesNativeReact(activeTab);
-    previousTab.current = activeTab;
-    if (!wasReact && isReact) {
-      loadImagePool();
-    }
-  }, [activeTab, connected, workspaceRoot, loadImagePool]);
+    const root = workspaceRoot.trim();
 
-  const selectByIndex = useCallback(
-    (index: number) => {
-      if (!scan?.files.length) return;
-      const clamped = Math.max(0, Math.min(index, scan.files.length - 1));
-      setSelected(scan.files[clamped]);
-    },
-    [scan]
-  );
+    if (!root || initPhase !== "ready") return;
+
+    if (activeTab === "image-pool") return;
+
+    saveActiveTabSession(root, activeTab).catch(() => {
+
+      // Session persistence is best-effort.
+
+    });
+
+  }, [activeTab, workspaceRoot, initPhase]);
+
+
 
   const openBoxLabel = useCallback((item: api.ImagePoolItem) => {
-    setSelected(item);
+
     setPoolLabelFocusFilename(item.filename);
+
     setActiveTab("pool-label");
+
   }, []);
 
-  const selectedIndex = scan && selected ? scan.files.findIndex((item) => item.filename === selected.filename) : -1;
+
 
   const value = useMemo(
+
     () => ({
+
       workspaceRoot,
+
       setWorkspaceRoot,
+
       setWorkspaceRootInput,
-      scan,
-      selected,
-      setSelected,
+
       activeTab,
+
       setActiveTab,
+
       imageWorkspaceTab,
+
       setImageWorkspaceTab,
-      imagePoolPending,
-      imagePoolError,
-      loadImagePool,
+
       openWorkspacePath,
+
       chooseWorkspaceFolder,
-      selectByIndex,
+
       openBoxLabel,
+
       poolLabelFocusFilename,
-      clearPoolLabelFocus,
-      imagePoolNewCount,
-      setImagePoolNewCount,
-      selectedIndex
+
+      clearPoolLabelFocus
+
     }),
+
     [
+
       workspaceRoot,
-      scan,
-      selected,
+
       activeTab,
+
       imageWorkspaceTab,
+
       setImageWorkspaceTab,
-      imagePoolPending,
-      imagePoolError,
-      loadImagePool,
+
       openWorkspacePath,
+
       chooseWorkspaceFolder,
-      selectByIndex,
+
       openBoxLabel,
+
       poolLabelFocusFilename,
+
       clearPoolLabelFocus,
-      imagePoolNewCount,
-      setImagePoolNewCount,
-      selectedIndex,
+
       setWorkspaceRootInput
+
     ]
+
   );
 
+
+
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
+
 }
 
-export function useWorkspace() {
-  const context = useContext(WorkspaceContext);
-  if (!context) throw new Error("useWorkspace must be used within WorkspaceProvider.");
-  return context;
-}

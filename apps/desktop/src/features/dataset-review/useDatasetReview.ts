@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../../api";
 import type { LabelBox } from "../../api";
+import { useConfirm } from "../../components/useConfirm";
+import { useToast } from "../../components/useToast";
+import { errMessage } from "../../lib/errors";
 import {
   isJunkFile,
   loadMetadataMap,
@@ -31,6 +34,8 @@ type UseDatasetReviewOptions = {
 };
 
 export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOptions) {
+  const { confirm } = useConfirm();
+  const { showToast } = useToast();
   const root = workspaceRoot.trim();
   const [mode, setMode] = useState<YoloViewMode>("detect");
   const [datasetRoot, setDatasetRoot] = useState("");
@@ -54,7 +59,8 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
-  const [galleryScrollTop, setGalleryScrollTop] = useState(0);
+  const [restoreGalleryScrollTop, setRestoreGalleryScrollTop] = useState<number | null>(null);
+  const galleryScrollTopRef = useRef(0);
   const [selectedClassHint, setSelectedClassHint] = useState("");
   const [canUndoJunk, setCanUndoJunk] = useState(false);
   const readyNotified = useRef(false);
@@ -168,7 +174,7 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
           reviewedPaths: [...(fields.reviewedPaths ?? reviewedPaths)],
           flaggedPaths: [...(fields.flaggedPaths ?? flaggedPaths)],
           currentImagePath: fields.currentImagePath ?? currentPair?.imagePath ?? "",
-          galleryScrollTop: fields.galleryScrollTop ?? galleryScrollTop,
+          galleryScrollTop: fields.galleryScrollTop ?? galleryScrollTopRef.current,
           yoloViewMode: fields.yoloViewMode ?? mode,
           imageViewMode: fields.imageViewMode ?? imageViewMode,
           includeClassIds: [...(fields.includeClassIds ?? include)],
@@ -176,7 +182,7 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
         }).catch(() => {});
       }, 500);
     },
-    [currentPair?.imagePath, exclude, flaggedPaths, galleryScrollTop, imageViewMode, include, mode, reviewedPaths, root]
+    [currentPair?.imagePath, exclude, flaggedPaths, imageViewMode, include, mode, reviewedPaths, root]
   );
 
   const loadDataset = useCallback(
@@ -204,7 +210,8 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
         setDatasetRoot(datasetPath);
         setReviewedPaths(new Set(session.reviewedPaths));
         setFlaggedPaths(new Set(session.flaggedPaths));
-        setGalleryScrollTop(session.galleryScrollTop ?? 0);
+        setRestoreGalleryScrollTop(session.galleryScrollTop ?? null);
+        galleryScrollTopRef.current = session.galleryScrollTop ?? 0;
         setImageViewMode(session.imageViewMode || "all");
         setInclude(new Set(session.includeClassIds || []));
         setExclude(new Set(session.excludeClassIds || []));
@@ -240,7 +247,7 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
         setStatus(`${nextMode === "clf" ? "Clf" : "Detect"} dataset: ${found.length} image(s).`);
         notifyReady();
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(errMessage(err));
         notifyReady();
       } finally {
         loadingRef.current = false;
@@ -261,7 +268,7 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
     readDatasetReviewSession(root)
       .then((session) => loadDatasetRef.current(session.yoloViewMode || "detect"))
       .catch((err) => {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(errMessage(err));
         notifyReady();
       });
     return () => revokeDatasetImageUrls();
@@ -485,13 +492,15 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
     const pending = filenames.filter((filename) => {
       const row = metadata.get(filename);
       if (isJunkFile(row, "detect")) return false;
-      return !(row?.detect_enabled === true || row?.detect_enabled === "1");
+      return !row?.detect_enabled;
     });
     if (!pending.length) throw new Error("所选图片无法发送到 Detect（废片或已在 Detect 中）。");
     if (
-      !window.confirm(
-        `将 ${pending.length} 张图片发送到 Detect？\n\n会写入 metadata（detect_enabled=1）并构建 detect 硬链接。`
-      )
+      !(await confirm({
+        title: "Send to Detect",
+        message: `将 ${pending.length} 张图片发送到 Detect？\n\n会写入 metadata（detect_enabled=1）并构建 detect 硬链接。`,
+        confirmLabel: "Send"
+      }))
     ) {
       return;
     }
@@ -502,7 +511,7 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
     const buildResult = await runBuildYoloLinksJob(root, false, JSON.stringify(pending));
     setMetadata(await loadMetadataMap(root));
     setStatus(`已发送 ${pending.length} 张到 Detect（detect 硬链接 ${buildResult.detectImagesLinked || 0}）。`);
-  }, [canSendToDetect, metadata, root, selectedPairs]);
+  }, [canSendToDetect, confirm, metadata, root, selectedPairs]);
 
   const addClassificationFolder = useCallback(
     async (rawInput: string) => {
@@ -531,7 +540,7 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
         target.classId != null && classNames.has(target.classId)
           ? classDisplay(classNames, target.classId)
           : target.folderName;
-      if (!window.confirm(`Move ${selectedPairs.length} image(s) to ${label}?`)) return;
+      if (!(await confirm({ title: "Move images", message: `Move ${selectedPairs.length} image(s) to ${label}?`, confirmLabel: "Move" }))) return;
       const result = await api.moveImagesToClass(
         datasetRoot,
         selectedPairs.map((pair) => pair.imagePath),
@@ -545,10 +554,10 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
         if (index >= 0) navigate(index);
       }
       if (result.skipped?.length) {
-        window.alert(`Moved ${result.moved?.length || 0} image(s).\nSkipped ${result.skipped.length}.`);
+        showToast(`Moved ${result.moved?.length || 0} image(s).\nSkipped ${result.skipped.length}.`, { variant: "info" });
       }
     },
-    [classNames, currentPair?.imagePath, datasetRoot, datasetTask, loadDataset, mode, navigate, pairs, selectedPairs]
+    [classNames, confirm, currentPair?.imagePath, datasetRoot, datasetTask, loadDataset, mode, navigate, pairs, selectedPairs, showToast]
   );
 
   const changeImageViewMode = useCallback(
@@ -567,20 +576,20 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
       .filter(Boolean) as string[];
     const targets = filenames.filter((name) => !isJunkFile(metadata.get(name), junkScope));
     if (!targets.length) return;
-    pushJunkUndo("yolo-review", targets, metadata);
+    pushJunkUndo("yolo-review", root, targets, metadata);
     await markJunkFilenames(root, targets, junkScope);
     setMetadata(await loadMetadataMap(root));
-    setCanUndoJunk(hasJunkUndo("yolo-review"));
+    setCanUndoJunk(hasJunkUndo("yolo-review", root));
     await loadDataset(mode, { silent: true });
   }, [junkScope, loadDataset, metadata, mode, root, selectedPairs]);
 
   const undoJunk = useCallback(async () => {
     if (!root) return;
-    const snapshots = popJunkUndo("yolo-review");
+    const snapshots = popJunkUndo("yolo-review", root);
     if (!snapshots?.length) return;
     await restoreJunkUndoWithLinks(root, snapshots);
     setMetadata(await loadMetadataMap(root));
-    setCanUndoJunk(hasJunkUndo("yolo-review"));
+    setCanUndoJunk(hasJunkUndo("yolo-review", root));
     await loadDataset(mode, { silent: true });
   }, [loadDataset, mode, root]);
 
@@ -721,7 +730,8 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
     canUndoJunk,
     canSendToCrop,
     canSendToDetect,
-    galleryScrollTop,
+    restoreGalleryScrollTop,
+    clearGalleryRestore: () => setRestoreGalleryScrollTop(null),
     selectedClassItems,
     selectedClassHint,
     switchMode,
@@ -748,7 +758,7 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
     undoJunk,
     reload: () => loadDataset(mode),
     onGalleryScroll: (scrollTop: number) => {
-      setGalleryScrollTop(scrollTop);
+      galleryScrollTopRef.current = scrollTop;
       queueSessionSave({ galleryScrollTop: scrollTop });
     },
     selectedPairs

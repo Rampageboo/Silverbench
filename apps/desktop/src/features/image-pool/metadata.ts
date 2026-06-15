@@ -1,4 +1,4 @@
-import { callBackend } from "../../api";
+import { callJson } from "../../api";
 import type { HideJunkMode, JunkScope, MetadataRow } from "./types";
 
 export const INBOX_JUNK_CLASS = "__junk__";
@@ -7,9 +7,20 @@ export function truthyFlag(value: unknown) {
   return value === true || value === "1" || value === 1;
 }
 
+function normalizeMetadataRow(row: Record<string, unknown>): MetadataRow {
+  return {
+    filename: String(row.filename || ""),
+    detect_junk: truthyFlag(row.detect_junk),
+    clf_class: row.clf_class != null ? String(row.clf_class) : undefined,
+    detect_enabled: truthyFlag(row.detect_enabled),
+    clf_enabled: truthyFlag(row.clf_enabled),
+    reviewed: truthyFlag(row.reviewed),
+    flagged: truthyFlag(row.flagged)
+  };
+}
+
 export function isDetectJunk(row: MetadataRow | undefined) {
-  if (!row) return false;
-  return truthyFlag(row.detect_junk);
+  return Boolean(row?.detect_junk);
 }
 
 export function isClfJunk(row: MetadataRow | undefined) {
@@ -28,11 +39,11 @@ export function isJunkFile(
 }
 
 export function isReviewedFile(row: MetadataRow | undefined) {
-  return truthyFlag(row?.reviewed);
+  return Boolean(row?.reviewed);
 }
 
 export function isFlaggedFile(row: MetadataRow | undefined) {
-  return truthyFlag(row?.flagged);
+  return Boolean(row?.flagged);
 }
 
 export function junkLabelForFile(row: MetadataRow | undefined) {
@@ -47,16 +58,10 @@ export function junkLabelForFile(row: MetadataRow | undefined) {
 function metadataSideState(row: MetadataRow | undefined) {
   const detectRejected = isDetectJunk(row);
   const clfRejected = isClfJunk(row);
-  const detectInUse = Boolean(
-    row && truthyFlag(row.detect_enabled) && !detectRejected
-  );
+  const detectInUse = Boolean(row && row.detect_enabled && !detectRejected);
   const clfClass = String(row?.clf_class || "").trim();
   const clfInUse = Boolean(
-    row &&
-      truthyFlag(row.clf_enabled) &&
-      clfClass &&
-      clfClass !== INBOX_JUNK_CLASS &&
-      !clfRejected
+    row && row.clf_enabled && clfClass && clfClass !== INBOX_JUNK_CLASS && !clfRejected
   );
   return { detectRejected, clfRejected, detectInUse, clfInUse };
 }
@@ -93,13 +98,14 @@ export function cardExtraClasses(row: MetadataRow | undefined, _scope: JunkScope
 }
 
 export async function loadMetadataMap(workspaceRoot: string) {
-  const result = (await callBackend("readMetadataRows", [workspaceRoot])) as {
-    ok?: boolean;
-    rows?: MetadataRow[];
-  };
+  const result = await callJson<{ ok?: boolean; rows?: Array<Record<string, unknown>> }>(
+    "readMetadataRows",
+    [workspaceRoot]
+  );
   const map = new Map<string, MetadataRow>();
   for (const row of result?.rows || []) {
-    if (row?.filename) map.set(row.filename, row);
+    const normalized = normalizeMetadataRow(row);
+    if (normalized.filename) map.set(normalized.filename, normalized);
   }
   return map;
 }
@@ -114,11 +120,11 @@ export async function markJunkFilenames(
       ? { filename, detect_junk: true, detect_enabled: false }
       : { filename, clf_enabled: false, clf_class: INBOX_JUNK_CLASS }
   );
-  await callBackend("upsertMetadataRows", [workspaceRoot, JSON.stringify(updates)]);
+  await callJson("upsertMetadataRows", [workspaceRoot, JSON.stringify(updates)]);
   if (scope === "detect") {
-    await callBackend("removeDetectDatasetLinks", [workspaceRoot, JSON.stringify(filenames)]);
+    await callJson("removeDetectDatasetLinks", [workspaceRoot, JSON.stringify(filenames)]);
   } else {
-    await callBackend("removeClfDatasetLinks", [workspaceRoot, JSON.stringify(filenames)]);
+    await callJson("removeClfDatasetLinks", [workspaceRoot, JSON.stringify(filenames)]);
   }
 }
 
@@ -132,7 +138,7 @@ export async function clearJunkFilenames(
       ? { filename, detect_junk: false }
       : { filename, clf_class: "", clf_enabled: false }
   );
-  await callBackend("upsertMetadataRows", [workspaceRoot, JSON.stringify(updates)]);
+  await callJson("upsertMetadataRows", [workspaceRoot, JSON.stringify(updates)]);
 }
 
 export async function restoreMetadataSnapshots(
@@ -152,14 +158,14 @@ export async function restoreMetadataSnapshots(
     return {
       filename,
       clf_class: row.clf_class || "",
-      clf_enabled: row.clf_enabled === "1" || row.clf_enabled === true,
-      detect_enabled: row.detect_enabled === "1" || row.detect_enabled === true,
-      detect_junk: row.detect_junk === "1" || row.detect_junk === true,
-      reviewed: row.reviewed === "1" || row.reviewed === true,
-      flagged: row.flagged === "1" || row.flagged === true
+      clf_enabled: row.clf_enabled,
+      detect_enabled: row.detect_enabled,
+      detect_junk: row.detect_junk,
+      reviewed: row.reviewed,
+      flagged: row.flagged
     };
   });
-  await callBackend("upsertMetadataRows", [workspaceRoot, JSON.stringify(updates)]);
+  await callJson("upsertMetadataRows", [workspaceRoot, JSON.stringify(updates)]);
 }
 
 export async function setMetadataFlags(
@@ -169,14 +175,11 @@ export async function setMetadataFlags(
 ) {
   const updates = [...new Set(filenames)].map((filename) => ({ filename, ...flags }));
   if (updates.length) {
-    await callBackend("upsertMetadataRows", [workspaceRoot, JSON.stringify(updates)]);
+    await callJson("upsertMetadataRows", [workspaceRoot, JSON.stringify(updates)]);
   }
 }
 
-export function passesHideJunk(
-  row: MetadataRow | undefined,
-  hideJunk: HideJunkMode
-) {
+export function passesHideJunk(row: MetadataRow | undefined, hideJunk: HideJunkMode) {
   if (!hideJunk) return true;
   return !isJunkFile(row, hideJunk);
 }

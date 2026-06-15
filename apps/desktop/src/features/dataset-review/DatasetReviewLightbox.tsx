@@ -69,7 +69,7 @@ export function DatasetReviewLightbox({
     return () => {
       cancelled = true;
     };
-  }, [datasetRoot, open, pair?.imagePath]);
+  }, [datasetRoot, open, pair]);
 
   useEffect(() => {
     if (!open) return;

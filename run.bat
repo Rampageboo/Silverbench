@@ -109,6 +109,7 @@ echo Image Pool / Box Label use native React routes
 echo Other tools embed from http://127.0.0.1:8765
 echo.
 echo Tip: double-click YoloWorkBench.vbs to launch without a terminal window.
+echo      Run create-shortcut.vbs once to put a desktop shortcut on your desktop.
 echo Logs: logs\desktop.log, logs\backend.log
 echo Fallback full web shell: cd apps\desktop ^&^& npm run tauri:dev:legacy
 echo Qt is not used. For the old Qt shell specifically, use run_legacy_qt.bat.

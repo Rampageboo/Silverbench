@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as api from "../../api";
 import { assignVisualState, thumbMediaClasses } from "../image-pool/metadata";
 import type { JunkScope, MetadataRow } from "../image-pool/types";
@@ -13,10 +13,11 @@ type ImageAssignGridProps = {
   junkScope: JunkScope;
   selected: Set<string>;
   pendingFilenames: Set<string>;
-  restoreScrollTop?: number;
+  restoreScrollTop?: number | null;
   onSelect: (index: number, options?: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean }) => void;
   onDoubleClick: (index: number) => void;
   onScrollChange?: (scrollTop: number) => void;
+  onViewportRestored?: () => void;
 };
 
 function LazyThumb({ workspaceRoot, filename }: { workspaceRoot: string; filename: string }) {
@@ -57,21 +58,22 @@ export function ImageAssignGrid({
   junkScope,
   selected,
   pendingFilenames,
-  restoreScrollTop = 0,
+  restoreScrollTop = null,
   onSelect,
   onDoubleClick,
-  onScrollChange
+  onScrollChange,
+  onViewportRestored
 }: ImageAssignGridProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [layout, setLayout] = useState(() => computeVirtualGridLayout(null, 0, 148, 10, 58, 1));
 
-  const recompute = () => {
+  const recompute = useCallback(() => {
     setLayout(computeVirtualGridLayout(wrapRef.current, items.length, 148, 10, 58, 1));
-  };
+  }, [items.length]);
 
   useLayoutEffect(() => {
     recompute();
-  }, [items.length]);
+  }, [recompute]);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -79,17 +81,18 @@ export function ImageAssignGrid({
     const observer = new ResizeObserver(() => recompute());
     observer.observe(el);
     return () => observer.disconnect();
-  }, [items.length]);
+  }, [recompute]);
 
   useEffect(() => {
     const el = wrapRef.current;
-    if (!el || !restoreScrollTop) return;
+    if (!el || restoreScrollTop === null) return;
     requestAnimationFrame(() => {
       if (!wrapRef.current) return;
       wrapRef.current.scrollTop = restoreScrollTop;
       recompute();
+      onViewportRestored?.();
     });
-  }, [workspaceRoot, restoreScrollTop]);
+  }, [workspaceRoot, restoreScrollTop, onViewportRestored, recompute]);
 
   const visibleItems = useMemo(
     () => items.slice(layout.startIndex, layout.endIndex),

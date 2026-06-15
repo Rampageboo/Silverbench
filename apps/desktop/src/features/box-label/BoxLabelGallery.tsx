@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { computeVirtualGridLayout } from "../image-pool/virtualGrid";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { computeVirtualGridLayout, scrollVirtualGridToIndex } from "../image-pool/virtualGrid";
+import { isFlaggedFile, isReviewedFile } from "../image-pool/metadata";
 import { datasetImageUrl } from "../dataset-review/datasetAssets";
 import type { MetadataRow } from "../image-pool/types";
 import type { BoxLabelEntry } from "./boxLabelCore";
@@ -19,9 +20,11 @@ type BoxLabelGalleryProps = {
   onImageViewModeChange: (mode: "all" | "hideReviewed" | "flagged") => void;
 };
 
+const BOX_LABEL_GRID_PARAMS = { columnUnit: 138, gap: 10, rowExtra: 36, aspectRatio: 10 / 16 } as const;
+
 function galleryThumbTags(row: MetadataRow | undefined) {
-  const flagged = row?.flagged === true || row?.flagged === "1";
-  const reviewed = row?.reviewed === true || row?.reviewed === "1";
+  const flagged = isFlaggedFile(row);
+  const reviewed = isReviewedFile(row);
   return `${flagged ? "[FLAG] " : ""}${reviewed ? "[OK] " : ""}`;
 }
 
@@ -79,15 +82,16 @@ export function BoxLabelGallery({
   onImageViewModeChange
 }: BoxLabelGalleryProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
+  const lastScrolledIndexRef = useRef(-1);
   const [layout, setLayout] = useState(() => computeVirtualGridLayout(null, 0, 138, 10, 36, 10 / 16));
 
-  const recompute = () => {
+  const recompute = useCallback(() => {
     setLayout(computeVirtualGridLayout(wrapRef.current, entries.length, 138, 10, 36, 10 / 16));
-  };
+  }, [entries.length]);
 
   useLayoutEffect(() => {
     recompute();
-  }, [entries.length]);
+  }, [recompute]);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -95,7 +99,7 @@ export function BoxLabelGallery({
     const observer = new ResizeObserver(() => recompute());
     observer.observe(el);
     return () => observer.disconnect();
-  }, [entries.length]);
+  }, [recompute]);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -115,22 +119,19 @@ export function BoxLabelGallery({
       recompute();
       onViewportRestored();
     });
-  }, [restoreScrollTop, restoreImagePath, entries, layout.columns, layout.rowHeight, onViewportRestored]);
+  }, [restoreScrollTop, restoreImagePath, entries, layout.columns, layout.rowHeight, onViewportRestored, recompute]);
+
+  useEffect(() => {
+    lastScrolledIndexRef.current = -1;
+  }, [datasetRoot, entries.length]);
 
   useEffect(() => {
     const el = wrapRef.current;
-    if (!el || currentIndex < 0 || !entries.length) return;
-    const columns = Math.max(1, layout.columns || 1);
-    const rowHeight = Math.max(1, layout.rowHeight || 132);
-    const row = Math.floor(currentIndex / columns);
-    const rowTop = row * rowHeight;
-    const rowBottom = rowTop + rowHeight;
-    const viewTop = el.scrollTop;
-    const viewBottom = viewTop + el.clientHeight;
-    if (rowTop >= viewTop && rowBottom <= viewBottom) return;
-    const targetTop = Math.max(0, Math.round(row * rowHeight - el.clientHeight * 0.35));
-    el.scrollTop = targetTop;
-  }, [currentIndex, entries.length, layout.columns, layout.rowHeight]);
+    if (!el || currentIndex < 0 || !entries.length || currentIndex === lastScrolledIndexRef.current) return;
+    const { scrolled, layout: nextLayout } = scrollVirtualGridToIndex(el, currentIndex, entries.length, BOX_LABEL_GRID_PARAMS);
+    lastScrolledIndexRef.current = currentIndex;
+    if (scrolled) setLayout(nextLayout);
+  }, [currentIndex, entries.length]);
 
   const visibleItems = useMemo(
     () => entries.slice(layout.startIndex, layout.endIndex),
@@ -231,8 +232,8 @@ export function BoxLabelGallery({
               const active = index === currentIndex;
               const shiftSelected = shiftSelectedBasenames.has(item.basename);
               const row = metadata.get(item.basename);
-              const reviewed = row?.reviewed === true || row?.reviewed === "1";
-              const flagged = row?.flagged === true || row?.flagged === "1";
+              const reviewed = isReviewedFile(row);
+              const flagged = isFlaggedFile(row);
               return (
                 <div
                   key={item.imagePath}

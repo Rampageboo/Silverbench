@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../../api";
 import {
   clearJunkFilenames,
-  isDetectJunk,
   isClfJunk,
   isJunkFile,
   junkLabelForFile,
@@ -11,7 +10,8 @@ import {
 } from "../image-pool/metadata";
 import { hasJunkUndo, popJunkUndo, pushJunkUndo } from "../shared/junkUndo";
 import { restoreJunkUndoWithLinks } from "../shared/junkMetadata";
-import { readWorkspaceSessionLite } from "../image-pool/session";
+import { useWorkspaceCache } from "../shared/useWorkspaceCache";
+import { errMessage } from "../../lib/errors";
 import type { JunkScope, MetadataRow } from "../image-pool/types";
 import { runBuildYoloLinksJob } from "./buildJob";
 import {
@@ -30,7 +30,7 @@ import {
   saveInboxSession,
   smallPathHash
 } from "./session";
-import type { AssignTarget, DetectClass, InboxFilter, InboxItem, InboxSession } from "./types";
+import type { AssignTarget, DetectClass, InboxFilter, InboxSession } from "./types";
 
 type UseImageAssignOptions = {
   workspaceRoot: string;
@@ -39,6 +39,7 @@ type UseImageAssignOptions = {
 };
 
 export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImageAssignOptions) {
+  const { getBoxLabelCache } = useWorkspaceCache();
   const root = workspaceRoot.trim();
   const [scan, setScan] = useState<api.ImagePoolScan | null>(null);
   const [metadata, setMetadata] = useState<Map<string, MetadataRow>>(new Map());
@@ -65,7 +66,8 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
   const [log, setLog] = useState("Ready.");
   const [canUndoJunk, setCanUndoJunk] = useState(false);
   const [rebuild, setRebuild] = useState(false);
-  const [galleryScrollTop, setGalleryScrollTop] = useState(0);
+  const [restoreGalleryScrollTop, setRestoreGalleryScrollTop] = useState<number | null>(null);
+  const galleryScrollTopRef = useRef(0);
   const scrollTimer = useRef<number | null>(null);
   const [buildProgress, setBuildProgress] = useState<{ open: boolean; done: number; total: number; detail: string }>({
     open: false,
@@ -121,6 +123,29 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
     });
   }, [detectClasses, detectClassSearch]);
 
+  const clfClassCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of metadata.values()) {
+      const name = String(row.clf_class || "").trim();
+      if (!name || isClfJunk(row)) continue;
+      counts.set(name, (counts.get(name) || 0) + 1);
+    }
+    return counts;
+  }, [metadata]);
+
+  const detectClassCounts = useMemo(() => {
+    const counts = new Map<number, number>();
+    const labelIndex = root ? getBoxLabelCache(root)?.labelIndex : null;
+    if (labelIndex) {
+      for (const classIds of labelIndex.values()) {
+        for (const classId of classIds) {
+          counts.set(classId, (counts.get(classId) || 0) + 1);
+        }
+      }
+    }
+    return counts;
+  }, [getBoxLabelCache, root]);
+
   const reloadClasses = useCallback(async () => {
     if (!root) return;
     const payload = await api.readMetadataRows(root);
@@ -162,7 +187,8 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
       setFilter(inboxData.inbox.ui.filter);
       setAssignTarget(assignTargetFromSession(inboxData.inbox.ui));
       setJunkScope(assignTargetFromSession(inboxData.inbox.ui));
-      setGalleryScrollTop(inboxData.inbox.ui.scrollTop ?? 0);
+      setRestoreGalleryScrollTop(inboxData.inbox.ui.scrollTop ?? null);
+      galleryScrollTopRef.current = inboxData.inbox.ui.scrollTop ?? 0;
       const map = await reloadMetadata();
       await reloadClasses();
       if (inboxData.inbox.ui.filter === "random-unused") {
@@ -173,7 +199,7 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
       }
       notifyReady();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMessage(err));
       notifyReady();
     } finally {
       loadingRef.current = false;
@@ -191,11 +217,11 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
   }, [root, load, notifyReady]);
 
   useEffect(() => {
-    setCanUndoJunk(hasJunkUndo("inbox"));
-  }, [selected, assigning, metadata]);
+    setCanUndoJunk(hasJunkUndo("inbox", root));
+  }, [root, selected, assigning, metadata]);
 
   const saveUi = useCallback(
-    async (nextFilter: InboxFilter, nextTarget: AssignTarget, scrollTop = galleryScrollTop) => {
+    async (nextFilter: InboxFilter, nextTarget: AssignTarget, scrollTop = galleryScrollTopRef.current) => {
       if (!root || !inboxSession) return;
       const next = normalizeInboxSession({
         ...inboxSession,
@@ -204,12 +230,14 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
       const summary = await saveInboxSession(root, next);
       setInboxSession(summary.inbox);
     },
-    [galleryScrollTop, inboxSession, root]
+    [inboxSession, root]
   );
+
+  const clearGalleryRestore = useCallback(() => setRestoreGalleryScrollTop(null), []);
 
   const onGalleryScroll = useCallback(
     (scrollTop: number) => {
-      setGalleryScrollTop(scrollTop);
+      galleryScrollTopRef.current = scrollTop;
       if (!root || !inboxSession) return;
       if (scrollTimer.current) window.clearTimeout(scrollTimer.current);
       scrollTimer.current = window.setTimeout(() => {
@@ -242,7 +270,7 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
     (next: AssignTarget) => {
       setAssignTarget(next);
       setJunkScope(next);
-      reloadClasses().catch((err) => setLog(err instanceof Error ? err.message : String(err)));
+      reloadClasses().catch((err) => setLog(errMessage(err)));
       saveUi(filter, next).catch(() => {});
     },
     [filter, reloadClasses, saveUi]
@@ -393,7 +421,7 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
     if (!root) return;
     const names = [...selected].filter((filename) => !isJunkFile(metadata.get(filename), junkScope));
     if (!names.length) return;
-    pushJunkUndo("inbox", names, metadata);
+    pushJunkUndo("inbox", root, names, metadata);
     setAssigning(true);
     try {
       await markJunkFilenames(root, names, junkScope);
@@ -403,7 +431,7 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
         setScan(refreshed);
         onScanUpdate?.(refreshed.newCount);
       }
-      setCanUndoJunk(hasJunkUndo("inbox"));
+      setCanUndoJunk(hasJunkUndo("inbox", root));
       setLog(`Marked ${names.length} image(s) as ${junkScope} junk.`);
     } finally {
       setAssigning(false);
@@ -417,12 +445,12 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
       setLog(`Selected images are not ${junkScope} junk.`);
       return;
     }
-    pushJunkUndo("inbox", names, metadata);
+    pushJunkUndo("inbox", root, names, metadata);
     setAssigning(true);
     try {
       await clearJunkFilenames(root, names, junkScope);
       await reloadMetadata();
-      setCanUndoJunk(hasJunkUndo("inbox"));
+      setCanUndoJunk(hasJunkUndo("inbox", root));
       setLog(`Cleared ${junkScope} junk from ${names.length} image(s).`);
     } finally {
       setAssigning(false);
@@ -431,7 +459,7 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
 
   const undoJunk = useCallback(async () => {
     if (!root) return;
-    const snapshots = popJunkUndo("inbox");
+    const snapshots = popJunkUndo("inbox", root);
     if (!snapshots?.length) return;
     setAssigning(true);
     try {
@@ -442,7 +470,7 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
         setScan(refreshed);
         onScanUpdate?.(refreshed.newCount);
       }
-      setCanUndoJunk(hasJunkUndo("inbox"));
+      setCanUndoJunk(hasJunkUndo("inbox", root));
       setLog(`Restored junk state for ${snapshots.length} image(s).`);
     } finally {
       setAssigning(false);
@@ -518,7 +546,7 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
       await Promise.all([reloadMetadata(), reloadClasses()]);
       setLog("Assign list refreshed.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMessage(err));
     } finally {
       loadingRef.current = false;
       setPending(false);
@@ -579,6 +607,8 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
     selected,
     clfClasses: filteredClfClasses,
     detectClasses: filteredDetectClasses,
+    clfClassCounts,
+    detectClassCounts,
     clfDatasetPath,
     detectDatasetPath,
     selectedClass,
@@ -591,7 +621,8 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
     buildProgress,
     canUndoJunk,
     junkSelection,
-    galleryScrollTop,
+    restoreGalleryScrollTop,
+    clearGalleryRestore,
     onGalleryScroll,
     cardExtraClasses: (filename: string) => (isJunkFile(metadata.get(filename), "any") ? "inbox-junk" : ""),
     junkLabelForFile: (filename: string) => junkLabelForFile(metadata.get(filename)),

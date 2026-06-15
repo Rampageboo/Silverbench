@@ -10,8 +10,8 @@ export function inboxClassTagForFile(filename: string, metadata: Map<string, Met
   if (isClfJunk(row)) return "Clf junk";
   if (isDetectJunk(row)) return "Detect junk";
   if (!row) return "Unassigned";
-  const detectOn = row.detect_enabled === "1" || row.detect_enabled === true;
-  const clfOn = row.clf_enabled === "1" || row.clf_enabled === true;
+  const detectOn = Boolean(row?.detect_enabled);
+  const clfOn = Boolean(row?.clf_enabled);
   if (detectOn && clfOn && row.clf_class) return `detect + clf: ${row.clf_class}`;
   if (detectOn) return "detect";
   if (clfOn && row.clf_class) return `clf: ${row.clf_class}`;

@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import type { ClassifierImageResult, LabelBox } from "../../api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { LabelBox } from "../../api";
+import { errMessage } from "../../lib/errors";
 import {
   boxToRect,
   canvasToImagePoint,
@@ -18,7 +19,6 @@ import {
   resizeOrMoveRect,
   type DisplayRect,
   type DragState,
-  type ImagePoint,
   type Viewport
 } from "../box-label/geometry";
 import { datasetImageUrl } from "./datasetAssets";
@@ -29,7 +29,6 @@ type DatasetReviewEditorProps = {
   pair: DatasetPair | null;
   boxes: LabelBox[];
   selectedBoxIndex: number | null;
-  classifierResult?: ClassifierImageResult | null;
   onBoxesChange: (boxes: LabelBox[]) => void;
   onSelectBox: (index: number | null) => void;
   onPersist: (boxes: LabelBox[]) => Promise<void>;
@@ -41,7 +40,6 @@ export function DatasetReviewEditor({
   pair,
   boxes,
   selectedBoxIndex,
-  classifierResult,
   onBoxesChange,
   onSelectBox,
   onPersist,
@@ -59,63 +57,7 @@ export function DatasetReviewEditor({
   const [showGrid, setShowGrid] = useState(true);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    boxesRef.current = boxes;
-    scheduleDraw();
-  }, [boxes]);
-
-  useEffect(() => {
-    selectedRef.current = selectedBoxIndex;
-    scheduleDraw();
-  }, [selectedBoxIndex]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      if (!pair || !datasetRoot) {
-        imageRef.current = null;
-        scheduleDraw();
-        return;
-      }
-      setError("");
-      try {
-        const url = await datasetImageUrl(datasetRoot, pair.imagePath);
-        const image = await loadCanvasImage(url);
-        if (cancelled) return;
-        imageRef.current = image;
-        viewportRef.current = { zoom: 1, panX: 0, panY: 0 };
-        dragRef.current = null;
-        scheduleDraw();
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-      }
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [datasetRoot, pair?.imagePath]);
-
-  useEffect(() => {
-    function resize() {
-      resizeCanvasToParent(canvasRef.current);
-      scheduleDraw();
-    }
-    resize();
-    const observer = new ResizeObserver(resize);
-    if (stageRef.current) observer.observe(stageRef.current);
-    return () => observer.disconnect();
-  }, []);
-
-  function scheduleDraw() {
-    if (rafRef.current !== null) return;
-    rafRef.current = window.requestAnimationFrame(() => {
-      rafRef.current = null;
-      drawCanvas();
-    });
-  }
-
-  function drawCanvas() {
+  const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     const image = imageRef.current;
     if (!canvas) return;
@@ -137,20 +79,63 @@ export function DatasetReviewEditor({
     if (drag?.type === "draw") {
       drawImageRect(ctx, display, normalizedImageRect(drag.start, drag.current), "#f59e0b", true);
     }
-    if (classifierResult?.top) {
-      ctx.save();
-      ctx.fillStyle = "rgba(15, 23, 42, 0.82)";
-      ctx.fillRect(display.x + 8, display.y + 8, 220, 28);
-      ctx.fillStyle = "#f8fafc";
-      ctx.font = "12px sans-serif";
-      ctx.fillText(
-        `${classifierResult.top.name} ${(classifierResult.top.confidence * 100).toFixed(0)}%`,
-        display.x + 14,
-        display.y + 27
-      );
-      ctx.restore();
+  }, [pair, showGrid]);
+
+  const scheduleDraw = useCallback(() => {
+    if (rafRef.current !== null) return;
+    rafRef.current = window.requestAnimationFrame(() => {
+      rafRef.current = null;
+      drawCanvas();
+    });
+  }, [drawCanvas]);
+
+  useEffect(() => {
+    boxesRef.current = boxes;
+    scheduleDraw();
+  }, [boxes, scheduleDraw]);
+
+  useEffect(() => {
+    selectedRef.current = selectedBoxIndex;
+    scheduleDraw();
+  }, [selectedBoxIndex, scheduleDraw]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (!pair || !datasetRoot) {
+        imageRef.current = null;
+        scheduleDraw();
+        return;
+      }
+      setError("");
+      try {
+        const url = await datasetImageUrl(datasetRoot, pair.imagePath);
+        const image = await loadCanvasImage(url);
+        if (cancelled) return;
+        imageRef.current = image;
+        viewportRef.current = { zoom: 1, panX: 0, panY: 0 };
+        dragRef.current = null;
+        scheduleDraw();
+      } catch (err) {
+        if (!cancelled) setError(errMessage(err));
+      }
     }
-  }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [datasetRoot, pair, scheduleDraw]);
+
+  useEffect(() => {
+    function resize() {
+      resizeCanvasToParent(canvasRef.current);
+      scheduleDraw();
+    }
+    resize();
+    const observer = new ResizeObserver(resize);
+    if (stageRef.current) observer.observe(stageRef.current);
+    return () => observer.disconnect();
+  }, [scheduleDraw]);
 
   async function commitBoxes(next: LabelBox[], message: string) {
     boxesRef.current = next;
@@ -159,7 +144,7 @@ export function DatasetReviewEditor({
       await onPersist(next);
       onStatus?.(message);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMessage(err));
     }
     scheduleDraw();
   }
@@ -277,17 +262,17 @@ export function DatasetReviewEditor({
     <section className="panel" id="previewPanel">
       <div className="panel-header">
         <span>Preview</span>
-        <span id="boxCount" className="status">
-          {boxes.length} box(es)
-        </span>
-      </div>
-      <div className="panel-body viewer" id="previewViewer">
-        {error ? <div className="error-banner">{error}</div> : null}
-        <div className="row" style={{ marginBottom: 8 }}>
+        <div className="image-view-controls">
           <button type="button" className={showGrid ? "active" : ""} onClick={() => setShowGrid((v) => !v)}>
             Grid
           </button>
+          <span id="boxCount" className="status">
+            {boxes.length} box(es)
+          </span>
         </div>
+      </div>
+      <div className="panel-body viewer" id="previewViewer">
+        {error ? <div className="error-banner">{error}</div> : null}
         <div className="canvas-wrap" id="dropZone" ref={stageRef}>
           <canvas
             id="previewCanvas"

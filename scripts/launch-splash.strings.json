@@ -1,0 +1,11 @@
+{
+  "title": "YoloWorkBench",
+  "tagline": "YOLO 数据集全流程工作台",
+  "stages": [
+    "正在启动…",
+    "准备运行环境…",
+    "连接后端服务…",
+    "加载工作台…"
+  ],
+  "timeoutHint": "启动时间较长，请稍候或查看 logs\\desktop.log"
+}

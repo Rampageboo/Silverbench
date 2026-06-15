@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { LabelBox } from "../../api";
+import { errMessage } from "../../lib/errors";
 import {
   drawBoxes,
   imageDisplayRect,
@@ -54,7 +55,7 @@ export function DatasetReviewPreview({
         ctx.drawImage(image, display.x, display.y, display.w, display.h);
         drawBoxes(ctx, display, boxes, null);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+        if (!cancelled) setError(errMessage(err));
       }
     }
     draw();

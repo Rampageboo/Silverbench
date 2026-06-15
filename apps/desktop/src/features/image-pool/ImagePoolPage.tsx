@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { useWorkspace } from "../../app/WorkspaceProvider";
+import { useWorkspace } from "../../app/useWorkspace";
+import { useToast } from "../../components/useToast";
+import { errMessage } from "../../lib/errors";
 import { ImagePoolDuplicates } from "./ImagePoolDuplicates";
 import { ImagePoolGrid } from "./ImagePoolGrid";
 import { ImagePoolPreview } from "./ImagePoolPreview";
 import { ImagePoolToolbar } from "./ImagePoolToolbar";
 import { useImagePool } from "./useImagePool";
+import { useImagePoolBadge } from "./useImagePoolBadge";
 import type { FilteredItem } from "./types";
 
 type ImagePoolPageProps = {
@@ -13,7 +16,13 @@ type ImagePoolPageProps = {
 };
 
 export function ImagePoolPage({ onReady, onStatusText }: ImagePoolPageProps) {
-  const { workspaceRoot, openBoxLabel, chooseWorkspaceFolder, setImagePoolNewCount } = useWorkspace();
+  const { workspaceRoot, openBoxLabel, chooseWorkspaceFolder } = useWorkspace();
+  const { setImagePoolNewCount } = useImagePoolBadge();
+  const { showToast } = useToast();
+  const showError = useCallback(
+    (err: unknown) => showToast(errMessage(err), { variant: "error" }),
+    [showToast]
+  );
   const pool = useImagePool({
     workspaceRoot,
     onReady,
@@ -99,7 +108,7 @@ export function ImagePoolPage({ onReady, onStatusText }: ImagePoolPageProps) {
               selectedCount={pool.selected.size}
               canUndoJunk={pool.canUndoJunk}
               junkSelection={pool.junkSelection}
-              onOpenWorkspace={() => chooseWorkspaceFolder().catch(() => {})}
+              onOpenWorkspace={() => chooseWorkspaceFolder().catch(showError)}
               onRefresh={() => pool.runScan({ force: true })}
               onMarkSeen={() => pool.markSeen()}
               onSelectAll={pool.selectAllVisible}

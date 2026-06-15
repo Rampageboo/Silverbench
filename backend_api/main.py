@@ -79,6 +79,7 @@ class WriteAppSettingsRequest(BaseModel):
     lastOpenedWorkspace: str = ""
     lastOpenedFolder: str = ""
     lastOpenedYoloFolder: str = ""
+    startupOverlayMode: str = ""
 
 
 class MarkJunkRequest(BaseModel):
@@ -183,6 +184,7 @@ def app_settings_write(payload: WriteAppSettingsRequest) -> JSONResponse:
                             "lastOpenedWorkspace": payload.lastOpenedWorkspace,
                             "lastOpenedFolder": payload.lastOpenedFolder,
                             "lastOpenedYoloFolder": payload.lastOpenedYoloFolder,
+                            "startupOverlayMode": payload.startupOverlayMode,
                         }.items()
                         if value
                     },
@@ -212,6 +214,9 @@ def app_settings() -> JSONResponse:
             "lastOpenedWorkspace": str(settings.get("lastOpenedWorkspace") or ""),
             "lastOpenedFolder": str(settings.get("lastOpenedFolder") or ""),
             "lastOpenedYoloFolder": str(settings.get("lastOpenedYoloFolder") or ""),
+            "startupOverlayMode": "minimal"
+            if str(settings.get("startupOverlayMode") or "").strip().lower() == "minimal"
+            else "overview",
         }
     )
 

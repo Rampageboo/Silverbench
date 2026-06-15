@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import * as api from "../api";
+import { errMessage } from "../lib/errors";
 
 export type BackendHealth = {
   ok: boolean;
@@ -24,7 +25,7 @@ export function useBackend(pollMs = 1500) {
       } catch (err) {
         if (!cancelled) {
           setHealth(null);
-          setError(err instanceof Error ? err.message : String(err));
+          setError(errMessage(err));
         }
       }
     }

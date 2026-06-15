@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../../api";
+import { useConfirm } from "../../components/useConfirm";
+import { useToast } from "../../components/useToast";
+import { errMessage } from "../../lib/errors";
 import {
   cardExtraClasses,
   clearJunkFilenames,
@@ -11,11 +14,9 @@ import {
 } from "./metadata";
 import { hasJunkUndo, popJunkUndo, pushJunkUndo } from "../shared/junkUndo";
 import { restoreJunkUndoWithLinks } from "../shared/junkMetadata";
+import { useWorkspaceCache } from "../shared/useWorkspaceCache";
 import {
-  getImagePoolCache,
   IMAGE_POOL_CACHE_MS,
-  patchImagePoolCacheMetadata,
-  setImagePoolCache
 } from "../shared/workspaceCache";
 import { parseImagePoolUi, readWorkspaceSessionLite, saveImagePoolSession } from "./session";
 import type {
@@ -79,6 +80,13 @@ type UseImagePoolOptions = {
 const IMAGE_POOL_SCAN_CACHE_MS = IMAGE_POOL_CACHE_MS;
 
 export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImagePoolOptions) {
+  const { confirm } = useConfirm();
+  const { showToast } = useToast();
+  const {
+    getImagePoolCache,
+    patchImagePoolCacheMetadata,
+    setImagePoolCache
+  } = useWorkspaceCache();
   const root = workspaceRoot.trim();
   const [scan, setScan] = useState<api.ImagePoolScan | null>(null);
   const [metadata, setMetadata] = useState<Map<string, MetadataRow>>(new Map());
@@ -133,7 +141,7 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
     setMetadata(map);
     patchImagePoolCacheMetadata(root, map);
     return map;
-  }, [root]);
+  }, [patchImagePoolCacheMetadata, root]);
 
   const runScan = useCallback(
     async (options: { fast?: boolean; force?: boolean; silent?: boolean } = {}) => {
@@ -181,7 +189,7 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
         notifyReady();
         return result;
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errMessage(err);
         if (!options.silent) setError(message);
         if (!options.silent) notifyReady();
         return null;
@@ -190,7 +198,7 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
         if (!options.silent) setPending(false);
       }
     },
-    [applyScan, notifyReady, root, reloadMetadata]
+    [applyScan, notifyReady, reloadMetadata, root, setImagePoolCache]
   );
 
   const persistUiSession = useCallback(
@@ -255,6 +263,8 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
       cancelled = true;
       window.clearTimeout(usageScanTimer.current || undefined);
     };
+    // applyScan is intentionally omitted: root change should reset scan state once, not re-bind on every scan callback identity change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notifyReady, root, runScan]);
 
   const queueSessionSave = useCallback(
@@ -352,9 +362,12 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
       const preview = unique.slice(0, 8).join("\n");
       const more = unique.length > 8 ? `\n... plus ${unique.length - 8} more` : "";
       if (
-        !window.confirm(
-          `Permanently delete ${unique.length} image(s)?\n\nThis removes image_pool files, all detect/clf hard links, detect_labels, and metadata records. This cannot be undone.\n\n${preview}${more}`
-        )
+        !(await confirm({
+          title: "Delete images",
+          message: `Permanently delete ${unique.length} image(s)?\n\nThis removes image_pool files, all detect/clf hard links, detect_labels, and metadata records. This cannot be undone.\n\n${preview}${more}`,
+          confirmLabel: "Delete",
+          danger: true
+        }))
       ) {
         return;
       }
@@ -376,7 +389,7 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
             }
           } catch (err) {
             failed += 1;
-            failures.push(`${filename}: ${err instanceof Error ? err.message : String(err)}`);
+            failures.push(`${filename}: ${errMessage(err)}`);
           }
         }
         setSelected(new Set());
@@ -386,7 +399,9 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
           setDuplicateScan(dup);
         }
         if (failures.length) {
-          window.alert(`Some deletes failed (${failed}/${unique.length}):\n${failures.slice(0, 10).join("\n")}`);
+          showToast(`Some deletes failed (${failed}/${unique.length}):\n${failures.slice(0, 10).join("\n")}`, {
+            variant: "error"
+          });
         }
         setStatus(`Deleted ${deleted} image(s)${failed ? `; ${failed} failed` : ""}.`);
       } finally {
@@ -394,7 +409,7 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
         setStatus("");
       }
     },
-    [root, runScan, duplicateScan]
+    [confirm, duplicateScan, root, runScan, showToast]
   );
 
   const deleteSelected = useCallback(async () => {
@@ -409,7 +424,7 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
       await runScan({ force: true });
       setStatus(`Marked ${result.markedCount || 0} image_pool image(s) as seen.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMessage(err));
     } finally {
       setPending(false);
     }
@@ -420,15 +435,15 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
       if (!root || !filenames.length) return;
       const pendingNames = filenames.filter((name) => !isJunkFile(metadata.get(name), junkScope));
       if (!pendingNames.length) return;
-      pushJunkUndo("image-pool", pendingNames, metadata);
-      setCanUndoJunk(hasJunkUndo("image-pool"));
+      pushJunkUndo("image-pool", root, pendingNames, metadata);
+      setCanUndoJunk(hasJunkUndo("image-pool", root));
       setPending(true);
       try {
         await markJunkFilenames(root, pendingNames, junkScope);
         await reloadMetadata();
         setStatus(`Marked ${pendingNames.length} image(s) as ${junkScope} junk.`);
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(errMessage(err));
       } finally {
         setPending(false);
       }
@@ -441,15 +456,15 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
       if (!root || !filenames.length) return;
       const junked = filenames.filter((name) => isJunkFile(metadata.get(name), junkScope));
       if (!junked.length) return;
-      pushJunkUndo("image-pool", junked, metadata);
-      setCanUndoJunk(hasJunkUndo("image-pool"));
+      pushJunkUndo("image-pool", root, junked, metadata);
+      setCanUndoJunk(hasJunkUndo("image-pool", root));
       setPending(true);
       try {
         await clearJunkFilenames(root, junked, junkScope);
         await reloadMetadata();
         setStatus(`Cleared ${junkScope} junk from ${junked.length} image(s).`);
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(errMessage(err));
       } finally {
         setPending(false);
       }
@@ -466,8 +481,8 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
   }, [clearJunkFiles, selected]);
 
   const undoJunk = useCallback(async () => {
-    const snapshots = popJunkUndo("image-pool");
-    setCanUndoJunk(hasJunkUndo("image-pool"));
+    const snapshots = popJunkUndo("image-pool", root);
+    setCanUndoJunk(hasJunkUndo("image-pool", root));
     if (!snapshots?.length || !root) {
       setStatus("没有可撤回的废片操作。");
       return;
@@ -478,7 +493,7 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
       await reloadMetadata();
       setStatus("已撤回上一步废片操作。");
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMessage(err));
     } finally {
       setPending(false);
     }
@@ -491,7 +506,7 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
       const result = (await api.findImagePoolDuplicates(root)) as DuplicateScan;
       setDuplicateScan(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMessage(err));
     } finally {
       setDuplicatePending(false);
     }
@@ -506,13 +521,16 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
     }
     const dupCount = scanResult?.duplicateFiles || 0;
     if (!dupCount) {
-      window.alert("没有发现重复图片。");
+      showToast("没有发现重复图片。", { variant: "info" });
       return;
     }
     if (
-      !window.confirm(
-        `清除 ${dupCount} 张重复图？\n\n每组保留 1 张（优先 metadata 中登记的），其余彻底删除（含硬链接）。`
-      )
+      !(await confirm({
+        title: "Clear duplicates",
+        message: `清除 ${dupCount} 张重复图？\n\n每组保留 1 张（优先 metadata 中登记的），其余彻底删除（含硬链接）。`,
+        confirmLabel: "Clear",
+        danger: true
+      }))
     ) {
       return;
     }
@@ -525,13 +543,13 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
       const failed = result.failed?.length || 0;
       const msg = `已清除 ${result.removedCount || 0} 张重复图${failed ? `，${failed} 张失败` : ""}。`;
       setStatus(msg);
-      window.alert(msg);
+      showToast(msg, { variant: failed ? "error" : "info" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMessage(err));
     } finally {
       setDuplicatePending(false);
     }
-  }, [root, duplicateScan, runScan]);
+  }, [confirm, duplicateScan, root, runScan, showToast]);
 
   const statsText = useMemo(() => {
     if (!root) return "Open a workspace to scan image_pool";

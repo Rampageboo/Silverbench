@@ -575,6 +575,10 @@ html.app-startup-active body {
   overflow: hidden;
 }
 
+html.app-startup-active:not(.app-startup-overlay-ready) #root {
+  visibility: hidden;
+}
+
 .app-workbench-root--booting {
   visibility: hidden;
   pointer-events: none;
@@ -651,6 +655,27 @@ html.app-startup-active body {
 
 .workbench-panel--hidden {
   display: none !important;
+}
+
+.workbench-panel--active {
+  animation: workbench-panel-enter 0.26s ease both;
+}
+
+@keyframes workbench-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workbench-panel--active {
+    animation: none;
+  }
 }
 
 .workbench-page > div:not(.workbench-panel--hidden) {
@@ -1035,6 +1060,34 @@ html.app-startup-active body {
     radial-gradient(circle at 50% 42%, rgba(37, 99, 235, 0.18), transparent 34%),
     linear-gradient(180deg, #111827 0%, #090d14 100%);
   color: #e6edf6;
+  animation: startup-overlay-enter 0.45s ease both;
+}
+
+@keyframes startup-overlay-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes startup-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .startup-overlay,
+  .startup-panel {
+    animation: none;
+  }
 }
 
 .startup-overlay.is-done {
@@ -1052,6 +1105,7 @@ html.app-startup-active body {
   border-radius: 12px;
   background: rgba(15, 23, 42, 0.92);
   box-shadow: 0 28px 80px rgba(0, 0, 0, 0.46);
+  animation: startup-panel-enter 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both;
 }
 
 .startup-hero {
@@ -1271,15 +1325,18 @@ html.app-startup-active body {
   width: min(96vw, 1280px);
   max-height: 92vh;
   display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 10px;
-  padding: 12px;
+  gap: 0;
+  padding: 0;
   border-radius: 12px;
   border: 1px solid #334155;
   background: #0f172a;
+  overflow: hidden;
 }
 
 .react-image-pool-preview-head {
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1317,15 +1374,16 @@ html.app-startup-active body {
 .react-image-pool-preview-stage {
   position: relative;
   min-height: 320px;
-  display: grid;
-  place-items: center;
+  touch-action: none;
+  cursor: grab;
   background: #020617;
-  border-radius: 8px;
   overflow: hidden;
 }
 
 .react-image-pool-preview-stage img.image-preview-img {
   position: absolute;
+  left: 0;
+  top: 0;
   max-width: none;
   max-height: none;
   object-fit: contain;
@@ -1338,25 +1396,24 @@ html.app-startup-active body {
 }
 
 .react-image-pool-preview-nav {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 40px;
-  height: 56px;
+  align-self: center;
+  width: 36px;
+  height: 72px;
   border: 0;
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.72);
   color: #f8fafc;
   font-size: 28px;
   cursor: pointer;
+  z-index: 2;
 }
 
 .react-image-pool-preview-nav.prev {
-  left: 8px;
+  grid-column: 1;
 }
 
 .react-image-pool-preview-nav.next {
-  right: 8px;
+  grid-column: 3;
 }
 
 .react-image-pool-preview-nav:disabled {
@@ -1365,10 +1422,7 @@ html.app-startup-active body {
 }
 
 .react-image-pool-preview-filmstrip {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 4px;
+  grid-column: 1 / -1;
 }
 
 .react-image-pool-preview-thumb {
@@ -1423,7 +1477,7 @@ html.app-startup-active body {
   width: 100%;
   min-height: 0;
   height: 100%;
-  grid-template-columns: minmax(220px, 22vw) minmax(560px, 1fr) 340px;
+  grid-template-columns: minmax(220px, 22vw) minmax(560px, 1fr) 380px;
   grid-template-rows: auto minmax(0, 1fr);
 }
 
@@ -1460,7 +1514,7 @@ html.app-startup-active body {
 
 .react-dataset-review-page #previewViewer {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   min-height: 0;
   height: 100%;
 }
@@ -1468,6 +1522,8 @@ html.app-startup-active body {
 .react-dataset-review-page #previewViewer .canvas-wrap {
   flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
+  position: relative;
 }
 
 .react-dataset-review-page #previewViewer .edit-tray {
@@ -1480,11 +1536,11 @@ html.app-startup-active body {
   border-left: 1px solid #1f2937;
 }
 
-.react-dataset-review-page .classifier-result {
-  white-space: pre-wrap;
-  font: 12px/1.4 ui-monospace, monospace;
-  margin: 0;
-  color: #cbd5e1;
+.react-dataset-review-page .filter-class-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .react-dataset-review-page .inbox-tab-badge {
@@ -1666,6 +1722,34 @@ html.app-startup-active body {
   overflow: auto;
 }
 
+.react-box-label-page .pool-label-class-row {
+  position: relative;
+}
+
+.react-box-label-page .pool-label-class-row-count {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  padding: 0 3px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #16a34a;
+  background: rgba(34, 197, 94, 0.16);
+  pointer-events: none;
+}
+
+.react-box-label-page .pool-label-class-row.selected .pool-label-class-row-count {
+  color: #15803d;
+  background: rgba(34, 197, 94, 0.22);
+}
+
+[data-theme="dark"] .react-box-label-page .pool-label-class-row-count {
+  color: #4ade80;
+  background: rgba(34, 197, 94, 0.2);
+}
+
 .react-box-label-page .pool-label-shortcut-slot select.pool-label-shortcut-button {
   appearance: auto;
   cursor: pointer;
@@ -1686,7 +1770,14 @@ html.app-startup-active body {
   background: #12305c;
 }
 
-.react-box-label-page--loading,
+.react-box-label-page--loading {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  place-items: center;
+  height: 100%;
+  min-height: 320px;
+}
+
 .react-box-label-page--empty {
   display: grid;
   grid-template-rows: auto 1fr;
@@ -1695,9 +1786,58 @@ html.app-startup-active body {
   min-height: 320px;
 }
 
-.react-box-label-page--loading .empty,
 .react-box-label-page--empty .empty {
   place-self: center;
+}
+
+.page-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 28px 36px;
+  text-align: center;
+  color: #cbd5e1;
+  animation: page-loading-fade 0.32s ease both;
+}
+
+.page-loading-spinner {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 3px solid rgba(148, 163, 184, 0.22);
+  border-top-color: #3b82f6;
+  border-right-color: #60a5fa;
+  animation: page-loading-spin 0.8s linear infinite;
+}
+
+.page-loading-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.page-loading-detail {
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+@keyframes page-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes page-loading-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .react-box-label-page .pool-label-adjust-tool {
@@ -1878,4 +2018,283 @@ html.app-startup-active body {
 .boxlabel-gallery-scroll .thumb.active.selected {
   border-color: #22c55e;
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.55);
+}
+
+.inbox-class-chip {
+  position: relative;
+}
+
+.inbox-class-chip-count {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  padding: 0 3px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #16a34a;
+  background: rgba(34, 197, 94, 0.16);
+  pointer-events: none;
+}
+
+.inbox-class-chip.active .inbox-class-chip-count {
+  color: #15803d;
+  background: rgba(34, 197, 94, 0.22);
+}
+
+.inbox-class-chip.quick-assign .inbox-class-chip-count {
+  color: #15803d;
+  background: rgba(34, 197, 94, 0.24);
+}
+
+[data-theme="dark"] .inbox-class-chip-count {
+  color: #4ade80;
+  background: rgba(34, 197, 94, 0.2);
+}
+
+.app-toast-stack {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 12000;
+  display: grid;
+  gap: 8px;
+  width: min(420px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.app-toast {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid #334155;
+  background: #111827;
+  color: #e5e7eb;
+  box-shadow: 0 10px 30px rgba(2, 6, 23, 0.45);
+  pointer-events: auto;
+}
+
+.app-toast--error {
+  border-color: #7f1d1d;
+  background: #1f1315;
+}
+
+.app-toast--info {
+  border-color: #1e3a5f;
+  background: #101827;
+}
+
+.app-toast__message {
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.app-toast__close {
+  min-height: 24px;
+  min-width: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.app-toast__close:hover {
+  color: #e2e8f0;
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.app-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 11000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(2, 6, 23, 0.72);
+}
+
+.app-confirm-dialog {
+  width: min(520px, 100%);
+  padding: 18px 20px;
+  border-radius: 10px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  box-shadow: 0 18px 40px rgba(2, 6, 23, 0.55);
+}
+
+.app-confirm-dialog__title {
+  margin: 0 0 10px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.app-confirm-dialog__message {
+  margin: 0;
+  white-space: pre-wrap;
+  color: #cbd5e1;
+  line-height: 1.5;
+}
+
+.app-confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.app-confirm-dialog__cancel {
+  border-color: #475569;
+  background: #1e293b;
+}
+
+.app-confirm-dialog__confirm--danger {
+  border-color: #b91c1c;
+  background: #dc2626;
+}
+
+.app-settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 11500;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(2, 6, 23, 0);
+  transition: background 0.2s ease;
+}
+
+.app-settings-backdrop.is-visible {
+  background: rgba(2, 6, 23, 0.72);
+}
+
+.app-settings-dialog {
+  width: min(560px, 100%);
+  border-radius: 14px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  box-shadow: 0 24px 60px rgba(2, 6, 23, 0.6);
+  opacity: 0;
+  transform: translateY(12px) scale(0.97);
+  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.app-settings-dialog.is-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.app-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #1f2937;
+}
+
+.app-settings-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.app-settings-close {
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.app-settings-close:hover {
+  color: #e2e8f0;
+  background: rgba(148, 163, 184, 0.14);
+}
+
+.app-settings-body {
+  padding: 18px 20px 22px;
+}
+
+.app-settings-section h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.app-settings-hint {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.app-settings-options {
+  display: grid;
+  gap: 10px;
+}
+
+.app-settings-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid #334155;
+  background: #111827;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+}
+
+.app-settings-option:hover {
+  border-color: #475569;
+  background: #16203a;
+}
+
+.app-settings-option.selected {
+  border-color: #2f81f7;
+  background: #12305c;
+  box-shadow: inset 0 0 0 1px rgba(47, 129, 247, 0.55);
+}
+
+.app-settings-option input {
+  margin-top: 3px;
+  accent-color: #3b82f6;
+}
+
+.app-settings-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.app-settings-option-copy strong {
+  font-size: 14px;
+  color: #f1f5f9;
+}
+
+.app-settings-option-copy span {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-settings-backdrop,
+  .app-settings-dialog {
+    transition: none;
+  }
 }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { buildLegacyEmbedUrl, LEGACY_WORKBENCH_ORIGIN, type LegacyEmbedTab } from "../lib/legacyWorkbench";
+import { buildLegacyEmbedUrl, type LegacyEmbedTab } from "../lib/legacyWorkbench";
+import { postToLegacy, subscribeLegacyMessages } from "../lib/legacyBridge";
 
 type LegacyWorkbenchHostProps = {
   activeTab: LegacyEmbedTab;
@@ -32,7 +33,7 @@ export function LegacyWorkbenchHost({
 
   const iframeSrc = useMemo(
     () => buildLegacyEmbedUrl(persistTab ? iframeBootTab : activeTab, workspaceRoot, reloadKey),
-    persistTab ? [iframeBootTab, reloadKey, workspaceRoot] : [activeTab, reloadKey, workspaceRoot]
+    [persistTab, iframeBootTab, activeTab, workspaceRoot, reloadKey]
   );
 
   useEffect(() => {
@@ -54,18 +55,15 @@ export function LegacyWorkbenchHost({
   }, [iframeSrc, onReady]);
 
   useEffect(() => {
-    function onEmbedReady(event: MessageEvent) {
-      if (event.origin !== LEGACY_WORKBENCH_ORIGIN) return;
-      if (event.data?.type !== "ywb-embed-ready") return;
+    return subscribeLegacyMessages((message) => {
+      if (message.type !== "ywb-embed-ready") return;
       bootedRef.current = true;
       setReady(true);
       if (!readyNotifiedRef.current) {
         readyNotifiedRef.current = true;
         onReady?.();
       }
-    }
-    window.addEventListener("message", onEmbedReady);
-    return () => window.removeEventListener("message", onEmbedReady);
+    });
   }, [onReady]);
 
   useEffect(() => {
@@ -74,19 +72,18 @@ export function LegacyWorkbenchHost({
     const frame = iframeRef.current?.contentWindow;
     if (!frame) return;
     lastShellTabRef.current = activeTab;
-    frame.postMessage({ type: "ywb-shell-tab", tab: activeTab }, LEGACY_WORKBENCH_ORIGIN);
+    postToLegacy(frame, { type: "ywb-shell-tab", tab: activeTab });
   }, [activeTab, ready]);
 
   useEffect(() => {
     if (!ready || activeTab !== "pool-label" || !focusImagePath) return;
     const frame = iframeRef.current?.contentWindow;
     if (!frame) return;
-    const payload = {
-      type: "ywb-focus-image",
-      imagePath: `image_pool/${focusImagePath}`
-    };
     const timer = window.setTimeout(() => {
-      frame.postMessage(payload, LEGACY_WORKBENCH_ORIGIN);
+      postToLegacy(frame, {
+        type: "ywb-focus-image",
+        imagePath: `image_pool/${focusImagePath}`
+      });
       onFocusDelivered?.();
     }, 700);
     return () => window.clearTimeout(timer);

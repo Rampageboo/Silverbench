@@ -2,12 +2,14 @@ import { spawn } from "child_process";
 import { appendFileSync, existsSync, mkdirSync, openSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
+import { loadBackendConfig } from "./loadBackendConfig.mjs";
 
 const desktopDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const backend = loadBackendConfig(desktopDir);
 const projectRoot = resolve(desktopDir, "..", "..");
 const logsDir = join(projectRoot, "logs");
 const backendLogPath = join(logsDir, "backend.log");
-const healthUrl = "http://127.0.0.1:8765/health";
+const healthUrl = backend.healthUrl;
 // Keep in sync with API_SCHEMA_VERSION in backend_api/main.py.
 const REQUIRED_API_SCHEMA_VERSION = 3;
 
@@ -115,7 +117,7 @@ async function stopBackendOnPort() {
       [
         "-NoProfile",
         "-Command",
-        "$p = Get-NetTCPConnection -LocalPort 8765 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique; foreach ($id in $p) { if ($id) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue } }"
+        `$p = Get-NetTCPConnection -LocalPort ${backend.port} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique; foreach ($id in $p) { if ($id) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue } }`
       ],
       { stdio: "ignore" }
     );
@@ -144,12 +146,12 @@ function appendBackendLog(message) {
 
 async function main() {
   if (await isCurrentBackend()) {
-    console.log("FastAPI backend already running on http://127.0.0.1:8765");
+    console.log(`FastAPI backend already running on ${backend.origin}`);
     return;
   }
 
   if (await readHealth()) {
-    console.log("Stopping outdated FastAPI backend on http://127.0.0.1:8765...");
+    console.log(`Stopping outdated FastAPI backend on ${backend.origin}...`);
     await stopBackendOnPort();
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 500));
   }
@@ -163,9 +165,9 @@ async function main() {
     "uvicorn",
     "backend_api.main:app",
     "--host",
-    "127.0.0.1",
+    backend.host,
     "--port",
-    "8765"
+    String(backend.port)
   ];
 
   ensureLogsDir();

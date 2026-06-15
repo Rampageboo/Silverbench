@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+
 const STARTUP_FEATURES = [
   { title: "视频截帧", detail: "从视频批量截取训练图片" },
   { title: "图片库", detail: "管理 image_pool 素材与去重" },
@@ -10,25 +12,15 @@ const STARTUP_FEATURES = [
   { title: "数据集合并", detail: "合并多个数据源或 ZIP" }
 ] as const;
 
-export type StartupOverlayMode = "overview" | "minimal";
-
 type StartupOverlayProps = {
   visible: boolean;
   done?: boolean;
-  mode?: StartupOverlayMode;
+  mode?: import("./startupOverlayMode").StartupOverlayMode;
   progress: number;
   stage: string;
   detail: string;
+  onPainted?: () => void;
 };
-
-export function readStartupOverlayMode(): StartupOverlayMode {
-  try {
-    const stored = localStorage.getItem("ywb_startup_overlay_mode");
-    return stored === "minimal" ? "minimal" : "overview";
-  } catch {
-    return "overview";
-  }
-}
 
 export function StartupOverlay({
   visible,
@@ -36,8 +28,39 @@ export function StartupOverlay({
   mode = "overview",
   progress,
   stage,
-  detail
+  detail,
+  onPainted
 }: StartupOverlayProps) {
+  const paintedRef = useRef(false);
+
+  useEffect(() => {
+    if (!visible || paintedRef.current) return;
+
+    let cancelled = false;
+    const icon = new Image();
+    icon.src = "/assets/app-icon.svg";
+
+    function signalPainted() {
+      if (cancelled || paintedRef.current) return;
+      paintedRef.current = true;
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          if (!cancelled) onPainted?.();
+        });
+      });
+    }
+
+    if (icon.complete) signalPainted();
+    else {
+      icon.onload = signalPainted;
+      icon.onerror = signalPainted;
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, onPainted]);
+
   if (!visible) return null;
 
   const percent = Math.max(0, Math.min(100, Math.round(progress)));

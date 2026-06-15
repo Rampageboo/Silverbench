@@ -1,8 +1,7 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ClassifierImageResult } from "../../api";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { assignVisualState, thumbMediaClasses } from "../image-pool/metadata";
 import type { JunkScope, MetadataRow } from "../image-pool/types";
-import { computeVirtualGridLayout } from "../image-pool/virtualGrid";
+import { computeVirtualGridLayout, scrollVirtualGridToIndex } from "../image-pool/virtualGrid";
 import { datasetImageUrl } from "./datasetAssets";
 import type { DatasetPair } from "./datasetCore";
 
@@ -15,14 +14,15 @@ type DatasetReviewGalleryProps = {
   flaggedPaths: Set<string>;
   metadata: Map<string, MetadataRow>;
   junkScope: JunkScope;
-  restoreScrollTop: number;
+  restoreScrollTop: number | null;
   onSelect: (index: number, options?: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean }) => void;
   onScrollChange: (scrollTop: number) => void;
+  onViewportRestored?: () => void;
   onDoubleClick?: (index: number) => void;
   onContextMenu?: (index: number, event: React.MouseEvent) => void;
-  pendingBlackCount?: (imagePath: string) => number;
-  classifierResults?: Map<string, ClassifierImageResult>;
 };
+
+const DATASET_REVIEW_GRID_PARAMS = { columnUnit: 138, gap: 10, rowExtra: 36, aspectRatio: 10 / 16 } as const;
 
 function LazyDatasetThumb({ datasetRoot, imagePath }: { datasetRoot: string; imagePath: string }) {
   const imgRef = useRef<HTMLImageElement>(null);
@@ -70,21 +70,21 @@ export function DatasetReviewGallery({
   restoreScrollTop,
   onSelect,
   onScrollChange,
+  onViewportRestored,
   onDoubleClick,
-  onContextMenu,
-  pendingBlackCount,
-  classifierResults
+  onContextMenu
 }: DatasetReviewGalleryProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
+  const lastScrolledIndexRef = useRef(-1);
   const [layout, setLayout] = useState(() => computeVirtualGridLayout(null, 0, 138, 10, 36, 10 / 16));
 
-  const recompute = () => {
+  const recompute = useCallback(() => {
     setLayout(computeVirtualGridLayout(wrapRef.current, pairs.length, 138, 10, 36, 10 / 16));
-  };
+  }, [pairs.length]);
 
   useLayoutEffect(() => {
     recompute();
-  }, [pairs.length]);
+  }, [recompute]);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -92,31 +92,30 @@ export function DatasetReviewGallery({
     const observer = new ResizeObserver(() => recompute());
     observer.observe(el);
     return () => observer.disconnect();
-  }, [pairs.length]);
+  }, [recompute]);
+
+  useEffect(() => {
+    lastScrolledIndexRef.current = -1;
+  }, [datasetRoot, pairs.length]);
 
   useEffect(() => {
     const el = wrapRef.current;
-    if (!el || !restoreScrollTop) return;
+    if (!el || restoreScrollTop === null) return;
     requestAnimationFrame(() => {
       if (!wrapRef.current) return;
       wrapRef.current.scrollTop = restoreScrollTop;
       recompute();
+      onViewportRestored?.();
     });
-  }, [datasetRoot, restoreScrollTop]);
+  }, [datasetRoot, restoreScrollTop, onViewportRestored, recompute]);
 
   useEffect(() => {
     const el = wrapRef.current;
-    if (!el || currentIndex < 0 || !pairs.length) return;
-    const columns = Math.max(1, layout.columns || 1);
-    const rowHeight = Math.max(1, layout.rowHeight || 132);
-    const row = Math.floor(currentIndex / columns);
-    const rowTop = row * rowHeight;
-    const rowBottom = rowTop + rowHeight;
-    const viewTop = el.scrollTop;
-    const viewBottom = viewTop + el.clientHeight;
-    if (rowTop >= viewTop && rowBottom <= viewBottom) return;
-    el.scrollTop = Math.max(0, Math.round(row * rowHeight - el.clientHeight * 0.35));
-  }, [currentIndex, pairs.length, layout.columns, layout.rowHeight]);
+    if (!el || currentIndex < 0 || !pairs.length || currentIndex === lastScrolledIndexRef.current) return;
+    const { scrolled, layout: nextLayout } = scrollVirtualGridToIndex(el, currentIndex, pairs.length, DATASET_REVIEW_GRID_PARAMS);
+    lastScrolledIndexRef.current = currentIndex;
+    if (scrolled) setLayout(nextLayout);
+  }, [currentIndex, pairs.length]);
 
   const visibleItems = useMemo(
     () => pairs.slice(layout.startIndex, layout.endIndex),
@@ -173,18 +172,13 @@ export function DatasetReviewGallery({
               const shiftSelected = shiftSelectedPaths.has(pair.imagePath);
               const reviewed = reviewedPaths.has(pair.imagePath);
               const flagged = flaggedPaths.has(pair.imagePath);
-              const pendingCount = pendingBlackCount?.(pair.imagePath) || 0;
-              const classifier = classifierResults?.get(pair.imagePath);
-              const classifierTag = classifier?.top
-                ? `[${classifier.top.name} ${(classifier.top.confidence * 100).toFixed(0)}%] `
-                : "";
               const visual = assignVisualState(row, junkScope);
               const mediaClass = thumbMediaClasses(row, junkScope);
-              const tags = `${flagged ? "[FLAG] " : ""}${reviewed ? "[OK] " : ""}${pendingCount ? `[PENDING ${pendingCount}] ` : ""}${classifierTag}`;
+              const tags = `${flagged ? "[FLAG] " : ""}${reviewed ? "[OK] " : ""}`;
               return (
                 <div
                   key={pair.imagePath}
-                  className={`thumb${active ? " active" : ""}${shiftSelected ? " shift-selected" : ""}${reviewed ? " reviewed" : ""}${flagged ? " flagged" : ""}${pendingCount ? " pending" : ""}`}
+                  className={`thumb${active ? " active" : ""}${shiftSelected ? " shift-selected" : ""}${reviewed ? " reviewed" : ""}${flagged ? " flagged" : ""}`}
                   onClick={(event) =>
                     onSelect(index, {
                       shiftKey: event.shiftKey,

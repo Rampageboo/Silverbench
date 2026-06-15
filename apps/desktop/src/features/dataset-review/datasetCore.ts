@@ -92,7 +92,7 @@ export function inferDatasetTask(filePaths: Set<string>) {
     : ("detect" as DatasetTask);
 }
 
-export function labelPathFor(imagePath: string, filePaths: Set<string>, datasetRoot: string) {
+export function labelPathFor(imagePath: string, filePaths: Set<string>, _datasetRoot: string) {
   const stem = imagePath.split("/").pop()?.replace(/\.[^.]+$/, "") || "";
   const parts = imagePath.split("/");
   const candidates: string[] = [];
@@ -131,7 +131,6 @@ export async function buildLabelIndex(
   if (datasetTask === "classify") {
     pairs.forEach((pair, index) => {
       const className = pair.className;
-      const classId = className ? 0 : null;
       if (className) {
         const set = new Set<number>([0]);
         imageClassSet.set(pair.imagePath, set);

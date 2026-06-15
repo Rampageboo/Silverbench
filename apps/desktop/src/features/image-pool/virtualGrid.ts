@@ -37,3 +37,58 @@ export function computeVirtualGridLayout(
     columnWidth
   };
 }
+
+export type VirtualGridScrollOptions = {
+  columnUnit?: number;
+  gap?: number;
+  rowExtra?: number;
+  aspectRatio?: number;
+  /** Keep the active row in this band of the viewport (0–1). */
+  comfortTopRatio?: number;
+  comfortBottomRatio?: number;
+  /** When scrolling, bias the row to this fraction from the top. */
+  scrollBiasRatio?: number;
+};
+
+export function scrollVirtualGridToIndex(
+  el: HTMLElement,
+  index: number,
+  itemCount: number,
+  options: VirtualGridScrollOptions = {}
+): { scrolled: boolean; layout: VirtualGridLayout } {
+  const {
+    columnUnit = 148,
+    gap = 10,
+    rowExtra = 52,
+    aspectRatio = 1,
+    comfortTopRatio = 0.18,
+    comfortBottomRatio = 0.72,
+    scrollBiasRatio = 0.35
+  } = options;
+  const layout = computeVirtualGridLayout(el, itemCount, columnUnit, gap, rowExtra, aspectRatio);
+  if (index < 0 || !itemCount) return { scrolled: false, layout };
+
+  const columns = Math.max(1, layout.columns);
+  const rowHeight = Math.max(1, layout.rowHeight);
+  const row = Math.floor(index / columns);
+  const rowTop = row * rowHeight;
+  const rowBottom = rowTop + rowHeight;
+  const viewTop = el.scrollTop;
+  const comfortTop = viewTop + el.clientHeight * comfortTopRatio;
+  const comfortBottom = viewTop + el.clientHeight * comfortBottomRatio;
+
+  if (rowTop >= comfortTop && rowBottom <= comfortBottom) {
+    return { scrolled: false, layout };
+  }
+
+  const targetTop = Math.max(0, Math.round(row * rowHeight - el.clientHeight * scrollBiasRatio));
+  if (Math.abs(el.scrollTop - targetTop) < 2) {
+    return { scrolled: false, layout };
+  }
+
+  el.scrollTop = targetTop;
+  return {
+    scrolled: true,
+    layout: computeVirtualGridLayout(el, itemCount, columnUnit, gap, rowExtra, aspectRatio)
+  };
+}

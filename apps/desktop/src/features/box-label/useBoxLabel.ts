@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../../api";
+import { errMessage } from "../../lib/errors";
 import { readWorkspaceSessionLite } from "../image-pool/session";
 import {
   isDetectJunk,
@@ -12,16 +13,11 @@ import {
 import type { MetadataRow } from "../image-pool/types";
 import { hasJunkUndo, popJunkUndo, pushJunkUndo } from "../shared/junkUndo";
 import { restoreJunkUndoWithLinks } from "../shared/junkMetadata";
-import {
-  BOX_LABEL_CACHE_MS,
-  getBoxLabelCache,
-  patchBoxLabelCacheLabelIndex,
-  setBoxLabelCache
-} from "../shared/workspaceCache";
+import { useWorkspaceCache } from "../shared/useWorkspaceCache";
+import { BOX_LABEL_CACHE_MS } from "../shared/workspaceCache";
 import {
   loadDetectDatasetClassIndex,
   loadDetectDatasetEntries,
-  loadDatasetClassNames,
   type BoxLabelEntry
 } from "./boxLabelCore";
 import {
@@ -50,6 +46,7 @@ export function useBoxLabel({
   onFocusConsumed,
   onReady
 }: UseBoxLabelOptions) {
+  const { getBoxLabelCache, patchBoxLabelCacheLabelIndex, setBoxLabelCache } = useWorkspaceCache();
   const root = workspaceRoot.trim();
   const [datasetRoot, setDatasetRoot] = useState("");
   const [allEntries, setAllEntries] = useState<BoxLabelEntry[]>([]);
@@ -112,6 +109,16 @@ export function useBoxLabel({
     () => [...entries].sort((a, b) => naturalCompare(a.basename, b.basename)),
     [entries]
   );
+
+  const classImageCounts = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const classIds of labelIndex.values()) {
+      for (const classId of classIds) {
+        counts.set(classId, (counts.get(classId) || 0) + 1);
+      }
+    }
+    return counts;
+  }, [labelIndex]);
 
   const resolveIndex = useCallback((list: BoxLabelEntry[], basename: string) => {
     if (!basename) return 0;
@@ -224,13 +231,13 @@ export function useBoxLabel({
       if (!options.background) {
         setAllEntries([]);
         setDatasetRoot("");
-        setError(err instanceof Error ? err.message : String(err));
+        setError(errMessage(err));
         notifyReady();
       }
     } finally {
       if (!options.background) setPending(false);
     }
-  }, [focusFilename, notifyReady, resolveIndexByImagePath, root]);
+  }, [focusFilename, getBoxLabelCache, notifyReady, patchBoxLabelCacheLabelIndex, resolveIndexByImagePath, root, setBoxLabelCache]);
 
   useEffect(() => {
     readyNotified.current = false;
@@ -428,8 +435,8 @@ export function useBoxLabel({
       setStatusText("Selected images are already Detect junk.");
       return;
     }
-    pushJunkUndo("pool-label", targets, metadata);
-    setCanUndoJunk(hasJunkUndo("pool-label"));
+    pushJunkUndo("pool-label", root, targets, metadata);
+    setCanUndoJunk(hasJunkUndo("pool-label", root));
     await markJunkFilenames(root, targets, "detect");
     await reloadMetadata();
     setStatusText(`Marked ${targets.length} image(s) as Detect junk.`);
@@ -437,8 +444,8 @@ export function useBoxLabel({
 
   const undoJunk = useCallback(async () => {
     if (!root) return;
-    const snapshots = popJunkUndo("pool-label");
-    setCanUndoJunk(hasJunkUndo("pool-label"));
+    const snapshots = popJunkUndo("pool-label", root);
+    setCanUndoJunk(hasJunkUndo("pool-label", root));
     if (!snapshots?.length) {
       setStatusText("没有可撤回的废片操作。");
       return;
@@ -466,10 +473,13 @@ export function useBoxLabel({
   const updateLabelIndexForFile = useCallback((basename: string, boxes: api.LabelBox[]) => {
     setLabelIndex((current) => {
       const next = new Map(current);
-      next.set(basename, new Set(boxes.map((box) => box.classId)));
+      const classIds = new Set(boxes.map((box) => box.classId));
+      if (classIds.size) next.set(basename, classIds);
+      else next.delete(basename);
+      if (root) patchBoxLabelCacheLabelIndex(root, next);
       return next;
     });
-  }, []);
+  }, [patchBoxLabelCacheLabelIndex, root]);
 
   return {
     datasetRoot,
@@ -489,6 +499,7 @@ export function useBoxLabel({
     excludeClasses,
     imageViewMode,
     metadata,
+    classImageCounts,
     navigate,
     selectGalleryImage,
     selectedBasenames,
@@ -511,13 +522,6 @@ export function useBoxLabel({
     junkButtonLabel,
     statusText,
     setStatusText,
-    reload: load,
-    // Legacy aliases for BoxLabelPage transition
-    files: sortedEntries,
-    currentFile: currentEntry
-      ? { filename: currentEntry.basename, isNew: false, isUsed: true }
-      : null,
-    selectedFilenames: selectedBasenames,
-    shiftSelectedFilenames: shiftSelectedBasenames
+    reload: load
   };
 }

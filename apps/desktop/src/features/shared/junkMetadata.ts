@@ -23,9 +23,9 @@ export function metadataRowToUpdate(filename: string, row: MetadataRow | null): 
   return {
     filename,
     clf_class: row.clf_class || "",
-    clf_enabled: row.clf_enabled === "1" || row.clf_enabled === true,
-    detect_enabled: row.detect_enabled === "1" || row.detect_enabled === true,
-    detect_junk: row.detect_junk === "1" || row.detect_junk === true
+    clf_enabled: row.clf_enabled,
+    detect_enabled: row.detect_enabled,
+    detect_junk: row.detect_junk
   };
 }
 
