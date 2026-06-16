@@ -154,4 +154,33 @@ $form.Add_FormClosed({
     if ($mark.Image) { $mark.Image.Dispose() }
 })
 
+# Escape hatch: a borderless TopMost window with no chrome can otherwise trap
+# the desktop during a long first-run compile. Allow drag-to-move and Esc-close.
+$script:dragging = $false
+$script:dragAnchor = [System.Drawing.Point]::Empty
+$script:formAnchor = [System.Drawing.Point]::Empty
+$beginDrag = {
+    $script:dragging = $true
+    $script:dragAnchor = [System.Windows.Forms.Cursor]::Position
+    $script:formAnchor = $form.Location
+}
+$doDrag = {
+    if ($script:dragging) {
+        $p = [System.Windows.Forms.Cursor]::Position
+        $form.Location = New-Object System.Drawing.Point(
+            ($script:formAnchor.X + $p.X - $script:dragAnchor.X),
+            ($script:formAnchor.Y + $p.Y - $script:dragAnchor.Y))
+    }
+}
+$endDrag = { $script:dragging = $false }
+foreach ($c in @($form, $title, $tagline, $status, $mark, $barBack)) {
+    $c.Add_MouseDown($beginDrag)
+    $c.Add_MouseMove($doDrag)
+    $c.Add_MouseUp($endDrag)
+}
+$form.KeyPreview = $true
+$form.Add_KeyDown({
+    if ($_.KeyCode -eq [System.Windows.Forms.Keys]::Escape) { $form.Close() }
+})
+
 [void]$form.ShowDialog()

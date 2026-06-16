@@ -75,8 +75,17 @@ fn dismiss_launch_splash_impl() {
             {
                 use std::os::windows::process::CommandExt;
                 const CREATE_NO_WINDOW: u32 = 0x08000000;
+                // Filter on the image name too: the splash usually self-closes
+                // from the ready-file marker, so this PID may already be reused
+                // by an unrelated process by the time we get here.
                 let _ = std::process::Command::new("taskkill")
-                    .args(["/PID", &pid.to_string(), "/F"])
+                    .args([
+                        "/F",
+                        "/FI",
+                        &format!("PID eq {pid}"),
+                        "/FI",
+                        "IMAGENAME eq powershell.exe",
+                    ])
                     .creation_flags(CREATE_NO_WINDOW)
                     .status();
             }
