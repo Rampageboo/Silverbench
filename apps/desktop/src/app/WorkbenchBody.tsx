@@ -15,6 +15,7 @@ import { ImageAssignPage } from "../features/inbox/ImageAssignPage";
 import { DatasetReviewPage } from "../features/dataset-review/DatasetReviewPage";
 import { BoxLabelPage } from "../features/box-label/BoxLabelPage";
 import { TrainPrepPage } from "../features/train-prep/TrainPrepPage";
+import { CropPage } from "../features/crop/CropPage";
 import { ImagePoolBadgeProvider } from "../features/image-pool/ImagePoolBadgeProvider";
 import { useImagePoolBadge } from "../features/image-pool/useImagePoolBadge";
 import {
@@ -179,6 +180,11 @@ function WorkbenchBodyContent({ onNativeTabReady }: WorkbenchBodyProps) {
             <KeepAlivePanel panelKey="train-prep" active={activeTab === "train-prep"}>
               <FeatureErrorBoundary label="数据集准备">
                 <TrainPrepPage onReady={onNativeTabReady} />
+              </FeatureErrorBoundary>
+            </KeepAlivePanel>
+            <KeepAlivePanel panelKey="crop" active={activeTab === "crop"}>
+              <FeatureErrorBoundary label="批量裁剪">
+                <CropPage onReady={onNativeTabReady} />
               </FeatureErrorBoundary>
             </KeepAlivePanel>
           </KeepAliveProvider>
