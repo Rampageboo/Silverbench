@@ -64,9 +64,8 @@ function WorkbenchBodyContent({ onNativeTabReady }: WorkbenchBodyProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [imageWorkspaceStatus, setImageWorkspaceStatus] = useState("");
   const lastWorkspaceRef = useRef(workspaceRoot);
-  const cropIsNative = activeTab === "crop";
-  const useEmbeddedChrome = cropIsNative ? false : usesEmbeddedToolChrome(activeTab);
-  const useNativeReact = cropIsNative || tabUsesNativeReact(activeTab);
+  const useEmbeddedChrome = usesEmbeddedToolChrome(activeTab);
+  const useNativeReact = tabUsesNativeReact(activeTab);
   const showImageWorkspaceTopbar = activeTab === "image-pool";
 
   useEffect(() => {
@@ -116,9 +115,9 @@ function WorkbenchBodyContent({ onNativeTabReady }: WorkbenchBodyProps) {
 
   useEffect(() => {
     if (!connected || !workspaceRoot.trim()) return;
-    if (tabUsesNativeReact(activeTab) || cropIsNative) return;
+    if (tabUsesNativeReact(activeTab)) return;
     void refreshImagePoolBadge();
-  }, [activeTab, connected, cropIsNative, refreshImagePoolBadge, workspaceRoot]);
+  }, [activeTab, connected, refreshImagePoolBadge, workspaceRoot]);
 
   const imageWorkspaceStatusText = useMemo(() => {
     if (imageWorkspaceStatus) return imageWorkspaceStatus;
@@ -174,7 +173,7 @@ function WorkbenchBodyContent({ onNativeTabReady }: WorkbenchBodyProps) {
               <FeatureErrorBoundary label="Batch Crop"><CropPage onReady={onNativeTabReady} /></FeatureErrorBoundary>
             </KeepAlivePanel>
           </KeepAliveProvider>
-          {useEmbeddedChrome && activeTab !== "image-pool" && activeTab !== "crop" && !tabUsesNativeReact(activeTab) ? (
+          {useEmbeddedChrome && activeTab !== "image-pool" && !tabUsesNativeReact(activeTab) ? (
             <LegacyWorkbenchHost activeTab={activeTab} workspaceRoot={workspaceRoot} reloadKey={reloadKey} />
           ) : null}
         </main>
