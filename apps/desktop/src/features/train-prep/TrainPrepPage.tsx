@@ -134,7 +134,7 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
         const summary = resultSummary(result);
         setLog(summary);
         setStatus(result.ok === false ? "Finished with warnings" : "Finished");
-        showToast(result.message || label, { variant: result.ok === false ? "warning" : "success" });
+        showToast(result.message || label, { variant: result.ok === false ? "error" : "info" });
         await refresh();
       } catch (err) {
         const message = errMessage(err);
