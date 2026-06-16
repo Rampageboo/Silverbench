@@ -182,8 +182,10 @@ export function boxesToText(boxes: LabelBox[]) {
   return boxes.map((box) => `${box.classId} ${box.x} ${box.y} ${box.w} ${box.h}`).join("\n");
 }
 
+import { sanitizeFilename } from "../../lib/sanitizePathSegment";
+
 export function sanitizeCropFilename(stem: string) {
-  return String(stem || "crop").replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/\s+/g, "_");
+  return sanitizeFilename(stem, "crop");
 }
 
 export function smallPathHash(path: string) {

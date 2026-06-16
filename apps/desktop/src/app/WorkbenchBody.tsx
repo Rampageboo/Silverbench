@@ -1,7 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
-import { useBackend } from "../hooks/useBackend";
-import { useToast } from "../components/useToast";
-import { errMessage } from "../lib/errors";
+import { useEffect, useMemo, useState } from "react";
 import { useWorkspace } from "./useWorkspace";
 import { ToolNav } from "../components/ToolNav";
 import { SettingsModal } from "../components/SettingsModal";
@@ -21,8 +18,7 @@ import { MaskNoisePage } from "../features/mask-noise/MaskNoisePage";
 import { ImagePoolBadgeProvider } from "../features/image-pool/ImagePoolBadgeProvider";
 import { useImagePoolBadge } from "../features/image-pool/useImagePoolBadge";
 import {
-  imageWorkspaceStatusFallback,
-  type ImageWorkspaceTab
+  imageWorkspaceStatusFallback
 } from "../features/image-pool/imageWorkspaceMode";
 import { type ToolTab } from "../types/tools";
 
@@ -40,8 +36,6 @@ export function WorkbenchBody({ onNativeTabReady }: WorkbenchBodyProps) {
 function WorkbenchBodyContent({ onNativeTabReady }: WorkbenchBodyProps) {
   const { workspaceRoot, activeTab, setActiveTab, imageWorkspaceTab, setImageWorkspaceTab } = useWorkspace();
   const { imagePoolNewCount } = useImagePoolBadge();
-  const { showToast } = useToast();
-  const showError = useCallback((err: unknown) => showToast(errMessage(err), { variant: "error" }), [showToast]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [imageWorkspaceStatus, setImageWorkspaceStatus] = useState("");
   const showImageWorkspaceTopbar = activeTab === "image-pool";
@@ -69,12 +63,12 @@ function WorkbenchBodyContent({ onNativeTabReady }: WorkbenchBodyProps) {
             <KeepAlivePanel panelKey="inbox" active={activeTab === "image-pool" && imageWorkspaceTab === "inbox"}><FeatureErrorBoundary label="Inbox"><ImageAssignPage onReady={onNativeTabReady} onStatusText={setImageWorkspaceStatus} /></FeatureErrorBoundary></KeepAlivePanel>
             <KeepAlivePanel panelKey="yolo" active={activeTab === "image-pool" && imageWorkspaceTab === "yolo"}><FeatureErrorBoundary label="Dataset Review"><DatasetReviewPage onReady={onNativeTabReady} onStatusText={setImageWorkspaceStatus} /></FeatureErrorBoundary></KeepAlivePanel>
             <KeepAlivePanel panelKey="pool-label" active={activeTab === "pool-label"}><FeatureErrorBoundary label="Box Label"><BoxLabelPage onReady={onNativeTabReady} /></FeatureErrorBoundary></KeepAlivePanel>
-            <KeepAlivePanel panelKey="video" active={activeTab === "video"}><FeatureErrorBoundary label="Video Capture"><VideoCapturePage onReady={onNativeTabReady} /></FeatureErrorBoundary></KeepAlivePanel>
+            <KeepAlivePanel panelKey="video" active={activeTab === "video"}><FeatureErrorBoundary label="Video Capture"><VideoCapturePage active={activeTab === "video"} onReady={onNativeTabReady} /></FeatureErrorBoundary></KeepAlivePanel>
             <KeepAlivePanel panelKey="train-prep" active={activeTab === "train-prep"}><FeatureErrorBoundary label="Dataset Prep"><TrainPrepPage onReady={onNativeTabReady} /></FeatureErrorBoundary></KeepAlivePanel>
             <KeepAlivePanel panelKey="train" active={activeTab === "train"}><FeatureErrorBoundary label="Auto Label"><AutoLabelPage onReady={onNativeTabReady} /></FeatureErrorBoundary></KeepAlivePanel>
             <KeepAlivePanel panelKey="crop" active={activeTab === "crop"}><FeatureErrorBoundary label="Batch Crop"><CropPage onReady={onNativeTabReady} /></FeatureErrorBoundary></KeepAlivePanel>
             <KeepAlivePanel panelKey="merge" active={activeTab === "merge"}><FeatureErrorBoundary label="Dataset Merge"><MergePage onReady={onNativeTabReady} /></FeatureErrorBoundary></KeepAlivePanel>
-            <KeepAlivePanel panelKey="mask-noise" active={activeTab === "mask-noise"}><FeatureErrorBoundary label="Mask Cleanup"><MaskNoisePage onReady={onNativeTabReady} /></FeatureErrorBoundary></KeepAlivePanel>
+            <KeepAlivePanel panelKey="mask-noise" persist={false} active={activeTab === "mask-noise"}><FeatureErrorBoundary label="Mask Cleanup"><MaskNoisePage onReady={onNativeTabReady} /></FeatureErrorBoundary></KeepAlivePanel>
           </KeepAliveProvider>
         </main>
       </div>

@@ -31,8 +31,8 @@ export type TrainPrepResult = {
   labelsMoved?: number;
 };
 
-function rpc<T>(method: string, args: unknown[] = []) {
-  return callJson<T>(method as BackendMethod, args);
+function rpc<T>(method: BackendMethod, args: unknown[] = []) {
+  return callJson<T>(method, args);
 }
 
 export async function loadTrainPrepWorkspace(workspaceRoot: string) {
@@ -50,7 +50,8 @@ export function datasetRootForTask(info: WorkspaceInfo | null, task: DatasetTask
 }
 
 export async function prepareTrainPrepValidationSplit(datasetRoot: string, task: DatasetTask, ratio: number) {
-  const method = task === "classify" ? "prepareClassificationValidationSplit" : "prepareValidationSplit";
+  const method: BackendMethod =
+    task === "classify" ? "prepareClassificationValidationSplit" : "prepareValidationSplit";
   return rpc<TrainPrepResult>(method, [datasetRoot, ratio]);
 }
 

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkspace } from "../../app/useWorkspace";
+import { LogPanel } from "../../components/workbench/LogPanel";
+import { useRunWithConfirm } from "../../components/workbench/useRunWithConfirm";
 import { useToast } from "../../components/useToast";
+import { useLruObjectUrlCache } from "../../hooks/useLruObjectUrlCache";
 import { errMessage } from "../../lib/errors";
 import {
   chooseMaskDirectory,
@@ -56,6 +59,7 @@ function clearCanvas(canvas: HTMLCanvasElement | null) {
 export function MaskNoisePage({ onReady }: Props) {
   const { workspaceRoot } = useWorkspace();
   const { showToast } = useToast();
+  const runWithConfirm = useRunWithConfirm();
   const [settings, setSettings] = useState<MaskNoiseSettings>(defaultMaskNoiseSettings);
   const [folderRoot, setFolderRoot] = useState("");
   const [folderItems, setFolderItems] = useState<FolderItem[]>([]);
@@ -65,14 +69,13 @@ export function MaskNoisePage({ onReady }: Props) {
   const [photoName, setPhotoName] = useState("");
   const [photoSize, setPhotoSize] = useState("");
   const [maskPath, setMaskPath] = useState("");
-  const [maskName, setMaskName] = useState("");
   const [maskSize, setMaskSize] = useState("");
   const [outputRoot, setOutputRoot] = useState("");
   const [log, setLog] = useState("Ready.");
   const [duplicateMin, setDuplicateMin] = useState(1);
   const [duplicateMax, setDuplicateMax] = useState(3);
   const [pending, setPending] = useState(false);
-  const [thumbUrls, setThumbUrls] = useState<Map<string, string>>(new Map());
+  const getThumbUrl = useLruObjectUrlCache();
 
   const maskMapRef = useRef<HTMLCanvasElement>(null);
   const photoRef = useRef<HTMLCanvasElement>(null);
@@ -84,12 +87,6 @@ export function MaskNoisePage({ onReady }: Props) {
   useEffect(() => {
     onReady?.();
   }, [onReady]);
-
-  useEffect(() => {
-    return () => {
-      for (const url of thumbUrls.values()) URL.revokeObjectURL(url);
-    };
-  }, [thumbUrls]);
 
   const updateSetting = useCallback(<K extends keyof MaskNoiseSettings>(key: K, value: MaskNoiseSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -140,7 +137,6 @@ export function MaskNoisePage({ onReady }: Props) {
     if (kind === "mask") {
       await drawBase64ToCanvas(maskMapRef.current, base64);
       setMaskPath(path);
-      setMaskName(name);
       const canvas = maskMapRef.current;
       setMaskSize(canvas ? `${canvas.width}x${canvas.height}` : "");
     } else {
@@ -191,14 +187,15 @@ export function MaskNoisePage({ onReady }: Props) {
     await loadImagePath(item.backendPath, "photo");
   }
 
-  const ensureThumbUrl = useCallback(async (item: FolderItem) => {
-    if (thumbUrls.has(item.path)) return thumbUrls.get(item.path)!;
-    const base64 = await readMaskImageBase64(item.backendPath);
-    const blob = await fetch(`data:image/jpeg;base64,${base64}`).then((r) => r.blob());
-    const url = URL.createObjectURL(blob);
-    setThumbUrls((prev) => new Map(prev).set(item.path, url));
-    return url;
-  }, [thumbUrls]);
+  const ensureThumbUrl = useCallback(
+    async (item: FolderItem) =>
+      getThumbUrl(item.path, async () => {
+        const base64 = await readMaskImageBase64(item.backendPath);
+        const blob = await fetch(`data:image/jpeg;base64,${base64}`).then((r) => r.blob());
+        return URL.createObjectURL(blob);
+      }),
+    [getThumbUrl]
+  );
 
   async function generatePreview() {
     if (!photoPath || !maskPath) {
@@ -285,25 +282,34 @@ export function MaskNoisePage({ onReady }: Props) {
   async function deleteSelected(item: FolderItem) {
     if (!folderRoot) return;
     const items = selectedPaths.has(item.path) ? folderItems.filter((i) => selectedPaths.has(i.path)) : [item];
-    if (!window.confirm(`Delete ${items.length} image(s) and matching labels?`)) return;
-    setPending(true);
-    try {
-      const paths = items.map((i) => i.path);
-      const result = await deleteMaskImages(folderRoot, paths);
-      if (paths.some((path) => joinBackendPath(folderRoot, path) === photoPath)) {
-        setPhotoPath("");
-        setPhotoName("");
-        clearCanvas(photoRef.current);
-        clearCanvas(outputRef.current);
-        clearCanvas(diffRef.current);
+    await runWithConfirm(
+      {
+        title: "Delete images",
+        message: `Delete ${items.length} image(s) and matching labels?`,
+        confirmLabel: "Delete",
+        danger: true
+      },
+      async () => {
+        setPending(true);
+        try {
+          const paths = items.map((i) => i.path);
+          const result = await deleteMaskImages(folderRoot, paths);
+          if (paths.some((path) => joinBackendPath(folderRoot, path) === photoPath)) {
+            setPhotoPath("");
+            setPhotoName("");
+            clearCanvas(photoRef.current);
+            clearCanvas(outputRef.current);
+            clearCanvas(diffRef.current);
+          }
+          await loadFolder(folderRoot, new Set([...selectedPaths].filter((path) => !paths.includes(path))));
+          setLog(`Deleted ${result.deletedImages} image(s) and ${result.deletedLabels} label(s).`);
+        } catch (err) {
+          showError(err);
+        } finally {
+          setPending(false);
+        }
       }
-      await loadFolder(folderRoot, new Set([...selectedPaths].filter((path) => !paths.includes(path))));
-      setLog(`Deleted ${result.deletedImages} image(s) and ${result.deletedLabels} label(s).`);
-    } catch (err) {
-      showError(err);
-    } finally {
-      setPending(false);
-    }
+    );
   }
 
   const statusText = `${photoSize ? `photo ${photoSize}` : "no photo"} | ${maskSize ? `mask ${maskSize}` : "no mask"}`;
@@ -363,7 +369,7 @@ export function MaskNoisePage({ onReady }: Props) {
             <div className="group-title">Mask Preview</div>
             <canvas ref={maskMapRef} id="maskMapCanvas" />
           </div>
-          <div className="merge-log mask-noise-log">{log}</div>
+          <LogPanel className="mask-noise-log">{log}</LogPanel>
         </div>
       </section>
 

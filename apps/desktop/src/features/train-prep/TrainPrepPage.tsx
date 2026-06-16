@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useWorkspace } from "../../app/useWorkspace";
+import { LogPanel } from "../../components/workbench/LogPanel";
+import { useRunWithConfirm } from "../../components/workbench/useRunWithConfirm";
 import { useToast } from "../../components/useToast";
 import { errMessage } from "../../lib/errors";
 import type { WorkspaceInfo } from "../../api";
@@ -74,6 +76,7 @@ function classifyStats(files: string[]) {
 export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
   const { workspaceRoot, chooseWorkspaceFolder } = useWorkspace();
   const { showToast } = useToast();
+  const runWithConfirm = useRunWithConfirm();
   const [task, setTask] = useState<DatasetTask>("detect");
   const [ratio, setRatio] = useState(0.15);
   const [state, setState] = useState<LoadState>(DEFAULT_LOAD_STATE);
@@ -151,13 +154,18 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
   function handleCreateValSplit() {
     const safeRatio = clampRatio(ratio);
     const percent = Math.round(safeRatio * 100);
-    const confirmed = window.confirm(
-      task === "classify"
-        ? `Create classification validation split?\n\nThis moves about ${percent}% of images from train/<class> to val/<class>. Existing val files stop the operation.`
-        : `Create detection validation split?\n\nThis moves about ${percent}% of image/label pairs from images/train + labels/train to val. Existing val files stop the operation.`
+    void runWithConfirm(
+      {
+        title: "Create validation split",
+        message:
+          task === "classify"
+            ? `Create classification validation split?\n\nThis moves about ${percent}% of images from train/<class> to val/<class>. Existing val files stop the operation.`
+            : `Create detection validation split?\n\nThis moves about ${percent}% of image/label pairs from images/train + labels/train to val. Existing val files stop the operation.`,
+        confirmLabel: "Create split",
+        danger: true
+      },
+      () => runOperation("Creating validation split...", () => prepareTrainPrepValidationSplit(datasetRoot, task, safeRatio))
     );
-    if (!confirmed) return;
-    void runOperation("Creating validation split...", () => prepareTrainPrepValidationSplit(datasetRoot, task, safeRatio));
   }
 
   function handleFixDataYaml() {
@@ -165,13 +173,18 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
   }
 
   function handleMoveValBack() {
-    const confirmed = window.confirm(
-      task === "classify"
-        ? "Move classification val images back to train?"
-        : "Move detection images/val and labels/val back to train?"
+    void runWithConfirm(
+      {
+        title: "Move val to train",
+        message:
+          task === "classify"
+            ? "Move classification val images back to train?"
+            : "Move detection images/val and labels/val back to train?",
+        confirmLabel: "Move",
+        danger: true
+      },
+      () => runOperation("Moving val back to train...", () => moveTrainPrepValBackToTrain(datasetRoot, task))
     );
-    if (!confirmed) return;
-    void runOperation("Moving val back to train...", () => moveTrainPrepValBackToTrain(datasetRoot, task));
   }
 
   return (
@@ -259,7 +272,7 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
               <p>classes: {classify.classes}</p>
             </div>
           </div>
-          <div className="merge-log">{log || (loading ? "Loading dataset status..." : "No operation run yet.")}</div>
+          <LogPanel>{log || (loading ? "Loading dataset status..." : "No operation run yet.")}</LogPanel>
         </div>
       </section>
     </main>

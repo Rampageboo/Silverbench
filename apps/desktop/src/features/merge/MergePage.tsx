@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkspace } from "../../app/useWorkspace";
+import { FolderPickerRow } from "../../components/workbench/FolderPickerRow";
+import { LogPanel } from "../../components/workbench/LogPanel";
+import { useRunWithConfirm } from "../../components/workbench/useRunWithConfirm";
 import { useToast } from "../../components/useToast";
 import { errMessage } from "../../lib/errors";
 import { mergeDatasets, type MergeSource } from "./mergeLogic";
@@ -15,6 +18,7 @@ function baseName(path: string) {
 export function MergePage({ onReady }: Props) {
   const { workspaceRoot, chooseWorkspaceFolder } = useWorkspace();
   const { showToast } = useToast();
+  const runWithConfirm = useRunWithConfirm();
   const [task, setTask] = useState<MergeTask>("detect");
   const [targetRoot, setTargetRoot] = useState("");
   const [targetExplicit, setTargetExplicit] = useState(false);
@@ -111,28 +115,36 @@ export function MergePage({ onReady }: Props) {
       showToast("Target cannot also be a source.", { variant: "error" });
       return;
     }
-    if (!window.confirm(`Merge ${sources.length} source(s) into target?\n\nTarget: ${targetRoot}`)) return;
-    setRunning(true);
-    setProgress({ value: 0, total: 1, detail: "Planning..." });
-    try {
-      const result = await mergeDatasets({
-        sources,
-        targetRoot,
-        task,
-        autoRename,
-        onProgress: setProgress,
-        onLog: setLog
-      });
-      setStatus(result.summary);
-      showToast("Merge finished.");
-    } catch (err) {
-      const message = errMessage(err);
-      setStatus(message);
-      setLog((prev) => `${prev}\n\n${message}`);
-      showError(err);
-    } finally {
-      setRunning(false);
-    }
+    await runWithConfirm(
+      {
+        title: "Merge datasets",
+        message: `Merge ${sources.length} source(s) into target?\n\nTarget: ${targetRoot}`,
+        confirmLabel: "Merge"
+      },
+      async () => {
+        setRunning(true);
+        setProgress({ value: 0, total: 1, detail: "Planning..." });
+        try {
+          const result = await mergeDatasets({
+            sources,
+            targetRoot,
+            task,
+            autoRename,
+            onProgress: setProgress,
+            onLog: setLog
+          });
+          setStatus(result.summary);
+          showToast("Merge finished.");
+        } catch (err) {
+          const message = errMessage(err);
+          setStatus(message);
+          setLog((prev) => `${prev}\n\n${message}`);
+          showError(err);
+        } finally {
+          setRunning(false);
+        }
+      }
+    );
   }
 
   async function runValToTrain() {
@@ -140,18 +152,26 @@ export function MergePage({ onReady }: Props) {
       showToast("Choose a target folder first.", { variant: "error" });
       return;
     }
-    if (!window.confirm(task === "classify" ? "Move classification val images back to train?" : "Move detection val back to train?")) return;
-    setRunning(true);
-    try {
-      const result = await moveMergeValBackToTrain(targetRoot, task);
-      setLog(result.message || "Val moved back to train.");
-      setStatus("Val → Train finished.");
-      showToast(result.message || "Done.", { variant: result.ok === false ? "warning" : "success" });
-    } catch (err) {
-      showError(err);
-    } finally {
-      setRunning(false);
-    }
+    await runWithConfirm(
+      {
+        title: "Val to train",
+        message: task === "classify" ? "Move classification val images back to train?" : "Move detection val back to train?",
+        confirmLabel: "Move"
+      },
+      async () => {
+        setRunning(true);
+        try {
+          const result = await moveMergeValBackToTrain(targetRoot, task);
+          setLog(result.message || "Val moved back to train.");
+          setStatus("Val → Train finished.");
+          showToast(result.message || "Done.", { variant: result.ok === false ? "warning" : "success" });
+        } catch (err) {
+          showError(err);
+        } finally {
+          setRunning(false);
+        }
+      }
+    );
   }
 
   function onDrop(event: React.DragEvent) {
@@ -215,13 +235,18 @@ export function MergePage({ onReady }: Props) {
             <label><input type="radio" name="mergeTask" value="detect" checked={task === "detect"} onChange={() => { setTask("detect"); void syncTarget(workspaceRoot, "detect", targetExplicit); }} disabled={running} />Detect</label>
             <label><input type="radio" name="mergeTask" value="classify" checked={task === "classify"} onChange={() => { setTask("classify"); void syncTarget(workspaceRoot, "classify", targetExplicit); }} disabled={running} />Classify</label>
           </div>
-          <label>
-            Target folder
-            <div className="row">
-              <input value={targetRoot} onChange={(e) => { setTargetRoot(e.target.value); setTargetExplicit(true); }} />
-              <button type="button" onClick={() => void chooseTarget()} disabled={running}>Target Folder</button>
-            </div>
-          </label>
+          <FolderPickerRow
+            label="Target folder"
+            value={targetRoot}
+            browseLabel="Target Folder"
+            disabled={running}
+            readOnly={false}
+            onChange={(value) => {
+              setTargetRoot(value);
+              setTargetExplicit(true);
+            }}
+            onBrowse={() => void chooseTarget()}
+          />
           <div className="row merge-actions-row">
             <button className="primary" type="button" onClick={() => void runMerge()} disabled={running || !sources.length || !targetRoot}>Merge</button>
             <label><input type="checkbox" checked={autoRename} onChange={(e) => setAutoRename(e.target.checked)} disabled={running} /> Auto rename conflicts</label>
@@ -234,7 +259,9 @@ export function MergePage({ onReady }: Props) {
             </div>
             <div className="hint">Move val data back to train on the selected target folder.</div>
           </div>
-          <div className="merge-log" style={{ marginTop: 12 }}>{log}</div>
+          <div style={{ marginTop: 12 }}>
+            <LogPanel>{log}</LogPanel>
+          </div>
         </div>
       </section>
 

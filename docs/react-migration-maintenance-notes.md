@@ -1,6 +1,6 @@
 # React Migration Maintenance Notes
 
-This project has moved the desktop workbench to native React tabs. The old `web/*.js` files may still be useful as historical reference, but the React desktop app should be treated as the current source of truth for active workbench behavior.
+This project has moved the desktop workbench to native React tabs. The old `legacy/web/*.js` files may still be useful as historical reference, but the React desktop app should be treated as the current source of truth for active workbench behavior.
 
 ## Current scope
 
@@ -33,7 +33,7 @@ Minimum smoke test:
 
 - Image Pool: open a workspace and scan images.
 - Box Label: open an image and confirm labels can load/save.
-- Video Capture: open a video and preview one frame.
+- Video Capture: open a video and preview one frame; drag the scrubber and confirm preview requests are throttled.
 - Dataset Prep: load workspace info and run a harmless read-only action first.
 - Auto Label: choose a model and confirm the job can start or reach the first validation error clearly.
 - Batch Crop: choose input/output folders and start a small crop run.
@@ -42,106 +42,48 @@ Minimum smoke test:
 
 Do not run full validation after every small code edit. Batch the changes, then validate once.
 
-## P3 — Video preview request rate
+## P3 — Video preview request rate (done)
 
-`VideoCapturePage` requests preview frames from the backend when `previewTime` changes. This is fine for click/step seeking, but range sliders can emit many updates during dragging. Each request may require OpenCV to seek into a video and encode an image, which can be expensive for long videos or slow disks.
+`VideoCapturePage` debounces backend preview requests (~200 ms while dragging the scrubber), tracks a request id to ignore stale responses, and flushes immediately on pointer release. Tab deactivation clears the preview base64 string to release memory while keeping video lists and capture jobs alive.
 
-Future improvement:
+## P4 — Mask thumbnail cache (done)
 
-- Debounce preview requests by roughly 150-250 ms.
-- Track a request id and only display the newest response.
-- Optionally request preview frames only on pointer release rather than every slider movement.
+`MaskNoisePage` uses `useLruObjectUrlCache` (capacity 150) so object URLs are revoked when evicted. The grid still caps display at 500 items (`GRID_LIMIT`). Full pagination/virtual scroll remains a future option for very large folders.
 
-This does not block migration, but it is a likely source of sluggishness in heavy video workflows.
+## P6 — KeepAlive memory policy (done)
 
-## P4 — Mask thumbnail cache and large folders
+| Tab | Policy |
+|-----|--------|
+| Mask Cleanup | `persist={false}` — unmount when inactive |
+| Video Capture | KeepAlive + clear preview on inactive |
+| Other tabs | KeepAlive (preserve editing state) |
 
-`MaskNoisePage` can load many thumbnails from backend image files. It currently limits the grid size, but the thumbnail object URLs can still remain in memory while the tab is kept alive.
+## BackendMethod typing (done)
 
-Future improvement:
+Feature API helpers (`videoCaptureApi`, `autoLabelApi`, `trainPrepApi`, `cropApi`) use `rpc(method: BackendMethod, …)` so every desktop RPC name is checked at compile time. When adding a new backend handler in `backend/service.py`, add the same string to the `BackendMethod` union in `apps/desktop/src/api.ts`.
 
-- Add pagination or virtual scrolling for large folders.
-- Add an LRU cache for thumbnails, for example keeping only the most recent 100-200 thumbnails.
-- Revoke object URLs when thumbnails are evicted from the cache.
+## Legacy web files
 
-This matters because the user now has large datasets. The old mask-noise use case was data expansion; the future use case is more likely to be a general mask-based image transform or batch cleanup tool.
+Legacy web assets live under `legacy/web/`. The React desktop shell imports only `legacy/web/styles.css`; full `legacy/web` remains for `tauri:dev:legacy`, Qt, and standalone server flows.
 
-## P6 — KeepAlive memory policy
+## Reusable UI components (done for tool tabs)
 
-The workbench keeps tab components mounted so their state is preserved when switching tabs. This is convenient, but it means memory-heavy state can remain alive even when the tab is not visible.
+Shared thin wrappers live in `apps/desktop/src/components/workbench/`:
 
-Examples of state that can stay alive:
+- `LogPanel` — log/status text areas
+- `JobStatusPanel` — progress + status (Video, Auto Label)
+- `FolderPickerRow` — path input + browse button (Auto Label, Merge)
+- `NumberField` — labeled number inputs (Auto Label)
+- `useRunWithConfirm` — replaces `window.confirm` on tool pages
 
-- Video preview base64 strings.
-- Video job logs and loaded video lists.
-- Mask thumbnail object URLs.
-- Large image lists.
-- Canvas content.
-- Merge source lists and logs.
+Migrated pages: Video Capture, Auto Label, Batch Crop, Dataset Merge, Dataset Prep, Mask Cleanup.
 
-Why this can make the app feel slower over time:
-
-1. A tab loads images, video previews, thumbnails, or logs.
-2. The user switches away from the tab.
-3. Because the tab is kept alive, React does not unmount it.
-4. Its state and cached browser resources stay in memory.
-5. After using several heavy tabs, the app has more retained memory and more retained DOM/canvas/image resources.
-6. The browser runtime and garbage collector have more work to do, so UI updates can become slower.
-
-This is not exactly a memory leak if the state is intentionally retained, but the user experience can look similar: the app gradually feels heavier.
-
-Future improvement:
-
-- Keep light tabs alive.
-- Consider disabling KeepAlive for heavy tabs such as Video Capture and Mask Cleanup.
-- Or add a manual `Clear cache` / `Release memory` action inside heavy tabs.
-- Or clear preview/thumbnail state when a tab becomes inactive.
-
-Recommended policy:
-
-- KeepAlive is good for editing tabs where preserving state matters.
-- Avoid unlimited KeepAlive for tabs that load many images, canvases, base64 strings, or video previews.
-
-## Deferred note — BackendMethod typing
-
-Some feature API helpers cast dynamic backend method names to `BackendMethod`. This is acceptable for now and does not need to block the migration. A stricter future cleanup would add every backend RPC method to the `BackendMethod` union or replace the union with a generated method map.
-
-## Deferred note — Legacy web files
-
-Legacy `web/*.js` files can remain as reference material for now. They should not be treated as the active implementation for the desktop React workbench.
-
-Future cleanup options:
-
-- Add a clear `web/README_LEGACY.md` note.
-- Move legacy files under a `legacy/` folder.
-- Keep them until all React features have passed practical smoke tests.
-- Delete only after there is confidence that no browser-mode fallback or historical behavior is still needed.
-
-## Deferred note — Reusable UI components
-
-Several migrated pages now repeat similar UI patterns:
-
-- Folder picker rows.
-- Status/log panels.
-- Numeric fields.
-- Job polling.
-- Confirmation before destructive or long-running tasks.
-
-This duplication is acceptable during migration. After the app stabilizes, extract shared components gradually rather than doing a large cleanup all at once.
-
-Possible shared components:
-
-- `FolderPickerRow`
-- `LogPanel`
-- `JobStatusPanel`
-- `NumberField`
-- `ConfirmRunButton`
+Image Pool / Box Label / Dataset Review were left unchanged (already have richer dedicated UI).
 
 ## Practical priority order
 
-1. Run one full build and smoke-test pass.
+1. Run one full build and smoke-test pass after changes.
 2. Fix actual build/runtime errors first.
-3. Add video preview debounce if video seeking feels slow.
-4. Add pagination/LRU cache if Mask Cleanup is used with large folders.
-5. Review KeepAlive policy if the app feels heavier after switching across many tabs.
-6. Leave legacy web files and reusable component cleanup as later refactors.
+3. Add pagination/virtual scroll if Mask Cleanup is used with folders much larger than 500 images.
+4. Review KeepAlive policy further if other heavy tabs need `persist={false}`.
+5. Extract more shared components gradually as new tool pages are added.

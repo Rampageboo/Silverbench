@@ -26,8 +26,8 @@ export type CaptureJob = {
   result?: Record<string, unknown> | null;
 };
 
-function rpc<T>(method: string, args: unknown[] = []) {
-  return callJson<T>(method as BackendMethod, args);
+function rpc<T>(method: BackendMethod, args: unknown[] = []) {
+  return callJson<T>(method, args);
 }
 
 export function loadVideoWorkspace(workspaceRoot: string): Promise<WorkspaceInfo> {

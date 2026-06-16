@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listDatasetFiles } from "../../api";
 import { useWorkspace } from "../../app/useWorkspace";
+import { LogPanel } from "../../components/workbench/LogPanel";
+import { useRunWithConfirm } from "../../components/workbench/useRunWithConfirm";
 import { useToast } from "../../components/useToast";
 import { errMessage } from "../../lib/errors";
 import {
   buildLabelIndex,
   findPairs,
-  IMAGE_EXTENSIONS,
   inferDatasetTask,
   naturalCompare,
   readClassNamesFromDataset,
@@ -54,6 +55,7 @@ function queueSummary(queue: CropQueueState) {
 export function CropPage({ onReady }: CropPageProps) {
   const { workspaceRoot, chooseWorkspaceFolder } = useWorkspace();
   const { showToast } = useToast();
+  const runWithConfirm = useRunWithConfirm();
   const [inputRoot, setInputRoot] = useState("");
   const [outputRoot, setOutputRoot] = useState("");
   const [width, setWidth] = useState(2560);
@@ -160,20 +162,28 @@ export function CropPage({ onReady }: CropPageProps) {
       showToast("Choose input and output folders first.", { variant: "error" });
       return;
     }
-    if (!window.confirm(`Run crop?\n\nInput: ${inputRoot}\nOutput: ${outputRoot}`)) return;
-    setPending(true);
-    try {
-      const result = await runBatchCropImages(inputRoot, outputRoot, width, height, anchor, classAnchors, workers);
-      setStatus(`Done: ${result.cropped || 0}/${result.total || 0}`);
-      setBatchLog(formatBatchCropResult(result, outputRoot));
-      showToast("Crop finished.");
-    } catch (err) {
-      setStatus(errMessage(err));
-      setBatchLog(errMessage(err));
-      showError(err);
-    } finally {
-      setPending(false);
-    }
+    await runWithConfirm(
+      {
+        title: "Run batch crop",
+        message: `Run crop?\n\nInput: ${inputRoot}\nOutput: ${outputRoot}`,
+        confirmLabel: "Run"
+      },
+      async () => {
+        setPending(true);
+        try {
+          const result = await runBatchCropImages(inputRoot, outputRoot, width, height, anchor, classAnchors, workers);
+          setStatus(`Done: ${result.cropped || 0}/${result.total || 0}`);
+          setBatchLog(formatBatchCropResult(result, outputRoot));
+          showToast("Crop finished.");
+        } catch (err) {
+          setStatus(errMessage(err));
+          setBatchLog(errMessage(err));
+          showError(err);
+        } finally {
+          setPending(false);
+        }
+      }
+    );
   }
 
   async function runQueueCrop() {
@@ -293,7 +303,7 @@ export function CropPage({ onReady }: CropPageProps) {
               <span className="group-title">Crop Queue</span>
               <button type="button" onClick={() => void clearQueue()} disabled={pending || !queue.items.length}>Clear Queue</button>
             </div>
-            <div className="merge-log">{queueSummary(queue)}</div>
+            <LogPanel>{queueSummary(queue)}</LogPanel>
           </div>
           <div className="train-grid">
             <label>Output<input value={outputRoot} onChange={(e) => setOutputRoot(e.target.value)} readOnly placeholder="cropped output folder" /></label>
@@ -344,7 +354,7 @@ export function CropPage({ onReady }: CropPageProps) {
           ) : (
             <div className="class-anchor-list"><div className="empty">Open a classification dataset queue to set per-class anchors.</div></div>
           )}
-          <div className="merge-log">{batchLog}</div>
+          <LogPanel>{batchLog}</LogPanel>
         </div>
       </section>
 

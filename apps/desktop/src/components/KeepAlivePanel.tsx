@@ -15,16 +15,29 @@ export function KeepAliveProvider({ children }: KeepAliveProviderProps) {
 type KeepAlivePanelProps = {
   panelKey: string;
   active: boolean;
+  /** When false, unmount the panel whenever it is inactive. Default true. */
+  persist?: boolean;
   className?: string;
   children: ReactNode;
 };
 
 /** Mount a panel once visited; hide instead of unmounting to preserve state. */
-export function KeepAlivePanel({ panelKey, active, className, children }: KeepAlivePanelProps) {
+export function KeepAlivePanel({ panelKey, active, persist = true, className, children }: KeepAlivePanelProps) {
   const mountedPanels = useContext(KeepAliveRegistryContext);
   if (!mountedPanels) {
     throw new Error("KeepAlivePanel must be used within KeepAliveProvider.");
   }
+
+  if (!persist) {
+    if (!active) return null;
+    const classNames = ["workbench-panel", className, "workbench-panel--active"].filter(Boolean).join(" ");
+    return (
+      <div className={classNames} aria-hidden={false}>
+        {children}
+      </div>
+    );
+  }
+
   if (active) mountedPanels.add(panelKey);
   if (!mountedPanels.has(panelKey)) return null;
   const classNames = [

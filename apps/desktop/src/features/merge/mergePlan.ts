@@ -1,3 +1,4 @@
+import { sanitizeFilename, sanitizePathSegment } from "../../lib/sanitizePathSegment";
 import { classificationClassNameForPath, naturalCompare } from "../dataset-review/datasetCore";
 import type { MergeTask } from "./mergeApi";
 
@@ -9,11 +10,11 @@ export function ext(path: string) {
 }
 
 export function safeDatasetFilename(filename: string) {
-  return String(filename || "image").replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/\s+/g, "_");
+  return sanitizeFilename(filename, "image");
 }
 
 export function safeDatasetPathSegment(segment: string) {
-  return String(segment || "class").trim().replace(/[<>:"/\\|?*\x00-\x1F]/g, "_") || "class";
+  return sanitizePathSegment(segment, "class");
 }
 
 export function normalizeDatasetRoot<T>(sourceFiles: Map<string, T>, task: MergeTask = "detect") {
