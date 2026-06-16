@@ -14,6 +14,7 @@ import { ImagePoolPage } from "../features/image-pool/ImagePoolPage";
 import { ImageAssignPage } from "../features/inbox/ImageAssignPage";
 import { DatasetReviewPage } from "../features/dataset-review/DatasetReviewPage";
 import { BoxLabelPage } from "../features/box-label/BoxLabelPage";
+import { TrainPrepPage } from "../features/train-prep/TrainPrepPage";
 import { ImagePoolBadgeProvider } from "../features/image-pool/ImagePoolBadgeProvider";
 import { useImagePoolBadge } from "../features/image-pool/useImagePoolBadge";
 import {
@@ -173,6 +174,11 @@ function WorkbenchBodyContent({ onNativeTabReady }: WorkbenchBodyProps) {
             <KeepAlivePanel panelKey="pool-label" active={activeTab === "pool-label"}>
               <FeatureErrorBoundary label="图片标注">
                 <BoxLabelPage onReady={onNativeTabReady} />
+              </FeatureErrorBoundary>
+            </KeepAlivePanel>
+            <KeepAlivePanel panelKey="train-prep" active={activeTab === "train-prep"}>
+              <FeatureErrorBoundary label="数据集准备">
+                <TrainPrepPage onReady={onNativeTabReady} />
               </FeatureErrorBoundary>
             </KeepAlivePanel>
           </KeepAliveProvider>
