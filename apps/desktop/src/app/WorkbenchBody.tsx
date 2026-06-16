@@ -64,8 +64,9 @@ function WorkbenchBodyContent({ onNativeTabReady }: WorkbenchBodyProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [imageWorkspaceStatus, setImageWorkspaceStatus] = useState("");
   const lastWorkspaceRef = useRef(workspaceRoot);
-  const useEmbeddedChrome = usesEmbeddedToolChrome(activeTab);
-  const useNativeReact = tabUsesNativeReact(activeTab);
+  const cropIsNative = activeTab === "crop";
+  const useEmbeddedChrome = cropIsNative ? false : usesEmbeddedToolChrome(activeTab);
+  const useNativeReact = cropIsNative || tabUsesNativeReact(activeTab);
   const showImageWorkspaceTopbar = activeTab === "image-pool";
 
   useEffect(() => {
@@ -115,9 +116,9 @@ function WorkbenchBodyContent({ onNativeTabReady }: WorkbenchBodyProps) {
 
   useEffect(() => {
     if (!connected || !workspaceRoot.trim()) return;
-    if (tabUsesNativeReact(activeTab)) return;
+    if (tabUsesNativeReact(activeTab) || cropIsNative) return;
     void refreshImagePoolBadge();
-  }, [activeTab, connected, refreshImagePoolBadge, workspaceRoot]);
+  }, [activeTab, connected, cropIsNative, refreshImagePoolBadge, workspaceRoot]);
 
   const imageWorkspaceStatusText = useMemo(() => {
     if (imageWorkspaceStatus) return imageWorkspaceStatus;
@@ -154,41 +155,26 @@ function WorkbenchBodyContent({ onNativeTabReady }: WorkbenchBodyProps) {
         ) : null}
         <main className="workbench-page">
           <KeepAliveProvider>
-            <KeepAlivePanel
-              panelKey="image-pool"
-              active={activeTab === "image-pool" && imageWorkspaceTab === "image-pool"}
-            >
-              <FeatureErrorBoundary label="图片池">
-                <ImagePoolPage onReady={onNativeTabReady} onStatusText={setImageWorkspaceStatus} />
-              </FeatureErrorBoundary>
+            <KeepAlivePanel panelKey="image-pool" active={activeTab === "image-pool" && imageWorkspaceTab === "image-pool"}>
+              <FeatureErrorBoundary label="Image Pool"><ImagePoolPage onReady={onNativeTabReady} onStatusText={setImageWorkspaceStatus} /></FeatureErrorBoundary>
             </KeepAlivePanel>
             <KeepAlivePanel panelKey="inbox" active={activeTab === "image-pool" && imageWorkspaceTab === "inbox"}>
-              <FeatureErrorBoundary label="收件箱">
-                <ImageAssignPage onReady={onNativeTabReady} onStatusText={setImageWorkspaceStatus} />
-              </FeatureErrorBoundary>
+              <FeatureErrorBoundary label="Inbox"><ImageAssignPage onReady={onNativeTabReady} onStatusText={setImageWorkspaceStatus} /></FeatureErrorBoundary>
             </KeepAlivePanel>
             <KeepAlivePanel panelKey="yolo" active={activeTab === "image-pool" && imageWorkspaceTab === "yolo"}>
-              <FeatureErrorBoundary label="数据集审阅">
-                <DatasetReviewPage onReady={onNativeTabReady} onStatusText={setImageWorkspaceStatus} />
-              </FeatureErrorBoundary>
+              <FeatureErrorBoundary label="Dataset Review"><DatasetReviewPage onReady={onNativeTabReady} onStatusText={setImageWorkspaceStatus} /></FeatureErrorBoundary>
             </KeepAlivePanel>
             <KeepAlivePanel panelKey="pool-label" active={activeTab === "pool-label"}>
-              <FeatureErrorBoundary label="图片标注">
-                <BoxLabelPage onReady={onNativeTabReady} />
-              </FeatureErrorBoundary>
+              <FeatureErrorBoundary label="Box Label"><BoxLabelPage onReady={onNativeTabReady} /></FeatureErrorBoundary>
             </KeepAlivePanel>
             <KeepAlivePanel panelKey="train-prep" active={activeTab === "train-prep"}>
-              <FeatureErrorBoundary label="数据集准备">
-                <TrainPrepPage onReady={onNativeTabReady} />
-              </FeatureErrorBoundary>
+              <FeatureErrorBoundary label="Dataset Prep"><TrainPrepPage onReady={onNativeTabReady} /></FeatureErrorBoundary>
             </KeepAlivePanel>
             <KeepAlivePanel panelKey="crop" active={activeTab === "crop"}>
-              <FeatureErrorBoundary label="批量裁剪">
-                <CropPage onReady={onNativeTabReady} />
-              </FeatureErrorBoundary>
+              <FeatureErrorBoundary label="Batch Crop"><CropPage onReady={onNativeTabReady} /></FeatureErrorBoundary>
             </KeepAlivePanel>
           </KeepAliveProvider>
-          {useEmbeddedChrome && activeTab !== "image-pool" && !tabUsesNativeReact(activeTab) ? (
+          {useEmbeddedChrome && activeTab !== "image-pool" && activeTab !== "crop" && !tabUsesNativeReact(activeTab) ? (
             <LegacyWorkbenchHost activeTab={activeTab} workspaceRoot={workspaceRoot} reloadKey={reloadKey} />
           ) : null}
         </main>
