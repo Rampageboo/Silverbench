@@ -1,61 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkspace } from "../../app/useWorkspace";
 import { useToast } from "../../components/useToast";
 import { errMessage } from "../../lib/errors";
-import {
-  chooseMergeDirectory,
-  isImagePath,
-  isTextPath,
-  listMergeFiles,
-  loadMergeWorkspace,
-  readMergeBase64,
-  readMergeText,
-  writeMergeBase64,
-  writeMergeText,
-  type MergeTask
-} from "./mergeApi";
+import { mergeDatasets, type MergeSource } from "./mergeLogic";
+import { chooseMergeDirectory, loadMergeWorkspace, moveMergeValBackToTrain, openMergeFolder, type MergeTask } from "./mergeApi";
+import { isZipFile, readFileArrayBuffer } from "./mergeZip";
 
 type Props = { onReady?: () => void };
-type Source = { root: string; name: string };
-
-type Stats = {
-  copied: number;
-  renamed: number;
-  skipped: number;
-  failed: number;
-};
 
 function baseName(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() || path;
-}
-
-function destinationFor(path: string, sourceIndex: number, task: MergeTask, existing: Set<string>, reserved: Set<string>, autoRename: boolean) {
-  let destination = path.replace(/\\/g, "/");
-  if (task === "detect" && isImagePath(destination)) {
-    const name = baseName(destination);
-    destination = `images/train/${name}`;
-  }
-  if (task === "classify" && isImagePath(destination)) {
-    const parts = destination.split("/");
-    const className = parts.length >= 2 ? parts[parts.length - 2] : "unknown";
-    destination = `train/${className}/${baseName(destination)}`;
-  }
-  if (!isImagePath(destination) && !/labels\//.test(destination) && !/(data|dataset)\.ya?ml$/i.test(destination)) return null;
-  const key = destination.toLowerCase();
-  if (!existing.has(key) && !reserved.has(key)) return destination;
-  if (!autoRename) return null;
-  const parts = destination.split("/");
-  const filename = parts.pop() || destination;
-  const dot = filename.lastIndexOf(".");
-  const stem = dot > 0 ? filename.slice(0, dot) : filename;
-  const ext = dot > 0 ? filename.slice(dot) : "";
-  const renamed = `${stem}_m${sourceIndex + 1}${ext}`;
-  return [...parts, renamed].join("/");
-}
-
-function labelForImage(path: string) {
-  const name = baseName(path).replace(/\.[^.]+$/, ".txt");
-  return `labels/train/${name}`;
 }
 
 export function MergePage({ onReady }: Props) {
@@ -63,13 +17,30 @@ export function MergePage({ onReady }: Props) {
   const { showToast } = useToast();
   const [task, setTask] = useState<MergeTask>("detect");
   const [targetRoot, setTargetRoot] = useState("");
-  const [sources, setSources] = useState<Source[]>([]);
+  const [targetExplicit, setTargetExplicit] = useState(false);
+  const [sources, setSources] = useState<MergeSource[]>([]);
   const [autoRename, setAutoRename] = useState(true);
-  const [status, setStatus] = useState("Add source folders and choose a target folder.");
-  const [log, setLog] = useState("");
+  const [status, setStatus] = useState("No target folder");
+  const [log, setLog] = useState("Ready.");
   const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState({ value: 0, total: 1, detail: "" });
+  const zipInputRef = useRef<HTMLInputElement>(null);
 
   const showError = useCallback((err: unknown) => showToast(errMessage(err), { variant: "error" }), [showToast]);
+
+  const syncTarget = useCallback(async (root: string, mergeTask: MergeTask, explicit: boolean) => {
+    if (explicit || !root.trim()) return;
+    try {
+      const info = await loadMergeWorkspace(root);
+      const nextTarget = mergeTask === "classify" ? info.clfDataset : info.detectDataset;
+      if (nextTarget) {
+        setTargetRoot(nextTarget);
+        setStatus(nextTarget.split(/[\\/]/).pop() || nextTarget);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,11 +50,7 @@ export function MergePage({ onReady }: Props) {
         return;
       }
       try {
-        const info = await loadMergeWorkspace(workspaceRoot);
-        if (cancelled) return;
-        const nextTarget = task === "classify" ? info.clfDataset : info.detectDataset;
-        if (nextTarget && !targetRoot) setTargetRoot(nextTarget);
-        setStatus(`Workspace: ${info.name || info.root}`);
+        await syncTarget(workspaceRoot, task, targetExplicit);
       } catch (err) {
         if (!cancelled) showError(err);
       } finally {
@@ -92,110 +59,195 @@ export function MergePage({ onReady }: Props) {
     }
     void load();
     return () => { cancelled = true; };
-  }, [workspaceRoot, task, targetRoot, onReady, showError]);
+  }, [workspaceRoot, task, targetExplicit, onReady, showError, syncTarget]);
 
-  const canRun = useMemo(() => sources.length > 0 && Boolean(targetRoot), [sources.length, targetRoot]);
+  async function addSourceFolder() {
+    const path = await chooseMergeDirectory("Choose source dataset folder");
+    if (!path) return;
+    const opened = await openMergeFolder(path);
+    if (!opened.ok || !opened.root) {
+      showToast(opened.error || "Cannot open folder.", { variant: "error" });
+      return;
+    }
+    if (sources.some((source) => source.kind === "folder" && source.root === opened.root)) return;
+    setSources((items) => [...items, { kind: "folder", root: opened.root!, name: opened.name || baseName(opened.root!) }]);
+    setLog(`Added source folder: ${opened.root}`);
+  }
 
-  async function addSource() {
-    const root = await chooseMergeDirectory("Choose source dataset folder");
-    if (!root) return;
-    if (sources.some((source) => source.root === root)) return;
-    setSources([...sources, { root, name: baseName(root) }]);
+  async function addZipFile(file: File) {
+    if (!isZipFile(file)) {
+      showToast(`${file.name} is not a ZIP file.`, { variant: "error" });
+      return;
+    }
+    const buffer = await readFileArrayBuffer(file);
+    if (sources.some((source) => source.kind === "zip" && source.name === file.name && source.buffer.byteLength === buffer.byteLength)) return;
+    setSources((items) => [...items, { kind: "zip", name: file.name, buffer }]);
+    setLog(`Added ZIP: ${file.name}`);
   }
 
   async function chooseTarget() {
-    const root = await chooseMergeDirectory("Choose target dataset folder");
-    if (root) setTargetRoot(root);
-  }
-
-  async function copyOne(sourceRoot: string, sourcePath: string, destPath: string) {
-    if (isTextPath(sourcePath)) {
-      const text = await readMergeText(sourceRoot, sourcePath);
-      await writeMergeText(targetRoot, destPath, text);
+    const path = await chooseMergeDirectory("Choose target dataset folder");
+    if (!path) return;
+    const opened = await openMergeFolder(path);
+    if (!opened.ok || !opened.root) {
+      showToast(opened.error || "Cannot open folder.", { variant: "error" });
       return;
     }
-    const data = await readMergeBase64(sourceRoot, sourcePath);
-    await writeMergeBase64(targetRoot, destPath, data);
+    setTargetRoot(opened.root);
+    setTargetExplicit(true);
+    setStatus(opened.name || baseName(opened.root));
+  }
+
+  function removeSource(index: number) {
+    setSources((items) => items.filter((_, i) => i !== index));
   }
 
   async function runMerge() {
-    if (!canRun) {
+    if (!sources.length || !targetRoot) {
       showToast("Add sources and choose a target first.", { variant: "error" });
       return;
     }
-    if (sources.some((source) => source.root === targetRoot)) {
+    if (sources.some((source) => source.kind === "folder" && source.root === targetRoot)) {
       showToast("Target cannot also be a source.", { variant: "error" });
       return;
     }
-    if (!window.confirm(`Merge ${sources.length} source folder(s) into target?\n\nTarget: ${targetRoot}`)) return;
+    if (!window.confirm(`Merge ${sources.length} source(s) into target?\n\nTarget: ${targetRoot}`)) return;
     setRunning(true);
-    const stats: Stats = { copied: 0, renamed: 0, skipped: 0, failed: 0 };
-    const lines = [`Task: ${task}`, `Target: ${targetRoot}`];
+    setProgress({ value: 0, total: 1, detail: "Planning..." });
     try {
-      const existing = new Set((await listMergeFiles(targetRoot)).map((path) => path.toLowerCase()));
-      const reserved = new Set<string>();
-      for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
-        const source = sources[sourceIndex];
-        const files = await listMergeFiles(source.root);
-        lines.push(``, `${source.name}: ${files.length} file(s)`);
-        for (const path of files) {
-          if (!isImagePath(path)) continue;
-          const destination = destinationFor(path, sourceIndex, task, existing, reserved, autoRename);
-          if (!destination) {
-            stats.skipped += 1;
-            continue;
-          }
-          try {
-            await copyOne(source.root, path, destination);
-            existing.add(destination.toLowerCase());
-            reserved.add(destination.toLowerCase());
-            stats.copied += 1;
-            if (destination !== path) stats.renamed += 1;
-            if (task === "detect") {
-              const sourceLabel = path.replace(/^images\//, "labels/").replace(/\.[^.]+$/, ".txt");
-              const targetLabel = labelForImage(destination);
-              if (files.includes(sourceLabel)) await copyOne(source.root, sourceLabel, targetLabel);
-              else await writeMergeText(targetRoot, targetLabel, "");
-            }
-          } catch (err) {
-            stats.failed += 1;
-            lines.push(`FAILED ${path}: ${errMessage(err)}`);
-          }
-        }
-      }
-      const summary = `Done. Copied ${stats.copied}, renamed ${stats.renamed}, skipped ${stats.skipped}, failed ${stats.failed}.`;
-      lines.push("", summary);
-      setStatus(summary);
-      setLog(lines.join("\n"));
+      const result = await mergeDatasets({
+        sources,
+        targetRoot,
+        task,
+        autoRename,
+        onProgress: setProgress,
+        onLog: setLog
+      });
+      setStatus(result.summary);
       showToast("Merge finished.");
     } catch (err) {
       const message = errMessage(err);
       setStatus(message);
-      setLog(`${lines.join("\n")}\n\n${message}`);
+      setLog((prev) => `${prev}\n\n${message}`);
       showError(err);
     } finally {
       setRunning(false);
     }
   }
 
+  async function runValToTrain() {
+    if (!targetRoot) {
+      showToast("Choose a target folder first.", { variant: "error" });
+      return;
+    }
+    if (!window.confirm(task === "classify" ? "Move classification val images back to train?" : "Move detection val back to train?")) return;
+    setRunning(true);
+    try {
+      const result = await moveMergeValBackToTrain(targetRoot, task);
+      setLog(result.message || "Val moved back to train.");
+      setStatus("Val → Train finished.");
+      showToast(result.message || "Done.", { variant: result.ok === false ? "warning" : "success" });
+    } catch (err) {
+      showError(err);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  function onDrop(event: React.DragEvent) {
+    event.preventDefault();
+    event.currentTarget.classList.remove("drop-hover");
+    const files = [...event.dataTransfer.files];
+    let added = 0;
+    for (const file of files) {
+      if (isZipFile(file)) {
+        void addZipFile(file).then(() => { added += 1; }).catch(showError);
+      }
+    }
+    if (!added) setLog("Drop ZIP files onto the dashed box, or use Add Folder.");
+  }
+
   return (
-    <main className="merge-native-page">
+    <main className="merge-workspace">
       <section className="panel">
-        <div className="panel-header"><span>Dataset Merge</span><span className="status">{status}</span></div>
+        <div className="panel-header">
+          <span>Sources</span>
+          <span className="status">{sources.length}</span>
+        </div>
         <div className="panel-body">
-          <div className="row"><button className="primary" type="button" onClick={() => chooseWorkspaceFolder().catch(showError)} disabled={running}>Open Workspace</button></div>
-          <div className="grid two">
-            <label>Task<select value={task} onChange={(event) => setTask(event.target.value as MergeTask)} disabled={running}><option value="detect">Detect</option><option value="classify">Classify</option></select></label>
-            <label><input type="checkbox" checked={autoRename} onChange={(event) => setAutoRename(event.target.checked)} disabled={running} /> Auto rename conflicts</label>
+          <div
+            className="merge-drop"
+            onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("drop-hover"); }}
+            onDragLeave={(e) => e.currentTarget.classList.remove("drop-hover")}
+            onDrop={onDrop}
+          >
+            Drop dataset folders or ZIP files here.
           </div>
-          <label>Target folder<div className="row"><input value={targetRoot} onChange={(event) => setTargetRoot(event.target.value)} /><button type="button" onClick={() => chooseTarget().catch(showError)} disabled={running}>Choose</button></div></label>
-          <div className="row"><button type="button" onClick={() => addSource().catch(showError)} disabled={running}>Add Source Folder</button><button type="button" onClick={() => setSources([])} disabled={running || !sources.length}>Clear Sources</button></div>
-          <div className="info-card"><strong>Sources</strong>{sources.length ? sources.map((source, index) => <p key={source.root}>{index + 1}. {source.root}</p>) : <p>No source folders added.</p>}</div>
-          <button className="primary" type="button" onClick={() => void runMerge()} disabled={running || !canRun}>Run Merge</button>
-          <div className="hint">Native merge currently supports backend-accessible folders. ZIP and drag-and-drop remain available in the legacy implementation.</div>
+          <div className="row" style={{ marginTop: 12 }}>
+            <button className="primary" type="button" onClick={() => chooseWorkspaceFolder().catch(showError)} disabled={running}>Open Workspace</button>
+            <button className="primary" type="button" onClick={() => void addSourceFolder()} disabled={running}>Add Folder</button>
+            <button type="button" onClick={() => zipInputRef.current?.click()} disabled={running}>Add ZIP</button>
+            <button type="button" onClick={() => setSources([])} disabled={running || !sources.length}>Clear</button>
+          </div>
+          <input ref={zipInputRef} type="file" accept=".zip,application/zip" multiple hidden onChange={(e) => {
+            const files = [...(e.target.files || [])];
+            for (const file of files) void addZipFile(file).catch(showError);
+            e.target.value = "";
+          }} />
+          <div className="merge-list">
+            {sources.length ? sources.map((source, index) => (
+              <div className="merge-source" key={`${source.kind}-${source.name}-${index}`}>
+                <span>{source.name}</span>
+                <button type="button" onClick={() => removeSource(index)} disabled={running}>Remove</button>
+              </div>
+            )) : <div className="empty">No source folders or ZIP files added.</div>}
+          </div>
         </div>
       </section>
-      <section className="panel"><div className="panel-header"><span>Log</span></div><div className="panel-body"><pre className="log">{log || "No merge run yet."}</pre></div></section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <span>Merge Output</span>
+          <span className="status">{targetRoot || status}</span>
+        </div>
+        <div className="panel-body">
+          <div className="segmented merge-task-segmented">
+            <label><input type="radio" name="mergeTask" value="detect" checked={task === "detect"} onChange={() => { setTask("detect"); void syncTarget(workspaceRoot, "detect", targetExplicit); }} disabled={running} />Detect</label>
+            <label><input type="radio" name="mergeTask" value="classify" checked={task === "classify"} onChange={() => { setTask("classify"); void syncTarget(workspaceRoot, "classify", targetExplicit); }} disabled={running} />Classify</label>
+          </div>
+          <label>
+            Target folder
+            <div className="row">
+              <input value={targetRoot} onChange={(e) => { setTargetRoot(e.target.value); setTargetExplicit(true); }} />
+              <button type="button" onClick={() => void chooseTarget()} disabled={running}>Target Folder</button>
+            </div>
+          </label>
+          <div className="row merge-actions-row">
+            <button className="primary" type="button" onClick={() => void runMerge()} disabled={running || !sources.length || !targetRoot}>Merge</button>
+            <label><input type="checkbox" checked={autoRename} onChange={(e) => setAutoRename(e.target.checked)} disabled={running} /> Auto rename conflicts</label>
+          </div>
+          <div className="hint">Detect output keeps CVAT-style structure: images/train, labels/train, train.txt, and d1_/d2_/d3_ prefixes.</div>
+          <div className="merge-val-train-card">
+            <div className="group-title">Val → Train</div>
+            <div className="row">
+              <button type="button" onClick={() => void runValToTrain()} disabled={running || !targetRoot}>Val → Train</button>
+            </div>
+            <div className="hint">Move val data back to train on the selected target folder.</div>
+          </div>
+          <div className="merge-log" style={{ marginTop: 12 }}>{log}</div>
+        </div>
+      </section>
+
+      {running ? (
+        <div className="export-progress-overlay merge-progress-overlay">
+          <div className="export-progress-card" role="dialog" aria-labelledby="mergeProgressTitle">
+            <h2 id="mergeProgressTitle">Merging</h2>
+            <progress value={progress.value} max={progress.total || 1} />
+            <div className="export-progress-count">{progress.value} / {progress.total}</div>
+            <div className="export-progress-detail">{progress.detail}</div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

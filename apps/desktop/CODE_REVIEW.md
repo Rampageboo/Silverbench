@@ -1,6 +1,6 @@
 # YoloWorkBench 桌面端（React）代码评审与重构指南
 
-> 适用范围：仅 `apps/desktop`（React + Tauri 外壳）。遗留 `web/` 旧版引擎不在本次重构范围，仅在与 React 交互处提及。
+> 适用范围：仅 `apps/desktop`（React + Tauri 外壳）。遗留 `legacy/web/` 旧版引擎不在本次重构范围，仅在与 React 交互处提及。
 > 本文面向后续执行重构的 agent。每个问题给出：**位置 / 为什么 / 怎么改 / 验收标准**。
 > 通用约束：不要新增重型依赖；保持 `tsconfig` 的 `strict`；每次改动后运行 `npm run build`（即 `tsc && vite build`）确保类型与构建通过。
 
@@ -12,7 +12,7 @@
 - 全局状态：`src/app/WorkspaceProvider.tsx`（React Context）。
 - 后端通信：`src/api.ts`（唯一网络层）。
 - 功能模块：`src/features/<feature>/`，典型为 `useXxx.ts`（逻辑）+ `*.tsx`（视图）+ `session.ts` / `core.ts`。
-- 已原生化：`image-pool`、`box-label`、`inbox`、`dataset-review`；其余工具仍用 `LegacyWorkbenchHost` 以 iframe 嵌入旧版。
+- 已原生化：所有工具页均为 React 原生实现；`legacy/web/` 仅作为 legacy 启动路径与静态资源保留。
 - 构建校验：`npm run build`。开发：`npm run tauri:dev`。
 
 ---
@@ -228,7 +228,7 @@
 
 ## 工程优化 EO-1～EO-8（2026-06-15 完成）
 
-> 均在 **`apps/desktop`（React/Tauri）** 内完成；未改 `web/` 遗留 HTML 引擎。
+> 均在 **`apps/desktop`（React/Tauri）** 内完成；未改 `legacy/web/` 遗留 HTML 引擎。
 
 | 项 | 状态 | 交付摘要 |
 |---|---|---|

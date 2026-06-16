@@ -13,10 +13,10 @@ export function PlaceholderPage({ tab }: PlaceholderPageProps) {
       <div className="placeholder-card">
         <h2>{tool.label}</h2>
         <p className="placeholder-sub">{tool.labelZh}</p>
-        <p>该功能仍通过下方嵌入的旧版页面提供完整能力，React 版正在逐步替换。</p>
+        <p>该功能的 React 版本尚未实现。</p>
         <ul>
-          <li>旧模块：`web/` 目录下对应 JS 文件</li>
-          <li>当前阶段：Phase 0 应用骨架已完成，此工具页尚未实现</li>
+          <li>旧版实现已收拢到 `legacy/web/`。</li>
+          <li>当前阶段：此工具页尚未实现。</li>
         </ul>
       </div>
     </section>

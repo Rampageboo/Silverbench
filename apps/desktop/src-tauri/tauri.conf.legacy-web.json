@@ -7,7 +7,7 @@
     "beforeDevCommand": "npm run backend:dev",
     "devUrl": "http://127.0.0.1:8765",
     "beforeBuildCommand": "",
-    "frontendDist": "../../../web"
+    "frontendDist": "../../../legacy/web"
   },
   "app": {
     "windows": [

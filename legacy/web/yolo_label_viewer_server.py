@@ -23,7 +23,7 @@ from backend.service import BackendService
 from backend.torch_runtime import torch_runtime_info
 
 
-WEB_DIR = ROOT / "web"
+WEB_DIR = ROOT / "legacy" / "web"
 APP_SETTINGS_DIR = ROOT
 SESSION_DIR = ROOT / "Sessions"
 SESSION_FILE = SESSION_DIR / "yolo_label_viewer_session.json"

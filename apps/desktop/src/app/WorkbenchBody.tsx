@@ -1,13 +1,11 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useBackend } from "../hooks/useBackend";
 import { useToast } from "../components/useToast";
 import { errMessage } from "../lib/errors";
 import { useWorkspace } from "./useWorkspace";
 import { ToolNav } from "../components/ToolNav";
-import { Topbar } from "../components/Topbar";
 import { SettingsModal } from "../components/SettingsModal";
 import { ImageWorkspaceTopbar } from "../components/ImageWorkspaceTopbar";
-import { LegacyWorkbenchHost } from "../components/LegacyWorkbenchHost";
 import { KeepAlivePanel, KeepAliveProvider } from "../components/KeepAlivePanel";
 import { FeatureErrorBoundary } from "../components/FeatureErrorBoundary";
 import { ImagePoolPage } from "../features/image-pool/ImagePoolPage";
@@ -19,18 +17,14 @@ import { TrainPrepPage } from "../features/train-prep/TrainPrepPage";
 import { AutoLabelPage } from "../features/auto-label/AutoLabelPage";
 import { CropPage } from "../features/crop/CropPage";
 import { MergePage } from "../features/merge/MergePage";
+import { MaskNoisePage } from "../features/mask-noise/MaskNoisePage";
 import { ImagePoolBadgeProvider } from "../features/image-pool/ImagePoolBadgeProvider";
 import { useImagePoolBadge } from "../features/image-pool/useImagePoolBadge";
 import {
   imageWorkspaceStatusFallback,
   type ImageWorkspaceTab
 } from "../features/image-pool/imageWorkspaceMode";
-import {
-  applyShellTabSelection,
-  mapLegacyTabToShell,
-  subscribeLegacyMessages
-} from "../lib/legacyBridge";
-import { tabUsesNativeReact, usesEmbeddedToolChrome, type ToolTab } from "../types/tools";
+import { type ToolTab } from "../types/tools";
 
 type WorkbenchBodyProps = { onNativeTabReady?: () => void };
 
@@ -44,25 +38,13 @@ export function WorkbenchBody({ onNativeTabReady }: WorkbenchBodyProps) {
 }
 
 function WorkbenchBodyContent({ onNativeTabReady }: WorkbenchBodyProps) {
-  const { workspaceRoot, setWorkspaceRootInput, activeTab, setActiveTab, imageWorkspaceTab, setImageWorkspaceTab, openWorkspacePath, chooseWorkspaceFolder } = useWorkspace();
-  const { imagePoolNewCount, refreshImagePoolBadge } = useImagePoolBadge();
-  const { connected, health, error } = useBackend();
+  const { workspaceRoot, activeTab, setActiveTab, imageWorkspaceTab, setImageWorkspaceTab } = useWorkspace();
+  const { imagePoolNewCount } = useImagePoolBadge();
   const { showToast } = useToast();
   const showError = useCallback((err: unknown) => showToast(errMessage(err), { variant: "error" }), [showToast]);
-  const [reloadKey, setReloadKey] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [imageWorkspaceStatus, setImageWorkspaceStatus] = useState("");
-  const lastWorkspaceRef = useRef(workspaceRoot);
-  const useEmbeddedChrome = usesEmbeddedToolChrome(activeTab);
-  const useNativeReact = tabUsesNativeReact(activeTab);
   const showImageWorkspaceTopbar = activeTab === "image-pool";
-
-  useEffect(() => {
-    const trimmed = workspaceRoot.trim();
-    if (!trimmed || trimmed === lastWorkspaceRef.current.trim()) return;
-    lastWorkspaceRef.current = workspaceRoot;
-    setReloadKey((value) => value + 1);
-  }, [workspaceRoot]);
 
   useEffect(() => {
     if (imageWorkspaceTab === "image-pool" && imageWorkspaceStatus) return;
@@ -74,35 +56,13 @@ function WorkbenchBodyContent({ onNativeTabReady }: WorkbenchBodyProps) {
     setActiveTab(tab);
   }
 
-  const shellSyncedRef = useRef(false);
-  useEffect(() => {
-    return subscribeLegacyMessages((message) => {
-      if (message.type === "ywb-embed-ready" && message.syncShellTab === true && !shellSyncedRef.current) {
-        shellSyncedRef.current = true;
-        const selection = mapLegacyTabToShell(String(message.tab || ""));
-        if (selection) applyShellTabSelection(selection, setActiveTab, setImageWorkspaceTab);
-        return;
-      }
-      if (message.type !== "ywb-embed-tab" || message.fromUser !== true) return;
-      const selection = mapLegacyTabToShell(String(message.tab || ""));
-      if (selection) applyShellTabSelection(selection, setActiveTab, setImageWorkspaceTab);
-    });
-  }, [setActiveTab, setImageWorkspaceTab]);
-
-  useEffect(() => {
-    if (!connected || !workspaceRoot.trim()) return;
-    if (tabUsesNativeReact(activeTab)) return;
-    void refreshImagePoolBadge();
-  }, [activeTab, connected, refreshImagePoolBadge, workspaceRoot]);
-
   const imageWorkspaceStatusText = useMemo(() => imageWorkspaceStatus || imageWorkspaceStatusFallback(imageWorkspaceTab, workspaceRoot), [imageWorkspaceStatus, imageWorkspaceTab, workspaceRoot]);
 
   return (
-    <div className="workbench workbench--legacy-shell">
+    <div className="workbench workbench--shell">
       <ToolNav activeTab={activeTab} imagePoolNewCount={imagePoolNewCount} onSelectTab={selectTab} onOpenSettings={() => setSettingsOpen(true)} />
-      <div className={`workbench-content${useEmbeddedChrome ? " workbench-content--embedded" : ""}${useNativeReact ? " workbench-content--native" : ""}${showImageWorkspaceTopbar ? " workbench-content--image-workspace" : ""}`}>
+      <div className={`workbench-content workbench-content--native${showImageWorkspaceTopbar ? " workbench-content--image-workspace" : ""}`}>
         {showImageWorkspaceTopbar ? <ImageWorkspaceTopbar tab={imageWorkspaceTab} statusText={imageWorkspaceStatusText} imagePoolNewCount={imagePoolNewCount} onTabChange={setImageWorkspaceTab} /> : null}
-        {!useEmbeddedChrome && !useNativeReact ? <Topbar connected={connected} backendName={health?.backend || "fastapi"} backendError={error} activeTab={activeTab} workspaceRoot={workspaceRoot} statusText={connected ? `Backend: ${health?.backend || "fastapi"}` : error || "Waiting for FastAPI..."} imagePoolPending={false} onWorkspaceRootChange={setWorkspaceRootInput} onLoadWorkspace={() => openWorkspacePath(workspaceRoot).catch(showError)} onChooseFolder={() => chooseWorkspaceFolder().catch(showError)} /> : null}
         <main className="workbench-page">
           <KeepAliveProvider>
             <KeepAlivePanel panelKey="image-pool" active={activeTab === "image-pool" && imageWorkspaceTab === "image-pool"}><FeatureErrorBoundary label="Image Pool"><ImagePoolPage onReady={onNativeTabReady} onStatusText={setImageWorkspaceStatus} /></FeatureErrorBoundary></KeepAlivePanel>
@@ -114,8 +74,8 @@ function WorkbenchBodyContent({ onNativeTabReady }: WorkbenchBodyProps) {
             <KeepAlivePanel panelKey="train" active={activeTab === "train"}><FeatureErrorBoundary label="Auto Label"><AutoLabelPage onReady={onNativeTabReady} /></FeatureErrorBoundary></KeepAlivePanel>
             <KeepAlivePanel panelKey="crop" active={activeTab === "crop"}><FeatureErrorBoundary label="Batch Crop"><CropPage onReady={onNativeTabReady} /></FeatureErrorBoundary></KeepAlivePanel>
             <KeepAlivePanel panelKey="merge" active={activeTab === "merge"}><FeatureErrorBoundary label="Dataset Merge"><MergePage onReady={onNativeTabReady} /></FeatureErrorBoundary></KeepAlivePanel>
+            <KeepAlivePanel panelKey="mask-noise" active={activeTab === "mask-noise"}><FeatureErrorBoundary label="Mask Cleanup"><MaskNoisePage onReady={onNativeTabReady} /></FeatureErrorBoundary></KeepAlivePanel>
           </KeepAliveProvider>
-          {useEmbeddedChrome && activeTab !== "image-pool" && !tabUsesNativeReact(activeTab) ? <LegacyWorkbenchHost activeTab={activeTab} workspaceRoot={workspaceRoot} reloadKey={reloadKey} /> : null}
         </main>
       </div>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />

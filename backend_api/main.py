@@ -23,7 +23,7 @@ from backend_api.dialogs import create_desktop_backend_service
 
 
 APP_DIR = Path(__file__).resolve().parent.parent
-WEB_DIR = APP_DIR / "web"
+WEB_DIR = APP_DIR / "legacy" / "web"
 SESSION_DIR = APP_DIR / "Sessions"
 SESSION_FILE = SESSION_DIR / "yolo_label_viewer_session.json"
 HEARTBEAT_METHOD = "__heartbeat"

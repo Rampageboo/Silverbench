@@ -105,8 +105,7 @@ if not exist "node_modules" (
 
 echo Starting YoloWorkBench desktop shell...
 echo React shell on http://127.0.0.1:5173
-echo Image Pool / Box Label use native React routes
-echo Other tools embed from http://127.0.0.1:8765
+echo All tools are native React — no iframe embeds
 echo.
 echo Tip: double-click YoloWorkBench.vbs to launch without a terminal window.
 echo      Run create-shortcut.vbs once to put a desktop shortcut on your desktop.

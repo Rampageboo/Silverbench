@@ -175,13 +175,13 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
   }
 
   return (
-    <main className="train-prep-native-page">
+    <main className="train-prep-workspace">
       <section className="panel">
         <div className="panel-header">
-          <span>Dataset Prep</span>
+          <span>Dataset Split</span>
           <span className="status">{status}</span>
         </div>
-        <div className="panel-body">
+        <div className="panel-body train-prep-stack">
           <div className="row">
             <button className="primary" type="button" onClick={() => chooseWorkspaceFolder().catch(showError)} disabled={pending}>
               Open Workspace
@@ -191,7 +191,7 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
             </button>
           </div>
 
-          <div className="grid two">
+          <div className="train-grid">
             <label>
               Task
               <select value={task} onChange={(event) => setTask(event.target.value as DatasetTask)} disabled={pending}>
@@ -199,8 +199,8 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
                 <option value="classify">Classification dataset</option>
               </select>
             </label>
-            <label>
-              Validation ratio
+            <label className="inline-input">
+              Val ratio
               <input
                 type="number"
                 min="0.05"
@@ -239,11 +239,11 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
 
       <section className="panel">
         <div className="panel-header">
-          <span>Dataset status</span>
+          <span>Dataset Status</span>
           <span className="status">{currentFiles.length} indexed file(s)</span>
         </div>
-        <div className="panel-body">
-          <div className="grid two">
+        <div className="panel-body train-prep-stack">
+          <div className="train-grid">
             <div className="info-card">
               <strong>Detect</strong>
               <p>train images: {detect.trainImages}</p>
@@ -259,7 +259,7 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
               <p>classes: {classify.classes}</p>
             </div>
           </div>
-          <pre className="log">{log || (loading ? "Loading dataset status..." : "No operation run yet.")}</pre>
+          <div className="merge-log">{log || (loading ? "Loading dataset status..." : "No operation run yet.")}</div>
         </div>
       </section>
     </main>

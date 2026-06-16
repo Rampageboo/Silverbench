@@ -24,7 +24,7 @@ from backend.yolo_workspace import read_app_settings
 ICON_ICO_PATH = ROOT / "assets" / "app-icon.ico"
 ICON_PNG_PATH = ROOT / "assets" / "app-icon.png"
 WINDOWS_APP_ID = "YoloWorkBench.Desktop.1"
-HTML_PATH = ROOT / "web" / "index.html"
+HTML_PATH = ROOT / "legacy" / "web" / "index.html"
 
 
 def _configure_windows_taskbar_icon() -> None:

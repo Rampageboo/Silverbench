@@ -33,8 +33,8 @@ export function AutoLabelPage({ onReady }: Props) {
   const [device, setDevice] = useState("0");
   const [confidencePrefix, setConfidencePrefix] = useState(true);
   const [job, setJob] = useState<PtJob | null>(null);
-  const [status, setStatus] = useState("Choose folders and a model.");
-  const [log, setLog] = useState("");
+  const [status, setStatus] = useState("No model selected");
+  const [log, setLog] = useState("Use a rough YOLO detect best.pt to create output/images, output/labels, and data.yaml.");
   const [pending, setPending] = useState(false);
 
   const showError = useCallback((err: unknown) => showToast(errMessage(err), { variant: "error" }), [showToast]);
@@ -95,15 +95,18 @@ export function AutoLabelPage({ onReady }: Props) {
     if (path) setModelPath(path);
   }
 
-  async function runJob() {
+  async function runJob(nextTask: AutoLabelTask) {
     if (!canRun) {
       showToast("Choose input, output, and model first.", { variant: "error" });
       return;
     }
-    if (!window.confirm(`Run ${task} auto label?\n\nInput: ${inputRoot}\nOutput: ${outputRoot}\nModel: ${modelPath}`)) return;
+    if (!window.confirm(`Run ${nextTask} auto label?\n\nInput: ${inputRoot}\nOutput: ${outputRoot}\nModel: ${modelPath}`)) return;
+    const nextImageSize = nextTask === "classify" ? 224 : 640;
+    setTask(nextTask);
+    setImageSize(nextImageSize);
     setPending(true);
     try {
-      const next = await startAutoLabelJob(task, inputRoot, outputRoot, modelPath, imageSize, confidence, device, confidencePrefix);
+      const next = await startAutoLabelJob(nextTask, inputRoot, outputRoot, modelPath, nextImageSize, confidence, device, confidencePrefix);
       setJob(next);
       setStatus(`${next.status || "running"}: ${next.done || 0}/${next.total || 0}`);
       setLog(JSON.stringify(next, null, 2));
@@ -129,26 +132,61 @@ export function AutoLabelPage({ onReady }: Props) {
   }
 
   return (
-    <main className="auto-label-native-page">
+    <main className="train-workspace">
       <section className="panel">
-        <div className="panel-header"><span>Auto Label</span><span className="status">{status}</span></div>
-        <div className="panel-body">
-          <div className="row"><button className="primary" type="button" onClick={() => chooseWorkspaceFolder().catch(showError)} disabled={pending || running}>Open Workspace</button></div>
-          <div className="grid two">
-            <label>Task<select value={task} onChange={(event) => { const next = event.target.value as AutoLabelTask; setTask(next); setOutputRoot(outputDefault(workspaceRoot, next)); setImageSize(next === "classify" ? 224 : 640); }} disabled={pending || running}><option value="detect">Detect</option><option value="classify">Classify</option></select></label>
-            <label>Device<input value={device} onChange={(event) => setDevice(event.target.value)} disabled={pending || running} /></label>
+        <div className="panel-header">
+          <span>Detect / Auto Label New Data</span>
+          <span className="status">{task === "detect" ? status : "Switch task below"}</span>
+        </div>
+        <div className="panel-body train-prep-stack">
+          <div className="row">
+            <button className="primary" type="button" onClick={() => chooseWorkspaceFolder().catch(showError)} disabled={pending || running}>Open Workspace</button>
           </div>
-          <label>Input folder<div className="row"><input value={inputRoot} onChange={(event) => setInputRoot(event.target.value)} /><button type="button" onClick={() => chooseInput().catch(showError)} disabled={pending || running}>Choose</button></div></label>
-          <label>Output folder<div className="row"><input value={outputRoot} onChange={(event) => setOutputRoot(event.target.value)} /><button type="button" onClick={() => chooseOutput().catch(showError)} disabled={pending || running}>Choose</button></div></label>
-          <label>Model<div className="row"><input value={modelPath} onChange={(event) => setModelPath(event.target.value)} /><button type="button" onClick={() => chooseModel().catch(showError)} disabled={pending || running}>Choose</button></div></label>
-          <div className="grid two">
+          <div className="train-grid">
+            <label>Model<input value={modelPath} onChange={(event) => setModelPath(event.target.value)} readOnly placeholder="detect best.pt" /></label>
+            <label>Source<input value={inputRoot} onChange={(event) => setInputRoot(event.target.value)} readOnly placeholder="detect_dataset folder" /></label>
+            <label>Output<input value={outputRoot} onChange={(event) => setOutputRoot(event.target.value)} readOnly placeholder="auto-labeled dataset folder" /></label>
             <label>Image size<input type="number" value={imageSize} onChange={(event) => setImageSize(Math.max(1, Number(event.target.value) || 1))} disabled={pending || running} /></label>
-            {task === "detect" ? <label>Confidence<input type="number" step="0.01" min="0" max="1" value={confidence} onChange={(event) => setConfidence(Math.max(0, Math.min(1, Number(event.target.value) || 0)))} disabled={pending || running} /></label> : <label><input type="checkbox" checked={confidencePrefix} onChange={(event) => setConfidencePrefix(event.target.checked)} disabled={pending || running} /> Confidence prefix</label>}
+            <label>Conf<input type="number" step="0.01" min="0" max="1" value={confidence} onChange={(event) => setConfidence(Math.max(0, Math.min(1, Number(event.target.value) || 0)))} disabled={pending || running} /></label>
+            <label>Device<input value={device} onChange={(event) => setDevice(event.target.value)} disabled={pending || running} placeholder="0 or cpu" /></label>
           </div>
-          <div className="row"><button className="primary" type="button" onClick={() => void runJob()} disabled={pending || running || !canRun}>Start</button><button type="button" onClick={() => void cancelJob()} disabled={!running}>Cancel</button></div>
+          <div className="row">
+            <button type="button" onClick={() => chooseModel().catch(showError)} disabled={pending || running}>Choose detect best.pt</button>
+            <button type="button" onClick={() => chooseInput().catch(showError)} disabled={pending || running}>Source Dataset</button>
+            <button type="button" onClick={() => chooseOutput().catch(showError)} disabled={pending || running}>Output Folder</button>
+            <button className="primary" type="button" onClick={() => void runJob("detect")} disabled={pending || running || !canRun}>Auto Label Folder</button>
+            <button className="danger" type="button" onClick={() => void cancelJob()} disabled={!running}>Stop</button>
+          </div>
+          {running && task === "detect" ? <progress value={job?.done || 0} max={job?.total || 1} /> : null}
+          <div className="merge-log">{task === "detect" ? log : "Use a rough YOLO detect best.pt to create output/images, output/labels, and data.yaml."}</div>
         </div>
       </section>
-      <section className="panel"><div className="panel-header"><span>Job</span></div><div className="panel-body"><pre className="log">{log || "No job running."}</pre></div></section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <span>Classify New Data</span>
+          <span className="status">{task === "classify" ? status : "Switch task below"}</span>
+        </div>
+        <div className="panel-body train-prep-stack">
+          <div className="train-grid">
+            <label>Model<input value={modelPath} onChange={(event) => setModelPath(event.target.value)} readOnly placeholder="best.pt" /></label>
+            <label>Source<input value={inputRoot} onChange={(event) => setInputRoot(event.target.value)} readOnly placeholder="clf_dataset folder" /></label>
+            <label>Output<input value={outputRoot} onChange={(event) => setOutputRoot(event.target.value)} readOnly placeholder="classified output folder" /></label>
+            <label>Image size<input type="number" value={imageSize} onChange={(event) => setImageSize(Math.max(1, Number(event.target.value) || 1))} disabled={pending || running} /></label>
+            <label>Device<input value={device} onChange={(event) => setDevice(event.target.value)} disabled={pending || running} placeholder="0 or cpu" /></label>
+            <label className="inline-check"><input type="checkbox" checked={confidencePrefix} onChange={(event) => setConfidencePrefix(event.target.checked)} disabled={pending || running} /> Confidence prefix</label>
+          </div>
+          <div className="row">
+            <button type="button" onClick={() => chooseModel().catch(showError)} disabled={pending || running}>Choose best.pt</button>
+            <button type="button" onClick={() => chooseInput().catch(showError)} disabled={pending || running}>Source Dataset</button>
+            <button type="button" onClick={() => chooseOutput().catch(showError)} disabled={pending || running}>Output Folder</button>
+            <button className="primary" type="button" onClick={() => void runJob("classify")} disabled={pending || running || !canRun}>Classify Folder</button>
+            <button className="danger" type="button" onClick={() => void cancelJob()} disabled={!running}>Stop</button>
+          </div>
+          {running && task === "classify" ? <progress value={job?.done || 0} max={job?.total || 1} /> : null}
+          <div className="merge-log">{task === "classify" ? log : "Use a rough YOLO classify best.pt to copy new images into output/class_name folders."}</div>
+        </div>
+      </section>
     </main>
   );
 }

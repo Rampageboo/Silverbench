@@ -73,8 +73,8 @@ export function VideoCapturePage({ onReady }: Props) {
   const [format, setFormat] = useState<ImageFormat>("jpg");
   const [previewTime, setPreviewTime] = useState(0);
   const [previewBase64, setPreviewBase64] = useState("");
-  const [status, setStatus] = useState("Open videos to start capture.");
-  const [log, setLog] = useState("");
+  const [status, setStatus] = useState("Open or drop a video.");
+  const [log, setLog] = useState("Ready.");
   const [job, setJob] = useState<CaptureJob | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -135,6 +135,27 @@ export function VideoCapturePage({ onReady }: Props) {
 
   function updateCurrentVideo(next: VideoItem) {
     setVideos((items) => items.map((item, index) => (index === currentIndex ? next : item)));
+  }
+
+  function selectVideo(index: number) {
+    const video = videos[index];
+    if (!video) return;
+    setCurrentIndex(index);
+    setPreviewTime(0);
+    setPrefix(fileStem(video.name));
+  }
+
+  function removeVideo(index: number) {
+    setVideos((items) => {
+      const next = items.filter((_, itemIndex) => itemIndex !== index);
+      setCurrentIndex((current) => {
+        if (next.length === 0) return -1;
+        if (current === index) return Math.min(index, next.length - 1);
+        if (current > index) return current - 1;
+        return current;
+      });
+      return next;
+    });
   }
 
   async function addVideos() {
@@ -247,61 +268,133 @@ export function VideoCapturePage({ onReady }: Props) {
     }
   }
 
+  const videoMeta = current
+    ? `${current.width}x${current.height} | ${formatClock(current.duration)}`
+    : "No video loaded";
+
+  const segmentSummary = current?.segments.length
+    ? current.segments.map((segment, index) => `seg${String(index + 1).padStart(2, "0")} ${formatClock(segment.start)}-${formatClock(segment.end)}`).join(" · ")
+    : "Segments: none";
+
   return (
-    <main className="video-capture-native-page">
+    <main className="video-workspace">
       <section className="panel">
-        <div className="panel-header"><span>Video Capture</span><span className="status">{status}</span></div>
-        <div className="panel-body">
-          <div className="row">
+        <div className="panel-header">
+          <span>Video</span>
+          <span className="status">{videoMeta}</span>
+        </div>
+        <div className="panel-body video-panel">
+          <div className="video-stage" id="videoDropZone">
+            {previewBase64 ? (
+              <img
+                id="backendFramePreview"
+                alt="Video frame preview"
+                src={`data:image/${format === "png" ? "png" : "jpeg"};base64,${previewBase64}`}
+              />
+            ) : (
+              <div className="empty">{pending ? "Loading preview..." : "No preview."}</div>
+            )}
+          </div>
+          <input
+            className="video-scrubber"
+            type="range"
+            min="0"
+            max={current?.duration || 0}
+            step="0.001"
+            value={previewTime}
+            onChange={(event) => setPreviewTime(Number(event.target.value))}
+            disabled={!current || pending}
+            aria-label="Video progress"
+          />
+          <div className="segment-box">
+            <div className="row">
+              <div className="group-title" style={{ margin: 0 }}>Screenshot Segments</div>
+              <button type="button" onClick={addSegment} disabled={!current || running}>Add Segment</button>
+              <button type="button" className="danger" onClick={() => current?.segments.length && removeSegment(current.segments.length - 1)} disabled={!current?.segments.length || running}>Delete Segment</button>
+              <button type="button" onClick={useFullVideo} disabled={!current || running}>Full Video</button>
+            </div>
+            <div className="segment-summary">{segmentSummary}</div>
+            {current?.segments.map((segment, index) => (
+              <div className="train-grid" key={index} style={{ marginTop: 8 }}>
+                <label>
+                  Start
+                  <input type="number" step="0.001" value={segment.start} onChange={(event) => updateSegment(index, { start: Number(event.target.value) })} disabled={running} />
+                </label>
+                <label>
+                  End
+                  <input type="number" step="0.001" value={segment.end} onChange={(event) => updateSegment(index, { end: Number(event.target.value) })} disabled={running} />
+                </label>
+                <label>
+                  Interval
+                  <input type="number" step="0.001" min="0.001" value={segment.interval} onChange={(event) => updateSegment(index, { interval: Number(event.target.value) })} disabled={running} />
+                </label>
+                <div className="row" style={{ alignItems: "end" }}>
+                  <span className="hint" style={{ margin: 0 }}>{frameCount([segment])} frames</span>
+                  <button type="button" className="danger" onClick={() => removeSegment(index)} disabled={running}>Remove</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <aside className="panel">
+        <div className="panel-header">
+          <span>Screenshot</span>
+          <span className="status">{videos.length} videos</span>
+        </div>
+        <div className="panel-body video-control-stack">
+          <div className="row workspace-toolbar">
             <button className="primary" type="button" onClick={() => chooseWorkspaceFolder().catch(showError)} disabled={running}>Open Workspace</button>
-            <button type="button" onClick={() => void addVideos()} disabled={running}>Open Videos</button>
-            <button type="button" onClick={() => setVideos([])} disabled={running || !videos.length}>Clear</button>
+            <button className="primary" type="button" onClick={() => void addVideos()} disabled={running}>Add Video</button>
+            <button type="button" onClick={() => void chooseOutput()} disabled={running}>Output Folder</button>
           </div>
-          <label>Output folder<div className="row"><input value={outputRoot} onChange={(event) => setOutputRoot(event.target.value)} /><button type="button" onClick={() => void chooseOutput()} disabled={running}>Choose</button></div></label>
-          <div className="grid two">
-            <label>Prefix<input value={prefix} onChange={(event) => setPrefix(event.target.value)} /></label>
-            <label>Format<select value={format} onChange={(event) => setFormat(event.target.value as ImageFormat)}><option value="jpg">jpg</option><option value="png">png</option></select></label>
+          {outputRoot ? <div className="video-time">{outputRoot}</div> : null}
+          <div className="video-list">
+            {videos.length ? videos.map((video, index) => (
+              <div className={`video-list-item${index === currentIndex ? " active" : ""}`} key={video.path}>
+                <button type="button" className="video-list-select" onClick={() => selectVideo(index)} disabled={running}>
+                  {video.name}
+                </button>
+                <button type="button" className="video-list-remove" onClick={() => removeVideo(index)} disabled={running} aria-label={`Remove ${video.name}`}>
+                  Remove
+                </button>
+              </div>
+            )) : <div className="empty">Drop a video file or folder.</div>}
           </div>
-          <div className="hint">Estimated frames: {currentFrames} current / {totalFrames} all. Each segment has its own interval.</div>
+          <div className="video-time">{formatClock(previewTime)} / {formatClock(current?.duration || 0)}</div>
+          <div className="video-time">Estimated frames: {currentFrames} current / {totalFrames} all</div>
+          <button className="primary" type="button" onClick={() => void captureCurrentFrame()} disabled={!current || running}>Capture Current Frame</button>
+          <div className="video-inline-grid">
+            <label>
+              Filename prefix
+              <input value={prefix} onChange={(event) => setPrefix(event.target.value)} disabled={running} placeholder="video name" />
+            </label>
+            <label>
+              Format
+              <select value={format} onChange={(event) => setFormat(event.target.value as ImageFormat)} disabled={running}>
+                <option value="jpg">JPG</option>
+                <option value="png">PNG</option>
+              </select>
+            </label>
+          </div>
+          <div className="hint">Export naming: video_seg01_000001_timestamp.jpg. Each video is numbered independently.</div>
+          <div className="row">
+            <button type="button" onClick={() => void exportVideos("current")} disabled={!current || running}>Capture Segments</button>
+            <button type="button" onClick={() => void exportVideos("all")} disabled={!videos.length || running}>Export All Videos</button>
+            <button type="button" onClick={() => void cancelJob()} disabled={!running}>Stop</button>
+          </div>
+          {running || job ? (
+            <div className="video-progress">
+              <progress value={job?.saved || 0} max={job?.total || totalFrames || 1} />
+              <div className="video-progress-count">{job?.saved || 0} / {job?.total || totalFrames}</div>
+              <div className="video-progress-detail">{status}</div>
+            </div>
+          ) : null}
+          <div className="hint">Add or drop a video, then capture screenshots. With a workspace open, output defaults to image_pool.</div>
+          <div className="merge-log">{log}</div>
         </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-header"><span>Videos</span><span className="status">{videos.length}</span></div>
-        <div className="panel-body">
-          {videos.length ? videos.map((video, index) => <div className="row" key={video.path}><button type="button" className={index === currentIndex ? "primary" : ""} onClick={() => { setCurrentIndex(index); setPreviewTime(0); setPrefix(fileStem(video.name)); }}>{video.name}</button><span>{video.width}x{video.height} | {formatClock(video.duration)} | {frameCount(video.segments)} frames</span></div>) : <div className="empty">No videos loaded.</div>}
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-header"><span>Preview</span><span className="status">{current ? current.name : "No video"}</span></div>
-        <div className="panel-body">
-          {previewBase64 ? <img alt="Video frame preview" src={`data:image/${format === "png" ? "png" : "jpeg"};base64,${previewBase64}`} style={{ maxWidth: "100%", maxHeight: 360, objectFit: "contain" }} /> : <div className="empty">No preview.</div>}
-          <label>Time: {formatClock(previewTime)}<input type="range" min="0" max={current?.duration || 0} step="0.001" value={previewTime} onChange={(event) => setPreviewTime(Number(event.target.value))} disabled={!current || pending} /></label>
-          <div className="row"><button type="button" onClick={() => setPreviewTime((value) => clamp(value - 5, 0, current?.duration || 0))} disabled={!current}>-5s</button><button type="button" onClick={() => setPreviewTime((value) => clamp(value + 5, 0, current?.duration || 0))} disabled={!current}>+5s</button><button type="button" onClick={() => void captureCurrentFrame()} disabled={!current || running}>Capture Current Frame</button></div>
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-header"><span>Segments</span><span className="status">{current?.segments.length || 0}</span></div>
-        <div className="panel-body">
-          <div className="row"><button type="button" onClick={addSegment} disabled={!current || running}>Add Segment at Preview Time</button><button type="button" onClick={useFullVideo} disabled={!current || running}>Use Full Video</button></div>
-          {current?.segments.map((segment, index) => <div className="grid two" key={index}>
-            <label>Start<input type="number" step="0.001" value={segment.start} onChange={(event) => updateSegment(index, { start: Number(event.target.value) })} disabled={running} /></label>
-            <label>End<input type="number" step="0.001" value={segment.end} onChange={(event) => updateSegment(index, { end: Number(event.target.value) })} disabled={running} /></label>
-            <label>Interval<input type="number" step="0.001" min="0.001" value={segment.interval} onChange={(event) => updateSegment(index, { interval: Number(event.target.value) })} disabled={running} /></label>
-            <div className="row"><span>{formatClock(segment.start)} - {formatClock(segment.end)} | {frameCount([segment])} frames</span><button type="button" className="danger" onClick={() => removeSegment(index)} disabled={running}>Remove</button></div>
-          </div>)}
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-header"><span>Export</span><span className="status">{job?.status || "idle"}</span></div>
-        <div className="panel-body">
-          <div className="row"><button className="primary" type="button" onClick={() => void exportVideos("current")} disabled={!current || running}>Export Current Video</button><button className="primary" type="button" onClick={() => void exportVideos("all")} disabled={!videos.length || running}>Export All Videos</button><button type="button" onClick={() => void cancelJob()} disabled={!running}>Cancel</button></div>
-          <pre className="log">{log || "No export job yet."}</pre>
-        </div>
-      </section>
+      </aside>
     </main>
   );
 }

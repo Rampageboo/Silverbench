@@ -33,7 +33,20 @@ export type BackendMethod =
   | "startBuildYoloLinks"
   | "getBuildJob"
   | "writeWorkspaceSession"
-  | "readWorkspaceSession";
+  | "readWorkspaceSession"
+  | "chooseDirectory"
+  | "chooseImageFile"
+  | "readImageFileBase64"
+  | "maskNoisePreview"
+  | "maskNoiseSaveOne"
+  | "maskNoiseExportFolder"
+  | "saveMaskNoiseTempImage"
+  | "duplicateImages"
+  | "deleteImages"
+  | "batchCropImages"
+  | "batchCropFiles"
+  | "openFolder"
+  | "moveValBackToTrain";
 
 export type ApiCallResponse<T = unknown> =
   | {
@@ -442,6 +455,7 @@ export type WorkspaceInfo = {
   name: string;
   detectDataset: string;
   clfDataset: string;
+  imagePool?: string;
   imageCount?: number;
   labelCount?: number;
   error?: string;

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useBackend } from "../hooks/useBackend";
-import { subscribeLegacyMessages } from "../lib/legacyBridge";
 import { BackendStatusBanner } from "../components/BackendStatusBanner";
 import { ToastProvider } from "../components/ToastProvider";
 import { ConfirmProvider } from "../components/ConfirmProvider";
@@ -91,20 +90,6 @@ export function App() {
       finishStartup("工具页已加载");
     }
 
-    const unsubscribe = subscribeLegacyMessages((message) => {
-      if (message.type === "ywb-embed-progress") {
-        const progress = Number(message.progress);
-        if (Number.isFinite(progress)) {
-          setStartupProgress((value) => Math.max(value, Math.min(96, progress)));
-        }
-        if (typeof message.stage === "string" && message.stage) setStartupStage(message.stage);
-        if (typeof message.detail === "string" && message.detail) setStartupDetail(message.detail);
-        return;
-      }
-      if (message.type !== "ywb-embed-ready") return;
-      finishStartup(typeof message.detail === "string" ? message.detail : "工具页已加载");
-    });
-
     const fallbackTimer = window.setTimeout(() => {
       finishStartup("加载超时，已进入工作台");
     }, 90000);
@@ -112,7 +97,6 @@ export function App() {
     window.addEventListener("ywb-native-tab-ready", onNativeTabReady as EventListener);
     return () => {
       window.clearTimeout(fallbackTimer);
-      unsubscribe();
       window.removeEventListener("ywb-native-tab-ready", onNativeTabReady as EventListener);
     };
   }, [startupActive]);

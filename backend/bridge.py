@@ -10,7 +10,7 @@ from .path_access import PathAccess
 from .service import BackendService
 
 APP_DIR = Path(__file__).resolve().parent.parent
-BROWSER_HTML = APP_DIR / "web" / "index.html"
+BROWSER_HTML = APP_DIR / "legacy" / "web" / "index.html"
 SESSION_DIR = APP_DIR / "Sessions"
 SESSION_FILE = SESSION_DIR / "yolo_label_viewer_session.json"
 

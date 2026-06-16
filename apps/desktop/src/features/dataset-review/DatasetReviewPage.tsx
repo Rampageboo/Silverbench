@@ -2,8 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useWorkspace } from "../../app/useWorkspace";
 import { useToast } from "../../components/useToast";
 import { errMessage } from "../../lib/errors";
-import type { LabelBox } from "../../api";
-import { DatasetReviewEditor } from "./DatasetReviewEditor";
 import { DatasetReviewGallery } from "./DatasetReviewGallery";
 import { DatasetReviewLightbox } from "./DatasetReviewLightbox";
 import { DatasetReviewPreview } from "./DatasetReviewPreview";
@@ -27,14 +25,8 @@ export function DatasetReviewPage({ onReady, onStatusText }: DatasetReviewPagePr
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [cropMenu, setCropMenu] = useState<{ x: number; y: number; classId: number } | null>(null);
   const [detectMenu, setDetectMenu] = useState<{ x: number; y: number } | null>(null);
-  const [editBoxes, setEditBoxes] = useState<LabelBox[]>([]);
 
-  const { setSelectedBoxIndex, currentBoxes, currentPair, navigate, currentIndex, pairs } = review;
-
-  useEffect(() => {
-    setEditBoxes(currentBoxes);
-    setSelectedBoxIndex(null);
-  }, [currentPair?.imagePath, currentBoxes, setSelectedBoxIndex]);
+  const { currentPair, navigate, currentIndex, pairs } = review;
 
   useEffect(() => {
     onStatusText?.(review.status || review.error);
@@ -69,16 +61,11 @@ export function DatasetReviewPage({ onReady, onStatusText }: DatasetReviewPagePr
       if (key === "n" && !event.ctrlKey && !event.metaKey) {
         event.preventDefault();
         review.nextIssue();
-        return;
-      }
-      if (key === "escape") {
-        event.preventDefault();
-        setSelectedBoxIndex(null);
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [currentIndex, navigate, review, setSelectedBoxIndex]);
+  }, [currentIndex, navigate, review]);
 
   useEffect(() => {
     if (!cropMenu && !detectMenu) return;
@@ -101,7 +88,11 @@ export function DatasetReviewPage({ onReady, onStatusText }: DatasetReviewPagePr
   const reviewedActive =
     review.selectedPairs.length > 0 &&
     review.selectedPairs.every((pair) => review.reviewedPaths.has(pair.imagePath));
-  const editablePreview = review.mode === "detect" && review.datasetTask === "detect";
+  const imageCountLabel = pairs.length
+    ? `${currentIndex + 1} / ${pairs.length}`
+    : "0 / 0";
+  const imageCountTotal =
+    review.allPairs.length !== pairs.length ? ` (${review.allPairs.length} total)` : "";
 
   return (
     <div className={`react-dataset-review-page${reviewMode ? " review" : ""}`}>
@@ -219,56 +210,25 @@ export function DatasetReviewPage({ onReady, onStatusText }: DatasetReviewPagePr
           }}
         />
 
-        {editablePreview ? (
-          <DatasetReviewEditor
-            datasetRoot={review.datasetRoot}
-            pair={currentPair}
-            boxes={editBoxes}
-            selectedBoxIndex={review.selectedBoxIndex}
-            onBoxesChange={setEditBoxes}
-            onSelectBox={review.setSelectedBoxIndex}
-            onPersist={review.persistBoxes}
-            onStatus={(text) => onStatusText?.(text)}
-          />
-        ) : (
-          <DatasetReviewPreview
-            datasetRoot={review.datasetRoot}
-            pair={currentPair}
-            boxes={review.currentBoxes}
-            onPrev={() => navigate(currentIndex - 1)}
-            onNext={() => navigate(currentIndex + 1)}
-            canPrev={currentIndex > 0}
-            canNext={currentIndex < pairs.length - 1}
-          />
-        )}
+        <DatasetReviewPreview
+          datasetRoot={review.datasetRoot}
+          pair={currentPair}
+          boxes={review.currentBoxes}
+          onPrev={() => navigate(currentIndex - 1)}
+          onNext={() => navigate(currentIndex + 1)}
+          canPrev={currentIndex > 0}
+          canNext={currentIndex < pairs.length - 1}
+        />
 
         {!reviewMode ? (
           <aside className="side-stack yolo-side-stack" id="yoloSideStack">
-            <section className="panel txt-info-panel" id="txtInfoPanel">
-              <div className="panel-header">
-                <span>TXT Info</span>
-                <span id="imageCount" className="status">
-                  {pairs.length ? `${currentIndex + 1} / ${pairs.length}` : "0 / 0"}
-                  {review.allPairs.length !== pairs.length ? ` (${review.allPairs.length} total)` : ""}
-                </span>
-              </div>
-              <div className="panel-body txt-info-body">
-                <div className="meta">
-                  <div id="fileMeta">{review.currentPair?.imagePath || "No image selected."}</div>
-                </div>
-                <textarea
-                  id="labelText"
-                  readOnly
-                  value={review.currentBoxes
-                    .map((box) => `${box.classId} ${box.x} ${box.y} ${box.w} ${box.h}`)
-                    .join("\n")}
-                />
-              </div>
-            </section>
-
             <section className="panel filter-panel">
               <div className="panel-header">
                 <span>Filter</span>
+                <span id="imageCount" className="status">
+                  {imageCountLabel}
+                  {imageCountTotal}
+                </span>
               </div>
               <div className="panel-body filter-panel-body">
                 <div className="yolo-filter-tools row" style={{ marginBottom: 8 }}>

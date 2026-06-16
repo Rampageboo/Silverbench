@@ -1,5 +1,4 @@
 import { useRef, useState } from "react";
-import { LEGACY_WORKBENCH_ORIGIN } from "../lib/legacyWorkbench";
 import { WORKBENCH_TOOLS, type ToolTab } from "../types/tools";
 
 const TOOL_NAV_ICONS: Record<string, string> = {
@@ -63,7 +62,7 @@ export function ToolNav({ activeTab, imagePoolNewCount = 0, onSelectTab, onOpenS
           <div className="brand" title="YoloWorkBench">
             <img
               className="brand-icon"
-              src={`${LEGACY_WORKBENCH_ORIGIN}/assets/app-icon.svg`}
+              src="/assets/app-icon.svg"
               width={22}
               height={22}
               alt=""
