@@ -184,6 +184,17 @@ def capture_video_screenshots(
     return {"video": str(path), "saved": len(saved), "files": saved, "errors": errors, "targetCount": len(targets)}
 
 
+def _segment_interval(segment: dict[str, Any], fallback_interval: float) -> float:
+    raw = segment.get("interval", fallback_interval)
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        value = fallback_interval
+    if value <= 0:
+        raise ValueError("Segment interval must be greater than 0.")
+    return value
+
+
 def capture_targets(
     segments: list[dict[str, Any]],
     interval: float,
@@ -194,6 +205,7 @@ def capture_targets(
     for segment_index, segment in enumerate(segments or [], start=1):
         start = max(0.0, float(segment.get("start", 0) or 0))
         end = max(start, float(segment.get("end", start) or start))
+        segment_interval = _segment_interval(segment, interval)
         timestamp = start
         while timestamp <= end + 0.001:
             seconds = min(timestamp, end)
@@ -202,7 +214,7 @@ def capture_targets(
                 frame_index = min(frame_index, max_frame_index)
                 seconds = frame_index / fps if fps else seconds
             targets.append((frame_index, seconds, segment_index))
-            timestamp += interval
+            timestamp += segment_interval
     return sorted(targets, key=lambda item: (item[0], item[2]))
 
 
