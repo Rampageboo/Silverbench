@@ -1,6 +1,8 @@
 import { readTextFile, writeTextFile, type LabelBox } from "../../api";
 import { chooseVideoFiles, getVideoFrameBase64, type VideoItem } from "./videoCaptureApi";
 
+export const DEFAULT_VIDEO_ANNOTATIONS_ROOT = "workspace/video_annotations";
+
 export type VideoSource = Pick<VideoItem, "path" | "name" | "duration" | "width" | "height"> & {
   ok?: boolean;
 };
@@ -63,12 +65,22 @@ function safeStem(name: string) {
   );
 }
 
+export function normalizeVideoAnnotationsRoot(value: unknown) {
+  const text = String(value || DEFAULT_VIDEO_ANNOTATIONS_ROOT).replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  const parts = text.split("/").filter(Boolean);
+  if (!parts.length || parts.some((part) => part === "." || part === "..")) {
+    throw new Error("Video annotation storage path must stay inside the workspace.");
+  }
+  return parts.join("/");
+}
+
 export function timestampKey(seconds: number) {
   return String(Math.max(0, Math.round((Number(seconds) || 0) * 1000)));
 }
 
-export function videoManifestRelativePath(video: VideoSource) {
-  return `workspace/video_annotations/${safeStem(video.name)}-${hashPath(video.path)}.json`;
+export function videoManifestRelativePath(video: VideoSource, annotationsRoot = DEFAULT_VIDEO_ANNOTATIONS_ROOT) {
+  const root = normalizeVideoAnnotationsRoot(annotationsRoot);
+  return `${root}/${safeStem(video.name)}-${hashPath(video.path)}.json`;
 }
 
 export function normalizeVideoSource(item: VideoItem): VideoSource {
@@ -93,7 +105,7 @@ export function createVideoAnnotationManifest(video: VideoSource): VideoAnnotati
   };
 }
 
-function normalizeManifest(value: unknown, video: VideoSource): VideoAnnotationManifest {
+export function normalizeVideoAnnotationManifest(value: unknown, video: VideoSource): VideoAnnotationManifest {
   if (!value || typeof value !== "object") throw new Error("Video annotation manifest is not an object.");
   const data = value as Partial<VideoAnnotationManifest>;
   if (data.version !== 1) throw new Error(`Unsupported video annotation manifest version: ${String(data.version)}`);
@@ -131,8 +143,12 @@ export function getAnnotationFrameBase64(videoPath: string, seconds: number) {
   return getVideoFrameBase64(videoPath, seconds, "jpg");
 }
 
-export async function loadVideoAnnotationManifest(workspaceRoot: string, video: VideoSource) {
-  const relativePath = videoManifestRelativePath(video);
+export async function loadVideoAnnotationManifest(
+  workspaceRoot: string,
+  video: VideoSource,
+  annotationsRoot = DEFAULT_VIDEO_ANNOTATIONS_ROOT
+) {
+  const relativePath = videoManifestRelativePath(video, annotationsRoot);
   let text: string;
   try {
     text = await readTextFile(workspaceRoot, relativePath);
@@ -141,15 +157,19 @@ export async function loadVideoAnnotationManifest(workspaceRoot: string, video: 
   }
   if (!text.trim()) return createVideoAnnotationManifest(video);
   try {
-    return normalizeManifest(JSON.parse(text), video);
+    return normalizeVideoAnnotationManifest(JSON.parse(text), video);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Cannot read ${relativePath}: ${message}`);
   }
 }
 
-export async function saveVideoAnnotationManifest(workspaceRoot: string, manifest: VideoAnnotationManifest) {
+export async function saveVideoAnnotationManifest(
+  workspaceRoot: string,
+  manifest: VideoAnnotationManifest,
+  annotationsRoot = DEFAULT_VIDEO_ANNOTATIONS_ROOT
+) {
   const next = { ...manifest, updatedAt: new Date().toISOString() };
-  await writeTextFile(workspaceRoot, videoManifestRelativePath(next.video), `${JSON.stringify(next, null, 2)}\n`);
+  await writeTextFile(workspaceRoot, videoManifestRelativePath(next.video, annotationsRoot), `${JSON.stringify(next, null, 2)}\n`);
   return next;
 }
