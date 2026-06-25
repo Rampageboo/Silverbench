@@ -53,6 +53,10 @@ function nonEmptyString(value: unknown, fallback: string) {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+function hasText(value: unknown): value is string {
+  return typeof value === "string" && Boolean(value.trim());
+}
+
 function workspaceNameFromPath(workspaceRoot: string) {
   const parts = workspaceRoot.replace(/[\\/]+$/, "").split(/[\\/]/);
   return parts.at(-1) || "YoloWorkBench Workspace";
@@ -102,9 +106,9 @@ function manifestNeedsMigration(source: Record<string, unknown>) {
   return (
     source.version !== WORKSPACE_MANIFEST_VERSION ||
     source.type !== "yolo-workbench" ||
-    typeof source.createdAt !== "string" ||
-    typeof source.updatedAt !== "string" ||
-    requiredPathKeys.some((key) => typeof paths[key] !== "string" || !String(paths[key]).trim()) ||
+    !hasText(source.createdAt) ||
+    !hasText(source.updatedAt) ||
+    requiredPathKeys.some((key) => !hasText(paths[key])) ||
     videoLabel.enabled !== true ||
     videoLabel.primary !== true ||
     videoLabel.persistence !== "timestamp-manifest" ||
@@ -125,7 +129,11 @@ export function normalizeWorkspaceManifest(
   const sourceTools = isRecord(source.tools) ? source.tools : {};
   const sourceVideoLabel = isRecord(sourceTools.videoLabel) ? sourceTools.videoLabel : {};
   const sourceImageLabel = isRecord(sourceTools.imageLabel) ? sourceTools.imageLabel : {};
-  const paths = { ...defaultPaths(), ...sourcePaths } as WorkspaceManifestPaths;
+  const pathDefaults = defaultPaths();
+  const paths = { ...sourcePaths } as WorkspaceManifestPaths;
+  for (const [key, fallback] of Object.entries(pathDefaults)) {
+    paths[key] = nonEmptyString(sourcePaths[key], String(fallback));
+  }
   const toolDefaults = defaultTools();
   const tools = {
     ...toolDefaults,
