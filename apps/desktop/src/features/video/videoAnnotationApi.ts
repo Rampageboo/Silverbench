@@ -66,9 +66,13 @@ function safeStem(name: string) {
 }
 
 export function normalizeVideoAnnotationsRoot(value: unknown) {
-  const text = String(value || DEFAULT_VIDEO_ANNOTATIONS_ROOT).replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  const raw = String(value || DEFAULT_VIDEO_ANNOTATIONS_ROOT).trim().replace(/\\/g, "/");
+  if (raw.startsWith("/") || raw.startsWith("//") || /^[a-zA-Z]:\//.test(raw)) {
+    throw new Error("Video annotation storage path must be workspace-relative.");
+  }
+  const text = raw.replace(/^\/+|\/+$/g, "");
   const parts = text.split("/").filter(Boolean);
-  if (!parts.length || parts.some((part) => part === "." || part === "..")) {
+  if (!parts.length || parts.some((part) => part === "." || part === ".." || part.includes(":"))) {
     throw new Error("Video annotation storage path must stay inside the workspace.");
   }
   return parts.join("/");
