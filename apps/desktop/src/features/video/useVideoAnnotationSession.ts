@@ -62,9 +62,13 @@ export function useVideoAnnotationSession({
   const manifestRef = useRef<VideoAnnotationManifest | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const saveRevisionRef = useRef(0);
+  const currentRef = useRef<VideoSource | null>(null);
+  const timeRef = useRef(0);
   const debouncedPreviewTime = useDebouncedValue(time, 120);
 
   const current = currentIndex >= 0 ? videos[currentIndex] || null : null;
+  currentRef.current = current;
+  timeRef.current = time;
   const maxTime = current?.duration ? Math.max(0, current.duration - 0.001) : 0;
   const currentKey = timestampKey(time);
   const currentFrame = frameAnnotationAt(manifest, time);
@@ -76,15 +80,17 @@ export function useVideoAnnotationSession({
       const message = errMessage(reason);
       setStatus(message);
       showToast(message, { variant: "error" });
+      const activeVideo = currentRef.current;
+      const activeTime = timeRef.current;
       recordWorkspaceEventBestEffort(workspaceRoot, {
         tool: "video-label",
         action: `${action}.failed`,
         level: "error",
         message,
-        details: current ? { videoPath: current.path, time } : { time }
+        details: activeVideo ? { videoPath: activeVideo.path, time: activeTime } : { time: activeTime }
       });
     },
-    [current, showToast, time, workspaceRoot]
+    [showToast, workspaceRoot]
   );
 
   useEffect(() => {
@@ -127,7 +133,10 @@ export function useVideoAnnotationSession({
     setSelectedIndex(null);
     setSaveState("idle");
     setTime(0);
-    if (!workspaceRoot.trim() || !current) return;
+    if (!workspaceRoot.trim() || !current) {
+      setManifestLoading(false);
+      return;
+    }
     setManifestLoading(true);
     loadVideoAnnotationManifest(workspaceRoot, current, annotationsRoot)
       .then((next) => {
@@ -162,6 +171,7 @@ export function useVideoAnnotationSession({
   useEffect(() => {
     if (!active || !current) {
       setPreviewBase64("");
+      setPreviewLoading(false);
       return;
     }
     const requestId = ++previewRequestRef.current;
