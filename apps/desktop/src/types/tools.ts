@@ -16,9 +16,9 @@ export type WorkbenchTool = {
 };
 
 export const WORKBENCH_TOOLS: WorkbenchTool[] = [
-  { tab: "image-pool", label: "Image Pool", labelZh: "Image Pool", keywords: "pool image image_pool" },
-  { tab: "pool-label", label: "Box Label", labelZh: "Box Label", keywords: "label box detection annotation track" },
-  { tab: "video", label: "Video Capture", labelZh: "Video Capture", keywords: "video capture screenshot" },
+  { tab: "video", label: "Video Label", labelZh: "视频标注", keywords: "video label annotation timestamp frame" },
+  { tab: "pool-label", label: "Image Box Label", labelZh: "图片标注", keywords: "image label box detection annotation track" },
+  { tab: "image-pool", label: "Image Pool", labelZh: "图片库", keywords: "pool image image_pool" },
   { tab: "train-prep", label: "Dataset Prep", labelZh: "Dataset Prep", keywords: "prep split yaml train val" },
   { tab: "train", label: "Auto Label", labelZh: "Auto Label", keywords: "auto train pt model" },
   { tab: "crop", label: "Batch Crop", labelZh: "Batch Crop", keywords: "crop batch" },
