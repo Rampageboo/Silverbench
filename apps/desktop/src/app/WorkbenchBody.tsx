@@ -9,7 +9,7 @@ import { ImagePoolPage } from "../features/image-pool/ImagePoolPage";
 import { ImageAssignPage } from "../features/inbox/ImageAssignPage";
 import { DatasetReviewPage } from "../features/dataset-review/DatasetReviewPage";
 import { BoxLabelPage } from "../features/box-label/BoxLabelPage";
-import { VideoCapturePage } from "../features/video/VideoCapturePage";
+import { VideoLabelPage } from "../features/video/VideoLabelPage";
 import { TrainPrepPage } from "../features/train-prep/TrainPrepPage";
 import { AutoLabelPage } from "../features/auto-label/AutoLabelPage";
 import { CropPage } from "../features/crop/CropPage";
@@ -62,8 +62,8 @@ function WorkbenchBodyContent({ onNativeTabReady }: WorkbenchBodyProps) {
             <KeepAlivePanel panelKey="image-pool" active={activeTab === "image-pool" && imageWorkspaceTab === "image-pool"}><FeatureErrorBoundary label="Image Pool"><ImagePoolPage onReady={onNativeTabReady} onStatusText={setImageWorkspaceStatus} /></FeatureErrorBoundary></KeepAlivePanel>
             <KeepAlivePanel panelKey="inbox" active={activeTab === "image-pool" && imageWorkspaceTab === "inbox"}><FeatureErrorBoundary label="Inbox"><ImageAssignPage onReady={onNativeTabReady} onStatusText={setImageWorkspaceStatus} /></FeatureErrorBoundary></KeepAlivePanel>
             <KeepAlivePanel panelKey="yolo" active={activeTab === "image-pool" && imageWorkspaceTab === "yolo"}><FeatureErrorBoundary label="Dataset Review"><DatasetReviewPage onReady={onNativeTabReady} onStatusText={setImageWorkspaceStatus} /></FeatureErrorBoundary></KeepAlivePanel>
-            <KeepAlivePanel panelKey="pool-label" active={activeTab === "pool-label"}><FeatureErrorBoundary label="Box Label"><BoxLabelPage onReady={onNativeTabReady} /></FeatureErrorBoundary></KeepAlivePanel>
-            <KeepAlivePanel panelKey="video" active={activeTab === "video"}><FeatureErrorBoundary label="Video Capture"><VideoCapturePage active={activeTab === "video"} onReady={onNativeTabReady} /></FeatureErrorBoundary></KeepAlivePanel>
+            <KeepAlivePanel panelKey="pool-label" active={activeTab === "pool-label"}><FeatureErrorBoundary label="Image Box Label"><BoxLabelPage onReady={onNativeTabReady} /></FeatureErrorBoundary></KeepAlivePanel>
+            <KeepAlivePanel panelKey="video" active={activeTab === "video"}><FeatureErrorBoundary label="Video Label"><VideoLabelPage active={activeTab === "video"} onReady={onNativeTabReady} /></FeatureErrorBoundary></KeepAlivePanel>
             <KeepAlivePanel panelKey="train-prep" active={activeTab === "train-prep"}><FeatureErrorBoundary label="Dataset Prep"><TrainPrepPage onReady={onNativeTabReady} /></FeatureErrorBoundary></KeepAlivePanel>
             <KeepAlivePanel panelKey="train" active={activeTab === "train"}><FeatureErrorBoundary label="Auto Label"><AutoLabelPage onReady={onNativeTabReady} /></FeatureErrorBoundary></KeepAlivePanel>
             <KeepAlivePanel panelKey="crop" active={activeTab === "crop"}><FeatureErrorBoundary label="Batch Crop"><CropPage onReady={onNativeTabReady} /></FeatureErrorBoundary></KeepAlivePanel>
