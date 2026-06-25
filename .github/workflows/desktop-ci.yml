@@ -1,0 +1,27 @@
+name: Desktop CI
+
+on:
+  push:
+    branches:
+      - feature/direct-video-annotation
+  pull_request:
+    paths:
+      - "apps/desktop/**"
+      - ".github/workflows/desktop-ci.yml"
+
+jobs:
+  desktop:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
