@@ -22,9 +22,11 @@ const WorkspaceArchitectureContext = createContext<WorkspaceArchitectureContextV
 
 export function WorkspaceArchitectureProvider({
   workspaceRoot,
+  onMigrated,
   children
 }: {
   workspaceRoot: string;
+  onMigrated?: (manifest: WorkspaceManifest) => void;
   children: ReactNode;
 }) {
   const [manifest, setManifest] = useState<WorkspaceManifest | null>(null);
@@ -32,6 +34,8 @@ export function WorkspaceArchitectureProvider({
   const [error, setError] = useState("");
   const [migrated, setMigrated] = useState(false);
   const requestRef = useRef(0);
+  const onMigratedRef = useRef(onMigrated);
+  onMigratedRef.current = onMigrated;
 
   const refresh = useCallback(async () => {
     const root = workspaceRoot.trim();
@@ -52,6 +56,7 @@ export function WorkspaceArchitectureProvider({
       setMigrated(result.migrated);
       setPhase("ready");
       if (result.migrated) {
+        onMigratedRef.current?.(result.manifest);
         recordWorkspaceEventBestEffort(root, {
           tool: "workspace",
           action: "manifest.migrated",
