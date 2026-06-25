@@ -6,6 +6,7 @@ import {
   writeStartupOverlayMode,
   type StartupOverlayMode
 } from "../app/startupOverlayMode";
+import { useWorkspaceArchitecture } from "../workspace/WorkspaceArchitectureProvider";
 
 type SettingsModalProps = {
   open: boolean;
@@ -19,7 +20,7 @@ type StartupOption = {
 };
 
 const STARTUP_OPTIONS: StartupOption[] = [
-  { value: "overview", title: "功能概览", desc: "展示 9 项核心功能与简介" },
+  { value: "overview", title: "功能概览", desc: "展示核心功能与简介" },
   { value: "minimal", title: "简洁式", desc: "仅图标、标题与加载进度" }
 ];
 
@@ -27,6 +28,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [mode, setMode] = useState<StartupOverlayMode>(readStartupOverlayMode);
   const [render, setRender] = useState(open);
   const [visible, setVisible] = useState(false);
+  const { workspaceRoot, manifest, phase, error, migrated, refresh } = useWorkspaceArchitecture();
 
   useEffect(() => {
     if (open) {
@@ -116,6 +118,36 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 </label>
               ))}
             </div>
+          </div>
+
+          <div className="app-settings-section">
+            <div className="row">
+              <h3 style={{ margin: 0 }}>Workspace Architecture</h3>
+              <button type="button" onClick={() => void refresh()} disabled={!workspaceRoot.trim() || phase === "loading"}>
+                Refresh
+              </button>
+            </div>
+            {!workspaceRoot.trim() ? (
+              <p className="app-settings-hint">No workspace is open.</p>
+            ) : manifest ? (
+              <div className="app-settings-options">
+                <div className="app-settings-option selected">
+                  <span className="app-settings-option-copy">
+                    <strong>{manifest.name} · manifest v{manifest.version}</strong>
+                    <span>Video Label is primary. Extracted screenshots are disabled.</span>
+                    <span>Image Box Label and Image Pool remain enabled as secondary workflows.</span>
+                    <span>Video metadata: {String(manifest.paths.video_annotations)}</span>
+                    <span>Structured logs: {String(manifest.paths.logs)}</span>
+                    <span>Disposable cache: {String(manifest.paths.cache)}</span>
+                    {migrated ? <span>Manifest upgraded during this session.</span> : null}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <p className="app-settings-hint">
+                {phase === "loading" ? "Loading workspace manifest…" : error || "Workspace manifest unavailable."}
+              </p>
+            )}
           </div>
         </div>
       </section>
