@@ -15,9 +15,12 @@ import { useWorkspace } from "./useWorkspace";
 type WorkbenchBodyProps = { onNativeTabReady?: () => void };
 
 export function WorkbenchBody({ onNativeTabReady }: WorkbenchBodyProps) {
-  const { workspaceRoot } = useWorkspace();
+  const { workspaceRoot, setActiveTab } = useWorkspace();
   return (
-    <WorkspaceArchitectureProvider workspaceRoot={workspaceRoot}>
+    <WorkspaceArchitectureProvider
+      workspaceRoot={workspaceRoot}
+      onMigrated={() => setActiveTab("video")}
+    >
       <ImagePoolBadgeProvider workspaceRoot={workspaceRoot}>
         <WorkbenchBodyContent onNativeTabReady={onNativeTabReady} />
       </ImagePoolBadgeProvider>
