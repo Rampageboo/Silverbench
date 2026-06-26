@@ -10,6 +10,7 @@ const projectRoot = resolve(desktopDir, "..", "..");
 const logsDir = join(projectRoot, "logs");
 const backendLogPath = join(logsDir, "backend.log");
 const healthUrl = backend.healthUrl;
+const multimodalStatusUrl = `${backend.origin}/api/multimodal/status`;
 // Keep in sync with API_SCHEMA_VERSION in backend_api/main.py.
 const REQUIRED_API_SCHEMA_VERSION = 3;
 
@@ -72,7 +73,7 @@ async function resolvePython() {
 async function ensurePythonDeps(python) {
   const markers = [
     [...python.prefixArgs, "-c", "import fastapi, uvicorn"],
-    [...python.prefixArgs, "-c", "import PIL, numpy, cv2"]
+    [...python.prefixArgs, "-c", "import PIL, numpy, cv2; assert hasattr(cv2, 'aruco')"]
   ];
   for (const args of markers) {
     try {
@@ -89,9 +90,9 @@ async function ensurePythonDeps(python) {
   }
 }
 
-async function readHealth() {
+async function readJson(url) {
   try {
-    const response = await fetch(healthUrl, { cache: "no-store" });
+    const response = await fetch(url, { cache: "no-store" });
     if (!response.ok) return null;
     return await response.json();
   } catch {
@@ -99,13 +100,19 @@ async function readHealth() {
   }
 }
 
+async function readHealth() {
+  return readJson(healthUrl);
+}
+
 async function isCurrentBackend() {
-  const data = await readHealth();
+  const [data, multimodal] = await Promise.all([readHealth(), readJson(multimodalStatusUrl)]);
   return Boolean(
     data?.ok &&
       data?.backend === "fastapi" &&
       data?.ui === "web" &&
-      data?.apiSchemaVersion === REQUIRED_API_SCHEMA_VERSION
+      data?.apiSchemaVersion === REQUIRED_API_SCHEMA_VERSION &&
+      multimodal?.ok &&
+      multimodal?.calibration === "apriltag-opencv"
   );
 }
 
@@ -163,7 +170,7 @@ async function main() {
     ...python.prefixArgs,
     "-m",
     "uvicorn",
-    "backend_api.main:app",
+    "backend_api.multimodal_main:app",
     "--host",
     backend.host,
     "--port",
