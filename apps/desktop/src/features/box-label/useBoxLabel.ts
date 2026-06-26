@@ -90,6 +90,7 @@ export function useBoxLabel({
       if (includeClasses.size && ![...includeClasses].some((id) => classes?.has(id))) return false;
       if ([...excludeClasses].some((id) => classes?.has(id))) return false;
       const row = metadata.get(entry.basename);
+      if (isDetectJunk(row)) return false;
       if (imageViewMode === "hideReviewed" && isReviewedFile(row)) return false;
       if (imageViewMode === "flagged" && !isFlaggedFile(row)) return false;
       return true;
@@ -155,8 +156,12 @@ export function useBoxLabel({
       readWorkspaceSessionLite(root)
         .then((session) => {
           const parsed = parsePoolLabelSession(session);
-          setInitialShortcutSlots(normalizeShortcutSlotsFromSession(parsed));
-          setInitialFixedBoxSlots(normalizeFixedBoxSlotsFromSession(parsed));
+          const shortcuts = normalizeShortcutSlotsFromSession(parsed);
+          const fixedSlots = normalizeFixedBoxSlotsFromSession(parsed);
+          setInitialShortcutSlots(shortcuts);
+          setInitialFixedBoxSlots(fixedSlots);
+          if (shortcuts) shortcutSlotsRef.current = shortcuts;
+          if (fixedSlots) fixedBoxSlotsRef.current = fixedSlots;
           const pointerTool = !!parsed.poolLabelPointerToolEnabled;
           const autoFit = pointerTool ? false : !!parsed.poolLabelAutoFitEnabled;
           setInitialPointerToolEnabled(pointerTool);
@@ -193,8 +198,12 @@ export function useBoxLabel({
       setSelectionAnchorIndex(null);
 
       const parsed = parsePoolLabelSession(session);
-      setInitialShortcutSlots(normalizeShortcutSlotsFromSession(parsed));
-      setInitialFixedBoxSlots(normalizeFixedBoxSlotsFromSession(parsed));
+      const shortcuts = normalizeShortcutSlotsFromSession(parsed);
+      const fixedSlots = normalizeFixedBoxSlotsFromSession(parsed);
+      setInitialShortcutSlots(shortcuts);
+      setInitialFixedBoxSlots(fixedSlots);
+      if (shortcuts) shortcutSlotsRef.current = shortcuts;
+      if (fixedSlots) fixedBoxSlotsRef.current = fixedSlots;
       const pointerTool = !!parsed.poolLabelPointerToolEnabled;
       const autoFit = pointerTool ? false : !!parsed.poolLabelAutoFitEnabled;
       setInitialPointerToolEnabled(pointerTool);
@@ -435,12 +444,36 @@ export function useBoxLabel({
       setStatusText("Selected images are already Detect junk.");
       return;
     }
+    const targetSet = new Set(targets);
+    const previousEntries = allEntries;
     pushJunkUndo("pool-label", root, targets, metadata);
     setCanUndoJunk(hasJunkUndo("pool-label", root));
-    await markJunkFilenames(root, targets, "detect");
-    await reloadMetadata();
+    setShiftSelectedBasenames(new Set());
+    setSelectionAnchorIndex(null);
+    setMetadata((current) => {
+      const next = new Map(current);
+      for (const filename of targets) {
+        const row = next.get(filename);
+        next.set(filename, { ...(row || { filename }), filename, detect_junk: true, detect_enabled: false });
+      }
+      return next;
+    });
+    setAllEntries((current) => current.filter((entry) => !targetSet.has(entry.basename)));
+    setCurrentIndex((index) => {
+      const remaining = entries.filter((entry) => !targetSet.has(entry.basename));
+      if (!remaining.length) return 0;
+      return Math.min(index, remaining.length - 1);
+    });
     setStatusText(`Marked ${targets.length} image(s) as Detect junk.`);
-  }, [currentEntry, metadata, reloadMetadata, root, selectedBasenames]);
+    try {
+      await markJunkFilenames(root, targets, "detect");
+      await reloadMetadata();
+    } catch (err) {
+      setAllEntries(previousEntries);
+      await reloadMetadata().catch(() => {});
+      setStatusText(errMessage(err));
+    }
+  }, [allEntries, currentEntry, entries, metadata, reloadMetadata, root, selectedBasenames]);
 
   const undoJunk = useCallback(async () => {
     if (!root) return;
@@ -452,8 +485,9 @@ export function useBoxLabel({
     }
     await restoreJunkUndoWithLinks(root, snapshots);
     await reloadMetadata();
+    await load({ background: true });
     setStatusText("已撤回上一步废片操作。");
-  }, [reloadMetadata, root]);
+  }, [load, reloadMetadata, root]);
 
   const junkButtonLabel = useMemo(() => {
     const names =
