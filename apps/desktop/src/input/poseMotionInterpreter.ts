@@ -138,9 +138,9 @@ export class PoseMotionInterpreter {
       case "Right":
         return [createCommandEnvelope("gesture", { type: "video.seekBy", seconds: this.options.seekSeconds }, metadata)];
       case "Up":
-        return [createCommandEnvelope("gesture", { type: "video.gotoReviewed", direction: -1 }, metadata)];
+        return [createCommandEnvelope("gesture", { type: "video.copyPreviousBoxes" }, metadata)];
       case "Down":
-        return [createCommandEnvelope("gesture", { type: "video.gotoReviewed", direction: 1 }, metadata)];
+        return [createCommandEnvelope("gesture", { type: "video.markReviewed" }, metadata)];
     }
   }
 
