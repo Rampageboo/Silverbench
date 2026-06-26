@@ -9,6 +9,13 @@ type DragState =
   | { kind: "resize"; index: number; corner: Corner; origin: LabelBox; startBoxes: LabelBox[] }
   | null;
 
+export type RemotePointerState = {
+  x: number;
+  y: number;
+  pressed: boolean;
+  sequence: number;
+};
+
 type Props = {
   imageBase64: string;
   boxes: LabelBox[];
@@ -16,6 +23,7 @@ type Props = {
   currentClass: number;
   selectedIndex: number | null;
   disabled?: boolean;
+  remotePointer?: RemotePointerState | null;
   onChange: (boxes: LabelBox[]) => void;
   onSelectedIndexChange: (index: number | null) => void;
 };
@@ -111,8 +119,10 @@ function hitCorner(
     ["se", { x: edges.x2, y: edges.y2 }]
   ];
   return (
-    corners.find(([, corner]) => Math.abs(point.x - corner.x) <= thresholdX && Math.abs(point.y - corner.y) <= thresholdY)?.[0] ||
-    null
+    corners.find(
+      ([, corner]) =>
+        Math.abs(point.x - corner.x) <= thresholdX && Math.abs(point.y - corner.y) <= thresholdY
+    )?.[0] || null
   );
 }
 
@@ -133,15 +143,20 @@ export function VideoAnnotationCanvas({
   currentClass,
   selectedIndex,
   disabled = false,
+  remotePointer = null,
   onChange,
   onSelectedIndexChange
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const dragRef = useRef<DragState>(null);
+  const remoteSequenceRef = useRef(-1);
+  const remotePressedRef = useRef(false);
+  const remoteStartRef = useRef<Point | null>(null);
   const workingBoxesRef = useRef<LabelBox[]>(boxes);
   const [workingBoxes, setWorkingBoxesState] = useState<LabelBox[]>(boxes);
   const [draftRect, setDraftRect] = useState<{ start: Point; current: Point } | null>(null);
+  const [remoteCursor, setRemoteCursor] = useState<Point | null>(null);
   const [tool, setTool] = useState<"draw" | "select">("draw");
   const [renderVersion, setRenderVersion] = useState(0);
 
@@ -153,7 +168,7 @@ export function VideoAnnotationCanvas({
   }, []);
 
   useEffect(() => {
-    if (dragRef.current) return;
+    if (dragRef.current || remotePressedRef.current) return;
     setWorkingBoxes(boxes);
     if (selectedIndex !== null && selectedIndex >= boxes.length) onSelectedIndexChange(null);
   }, [boxes, onSelectedIndexChange, selectedIndex, setWorkingBoxes]);
@@ -181,6 +196,10 @@ export function VideoAnnotationCanvas({
   }, []);
 
   useEffect(() => {
+    remotePressedRef.current = false;
+    remoteStartRef.current = null;
+    setRemoteCursor(null);
+    setDraftRect(null);
     if (!imageBase64) {
       imageRef.current = null;
       setRenderVersion((value) => value + 1);
@@ -198,6 +217,53 @@ export function VideoAnnotationCanvas({
       cancelled = true;
     };
   }, [imageBase64]);
+
+  useEffect(() => {
+    if (!remotePointer) {
+      setRemoteCursor(null);
+      remotePressedRef.current = false;
+      remoteStartRef.current = null;
+      return;
+    }
+    if (remotePointer.sequence === remoteSequenceRef.current) return;
+    remoteSequenceRef.current = remotePointer.sequence;
+    if (disabled || !imageRef.current) return;
+
+    const point = { x: clamp(remotePointer.x), y: clamp(remotePointer.y) };
+    setRemoteCursor(point);
+    if (remotePointer.pressed) {
+      if (!remotePressedRef.current) {
+        remotePressedRef.current = true;
+        remoteStartRef.current = point;
+        onSelectedIndexChange(null);
+      }
+      const start = remoteStartRef.current || point;
+      setDraftRect({ start, current: point });
+      return;
+    }
+
+    if (remotePressedRef.current) {
+      const start = remoteStartRef.current;
+      remotePressedRef.current = false;
+      remoteStartRef.current = null;
+      setDraftRect(null);
+      if (!start) return;
+      const nextBox = boxFromEdges(currentClass, start.x, start.y, point.x, point.y);
+      if (nextBox.w < MIN_BOX_SIZE || nextBox.h < MIN_BOX_SIZE) return;
+      const next = [...workingBoxesRef.current, nextBox];
+      setWorkingBoxes(next);
+      onSelectedIndexChange(next.length - 1);
+      onChange(next);
+    }
+  }, [currentClass, disabled, onChange, onSelectedIndexChange, remotePointer, setWorkingBoxes]);
+
+  useEffect(() => {
+    if (!disabled) return;
+    remotePressedRef.current = false;
+    remoteStartRef.current = null;
+    setRemoteCursor(null);
+    setDraftRect(null);
+  }, [disabled]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -261,7 +327,22 @@ export function VideoAnnotationCanvas({
       context.strokeRect(x1, y1, x2 - x1, y2 - y1);
       context.setLineDash([]);
     }
-  }, [classNames, draftRect, renderVersion, selectedIndex, workingBoxes]);
+
+    if (remoteCursor) {
+      const x = display.x + remoteCursor.x * display.width;
+      const y = display.y + remoteCursor.y * display.height;
+      const radius = 10 * ratio;
+      context.strokeStyle = remotePressedRef.current ? "#f59e0b" : "#22d3ee";
+      context.lineWidth = 2 * ratio;
+      context.beginPath();
+      context.arc(x, y, radius, 0, Math.PI * 2);
+      context.moveTo(x - radius * 1.5, y);
+      context.lineTo(x + radius * 1.5, y);
+      context.moveTo(x, y - radius * 1.5);
+      context.lineTo(x, y + radius * 1.5);
+      context.stroke();
+    }
+  }, [classNames, draftRect, remoteCursor, renderVersion, selectedIndex, workingBoxes]);
 
   const deleteSelected = useCallback(() => {
     if (selectedIndex === null || selectedIndex < 0 || selectedIndex >= workingBoxesRef.current.length) return;
@@ -275,7 +356,7 @@ export function VideoAnnotationCanvas({
     (event: React.PointerEvent<HTMLCanvasElement>) => {
       const canvas = canvasRef.current;
       const image = imageRef.current;
-      if (!canvas || !image || disabled) return;
+      if (!canvas || !image || disabled || remotePressedRef.current) return;
       canvas.focus();
       canvas.setPointerCapture(event.pointerId);
       const { point, inside } = eventPoint(event, canvas, image);
