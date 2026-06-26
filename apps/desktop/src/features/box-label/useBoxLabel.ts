@@ -33,6 +33,20 @@ function naturalCompare(a: string, b: string) {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 }
 
+/**
+ * Compute the new current index after removing `removedBasenames` from
+ * `entries`. Exported for unit testing; not part of the public hook API.
+ */
+export function computePostRemovalIndex(
+  currentIndex: number,
+  entries: ReadonlyArray<{ basename: string }>,
+  removedBasenames: ReadonlySet<string>
+): number {
+  const remaining = entries.filter((entry) => !removedBasenames.has(entry.basename));
+  if (!remaining.length) return 0;
+  return Math.min(currentIndex, remaining.length - 1);
+}
+
 type UseBoxLabelOptions = {
   workspaceRoot: string;
   focusFilename?: string | null;
@@ -446,6 +460,7 @@ export function useBoxLabel({
     }
     const targetSet = new Set(targets);
     const previousEntries = allEntries;
+    const previousIndex = currentIndex;
     pushJunkUndo("pool-label", root, targets, metadata);
     setCanUndoJunk(hasJunkUndo("pool-label", root));
     setShiftSelectedBasenames(new Set());
@@ -459,19 +474,18 @@ export function useBoxLabel({
       return next;
     });
     setAllEntries((current) => current.filter((entry) => !targetSet.has(entry.basename)));
-    setCurrentIndex((index) => {
-      const remaining = entries.filter((entry) => !targetSet.has(entry.basename));
-      if (!remaining.length) return 0;
-      return Math.min(index, remaining.length - 1);
-    });
+    setCurrentIndex((index) => computePostRemovalIndex(index, entries, targetSet));
     setStatusText(`Marked ${targets.length} image(s) as Detect junk.`);
     try {
       await markJunkFilenames(root, targets, "detect");
       await reloadMetadata();
     } catch (err) {
+      // Restore optimistic state on backend failure so the gallery and
+      // preview remain consistent with the server's actual metadata.
       setAllEntries(previousEntries);
+      setCurrentIndex(previousIndex);
       await reloadMetadata().catch(() => {});
-      setStatusText(errMessage(err));
+      setStatusText(`Failed to mark junk: ${errMessage(err)}`);
     }
   }, [allEntries, currentEntry, entries, metadata, reloadMetadata, root, selectedBasenames]);
 

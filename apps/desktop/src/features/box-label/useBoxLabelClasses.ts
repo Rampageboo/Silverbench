@@ -79,9 +79,15 @@ export function useBoxLabelClasses({
   const [blackBoxEnabled, setBlackBoxEnabled] = useState(false);
   const [boxAdjustMode, setBoxAdjustMode] = useState<"grow" | "shrink">("grow");
 
+  // Set to true only by explicit user mutations (not hydration effects).
+  // The sync effect below reads this flag to decide whether to propagate to
+  // the session. Hydration effects must NOT set this flag.
+  const userMutatedRef = useRef(false);
+
   const setShortcutSlots = useCallback(
     (next: Array<number | null>) => {
       shortcutSlotsHydratedRef.current = true;
+      userMutatedRef.current = true;
       saveShortcutSlots(workspaceRoot, next);
       setShortcutSlotsState(next);
     },
@@ -90,6 +96,7 @@ export function useBoxLabelClasses({
 
   const setFixedBoxSlots = useCallback((next: Array<FixedBoxSlot | null>) => {
     fixedBoxSlotsHydratedRef.current = true;
+    userMutatedRef.current = true;
     setFixedBoxSlotsState(next);
   }, []);
 
@@ -155,8 +162,14 @@ export function useBoxLabelClasses({
     setFixedBoxSlotsState(initialFixedBoxSlots);
   }, [workspaceRoot, initialFixedBoxSlots]);
 
+  // Sync shortcut/fixed-box state to localStorage and session ONLY when the
+  // user explicitly mutated either value. Hydration effects must not trigger
+  // this path because the session might have fixed boxes without shortcuts,
+  // and propagating at that point would write unvalidated localStorage
+  // shortcuts back into the session file.
   useEffect(() => {
-    if (!shortcutSlotsHydratedRef.current && !fixedBoxSlotsHydratedRef.current) return;
+    if (!userMutatedRef.current) return;
+    userMutatedRef.current = false;
     saveShortcutSlots(workspaceRoot, shortcutSlots);
     onShortcutSlotsChange?.(shortcutSlots, fixedBoxSlots);
   }, [shortcutSlots, fixedBoxSlots, onShortcutSlotsChange, workspaceRoot]);

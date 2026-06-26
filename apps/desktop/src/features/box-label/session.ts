@@ -102,26 +102,27 @@ export async function savePoolLabelSession(
   const payload: Record<string, unknown> = {
     ...existing,
     activeTab: "pool-label",
+    poolLabelSessionVersion: 1,
     currentImagePath: fields.currentImagePath,
     poolLabelCurrentImagePath: fields.currentImagePath,
-    galleryScrollTop: Math.max(0, Math.round(fields.galleryScrollTop))
+    galleryScrollTop: Math.max(0, Math.round(fields.galleryScrollTop)),
+    poolLabelSavedAt: new Date().toISOString()
   };
-  if (shortcutSlots) {
+  // Only write shortcut fields when the caller has an authoritative value.
+  // undefined means "not yet hydrated" — omitting the fields preserves
+  // whatever shortcuts were already in the session file.
+  if (shortcutSlots !== undefined) {
     payload.poolLabelShortcuts = shortcutSlots;
     payload.poolLabelShortcutAssigned = shortcutSlots.map((slot) => slot !== null);
-    payload.poolLabelSavedAt = new Date().toISOString();
   }
-  if (fields.fixedBoxSlots) {
+  if (fields.fixedBoxSlots !== undefined) {
     payload.poolLabelFixedBoxes = fields.fixedBoxSlots;
-    payload.poolLabelSavedAt = new Date().toISOString();
   }
   if (fields.pointerToolEnabled != null) {
     payload.poolLabelPointerToolEnabled = fields.pointerToolEnabled;
-    payload.poolLabelSavedAt = new Date().toISOString();
   }
   if (fields.autoFitEnabled != null) {
     payload.poolLabelAutoFitEnabled = fields.autoFitEnabled;
-    payload.poolLabelSavedAt = new Date().toISOString();
   }
   await callBackend("writeWorkspaceSession", [workspaceRoot, JSON.stringify(payload)]);
 }

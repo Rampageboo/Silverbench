@@ -25,6 +25,37 @@ describe("box-label session", () => {
     expect(parsed.poolLabelAutoFitEnabled).toBe(false);
   });
 
+  // -------------------------------------------------------------------------
+  // normalizeShortcutSlotsFromSession — null vs empty semantics
+  // -------------------------------------------------------------------------
+
+  it("normalizeShortcutSlotsFromSession returns null when both fields are absent", () => {
+    // Absent shortcut fields mean 'not loaded yet', NOT 'all cleared'.
+    // The caller must treat null as 'unknown', not as an empty slot list.
+    expect(normalizeShortcutSlotsFromSession({})).toBeNull();
+    expect(normalizeShortcutSlotsFromSession({ poolLabelFixedBoxes: [] })).toBeNull();
+  });
+
+  it("normalizeShortcutSlotsFromSession returns all-null for empty arrays", () => {
+    // An explicit empty poolLabelShortcuts array means 'user cleared all shortcuts'.
+    const slots = normalizeShortcutSlotsFromSession({ poolLabelShortcuts: [] });
+    expect(slots).not.toBeNull();
+    expect(slots).toHaveLength(10);
+    expect(slots!.every((s) => s === null)).toBe(true);
+  });
+
+  it("normalizeShortcutSlotsFromSession normalises a partial array", () => {
+    const slots = normalizeShortcutSlotsFromSession({
+      poolLabelShortcuts: [0, 1, 2]
+    });
+    expect(slots).not.toBeNull();
+    expect(slots![0]).toBe(0);
+    expect(slots![1]).toBe(1);
+    expect(slots![2]).toBe(2);
+    expect(slots![3]).toBeNull();
+    expect(slots).toHaveLength(10);
+  });
+
   it("normalizeShortcutSlotsFromSession respects assigned mask", () => {
     const slots = normalizeShortcutSlotsFromSession({
       poolLabelShortcuts: [1, 2, null, 3],
@@ -33,12 +64,47 @@ describe("box-label session", () => {
     expect(slots).toEqual([1, null, null, 3, null, null, null, null, null, null]);
   });
 
+  it("normalizeShortcutSlotsFromSession rejects negative class ids", () => {
+    const slots = normalizeShortcutSlotsFromSession({
+      poolLabelShortcuts: [-1, 0, "bad", 5]
+    });
+    expect(slots![0]).toBeNull();
+    expect(slots![1]).toBe(0);
+    expect(slots![2]).toBeNull();
+    expect(slots![3]).toBe(5);
+  });
+
+  // -------------------------------------------------------------------------
+  // normalizeFixedBoxSlotsFromSession
+  // -------------------------------------------------------------------------
+
+  it("normalizeFixedBoxSlotsFromSession returns null when absent", () => {
+    expect(normalizeFixedBoxSlotsFromSession({})).toBeNull();
+  });
+
   it("normalizeFixedBoxSlotsFromSession clamps coordinates", () => {
     const slots = normalizeFixedBoxSlotsFromSession({
       poolLabelFixedBoxes: [{ classId: 2, x: 1.5, y: -0.2, w: 0.3, h: 0.4 }]
     });
-    expect(slots[0]).toEqual({ classId: 2, x: 1, y: 0, w: 0.3, h: 0.4 });
+    expect(slots![0]).toEqual({ classId: 2, x: 1, y: 0, w: 0.3, h: 0.4 });
   });
+
+  it("normalizeFixedBoxSlotsFromSession rejects non-integer classIds", () => {
+    const slots = normalizeFixedBoxSlotsFromSession({
+      poolLabelFixedBoxes: [{ classId: 1.5, x: 0.1, y: 0.1, w: 0.2, h: 0.2 }]
+    });
+    expect(slots![0]).toBeNull();
+  });
+
+  it("normalizeFixedBoxSlotsFromSession preserves valid entry with explicit empty array", () => {
+    const slots = normalizeFixedBoxSlotsFromSession({ poolLabelFixedBoxes: [] });
+    expect(slots).not.toBeNull();
+    expect(slots!.every((s) => s === null)).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // resolveResumeImagePath
+  // -------------------------------------------------------------------------
 
   it("resolveResumeImagePath prefers pool label path", () => {
     expect(
@@ -48,5 +114,9 @@ describe("box-label session", () => {
       })
     ).toBe("image_pool/b.jpg");
     expect(resolveResumeImagePath({ currentImagePath: "image_pool/a.jpg" })).toBe("image_pool/a.jpg");
+  });
+
+  it("resolveResumeImagePath returns empty string when both are absent", () => {
+    expect(resolveResumeImagePath({})).toBe("");
   });
 });

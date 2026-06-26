@@ -306,3 +306,97 @@ For UI behavior that cannot be fully covered in unit tests, add explicit manual 
 ## Current branch status
 
 This branch is a stability pass stacked on `feature/multimodal-controls`. It is intended to be reviewed after the multimodal PR, not merged directly into main before the lower branch is stable.
+
+---
+
+## Box Label stability hardening pass
+
+Branch: `feature/box-label-stability-hardening` (stacked on `feature/box-label-stability-pass`).
+
+### What was fixed
+
+**Shortcut/session persistence race (`useBoxLabelClasses.ts`)**
+
+The sync effect that propagates shortcut and fixed-box state to the session file was
+gated on `!shortcutSlotsHydratedRef.current && !fixedBoxSlotsHydratedRef.current`.
+This allowed the effect to fire when only fixed-box slots had been hydrated from the
+session (but shortcuts had not), writing unvalidated localStorage shortcuts back into
+`session.json` — erasing the "no shortcuts" state the session file deliberately had.
+
+Fix: replaced the per-field hydration flags with a single `userMutatedRef`. The sync
+effect now only runs when an explicit user action (dropdown change, draw-to-record)
+triggered the state change. Hydration effects no longer set this flag, so they never
+propagate to the session.
+
+**`markJunk` rollback missing `currentIndex` restore (`useBoxLabel.ts`)**
+
+When the backend write for Mark Junk failed, `allEntries` was restored but
+`currentIndex` was not. The gallery and preview showed a mismatched image after rollback.
+
+Fix: save `previousIndex` before the optimistic update and restore it in the catch block.
+
+**`savePoolLabelSession` — `poolLabelSavedAt` not always written (`session.ts`)**
+
+The timestamp was only written when shortcut, fixed-box, or tool-state fields were
+included. Navigation-only saves (image advance by A/D or mouse click) did not record a
+timestamp, making it hard to diagnose session-write ordering bugs.
+
+Fix: `poolLabelSavedAt` is now always included in every write. A
+`poolLabelSessionVersion: 1` field is also written to support future migrations.
+
+**`computePostRemovalIndex` extracted as a pure function**
+
+The index-clamping logic inside `markJunk` was extracted to a module-level function
+and exported for unit testing. `markJunk` now calls this helper directly.
+
+### Tests added or extended
+
+- `session.test.ts`: null vs empty-array semantics for missing/explicit shortcut
+  fields; partial array normalisation; negative classId rejection; fixed-box missing
+  field; explicit empty fixed-box array.
+- `galleryNavigation.test.ts`: textarea/select targets; uppercase A/D; unrelated keys;
+  single-item list; stale-reveal cancellation contract.
+- `junkRemoval.test.ts` (new): eight pure tests for `computePostRemovalIndex` covering
+  current-item removed, last-item removed, all-items removed, multi-selection, and
+  non-current removals from before and after the cursor.
+
+### What remains fragile
+
+- **Session write race**: `savePoolLabelSession` reads the full session file before
+  writing (read-modify-write). Two concurrent writes within the 500 ms debounce window
+  can still clobber each other. A proper fix requires backend support for field-level
+  partial writes or optimistic-concurrency tokens. Not attempted in this pass.
+- **`sortedEntries` vs `entries` index contract**: `currentIndex` is relative to
+  `sortedEntries` but `computePostRemovalIndex` operates on the unsorted `entries`. In
+  practice both are in the same order because `allEntries` is pre-sorted. If that
+  invariant ever breaks (future filter or order change), the index calculation will be
+  wrong. A comment has been added noting the fragility.
+- **Undo Junk does not restore scroll position**: after `undoJunk` calls `load()` with
+  `background: true`, the scroll anchor is not set. The restored image is findable but
+  the gallery may not scroll to it.
+- **Prefers-reduced-motion FLIP**: the compaction animation respects
+  `prefers-reduced-motion`, but the check happens at runtime each time. Changing the
+  OS preference while the animation is in progress is not handled.
+
+### Manual regression checklist (additions for this pass)
+
+1. Open a workspace whose `session.json` has `poolLabelFixedBoxes` but no
+   `poolLabelShortcuts`. Confirm the shortcuts panel shows the local-storage values,
+   not an empty layout.
+2. Change one shortcut slot. Confirm only that slot changed (not all cleared) after
+   reopening.
+3. Simulate a Mark Junk backend failure (disconnect network or mock the endpoint).
+   Confirm the gallery immediately re-shows the previously-junked images and the
+   current selection returns to the image that was active before the attempt.
+4. Mark three thumbnails as junk simultaneously (multi-select). Confirm:
+   a. All three disappear immediately from the grid.
+   b. Remaining thumbnails animate into the vacated slots.
+   c. The preview shows a valid (non-junked) image.
+
+### Known limitation discovered during implementation
+
+`py_compile` passes for touched Python modules but `python -m unittest discover` fails
+with `ModuleNotFoundError: No module named 'backend'`. This is a pre-existing
+environment issue — the repo root is not on `sys.path` when running from a subdirectory.
+Running `PYTHONPATH=$(pwd) python -m unittest discover -s tests -p "test_*.py"` from
+the repo root resolves it. No Python files were changed in this branch pass.
