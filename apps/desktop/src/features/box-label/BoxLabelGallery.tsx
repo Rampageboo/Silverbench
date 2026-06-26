@@ -22,6 +22,7 @@ type BoxLabelGalleryProps = {
 };
 
 const BOX_LABEL_GRID_PARAMS = { columnUnit: 138, gap: 10, rowExtra: 36, aspectRatio: 10 / 16 } as const;
+const FLIP_SELECTOR = "[data-box-label-gallery-key]";
 
 function galleryThumbTags(row: MetadataRow | undefined) {
   const flagged = isFlaggedFile(row);
@@ -68,6 +69,44 @@ function LazyThumb({ datasetRoot, imagePath }: { datasetRoot: string; imagePath:
   );
 }
 
+function readThumbRects(root: HTMLElement | null) {
+  const rects = new Map<string, DOMRect>();
+  if (!root) return rects;
+  for (const node of Array.from(root.querySelectorAll<HTMLElement>(FLIP_SELECTOR))) {
+    const key = node.dataset.boxLabelGalleryKey;
+    if (key) rects.set(key, node.getBoundingClientRect());
+  }
+  return rects;
+}
+
+function animateCompaction(root: HTMLElement, previous: Map<string, DOMRect>, current: Map<string, DOMRect>) {
+  if (!previous.size || typeof window === "undefined") return;
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  for (const node of Array.from(root.querySelectorAll<HTMLElement>(FLIP_SELECTOR))) {
+    const key = node.dataset.boxLabelGalleryKey;
+    if (!key) continue;
+    const before = previous.get(key);
+    const after = current.get(key);
+    if (!before || !after) continue;
+    const dx = before.left - after.left;
+    const dy = before.top - after.top;
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
+    node.classList.add("boxlabel-gallery-thumb-moving");
+    node.style.transition = "none";
+    node.style.transform = `translate(${dx}px, ${dy}px)`;
+    node.getBoundingClientRect();
+    requestAnimationFrame(() => {
+      node.style.transition = "transform 180ms cubic-bezier(0.22, 1, 0.36, 1)";
+      node.style.transform = "translate(0, 0)";
+      window.setTimeout(() => {
+        node.style.transition = "";
+        node.style.transform = "";
+        node.classList.remove("boxlabel-gallery-thumb-moving");
+      }, 220);
+    });
+  }
+}
+
 export function BoxLabelGallery({
   datasetRoot,
   entries,
@@ -84,7 +123,11 @@ export function BoxLabelGallery({
 }: BoxLabelGalleryProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const pendingKeyboardRevealIndexRef = useRef<number | null>(null);
+  const previousThumbRectsRef = useRef<Map<string, DOMRect>>(new Map());
+  const previousEntrySignatureRef = useRef("");
   const [layout, setLayout] = useState(() => computeVirtualGridLayout(null, 0, 138, 10, 36, 10 / 16));
+
+  const entrySignature = useMemo(() => entries.map((entry) => entry.imagePath).join("\n"), [entries]);
 
   const recompute = useCallback(() => {
     setLayout(computeVirtualGridLayout(wrapRef.current, entries.length, 138, 10, 36, 10 / 16));
@@ -93,6 +136,17 @@ export function BoxLabelGallery({
   useLayoutEffect(() => {
     recompute();
   }, [recompute]);
+
+  useLayoutEffect(() => {
+    const root = wrapRef.current;
+    if (!root) return;
+    const currentRects = readThumbRects(root);
+    if (previousEntrySignatureRef.current && previousEntrySignatureRef.current !== entrySignature) {
+      animateCompaction(root, previousThumbRectsRef.current, currentRects);
+    }
+    previousThumbRectsRef.current = currentRects;
+    previousEntrySignatureRef.current = entrySignature;
+  });
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -260,6 +314,7 @@ export function BoxLabelGallery({
               return (
                 <div
                   key={item.imagePath}
+                  data-box-label-gallery-key={item.imagePath}
                   className={`thumb${active ? " active" : ""}${shiftSelected ? " shift-selected" : ""}${reviewed ? " reviewed" : ""}${flagged ? " flagged" : ""}`}
                   onClick={(event) => {
                     pendingKeyboardRevealIndexRef.current = null;
