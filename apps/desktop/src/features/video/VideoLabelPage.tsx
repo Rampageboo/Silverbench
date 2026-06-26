@@ -4,6 +4,7 @@ import { useWorkbenchCommands } from "../../input/MultimodalControlProvider";
 import { VideoAnnotationCanvas, type RemotePointerState } from "./VideoAnnotationCanvas";
 import { formatVideoClock } from "./videoAnnotationDomain";
 import { useVideoAnnotationSession } from "./useVideoAnnotationSession";
+import { useVideoSampling, type SamplingMode } from "./useVideoSampling";
 import "./VideoLabelPage.css";
 
 type Props = {
@@ -11,20 +12,51 @@ type Props = {
   active?: boolean;
 };
 
+const SAMPLING_MODE_LABELS: Record<SamplingMode, string> = {
+  "whole-video": "Whole video",
+  "segments-preferred": "Segments preferred",
+  "segments-only": "Segments only"
+};
+
+const SAMPLING_MODES: SamplingMode[] = ["whole-video", "segments-preferred", "segments-only"];
+
 export function VideoLabelPage({ onReady, active = true }: Props) {
   const { workspaceRoot, chooseWorkspaceFolder } = useWorkspace();
   const session = useVideoAnnotationSession({ workspaceRoot, active, onReady });
   const [remotePointer, setRemotePointer] = useState<RemotePointerState | null>(null);
 
+  const videoDurationMs = session.current ? Math.round(session.current.duration * 1000) : 0;
+
+  const sampling = useVideoSampling({
+    workspaceRoot,
+    videoPath: session.current?.path ?? null,
+    videoDurationMs,
+    annotationManifest: session.manifest
+  });
+
   useEffect(() => {
     setRemotePointer(null);
   }, [active, session.current?.path]);
+
+  // When the user manually seeks, mark the source as manual
+  const handleGotoTime = (nextTime: number) => {
+    sampling.setLastSource("manual");
+    session.gotoTime(nextTime);
+  };
+
+  const handleRandomNext = () => {
+    const candidate = sampling.randomNext();
+    if (candidate) {
+      session.gotoTime(candidate.timestampMs / 1000);
+    }
+  };
 
   useWorkbenchCommands((envelope) => {
     if (!active) return;
     const command = envelope.command;
     switch (command.type) {
       case "video.seekBy":
+        sampling.setLastSource("manual");
         session.gotoTime(session.time + command.seconds);
         break;
       case "video.copyPreviousBoxes":
@@ -86,9 +118,16 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
     ? `${session.current.width}×${session.current.height} · ${formatVideoClock(session.current.duration)}`
     : "No video loaded";
 
+  const sourceLabel =
+    sampling.lastSource === "random-segment"
+      ? "Random segment"
+      : sampling.lastSource === "random-whole-video"
+        ? "Random whole-video"
+        : "Manual";
+
   return (
     <main className="video-label-workspace">
-      <section className="panel video-label-main-panel">
+    <section className="panel video-label-main-panel">
         <div className="panel-header">
           <span>Video Label</span>
           <span className="status">{videoMeta}</span>
@@ -143,20 +182,20 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
               step="0.001"
               value={Math.min(session.time, session.maxTime)}
               disabled={!session.current}
-              onChange={(event) => session.gotoTime(Number(event.target.value))}
+              onChange={(event) => handleGotoTime(Number(event.target.value))}
               aria-label="Video timestamp"
             />
             <div className="row video-label-time-row">
               <button
                 type="button"
-                onClick={() => session.gotoTime(session.time - session.stepSeconds)}
+                onClick={() => handleGotoTime(session.time - session.stepSeconds)}
                 disabled={!session.current}
               >
                 Previous
               </button>
               <button
                 type="button"
-                onClick={() => session.gotoTime(session.time + session.stepSeconds)}
+                onClick={() => handleGotoTime(session.time + session.stepSeconds)}
                 disabled={!session.current}
               >
                 Next
@@ -169,7 +208,7 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
                   max={session.maxTime}
                   step="0.001"
                   value={session.time}
-                  onChange={(event) => session.gotoTime(Number(event.target.value))}
+                  onChange={(event) => handleGotoTime(Number(event.target.value))}
                   disabled={!session.current}
                 />
               </label>
@@ -226,6 +265,51 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
                 <div className="empty">No videos added.</div>
               )}
             </div>
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="panel-header">
+            <span>Random Sampling</span>
+            <span className="status">{sampling.segmentCount} segment(s)</span>
+          </div>
+          <div className="panel-body video-label-action-stack">
+            <button
+              type="button"
+              className="primary"
+              onClick={handleRandomNext}
+              disabled={!session.current || videoDurationMs <= 0}
+            >
+              Random Next
+            </button>
+            <div className="video-label-stats">
+              <span>Source: {sourceLabel}</span>
+            </div>
+            <label>
+              Sampling mode
+              <select
+                value={sampling.samplingMode}
+                onChange={(event) => sampling.setMode(event.target.value as SamplingMode)}
+              >
+                {SAMPLING_MODES.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {SAMPLING_MODE_LABELS[mode]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Min spacing (ms)
+              <input
+                type="number"
+                min="0"
+                step="100"
+                value={sampling.minSpacingMs}
+                onChange={(event) =>
+                  sampling.setMinSpacingMs(Math.max(0, Number(event.target.value) || 0))
+                }
+              />
+            </label>
           </div>
         </section>
 

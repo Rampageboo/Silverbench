@@ -478,3 +478,117 @@ which is also safe.
    Close and reopen the app. Press key 1. Confirm subject-select mode (auto-fit) activates.
 5. Press a keyboard shortcut while a box is selected. Confirm the selected box is not relabeled.
 6. Toggle the mode button on an empty slot. Confirm the button is disabled (grayed out).
+
+---
+
+## Video segment and random sampling workflow
+
+Branch: `feature/video-segment-random-sampling-workflow`.
+
+### Overview
+
+The video annotation workflow no longer requires screenshots at any point. The entire
+path from video source to annotated dataset proceeds without writing decoded frames to
+disk. Segments are lightweight metadata ranges stored in the video annotation manifest.
+Random sampling draws frames from the live video decoder, not from any image pool.
+
+### Normal workflow
+
+```text
+Open workspace
+  ↓
+Add video (path recorded in manifest; no frames extracted)
+  ↓
+(Optional) Define segments — metadata ranges only
+  ↓
+Random-sample next frame (whole video or segment-constrained)
+  ↓
+Annotate timestamp record directly (YOLO boxes + review state)
+  ↓
+Repeat or export explicitly when training data is needed
+```
+
+Frames decoded for preview are held in memory only. They are discarded when the
+annotator navigates away or the preview is replaced. No frame file ever appears in
+`image_pool` as part of this workflow.
+
+### Segment data model
+
+A segment is a named, enableable range within a single video. It carries no pixel data.
+
+```ts
+export interface VideoSegment {
+  id: string;            // stable uuid
+  label: string;         // human-readable name, e.g. "intro", "action-scene-1"
+  startMs: number;       // inclusive start in milliseconds
+  endMs: number;         // exclusive end in milliseconds
+  enabled: boolean;      // whether this segment participates in random sampling
+}
+```
+
+Segments are stored inside the video annotation manifest alongside timestamp records:
+
+```text
+workspace/video_annotations/<safe-video-name>-<path-hash>.json
+```
+
+The manifest schema extends with a top-level `segments` array. Existing manifests
+without a `segments` key are read as having an empty segment list; no migration is
+required.
+
+### Sampling modes
+
+| Mode | Behavior |
+|---|---|
+| `whole-video` | Random timestamp drawn uniformly from `[0, durationMs)` |
+| `segments-only` | Random timestamp drawn uniformly from the union of `enabled` segment ranges |
+
+When `segments-only` is selected and no segment is enabled, the app falls back to
+`whole-video` and shows a warning banner rather than silently producing no frames.
+
+The active sampling mode is part of the Video Label UI session state. It is not
+persisted to the manifest so that reloading the app does not lock the user into a
+particular mode.
+
+### Decoded frames are preview-only
+
+The video decode path exists solely to show the annotator what the frame looks like.
+Decoded frames:
+
+- Are never written to `image_pool` or any workspace directory.
+- Are not referenced in the annotation manifest.
+- Are discarded when the annotator moves to a different timestamp.
+- Do not count against any storage quota or dataset index.
+
+Exporting frames to image files is an explicit secondary action available through the
+export panel. It is not triggered by annotation, random sampling, or segment creation.
+
+### How segments guide future training and export
+
+When an explicit frame export or dataset build is requested, segments act as filters:
+
+- If segments are defined and enabled, only timestamps that fall within an enabled
+  segment are included in the export unless the user selects "all annotated frames."
+- Segment labels can be mapped to dataset splits (train/val/test) or class-level
+  metadata in a future export configuration UI.
+- The segment list is stable enough to be referenced by export manifests; segment IDs
+  are UUIDs and are never reused after deletion.
+
+### Manual regression checklist
+
+1. Add a video to a workspace. Confirm no files appear in `image_pool` after the add.
+2. Click "Random next" (whole-video mode). Confirm a frame is displayed and no image
+   file is written to disk.
+3. Create a segment named "test-segment" covering a sub-range of the video (e.g.
+   1000 ms – 5000 ms) and enable it.
+4. Switch sampling mode to "segments only." Click "Random next" several times. Confirm
+   all displayed timestamps fall within the segment range.
+5. Annotate one of the timestamps (draw at least one box). Save.
+6. Reload the application. Confirm:
+   a. The segment list is restored (name, startMs, endMs, enabled state).
+   b. The annotated timestamp record is restored with its boxes.
+   c. No files have appeared in `image_pool`.
+7. Disable the segment and switch to "segments only" mode. Confirm the app falls back to
+   whole-video sampling and displays the warning banner.
+8. Trigger an explicit frame export from the export panel. Confirm exported files appear
+   under `workspace/exports` (or the configured path) and nowhere else.

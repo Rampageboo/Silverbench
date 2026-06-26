@@ -11,6 +11,7 @@ export type WorkspaceManifestPaths = {
   detect_dataset: string;
   clf_dataset: string;
   video_annotations: string;
+  video_segments: string;
   exports: string;
   cache: string;
   logs: string;
@@ -70,6 +71,7 @@ function defaultPaths(): WorkspaceManifestPaths {
     detect_dataset: "detect_dataset",
     clf_dataset: "clf_dataset",
     video_annotations: "workspace/video_annotations",
+    video_segments: "video_segments",
     exports: "exports",
     cache: ".cache",
     logs: "workspace/logs"

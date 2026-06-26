@@ -2,6 +2,7 @@ export type ToolTab =
   | "image-pool"
   | "pool-label"
   | "video"
+  | "video-capture"
   | "train-prep"
   | "train"
   | "crop"
@@ -37,6 +38,16 @@ export const WORKBENCH_TOOLS: readonly WorkbenchTool[] = [
     heavy: true,
     requiresWorkspace: true,
     primary: true
+  },
+  {
+    tab: "video-capture",
+    label: "Video Segments",
+    labelZh: "视频片段",
+    keywords: "video segment capture screenshot frame export",
+    group: "video",
+    keepAlive: true,
+    heavy: true,
+    requiresWorkspace: true
   },
   {
     tab: "pool-label",

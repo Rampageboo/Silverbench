@@ -53,6 +53,7 @@ describe("workspace manifest migration", () => {
         detect_dataset: "detect_dataset",
         clf_dataset: "clf_dataset",
         video_annotations: "workspace/custom-video-labels",
+        video_segments: "video_segments",
         exports: "exports",
         cache: ".cache",
         logs: "workspace/logs"

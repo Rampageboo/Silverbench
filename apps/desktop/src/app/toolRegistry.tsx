@@ -35,6 +35,13 @@ const VideoLabelTool = lazy(async () => {
   };
 });
 
+const VideoCaptureTool = lazy(async () => {
+  const module = await import("../features/video/VideoCapturePage");
+  return {
+    default: (props: ToolPageProps) => <module.VideoCapturePage active={props.active} onReady={props.onReady} />
+  };
+});
+
 const ImageBoxLabelTool = lazy(async () => {
   const module = await import("../features/box-label/BoxLabelPage");
   return { default: (props: ToolPageProps) => <module.BoxLabelPage onReady={props.onReady} /> };
@@ -67,6 +74,7 @@ const MergeTool = lazy(async () => {
 
 const TOOL_COMPONENTS: Record<ToolTab, WorkbenchToolDefinition["component"]> = {
   video: VideoLabelTool,
+  "video-capture": VideoCaptureTool,
   "pool-label": ImageBoxLabelTool,
   "image-pool": ImageWorkspaceTool,
   "train-prep": TrainPrepTool,

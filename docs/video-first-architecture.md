@@ -130,3 +130,109 @@ The following items remain separate changes because they require broader migrati
 - P10 full guided pipeline view.
 
 The architecture introduced here is intended to support those changes without expanding `WorkbenchBody` or `VideoLabelPage` into new monoliths.
+
+---
+
+## Video segment data model
+
+### VideoSegment type
+
+A segment is a named, enableable millisecond range within a single source video.
+It contains no pixel data and does not cause frame extraction.
+
+```ts
+export interface VideoSegment {
+  id: string;            // stable UUID assigned at creation; never reused
+  label: string;         // human-readable name chosen by the annotator
+  startMs: number;       // inclusive start timestamp in milliseconds
+  endMs: number;         // exclusive end timestamp in milliseconds
+  enabled: boolean;      // participates in random sampling when true
+}
+```
+
+### VideoSegmentManifest storage path
+
+Segments are stored as a top-level `segments` array inside the per-video annotation
+manifest. No separate file is needed.
+
+```text
+workspace/video_annotations/<safe-video-name>-<path-hash>.json
+```
+
+Manifests written before segment support was introduced have no `segments` key.
+Readers treat a missing key as an empty array. No migration script is required.
+
+Example manifest structure with segments:
+
+```json
+{
+  "videoPath": "/path/to/source.mp4",
+  "durationMs": 120000,
+  "segments": [
+    {
+      "id": "a1b2c3d4-...",
+      "label": "intro",
+      "startMs": 0,
+      "endMs": 8000,
+      "enabled": true
+    },
+    {
+      "id": "e5f6a7b8-...",
+      "label": "action-scene-1",
+      "startMs": 15000,
+      "endMs": 45000,
+      "enabled": true
+    }
+  ],
+  "frames": {
+    "3200": { "boxes": [], "reviewed": false },
+    "22500": { "boxes": [{ "classId": 0, "cx": 0.5, "cy": 0.5, "w": 0.2, "h": 0.3 }], "reviewed": true }
+  }
+}
+```
+
+### SamplingMode options
+
+```ts
+export type SamplingMode =
+  | "whole-video"    // uniform random draw over [0, durationMs)
+  | "segments-only"; // uniform random draw over the union of enabled segment ranges
+```
+
+The active mode is held in React component state for the Video Label session. It is not
+written to the manifest so that reloading the workspace does not constrain the annotator
+to a particular mode.
+
+Fallback rule: if `segments-only` is selected but no segment is enabled, the sampler
+falls back to `whole-video` and the UI displays a warning. It never returns an error or
+an empty frame.
+
+### How segments guide random sampling
+
+When `segments-only` is active the sampler:
+
+1. Collects all segments where `enabled === true`.
+2. Computes total covered duration as the sum of `(endMs - startMs)` for each enabled
+   segment (overlapping ranges are not de-duplicated in the current implementation).
+3. Draws a uniform random value in `[0, totalCoveredMs)`.
+4. Maps that value onto the ordered segment list to produce a concrete timestamp.
+
+The resulting timestamp is passed to the video decode endpoint exactly as a
+whole-video sample would be; the decode path is unaware of segments.
+
+### Integration with the Video Label page
+
+The Video Label page shell exposes:
+
+- A segment management panel (create, rename, set range, enable/disable, delete).
+- A sampling mode toggle (whole-video / segments only).
+- A "Random next" button that invokes the sampler for the current mode.
+- A frame preview canvas that displays the decoded frame for the current timestamp.
+
+Segments are saved eagerly on every create/update/delete operation because they are
+lightweight (pure metadata). Frame annotations are saved on navigation away or explicit
+save, consistent with the existing timestamp-manifest persistence contract.
+
+No decoded frame is written to disk as part of any of these operations. Explicit frame
+export remains a separate action in the export panel and is not triggered by annotation
+or sampling.
