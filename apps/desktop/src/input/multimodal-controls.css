@@ -154,20 +154,20 @@
   border: 1px solid var(--border, rgba(255,255,255,.1));
   border-radius: 10px;
   overflow: hidden;
-  max-width: min(90vw, 760px);
-  max-height: 90vh;
+  width: 94vw;
+  height: 94vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 24px 64px rgba(0,0,0,.6);
+  box-shadow: 0 24px 64px rgba(0,0,0,.7);
 }
 .calibration-sheet-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 14px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--border, rgba(255,255,255,.1));
-  font-size: .82rem;
+  font-size: .84rem;
   color: var(--text-2, #94a3b8);
   flex-shrink: 0;
 }
@@ -178,11 +178,11 @@
 }
 .calibration-sheet-img {
   display: block;
-  width: 100%;
   flex: 1;
   min-height: 0;
+  width: 100%;
   object-fit: contain;
-  background: #fff;
+  background: #d1d5db;  /* neutral gray so the white A4 page floats visibly */
 }
 
 @media print {
