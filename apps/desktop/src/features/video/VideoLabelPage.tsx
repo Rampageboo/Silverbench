@@ -1,6 +1,7 @@
+import { useEffect, useState } from "react";
 import { useWorkspace } from "../../app/useWorkspace";
 import { useWorkbenchCommands } from "../../input/MultimodalControlProvider";
-import { VideoAnnotationCanvas } from "./VideoAnnotationCanvas";
+import { VideoAnnotationCanvas, type RemotePointerState } from "./VideoAnnotationCanvas";
 import { formatVideoClock } from "./videoAnnotationDomain";
 import { useVideoAnnotationSession } from "./useVideoAnnotationSession";
 import "./VideoLabelPage.css";
@@ -13,6 +14,11 @@ type Props = {
 export function VideoLabelPage({ onReady, active = true }: Props) {
   const { workspaceRoot, chooseWorkspaceFolder } = useWorkspace();
   const session = useVideoAnnotationSession({ workspaceRoot, active, onReady });
+  const [remotePointer, setRemotePointer] = useState<RemotePointerState | null>(null);
+
+  useEffect(() => {
+    setRemotePointer(null);
+  }, [active, session.current?.path]);
 
   useWorkbenchCommands((envelope) => {
     if (!active) return;
@@ -32,8 +38,31 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
       case "video.selectClass":
         session.assignClass(envelope.command.classId);
         break;
+      case "pointer.move":
+        setRemotePointer((previous) => ({
+          x: envelope.command.x,
+          y: envelope.command.y,
+          pressed: previous?.pressed ?? false,
+          sequence: (previous?.sequence ?? 0) + 1
+        }));
+        break;
+      case "pointer.press":
+        setRemotePointer((previous) => ({
+          x: envelope.command.x,
+          y: envelope.command.y,
+          pressed: true,
+          sequence: (previous?.sequence ?? 0) + 1
+        }));
+        break;
+      case "pointer.release":
+        setRemotePointer((previous) => ({
+          x: envelope.command.x,
+          y: envelope.command.y,
+          pressed: false,
+          sequence: (previous?.sequence ?? 0) + 1
+        }));
+        break;
       default:
-        // Pointer commands are calibration-ready and will be consumed by the canvas interaction adapter.
         break;
     }
   });
@@ -86,6 +115,7 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
                 currentClass={session.currentClass}
                 selectedIndex={session.selectedIndex}
                 disabled={session.previewLoading || session.manifestLoading}
+                remotePointer={remotePointer}
                 onChange={(next) => session.updateCurrentFrame(next, true)}
                 onSelectedIndexChange={session.setSelectedIndex}
               />
