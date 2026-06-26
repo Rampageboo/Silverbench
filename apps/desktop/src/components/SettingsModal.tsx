@@ -136,7 +136,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                     <strong>{manifest.name} · manifest v{manifest.version}</strong>
                     <span>Video Label is primary. Extracted screenshots are disabled.</span>
                     <span>Image Box Label and Image Pool remain enabled as secondary workflows.</span>
-                    <span>Video metadata: {String(manifest.paths.video_annotations)}</span>
+                    <span>App mode: video-first · timestamp-manifest · no extracted frames</span>
+                    <span>Video annotations: {String(manifest.paths.video_annotations)}</span>
+                    <span>Video segments: {String(manifest.paths.video_segments)}</span>
                     <span>Structured logs: {String(manifest.paths.logs)}</span>
                     <span>Disposable cache: {String(manifest.paths.cache)}</span>
                     {migrated ? <span>Manifest upgraded during this session.</span> : null}

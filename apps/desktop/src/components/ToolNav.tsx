@@ -7,6 +7,7 @@ const TOOL_NAV_ICONS: Record<string, string> = {
   "pool-label":
     '<rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><path d="M12 9v6M9 12h6"/>',
   video: '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/>',
+  "video-capture": '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/><line x1="7" y1="20" x2="17" y2="20"/><line x1="12" y1="18" x2="12" y2="22"/>',
   "train-prep": '<path d="M6 4v16"/><path d="M18 4v16"/><path d="M6 12h12"/>',
   train: '<path d="M12 3l2.2 6.8H21l-5.6 4.1 2.1 6.6L12 16.3l-5.5 4.2 2.1-6.6L3 9.8h6.8z"/>',
   crop: '<path d="M6 3v3H3"/><path d="M18 3v3h3"/><path d="M6 21v-3H3"/><path d="M18 21v-3h3"/><rect x="7" y="7" width="10" height="10" rx="1"/>',

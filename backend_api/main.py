@@ -668,5 +668,10 @@ def _error_response(status_code: int, method: str, message: str, *, error_type: 
     )
 
 
-if WEB_DIR.is_dir():
-    app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
+@app.on_event("startup")
+async def _mount_legacy_web() -> None:
+    # Mount static files last so all API routes (including those added by
+    # importing modules such as multimodal_main) take priority over the
+    # catch-all "/" StaticFiles handler.
+    if WEB_DIR.is_dir():
+        app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")

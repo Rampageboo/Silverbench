@@ -1,13 +1,25 @@
 import config from "../../backend.config.json";
 
+export type BackendConfig = {
+  host: string;
+  port: number;
+};
+
 function normalizedOrigin(value: string) {
   return value.trim().replace(/\/+$/, "");
 }
 
+/** Return the configured host and port from backend.config.json. */
+export function resolveBackendConfig(): BackendConfig {
+  return {
+    host: String(config.host || "127.0.0.1"),
+    port: Number(config.port) || 8765
+  };
+}
+
 /** Resolve the local FastAPI origin, allowing explicit query/global overrides for development. */
-export function backendBaseUrl() {
-  const configuredHost = String(config.host || "127.0.0.1");
-  const configuredPort = Number(config.port) || 8765;
+export function backendBaseUrl(resolved?: BackendConfig) {
+  const { host: configuredHost, port: configuredPort } = resolved ?? resolveBackendConfig();
   if (typeof window === "undefined") return `http://${configuredHost}:${configuredPort}`;
 
   const queryOverride = new URLSearchParams(window.location.search).get("backendUrl") || "";
