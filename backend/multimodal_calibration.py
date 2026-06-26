@@ -142,8 +142,17 @@ def generate_calibration_sheet_png(dpi: int = 150) -> bytes:
         (positions[2][0], positions[2][1]),
         (positions[3][0] + marker_size, positions[3][1]),
     ]
-    draw.line([*inward, inward[0]], fill=(30, 64, 175), width=max(2, dpi // 40))
-    for index, point in enumerate(inward, start=1):
+    # Keep all visual guides well inside the tag-defined rectangle. Drawing on a tag edge
+    # destroys its quiet boundary and can make every marker undetectable after printing.
+    guide_gap = max(18, round(0.18 * dpi))
+    guides = [
+        (inward[0][0] + guide_gap, inward[0][1] + guide_gap),
+        (inward[1][0] - guide_gap, inward[1][1] + guide_gap),
+        (inward[2][0] - guide_gap, inward[2][1] - guide_gap),
+        (inward[3][0] + guide_gap, inward[3][1] - guide_gap),
+    ]
+    draw.line([*guides, guides[0]], fill=(30, 64, 175), width=max(2, dpi // 40))
+    for index, point in enumerate(guides, start=1):
         radius = max(5, dpi // 30)
         draw.ellipse(
             (point[0] - radius, point[1] - radius, point[0] + radius, point[1] + radius),
