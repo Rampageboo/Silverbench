@@ -89,7 +89,7 @@ export class GestureCommandInterpreter {
       const cutoff = observation.timestampMs - this.options.swipeWindowMs;
       this.motion = this.motion.filter((sample) => sample.timestampMs >= cutoff);
       const first = this.motion[0];
-      const last = this.motion.at(-1);
+      const last = this.motion[this.motion.length - 1];
       if (
         first &&
         last &&
@@ -97,8 +97,8 @@ export class GestureCommandInterpreter {
         Math.abs(last.x - first.x) >= this.options.swipeDistance
       ) {
         const visualDirection = Math.sign(last.x - first.x);
-        // Moving the hand left advances the video; moving right goes back.
-        const seconds = visualDirection < 0 ? this.options.seekSeconds : -this.options.seekSeconds;
+        // Left goes backward; right goes forward, matching whole-arm controls.
+        const seconds = visualDirection < 0 ? -this.options.seekSeconds : this.options.seekSeconds;
         commands.push(
           createCommandEnvelope("gesture", { type: "video.seekBy", seconds }, {
             confidence: observation.score,
