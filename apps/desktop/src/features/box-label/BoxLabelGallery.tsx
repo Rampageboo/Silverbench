@@ -4,6 +4,7 @@ import { isFlaggedFile, isReviewedFile } from "../image-pool/metadata";
 import { datasetImageUrl } from "../dataset-review/datasetAssets";
 import type { MetadataRow } from "../image-pool/types";
 import type { BoxLabelEntry } from "./boxLabelCore";
+import { galleryRevealTargetForKey } from "./galleryNavigation";
 
 type BoxLabelGalleryProps = {
   datasetRoot: string;
@@ -82,7 +83,7 @@ export function BoxLabelGallery({
   onImageViewModeChange
 }: BoxLabelGalleryProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
-  const lastScrolledIndexRef = useRef(-1);
+  const pendingKeyboardRevealIndexRef = useRef<number | null>(null);
   const [layout, setLayout] = useState(() => computeVirtualGridLayout(null, 0, 138, 10, 36, 10 / 16));
 
   const recompute = useCallback(() => {
@@ -100,6 +101,26 @@ export function BoxLabelGallery({
     observer.observe(el);
     return () => observer.disconnect();
   }, [recompute]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      pendingKeyboardRevealIndexRef.current = galleryRevealTargetForKey(
+        {
+          key: event.key,
+          ctrlKey: event.ctrlKey,
+          altKey: event.altKey,
+          metaKey: event.metaKey,
+          targetTagName: target?.tagName,
+          targetEditable: target?.isContentEditable
+        },
+        currentIndex,
+        entries.length
+      );
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [currentIndex, entries.length]);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -122,14 +143,16 @@ export function BoxLabelGallery({
   }, [restoreScrollTop, restoreImagePath, entries, layout.columns, layout.rowHeight, onViewportRestored, recompute]);
 
   useEffect(() => {
-    lastScrolledIndexRef.current = -1;
+    pendingKeyboardRevealIndexRef.current = null;
   }, [datasetRoot, entries.length]);
 
   useEffect(() => {
+    const requestedIndex = pendingKeyboardRevealIndexRef.current;
+    if (requestedIndex === null || requestedIndex !== currentIndex) return;
+    pendingKeyboardRevealIndexRef.current = null;
     const el = wrapRef.current;
-    if (!el || currentIndex < 0 || !entries.length || currentIndex === lastScrolledIndexRef.current) return;
+    if (!el || currentIndex < 0 || !entries.length) return;
     const { scrolled, layout: nextLayout } = scrollVirtualGridToIndex(el, currentIndex, entries.length, BOX_LABEL_GRID_PARAMS);
-    lastScrolledIndexRef.current = currentIndex;
     if (scrolled) setLayout(nextLayout);
   }, [currentIndex, entries.length]);
 
@@ -238,13 +261,14 @@ export function BoxLabelGallery({
                 <div
                   key={item.imagePath}
                   className={`thumb${active ? " active" : ""}${shiftSelected ? " shift-selected" : ""}${reviewed ? " reviewed" : ""}${flagged ? " flagged" : ""}`}
-                  onClick={(event) =>
+                  onClick={(event) => {
+                    pendingKeyboardRevealIndexRef.current = null;
                     onSelect(index, {
                       shiftKey: event.shiftKey,
                       ctrlKey: event.ctrlKey,
                       metaKey: event.metaKey
-                    })
-                  }
+                    });
+                  }}
                   title={item.basename}
                 >
                   <LazyThumb datasetRoot={datasetRoot} imagePath={item.imagePath} />
