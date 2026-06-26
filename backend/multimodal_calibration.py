@@ -22,6 +22,21 @@ def _dictionary():
     return aruco.getPredefinedDictionary(dictionary_id)
 
 
+def _detector_parameters():
+    aruco = cv2.aruco
+    if hasattr(aruco, "DetectorParameters"):
+        parameters = aruco.DetectorParameters()
+    elif hasattr(aruco, "DetectorParameters_create"):
+        parameters = aruco.DetectorParameters_create()
+    else:
+        raise RuntimeError("OpenCV aruco detector parameters are unavailable.")
+    if hasattr(aruco, "CORNER_REFINE_APRILTAG"):
+        parameters.cornerRefinementMethod = aruco.CORNER_REFINE_APRILTAG
+    elif hasattr(aruco, "CORNER_REFINE_SUBPIX"):
+        parameters.cornerRefinementMethod = aruco.CORNER_REFINE_SUBPIX
+    return parameters
+
+
 def decode_image_base64(value: str):
     text = str(value or "").strip()
     if not text:
@@ -30,7 +45,7 @@ def decode_image_base64(value: str):
         _, _, text = text.partition(",")
     try:
         payload = base64.b64decode(text, validate=True)
-    except ValueError as error:
+    except (ValueError, TypeError) as error:
         raise ValueError("imageBase64 is invalid.") from error
     data = np.frombuffer(payload, dtype=np.uint8)
     image = cv2.imdecode(data, cv2.IMREAD_COLOR)
@@ -46,11 +61,7 @@ def detect_apriltags(image) -> dict[str, Any]:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     aruco = cv2.aruco
     dictionary = _dictionary()
-    parameters = aruco.DetectorParameters()
-    if hasattr(aruco, "CORNER_REFINE_APRILTAG"):
-        parameters.cornerRefinementMethod = aruco.CORNER_REFINE_APRILTAG
-    elif hasattr(aruco, "CORNER_REFINE_SUBPIX"):
-        parameters.cornerRefinementMethod = aruco.CORNER_REFINE_SUBPIX
+    parameters = _detector_parameters()
 
     if hasattr(aruco, "ArucoDetector"):
         detector = aruco.ArucoDetector(dictionary, parameters)
@@ -85,7 +96,7 @@ def detect_apriltags(image) -> dict[str, Any]:
         "detections": detections,
         "requiredIds": list(CALIBRATION_TAG_IDS),
         "missingIds": [marker_id for marker_id in CALIBRATION_TAG_IDS if marker_id not in found_ids],
-        "rejectedCount": len(rejected or []),
+        "rejectedCount": len(rejected) if rejected is not None else 0,
     }
 
 
@@ -101,7 +112,7 @@ def _marker_image(marker_id: int, size: int) -> Image.Image:
     else:
         marker = np.zeros((size, size), dtype=np.uint8)
         aruco.drawMarker(dictionary, marker_id, size, marker, 1)
-    return Image.fromarray(marker, mode="L").convert("RGB")
+    return Image.fromarray(marker).convert("RGB")
 
 
 def generate_calibration_sheet_png(dpi: int = 150) -> bytes:
