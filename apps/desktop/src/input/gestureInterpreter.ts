@@ -42,7 +42,7 @@ export class GestureCommandInterpreter {
   private stableSince = 0;
   private stableFired = false;
   private motion: MotionSample[] = [];
-  private lastSwipeAt = 0;
+  private lastSwipeAt = Number.NEGATIVE_INFINITY;
   private pinchPressed = false;
 
   constructor(options: GestureInterpreterOptions = {}) {
@@ -67,7 +67,7 @@ export class GestureCommandInterpreter {
     this.stableSince = 0;
     this.stableFired = false;
     this.motion = [];
-    this.lastSwipeAt = 0;
+    this.lastSwipeAt = Number.NEGATIVE_INFINITY;
     this.pinchPressed = false;
   }
 
@@ -143,10 +143,15 @@ export class GestureCommandInterpreter {
   private pointerCommands(observation: GestureObservation, gesture: string): CommandEnvelope[] {
     const matrix = this.options.homography;
     const landmarks = observation.landmarks;
-    if (!matrix || landmarks.length < 18 || (!this.pinchPressed && gesture !== "Pointing_Up" && gesture !== "None")) {
-      if (this.pinchPressed && (!matrix || landmarks.length < 18)) this.pinchPressed = false;
+    if (!matrix || landmarks.length < 18) {
+      this.pinchPressed = false;
       return [];
     }
+
+    const palmWidth = Math.max(0.001, distance(landmarks[5], landmarks[17]));
+    const pinchRatio = distance(landmarks[4], landmarks[8]) / palmWidth;
+    const pointerActive = gesture === "Pointing_Up" || this.pinchPressed || pinchRatio <= 0.4;
+    if (!pointerActive) return [];
 
     const indexTip = landmarks[8];
     const cameraPoint: Point2 = {
@@ -164,8 +169,6 @@ export class GestureCommandInterpreter {
     };
     const commands = [createCommandEnvelope("gesture", { type: "pointer.move", ...point }, metadata)];
 
-    const palmWidth = Math.max(0.001, distance(landmarks[5], landmarks[17]));
-    const pinchRatio = distance(landmarks[4], landmarks[8]) / palmWidth;
     if (!this.pinchPressed && pinchRatio <= 0.32) {
       this.pinchPressed = true;
       commands.push(createCommandEnvelope("gesture", { type: "pointer.press", ...point }, metadata));
