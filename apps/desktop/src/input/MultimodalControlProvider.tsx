@@ -57,6 +57,7 @@ type MultimodalControlContextValue = {
   lastTranscript: string;
   gestureStatus: GestureCameraStatus;
   lastGesture: string;
+  lastArmMotion: string;
   gestureError: string;
   lastDecision: CommandDecision | null;
   cameraVideoRef: RefObject<HTMLVideoElement>;
@@ -157,6 +158,7 @@ export function MultimodalControlProvider({ children }: { children: ReactNode })
       lastTranscript: speech.lastTranscript,
       gestureStatus: gesture.status,
       lastGesture: gesture.lastGesture,
+      lastArmMotion: gesture.lastArmMotion,
       gestureError: gesture.error,
       lastDecision,
       cameraVideoRef,
@@ -166,6 +168,7 @@ export function MultimodalControlProvider({ children }: { children: ReactNode })
     [
       armed,
       gesture.error,
+      gesture.lastArmMotion,
       gesture.lastGesture,
       gesture.status,
       gestureEnabled,
