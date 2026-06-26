@@ -1,4 +1,5 @@
 import { useWorkspace } from "../../app/useWorkspace";
+import { useWorkbenchCommands } from "../../input/MultimodalControlProvider";
 import { VideoAnnotationCanvas } from "./VideoAnnotationCanvas";
 import { formatVideoClock } from "./videoAnnotationDomain";
 import { useVideoAnnotationSession } from "./useVideoAnnotationSession";
@@ -12,6 +13,31 @@ type Props = {
 export function VideoLabelPage({ onReady, active = true }: Props) {
   const { workspaceRoot, chooseWorkspaceFolder } = useWorkspace();
   const session = useVideoAnnotationSession({ workspaceRoot, active, onReady });
+
+  useWorkbenchCommands((envelope) => {
+    if (!active) return;
+    switch (envelope.command.type) {
+      case "video.seekBy":
+        session.gotoTime(session.time + envelope.command.seconds);
+        break;
+      case "video.copyPreviousBoxes":
+        session.copyPreviousBoxes();
+        break;
+      case "video.markReviewed":
+        if (session.current) session.updateCurrentFrame(session.boxes, true);
+        break;
+      case "video.clearFrameRecord":
+        session.clearFrameRecord();
+        break;
+      case "video.selectClass":
+        session.assignClass(envelope.command.classId);
+        break;
+      default:
+        // Pointer commands are calibration-ready and will be consumed by the canvas interaction adapter.
+        break;
+    }
+  });
+
   const saveLabel =
     session.saveState === "saving"
       ? "Saving…"
