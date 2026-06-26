@@ -77,4 +77,23 @@ jobs:
       - name: Compile multimodal backend modules
         run: python -m py_compile backend/multimodal_calibration.py backend_api/multimodal_main.py
       - name: Test printable sheet and detector round trip
-        run: python -m unittest discover -s tests -p "test_multimodal_calibration.py" -v
+        id: apriltag_tests
+        shell: bash
+        run: |
+          set +e
+          python -m unittest discover -s tests -p "test_multimodal_calibration.py" -v > apriltag-test-output.txt 2>&1
+          code=$?
+          cat apriltag-test-output.txt
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Upload AprilTag diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apriltag-ci-diagnostics
+          path: apriltag-test-output.txt
+          if-no-files-found: warn
+      - name: Enforce AprilTag validation
+        if: always()
+        shell: bash
+        run: test "${{ steps.apriltag_tests.outputs.exit_code }}" = "0"
