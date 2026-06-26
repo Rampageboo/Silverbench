@@ -22,9 +22,10 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
 
   useWorkbenchCommands((envelope) => {
     if (!active) return;
-    switch (envelope.command.type) {
+    const command = envelope.command;
+    switch (command.type) {
       case "video.seekBy":
-        session.gotoTime(session.time + envelope.command.seconds);
+        session.gotoTime(session.time + command.seconds);
         break;
       case "video.copyPreviousBoxes":
         session.copyPreviousBoxes();
@@ -36,32 +37,38 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
         session.clearFrameRecord();
         break;
       case "video.selectClass":
-        session.assignClass(envelope.command.classId);
+        session.assignClass(command.classId);
         break;
-      case "pointer.move":
+      case "pointer.move": {
+        const { x, y } = command;
         setRemotePointer((previous) => ({
-          x: envelope.command.x,
-          y: envelope.command.y,
+          x,
+          y,
           pressed: previous?.pressed ?? false,
           sequence: (previous?.sequence ?? 0) + 1
         }));
         break;
-      case "pointer.press":
+      }
+      case "pointer.press": {
+        const { x, y } = command;
         setRemotePointer((previous) => ({
-          x: envelope.command.x,
-          y: envelope.command.y,
+          x,
+          y,
           pressed: true,
           sequence: (previous?.sequence ?? 0) + 1
         }));
         break;
-      case "pointer.release":
+      }
+      case "pointer.release": {
+        const { x, y } = command;
         setRemotePointer((previous) => ({
-          x: envelope.command.x,
-          y: envelope.command.y,
+          x,
+          y,
           pressed: false,
           sequence: (previous?.sequence ?? 0) + 1
         }));
         break;
+      }
       default:
         break;
     }
