@@ -1,4 +1,5 @@
 import { useMemo, useState, type MouseEvent } from "react";
+import { createPortal } from "react-dom";
 import {
   calibrationSheetUrl,
   captureVideoFrameBase64,
@@ -119,6 +120,7 @@ export function MultimodalControlDock() {
   }
 
   return (
+    <>
     <aside className={`multimodal-control-dock${expanded ? " is-expanded" : ""}`}>
       <button
         type="button"
@@ -256,7 +258,9 @@ export function MultimodalControlDock() {
         </div>
       ) : null}
 
-      {showSheet ? (
+    </aside>
+
+      {showSheet ? createPortal(
         <div
           className="calibration-sheet-backdrop"
           role="dialog"
@@ -279,8 +283,9 @@ export function MultimodalControlDock() {
               draggable={false}
             />
           </div>
-        </div>
+        </div>,
+        document.body
       ) : null}
-    </aside>
+    </>
   );
 }
