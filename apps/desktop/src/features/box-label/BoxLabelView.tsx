@@ -23,25 +23,54 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
       >
         <div className="pool-label-shortcuts" id="poolLabelShortcuts">
           {SLOT_ORDER.map((slot) => {
-            const classId = editor.shortcutSlots[slot];
-            const bound = classId != null && editor.classes.some((item) => item.id === classId);
+            const slotData = editor.shortcutSlots[slot];
+            const bound = slotData != null && editor.classes.some((item) => item.id === slotData.classId);
+            const slotMode = slotData?.mode ?? "draw";
+            const modeTag = slotMode === "subject-select" ? " · SS" : "";
             return (
               <div className="pool-label-shortcut-slot" key={slot}>
                 <div className="pool-label-shortcut-number">{slot}</div>
                 <BoxLabelShortcutDropdown
                   className="class-slot"
                   title={`Shortcut ${slot}`}
-                  label={bound ? `${classId}: ${classNameFor(editor.classes, classId!)}` : "empty"}
-                  active={bound && classId === editor.currentClass && editor.activeShortcutSlot === slot}
+                  label={bound ? `${slotData!.classId}: ${classNameFor(editor.classes, slotData!.classId)}${modeTag}` : "empty"}
+                  active={bound && slotData!.classId === editor.currentClass && editor.activeShortcutSlot === slot}
                   options={editor.classShortcutOptions(slot)}
                   onSelect={(value) => {
                     const next = editor.shortcutSlots.slice();
-                    next[slot] = value === "" ? null : Number(value);
+                    if (value === "") {
+                      next[slot] = null;
+                    } else {
+                      // Preserve existing mode when changing class.
+                      const existingMode = next[slot]?.mode ?? "draw";
+                      next[slot] = { classId: Number(value), mode: existingMode };
+                    }
                     editor.setShortcutSlots(next);
                     if (value !== "") editor.selectClassShortcut(slot, true);
                     else editor.setStatus(`Shortcut ${slot} cleared.`);
                   }}
                 />
+                <button
+                  type="button"
+                  className={`pool-label-shortcut-mode-btn${slotMode === "subject-select" ? " mode-ss" : " mode-draw"}`}
+                  title={`Shortcut ${slot} mode: ${slotMode === "subject-select" ? "Subject Select" : "Draw"} — click to toggle`}
+                  disabled={!bound}
+                  onClick={() => {
+                    const next = editor.shortcutSlots.slice();
+                    const current = next[slot];
+                    if (!current) return;
+                    next[slot] = {
+                      ...current,
+                      mode: current.mode === "draw" ? "subject-select" : "draw"
+                    };
+                    editor.setShortcutSlots(next);
+                    editor.setStatus(
+                      `Shortcut ${slot} mode → ${next[slot]!.mode === "subject-select" ? "Subject Select" : "Draw"}.`
+                    );
+                  }}
+                >
+                  {slotMode === "subject-select" ? "SS" : "D"}
+                </button>
                 <BoxLabelShortcutDropdown
                   className="fixed-slot"
                   title={`Alt shortcut ${slot}`}
@@ -199,12 +228,13 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
                     type="button"
                     className={`pool-label-class-row${item.id === editor.currentClass ? " selected" : ""}${editor.includeClasses.has(item.id) ? " include-filter" : ""}${editor.excludeClasses.has(item.id) ? " exclude-filter" : ""}`}
                     onClick={() => void editor.assignClass(item.id)}
+                    onDoubleClick={() => void editor.applyClassToSelectedBox(item.id)}
                     onContextMenu={(event) => {
                       event.preventDefault();
                       if (event.shiftKey) editor.onAddExcludeClass(item.id);
                       else editor.onAddIncludeClass(item.id);
                     }}
-                    title="Right-click: Include · Shift+right-click: Exclude"
+                    title="Single-click: select class · Double-click: relabel selected box · Right-click: include/exclude filter"
                   >
                     {item.id}: {item.name}
                     {editor.includeClasses.has(item.id) ? " [inc]" : ""}

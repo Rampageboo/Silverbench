@@ -25,6 +25,7 @@ import {
   normalizeFixedBoxSlotsFromSession,
   parsePoolLabelSession,
   resolveResumeImagePath,
+  type BoxLabelShortcutSlot,
   type FixedBoxSlot,
   savePoolLabelSession
 } from "./session";
@@ -77,7 +78,7 @@ export function useBoxLabel({
   const [restoreImagePath, setRestoreImagePath] = useState("");
   const [shiftSelectedBasenames, setShiftSelectedBasenames] = useState<Set<string>>(new Set());
   const [selectionAnchorIndex, setSelectionAnchorIndex] = useState<number | null>(null);
-  const [initialShortcutSlots, setInitialShortcutSlots] = useState<Array<number | null> | null>(null);
+  const [initialShortcutSlots, setInitialShortcutSlots] = useState<Array<BoxLabelShortcutSlot | null> | null>(null);
   const [initialFixedBoxSlots, setInitialFixedBoxSlots] = useState<Array<FixedBoxSlot | null> | null>(null);
   const [initialPointerToolEnabled, setInitialPointerToolEnabled] = useState(false);
   const [initialAutoFitEnabled, setInitialAutoFitEnabled] = useState(false);
@@ -85,7 +86,7 @@ export function useBoxLabel({
   const [statusText, setStatusText] = useState("");
   const readyNotified = useRef(false);
   const sessionSaveTimer = useRef<number | null>(null);
-  const shortcutSlotsRef = useRef<Array<number | null> | null>(null);
+  const shortcutSlotsRef = useRef<Array<BoxLabelShortcutSlot | null> | null>(null);
   const fixedBoxSlotsRef = useRef<Array<FixedBoxSlot | null> | null>(null);
   const toolStateRef = useRef({ pointerToolEnabled: false, autoFitEnabled: false });
   const pendingFocusFilename = useRef<string | null>(null);
@@ -298,7 +299,7 @@ export function useBoxLabel({
     (
       index: number,
       scrollTop: number,
-      shortcutSlots?: Array<number | null>,
+      shortcutSlots?: Array<BoxLabelShortcutSlot | null>,
       fixedBoxSlots?: Array<FixedBoxSlot | null>,
       toolState?: { pointerToolEnabled: boolean; autoFitEnabled: boolean }
     ) => {
@@ -378,7 +379,7 @@ export function useBoxLabel({
   }, []);
 
   const onShortcutSlotsChange = useCallback(
-    (slots: Array<number | null>, fixedSlots?: Array<FixedBoxSlot | null>) => {
+    (slots: Array<BoxLabelShortcutSlot | null>, fixedSlots?: Array<FixedBoxSlot | null>) => {
       shortcutSlotsRef.current = slots;
       if (fixedSlots) fixedBoxSlotsRef.current = fixedSlots;
       queueSessionSave(currentIndex, galleryScrollTop ?? 0, slots, fixedSlots);

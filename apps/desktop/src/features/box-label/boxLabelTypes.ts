@@ -1,7 +1,7 @@
 import type * as api from "../../api";
 import type { MetadataRow } from "../image-pool/types";
 import type { BoxLabelEntry } from "./boxLabelCore";
-import type { FixedBoxSlot } from "./session";
+import type { BoxLabelShortcutSlot, FixedBoxSlot } from "./session";
 
 export type UndoSnapshot =
   | {
@@ -33,11 +33,11 @@ export type BoxLabelViewProps = {
   selectedFilenames: Set<string>;
   shiftSelectedFilenames: Set<string>;
   onNavigate: (index: number) => void;
-  initialShortcutSlots?: Array<number | null> | null;
+  initialShortcutSlots?: Array<BoxLabelShortcutSlot | null> | null;
   initialFixedBoxSlots?: Array<FixedBoxSlot | null> | null;
   initialPointerToolEnabled?: boolean;
   initialAutoFitEnabled?: boolean;
-  onShortcutSlotsChange?: (slots: Array<number | null>, fixedSlots?: Array<FixedBoxSlot | null>) => void;
+  onShortcutSlotsChange?: (slots: Array<BoxLabelShortcutSlot | null>, fixedSlots?: Array<FixedBoxSlot | null>) => void;
   onToolStateChange?: (pointerToolEnabled: boolean, autoFitEnabled: boolean) => void;
   includeClasses: Set<number>;
   excludeClasses: Set<number>;

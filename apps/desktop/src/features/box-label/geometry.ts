@@ -605,20 +605,35 @@ export function shortcutStorageKey(workspaceRoot: string) {
   return `ywb.boxlabel.shortcuts.${workspaceRoot}`;
 }
 
-export function loadShortcutSlots(workspaceRoot: string) {
+function migrateLocalShortcutEntry(value: unknown): import("./session").BoxLabelShortcutSlot | null {
+  if (value == null) return null;
+  if (typeof value === "object" && value !== null) {
+    const obj = value as Record<string, unknown>;
+    const classId = Number(obj.classId);
+    if (!Number.isInteger(classId) || classId < 0) return null;
+    const mode = obj.mode === "subject-select" ? "subject-select" as const : "draw" as const;
+    return { classId, mode };
+  }
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
+    return { classId: value, mode: "draw" };
+  }
+  return null;
+}
+
+export function loadShortcutSlots(workspaceRoot: string): Array<import("./session").BoxLabelShortcutSlot | null> {
   try {
     const raw = window.localStorage.getItem(shortcutStorageKey(workspaceRoot));
     const parsed = raw ? JSON.parse(raw) : null;
     if (Array.isArray(parsed)) {
-      return Array.from({ length: 10 }, (_, index) => (Number.isInteger(parsed[index]) ? parsed[index] : null));
+      return Array.from({ length: 10 }, (_, index) => migrateLocalShortcutEntry(parsed[index]));
     }
   } catch {
     // Ignore corrupt local shortcut settings.
   }
-  return Array.from({ length: 10 }, (_, index) => index);
+  return Array.from({ length: 10 }, (_, index) => ({ classId: index, mode: "draw" as const }));
 }
 
-export function saveShortcutSlots(workspaceRoot: string, slots: Array<number | null>) {
+export function saveShortcutSlots(workspaceRoot: string, slots: Array<import("./session").BoxLabelShortcutSlot | null>) {
   try {
     window.localStorage.setItem(shortcutStorageKey(workspaceRoot), JSON.stringify(slots));
   } catch {

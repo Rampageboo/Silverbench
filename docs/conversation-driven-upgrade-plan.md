@@ -400,3 +400,81 @@ with `ModuleNotFoundError: No module named 'backend'`. This is a pre-existing
 environment issue — the repo root is not on `sys.path` when running from a subdirectory.
 Running `PYTHONPATH=$(pwd) python -m unittest discover -s tests -p "test_*.py"` from
 the repo root resolves it. No Python files were changed in this branch pass.
+
+---
+
+## Shortcut mode memory and selected-box relabel safety
+
+Branch: `feature/box-label-stability-pass` (stacked on `feature/box-label-stability-hardening`).
+
+### Summary
+
+Each shortcut slot now stores `{ classId, mode }` instead of a bare class id number.
+The mode ("draw" or "subject-select") is persisted in both localStorage and
+`session.json` and is restored on app start. Pressing a keyboard shortcut applies
+the stored mode automatically.
+
+Single-clicking a class in the class panel no longer relabels the selected box.
+Double-clicking is required for an intentional relabel. This removes a common
+source of accidental class changes on images that already have boxes.
+
+### Type change
+
+```ts
+// Before
+type ShortcutSlot = number | null;
+
+// After
+export type BoxLabelShortcutSlot = {
+  classId: number;
+  mode: "draw" | "subject-select";
+};
+```
+
+Both localStorage (`loadShortcutSlots`/`saveShortcutSlots`) and the session file
+(`normalizeShortcutSlotsFromSession`/`savePoolLabelSession`) migrate old numeric
+entries to `{ classId, mode: "draw" }` on first read. Old app versions reading the
+session see the objects as unknown values and fall back to the local-storage default,
+which is also safe.
+
+### Behavioral changes
+
+| Action | Before | After |
+|---|---|---|
+| Single-click class in class panel | Relabels selected box | Sets active class; shows "double-click to relabel" hint |
+| Double-click class in class panel | (no-op, same as single) | Relabels selected box, pushes undo |
+| Keyboard shortcut 1–0 | Sets class, may apply mode change | Sets class + restores stored mode; never relabels selected box |
+| Shortcut mode toggle button (D/SS) | Not available | Toggles draw ↔ subject-select for that slot |
+
+### Files changed
+
+- `session.ts`: `BoxLabelShortcutSlot` type; `migrateShortcutEntry`; updated
+  `normalizeShortcutSlotsFromSession`, `savePoolLabelSession`.
+- `geometry.ts`: `migrateLocalShortcutEntry`; updated `loadShortcutSlots`,
+  `saveShortcutSlots` (default slots: `{ classId: i, mode: "draw" }`).
+- `boxLabelTypes.ts`: updated `initialShortcutSlots` and `onShortcutSlotsChange`
+  signatures.
+- `useBoxLabel.ts`: updated `initialShortcutSlots` state, `shortcutSlotsRef`, and
+  `queueSessionSave` parameter types.
+- `useBoxLabelClasses.ts`: updated slot state type; split `assignClass` (safe —
+  no box mutation) from new `applyClassToSelectedBox` (intentional relabel);
+  `selectClassShortcut` applies stored mode without touching selected box;
+  `classShortcutOptions` reads `slotData.classId`.
+- `useBoxLabelEditor.ts`: exposes `applyClassToSelectedBox`.
+- `BoxLabelView.tsx`: mode toggle button per slot (D/SS); `onDoubleClick` on class
+  rows; slot label shows mode tag (` · SS`) when set to subject-select.
+- `session.test.ts`: updated tests to expect object format from migration; added
+  object-format preservation test and negative-classId-in-object test.
+
+### Manual regression checklist
+
+1. Open a workspace that previously had numeric shortcuts saved.
+   Confirm they load as `{ classId, mode: "draw" }` (check browser devtools localStorage).
+2. Click a class in the class panel while a box is selected. Confirm the box class does
+   not change and the status bar shows the "double-click to relabel" hint.
+3. Double-click a class while a box is selected. Confirm the box is relabeled, the undo
+   stack gains an entry, and the new label persists after A/D navigation.
+4. Bind shortcut slot 1 to a class, set its mode to "SS" using the mode toggle button.
+   Close and reopen the app. Press key 1. Confirm subject-select mode (auto-fit) activates.
+5. Press a keyboard shortcut while a box is selected. Confirm the selected box is not relabeled.
+6. Toggle the mode button on an empty slot. Confirm the button is disabled (grayed out).

@@ -44,16 +44,28 @@ describe("box-label session", () => {
     expect(slots!.every((s) => s === null)).toBe(true);
   });
 
-  it("normalizeShortcutSlotsFromSession normalises a partial array", () => {
+  it("normalizeShortcutSlotsFromSession normalises a partial array (legacy numeric)", () => {
     const slots = normalizeShortcutSlotsFromSession({
       poolLabelShortcuts: [0, 1, 2]
     });
     expect(slots).not.toBeNull();
-    expect(slots![0]).toBe(0);
-    expect(slots![1]).toBe(1);
-    expect(slots![2]).toBe(2);
+    expect(slots![0]).toEqual({ classId: 0, mode: "draw" });
+    expect(slots![1]).toEqual({ classId: 1, mode: "draw" });
+    expect(slots![2]).toEqual({ classId: 2, mode: "draw" });
     expect(slots![3]).toBeNull();
     expect(slots).toHaveLength(10);
+  });
+
+  it("normalizeShortcutSlotsFromSession preserves mode from object format", () => {
+    const slots = normalizeShortcutSlotsFromSession({
+      poolLabelShortcuts: [
+        { classId: 3, mode: "subject-select" },
+        { classId: 7, mode: "draw" }
+      ]
+    });
+    expect(slots![0]).toEqual({ classId: 3, mode: "subject-select" });
+    expect(slots![1]).toEqual({ classId: 7, mode: "draw" });
+    expect(slots![2]).toBeNull();
   });
 
   it("normalizeShortcutSlotsFromSession respects assigned mask", () => {
@@ -61,7 +73,11 @@ describe("box-label session", () => {
       poolLabelShortcuts: [1, 2, null, 3],
       poolLabelShortcutAssigned: [true, false, true, true]
     });
-    expect(slots).toEqual([1, null, null, 3, null, null, null, null, null, null]);
+    expect(slots![0]).toEqual({ classId: 1, mode: "draw" });
+    expect(slots![1]).toBeNull();
+    expect(slots![2]).toBeNull();
+    expect(slots![3]).toEqual({ classId: 3, mode: "draw" });
+    expect(slots![4]).toBeNull();
   });
 
   it("normalizeShortcutSlotsFromSession rejects negative class ids", () => {
@@ -69,9 +85,17 @@ describe("box-label session", () => {
       poolLabelShortcuts: [-1, 0, "bad", 5]
     });
     expect(slots![0]).toBeNull();
-    expect(slots![1]).toBe(0);
+    expect(slots![1]).toEqual({ classId: 0, mode: "draw" });
     expect(slots![2]).toBeNull();
-    expect(slots![3]).toBe(5);
+    expect(slots![3]).toEqual({ classId: 5, mode: "draw" });
+  });
+
+  it("normalizeShortcutSlotsFromSession rejects negative classId in object format", () => {
+    const slots = normalizeShortcutSlotsFromSession({
+      poolLabelShortcuts: [{ classId: -2, mode: "draw" }, { classId: 4, mode: "subject-select" }]
+    });
+    expect(slots![0]).toBeNull();
+    expect(slots![1]).toEqual({ classId: 4, mode: "subject-select" });
   });
 
   // -------------------------------------------------------------------------

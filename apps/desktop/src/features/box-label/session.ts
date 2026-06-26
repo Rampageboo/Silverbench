@@ -1,11 +1,21 @@
 import { callBackend } from "../../api";
 import { readWorkspaceSessionLite } from "../image-pool/session";
 
+/**
+ * A shortcut slot now stores both the class and the intended drawing mode.
+ * Old numeric slots (classId only) are migrated to { classId, mode: "draw" }.
+ */
+export type BoxLabelShortcutSlot = {
+  classId: number;
+  mode: "draw" | "subject-select";
+};
+
 export type PoolLabelSession = {
   currentImagePath?: string;
   poolLabelCurrentImagePath?: string;
   galleryScrollTop?: number;
-  poolLabelShortcuts?: Array<number | null>;
+  /** May contain legacy numeric entries (migrated on read). */
+  poolLabelShortcuts?: Array<BoxLabelShortcutSlot | number | null>;
   poolLabelShortcutAssigned?: boolean[];
   poolLabelFixedBoxes?: Array<FixedBoxSlot | null>;
   poolLabelPointerToolEnabled?: boolean;
@@ -44,16 +54,25 @@ export function parsePoolLabelSession(data: unknown): PoolLabelSession {
   };
 }
 
-export function normalizeShortcutSlotsFromSession(data: PoolLabelSession): Array<number | null> | null {
+function migrateShortcutEntry(value: BoxLabelShortcutSlot | number | null | undefined): BoxLabelShortcutSlot | null {
+  if (value == null) return null;
+  // New object format
+  if (typeof value === "object") {
+    const classId = Number(value.classId);
+    if (!Number.isInteger(classId) || classId < 0) return null;
+    const mode = value.mode === "subject-select" ? "subject-select" : "draw";
+    return { classId, mode };
+  }
+  // Legacy numeric format — migrate to draw mode
+  const classId = Number(value);
+  return Number.isInteger(classId) && classId >= 0 ? { classId, mode: "draw" } : null;
+}
+
+export function normalizeShortcutSlotsFromSession(data: PoolLabelSession): Array<BoxLabelShortcutSlot | null> | null {
   const raw = data.poolLabelShortcuts;
   const assigned = data.poolLabelShortcutAssigned;
   if (!Array.isArray(raw) && !Array.isArray(assigned)) return null;
-  const slots = Array.from({ length: 10 }, (_, index) => {
-    const value = raw?.[index];
-    if (value == null) return null;
-    const classId = Number(value);
-    return Number.isInteger(classId) && classId >= 0 ? classId : null;
-  });
+  const slots = Array.from({ length: 10 }, (_, index) => migrateShortcutEntry(raw?.[index]));
   if (Array.isArray(assigned)) {
     return Array.from({ length: 10 }, (_, index) => (assigned[index] ? slots[index] : null));
   }
@@ -91,7 +110,7 @@ export async function savePoolLabelSession(
   fields: {
     currentImagePath: string;
     galleryScrollTop: number;
-    shortcutSlots?: Array<number | null>;
+    shortcutSlots?: Array<BoxLabelShortcutSlot | null>;
     fixedBoxSlots?: Array<FixedBoxSlot | null>;
     pointerToolEnabled?: boolean;
     autoFitEnabled?: boolean;
@@ -113,6 +132,7 @@ export async function savePoolLabelSession(
   // whatever shortcuts were already in the session file.
   if (shortcutSlots !== undefined) {
     payload.poolLabelShortcuts = shortcutSlots;
+    // Keep the assigned mask for backwards compatibility with old readers.
     payload.poolLabelShortcutAssigned = shortcutSlots.map((slot) => slot !== null);
   }
   if (fields.fixedBoxSlots !== undefined) {

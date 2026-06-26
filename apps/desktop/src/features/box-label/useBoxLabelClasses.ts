@@ -6,7 +6,7 @@ import {
   saveDatasetClassNames
 } from "./boxLabelCore";
 import { classNameFor, loadShortcutSlots, saveShortcutSlots, type DragState, type ToolMode } from "./geometry";
-import type { FixedBoxSlot } from "./session";
+import type { BoxLabelShortcutSlot, FixedBoxSlot } from "./session";
 
 type ShortcutOption = {
   value: string;
@@ -18,11 +18,11 @@ type ShortcutOption = {
 type UseBoxLabelClassesOptions = {
   datasetRoot: string;
   workspaceRoot: string;
-  initialShortcutSlots: Array<number | null> | null;
+  initialShortcutSlots: Array<BoxLabelShortcutSlot | null> | null;
   initialFixedBoxSlots: Array<FixedBoxSlot | null> | null;
   initialPointerToolEnabled: boolean;
   initialAutoFitEnabled: boolean;
-  onShortcutSlotsChange?: (slots: Array<number | null>, fixedSlots?: Array<FixedBoxSlot | null>) => void;
+  onShortcutSlotsChange?: (slots: Array<BoxLabelShortcutSlot | null>, fixedSlots?: Array<FixedBoxSlot | null>) => void;
   onToolStateChange?: (pointerToolEnabled: boolean, autoFitEnabled: boolean) => void;
   boxesRef: MutableRefObject<api.LabelBox[]>;
   selectedRef: MutableRefObject<number | null>;
@@ -63,7 +63,7 @@ export function useBoxLabelClasses({
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
-  const [shortcutSlots, setShortcutSlotsState] = useState<Array<number | null>>(() => loadShortcutSlots(workspaceRoot));
+  const [shortcutSlots, setShortcutSlotsState] = useState<Array<BoxLabelShortcutSlot | null>>(() => loadShortcutSlots(workspaceRoot));
   const [fixedBoxSlots, setFixedBoxSlotsState] = useState<Array<FixedBoxSlot | null>>(() =>
     Array.from({ length: 10 }, () => null)
   );
@@ -85,7 +85,7 @@ export function useBoxLabelClasses({
   const userMutatedRef = useRef(false);
 
   const setShortcutSlots = useCallback(
-    (next: Array<number | null>) => {
+    (next: Array<BoxLabelShortcutSlot | null>) => {
       shortcutSlotsHydratedRef.current = true;
       userMutatedRef.current = true;
       saveShortcutSlots(workspaceRoot, next);
@@ -225,6 +225,9 @@ export function useBoxLabelClasses({
     });
   }, []);
 
+  // Single-click class from the class panel: set active class only.
+  // Does NOT relabel the selected box — that requires an intentional double-click
+  // (applyClassToSelectedBox) to prevent accidental relabeling.
   const assignClass = useCallback(
     async (classId: number) => {
       if (!Number.isInteger(classId) || classId < 0) return;
@@ -235,12 +238,10 @@ export function useBoxLabelClasses({
       dragRef.current = null;
       const index = selectedRef.current;
       if (index !== null && boxesRef.current[index]) {
-        pushUndo("change class");
-        const next = boxesRef.current.map((box, itemIndex) => (itemIndex === index ? { ...box, classId } : box));
-        boxesRef.current = next;
-        setBoxes(next);
-        await persistLabels(`Changed selected box to ${classNameFor(classesRef.current, classId)}.`);
-        scheduleDraw();
+        // A box is selected: inform the user without mutating it.
+        setStatus(
+          `${classNameFor(classesRef.current, classId)} selected. Double-click to relabel selected box.`
+        );
         return;
       }
       if (pointerToolEnabled) {
@@ -249,22 +250,65 @@ export function useBoxLabelClasses({
       }
       setStatus(`Class ${classNameFor(classesRef.current, classId)} selected for new boxes.`);
     },
-    [boxesRef, dragRef, persistLabels, pointerToolEnabled, pushUndo, scheduleDraw, selectedRef, setBoxes, setStatus, applyCurrentClass]
+    [applyCurrentClass, boxesRef, classesRef, dragRef, pointerToolEnabled, selectedRef, setStatus]
   );
 
+  // Double-click class from the class panel: intentionally relabel the selected box.
+  const applyClassToSelectedBox = useCallback(
+    async (classId: number) => {
+      if (!Number.isInteger(classId) || classId < 0) return;
+      const index = selectedRef.current;
+      if (index === null || !boxesRef.current[index]) return;
+      applyCurrentClass(classId);
+      const cls = classesRef.current.find((item) => item.id === classId);
+      setClassNameInput(cls?.name || "");
+      pushUndo("change class");
+      const next = boxesRef.current.map((box, itemIndex) =>
+        itemIndex === index ? { ...box, classId } : box
+      );
+      boxesRef.current = next;
+      setBoxes(next);
+      await persistLabels(`Relabeled selected box to ${classNameFor(classesRef.current, classId)}.`);
+      scheduleDraw();
+    },
+    [applyCurrentClass, boxesRef, classesRef, persistLabels, pushUndo, scheduleDraw, selectedRef, setBoxes]
+  );
+
+  // Keyboard shortcut 1–0: apply stored class + mode. Does NOT relabel selected box.
   const selectClassShortcut = useCallback(
     (slot: number, useSlot = true) => {
-      const classId = useSlot ? shortcutSlots[slot] : slot;
-      if (classId === null || !classes.some((item) => item.id === classId)) return;
+      const slotData = useSlot ? shortcutSlots[slot] : null;
+      const classId = slotData?.classId ?? (useSlot ? undefined : slot);
+      if (classId == null || !classes.some((item) => item.id === classId)) return;
+
+      // Apply the mode stored in the slot without touching selected box.
+      if (slotData?.mode === "subject-select") {
+        setAutoFitEnabled(true);
+        setPointerToolEnabled(false);
+        setBlackBoxEnabled(false);
+        setMode("draw");
+      } else {
+        // "draw" mode or legacy (no stored mode)
+        setAutoFitEnabled(false);
+        if (pointerToolEnabled) {
+          setPointerToolEnabled(false);
+          setMode("draw");
+        }
+      }
+
       setActiveShortcutSlot(useSlot ? slot : null);
-      void assignClass(classId);
+      applyCurrentClass(classId);
+      const cls = classesRef.current.find((item) => item.id === classId);
+      setClassNameInput(cls?.name || "");
+
+      const modeName = slotData?.mode === "subject-select" ? "Subject Select" : "Draw";
       setStatus(
         useSlot
-          ? `Selected shortcut ${slot}: ${classNameFor(classes, classId)}.`
-          : `Selected class ${classNameFor(classes, classId)}.`
+          ? `Shortcut ${slot}: ${classNameFor(classes, classId)} (${modeName}).`
+          : `Class ${classNameFor(classes, classId)} selected.`
       );
     },
-    [assignClass, classes, setStatus, shortcutSlots]
+    [applyCurrentClass, classes, classesRef, pointerToolEnabled, setStatus, shortcutSlots]
   );
 
   const startFixedBoxRecording = useCallback(
@@ -338,14 +382,15 @@ export function useBoxLabelClasses({
 
   const classShortcutOptions = useCallback(
     (slot: number): ShortcutOption[] => {
-      const bound = shortcutSlots[slot];
+      const slotData = shortcutSlots[slot];
+      const boundId = slotData?.classId;
       return [
-        { value: "", label: "empty", searchText: "empty none clear", selected: bound == null },
+        { value: "", label: "empty", searchText: "empty none clear", selected: slotData == null },
         ...sortedClasses.map((item) => ({
           value: String(item.id),
           label: `${item.id}: ${item.name}`,
           searchText: `${item.id} ${item.name}`,
-          selected: bound === item.id
+          selected: boundId === item.id
         }))
       ];
     },
@@ -401,6 +446,7 @@ export function useBoxLabelClasses({
     toggleAutoFitTool,
     toggleBlackBoxTool,
     assignClass,
+    applyClassToSelectedBox,
     addClass,
     selectClassShortcut,
     startFixedBoxRecording,

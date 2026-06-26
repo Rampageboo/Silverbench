@@ -352,6 +352,7 @@ export function useBoxLabelEditor({
     classShortcutOptions: labelClasses.classShortcutOptions,
     fixedShortcutOptions: labelClasses.fixedShortcutOptions,
     assignClass: labelClasses.assignClass,
+    applyClassToSelectedBox: labelClasses.applyClassToSelectedBox,
     addClass: labelClasses.addClass,
     onClearClassFilters,
     onAddIncludeClass,
