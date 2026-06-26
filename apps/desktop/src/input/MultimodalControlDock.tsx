@@ -42,7 +42,7 @@ export function MultimodalControlDock() {
 
   const sourceStatus = useMemo(() => {
     const voice = controls.voiceEnabled ? `语音 ${controls.voiceStatus}` : "语音关闭";
-    const gesture = controls.gestureEnabled ? `手势 ${controls.gestureStatus}` : "手势关闭";
+    const gesture = controls.gestureEnabled ? `手势/手臂 ${controls.gestureStatus}` : "手势关闭";
     return `${voice} · ${gesture}`;
   }, [controls.gestureEnabled, controls.gestureStatus, controls.voiceEnabled, controls.voiceStatus]);
 
@@ -149,7 +149,7 @@ export function MultimodalControlDock() {
                 checked={controls.gestureEnabled}
                 onChange={(event) => controls.setGestureEnabled(event.target.checked)}
               />
-              手势
+              手势与手臂
             </label>
           </div>
 
@@ -233,17 +233,24 @@ export function MultimodalControlDock() {
             <div>{decisionText(controls.lastDecision)}</div>
             {controls.lastTranscript ? <div>语音：{controls.lastTranscript}</div> : null}
             {controls.lastGesture ? <div>手势：{controls.lastGesture}</div> : null}
+            {controls.lastArmMotion ? <div>手臂：{controls.lastArmMotion}</div> : null}
             {calibrationStatus ? <div>{calibrationStatus}</div> : null}
             {controls.gestureError ? <div className="error-banner">{controls.gestureError}</div> : null}
             {calibrationError ? <div className="error-banner">{calibrationError}</div> : null}
           </div>
 
           <details>
+            <summary>手臂动作映射</summary>
+            <p>系统同时跟踪肩、肘和腕；手掌识别不稳定时，小臂或整臂的明确挥动仍可触发。</p>
+            <p>向左：上一时间步；向右：下一时间步；向上：复制前一个框；向下：标记当前帧已复核。</p>
+          </details>
+
+          <details>
             <summary>AprilTag 摆放</summary>
             <p>
               在操作平面四角外侧放置标签 0、1、2、3，顺序为左上、右上、右下、左下。自动识别使用各标签朝内的角点建立单应性矩阵。
             </p>
-            <p>离散手势不需要校准；只有指向、捏合和隔空画框使用该矩阵。手离标定平面越远，视差误差越大。</p>
+            <p>离散手势和手臂挥动不需要校准；只有指向、捏合和隔空画框使用该矩阵。手离标定平面越远，视差误差越大。</p>
           </details>
         </div>
       ) : null}
