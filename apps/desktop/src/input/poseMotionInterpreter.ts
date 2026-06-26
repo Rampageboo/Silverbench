@@ -26,6 +26,7 @@ export type PoseMotionInterpreterOptions = {
 };
 
 type ArmSide = "Left" | "Right";
+type ArmIndexes = { readonly shoulder: number; readonly elbow: number; readonly wrist: number };
 type MotionSample = {
   timestampMs: number;
   x: number;
@@ -39,8 +40,8 @@ type MotionCandidate = {
   score: number;
 };
 
-const LEFT_ARM = { shoulder: 11, elbow: 13, wrist: 15 } as const;
-const RIGHT_ARM = { shoulder: 12, elbow: 14, wrist: 16 } as const;
+const LEFT_ARM: ArmIndexes = { shoulder: 11, elbow: 13, wrist: 15 };
+const RIGHT_ARM: ArmIndexes = { shoulder: 12, elbow: 14, wrist: 16 };
 const LEFT_HIP = 23;
 const RIGHT_HIP = 24;
 
@@ -145,7 +146,7 @@ export class PoseMotionInterpreter {
 
   private captureArm(
     side: ArmSide,
-    indexes: typeof LEFT_ARM,
+    indexes: ArmIndexes,
     observation: PoseObservation,
     torsoCenter: { x: number; y: number },
     bodyScale: number
