@@ -186,6 +186,8 @@
 }
 
 @media print {
+  @page { size: A4 portrait; margin: 0; }
+
   /* visibility:hidden lets children opt back in; display:none cannot be overridden by children */
   body > * { visibility: hidden; }
   .calibration-sheet-backdrop,
@@ -193,7 +195,7 @@
   .calibration-sheet-img {
     visibility: visible;
   }
-  .calibration-sheet-header { display: none; }
+  .calibration-sheet-header { display: none !important; }
   .calibration-sheet-backdrop {
     position: fixed;
     inset: 0;
@@ -203,11 +205,12 @@
     justify-content: center;
   }
   .calibration-sheet-box {
-    width: 100%;
-    height: 100%;
+    width: 100vw;
+    height: 100vh;
     border: none;
     border-radius: 0;
     box-shadow: none;
+    background: white;
   }
   .calibration-sheet-img {
     width: 100%;
