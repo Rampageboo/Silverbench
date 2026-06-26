@@ -1,0 +1,49 @@
+from __future__ import annotations
+
+from io import BytesIO
+
+from fastapi import Query
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+
+from backend.multimodal_calibration import (
+    APRILTAG_DICTIONARY_NAME,
+    CALIBRATION_TAG_IDS,
+    detect_apriltags_base64,
+    generate_calibration_sheet_png,
+)
+from backend_api.main import app
+
+
+class AprilTagDetectRequest(BaseModel):
+    imageBase64: str = Field(min_length=16, max_length=24_000_000)
+
+
+@app.get("/api/multimodal/status")
+def multimodal_status() -> dict[str, object]:
+    return {
+        "ok": True,
+        "gesture": "mediapipe-web",
+        "voice": "browser-speech",
+        "calibration": "apriltag-opencv",
+        "dictionary": APRILTAG_DICTIONARY_NAME,
+        "tagIds": list(CALIBRATION_TAG_IDS),
+    }
+
+
+@app.post("/api/multimodal/apriltag/detect")
+def apriltag_detect(payload: AprilTagDetectRequest) -> dict[str, object]:
+    return detect_apriltags_base64(payload.imageBase64)
+
+
+@app.get("/api/multimodal/apriltag/sheet.png")
+def apriltag_sheet(dpi: int = Query(default=150, ge=96, le=600)) -> StreamingResponse:
+    data = generate_calibration_sheet_png(dpi=dpi)
+    return StreamingResponse(
+        BytesIO(data),
+        media_type="image/png",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": 'inline; filename="yoloworkbench-apriltag-calibration.png"',
+        },
+    )
