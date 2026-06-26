@@ -7,6 +7,8 @@ import { ToolNav } from "../components/ToolNav";
 import { ImagePoolBadgeProvider } from "../features/image-pool/ImagePoolBadgeProvider";
 import { imageWorkspaceStatusFallback } from "../features/image-pool/imageWorkspaceMode";
 import { useImagePoolBadge } from "../features/image-pool/useImagePoolBadge";
+import { MultimodalControlDock } from "../input/MultimodalControlDock";
+import { MultimodalControlProvider } from "../input/MultimodalControlProvider";
 import type { ToolTab } from "../types/tools";
 import { WorkspaceArchitectureProvider } from "../workspace/WorkspaceArchitectureProvider";
 import { WORKBENCH_TOOL_DEFINITIONS, type WorkbenchToolDefinition } from "./toolRegistry";
@@ -17,13 +19,12 @@ type WorkbenchBodyProps = { onNativeTabReady?: () => void };
 export function WorkbenchBody({ onNativeTabReady }: WorkbenchBodyProps) {
   const { workspaceRoot, setActiveTab } = useWorkspace();
   return (
-    <WorkspaceArchitectureProvider
-      workspaceRoot={workspaceRoot}
-      onMigrated={() => setActiveTab("video")}
-    >
-      <ImagePoolBadgeProvider workspaceRoot={workspaceRoot}>
-        <WorkbenchBodyContent onNativeTabReady={onNativeTabReady} />
-      </ImagePoolBadgeProvider>
+    <WorkspaceArchitectureProvider workspaceRoot={workspaceRoot} onMigrated={() => setActiveTab("video")}>
+      <MultimodalControlProvider>
+        <ImagePoolBadgeProvider workspaceRoot={workspaceRoot}>
+          <WorkbenchBodyContent onNativeTabReady={onNativeTabReady} />
+        </ImagePoolBadgeProvider>
+      </MultimodalControlProvider>
     </WorkspaceArchitectureProvider>
   );
 }
@@ -153,6 +154,7 @@ function WorkbenchBodyContent({ onNativeTabReady }: WorkbenchBodyProps) {
         </main>
       </div>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <MultimodalControlDock />
     </div>
   );
 }
