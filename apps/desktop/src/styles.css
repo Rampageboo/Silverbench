@@ -2066,3 +2066,83 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   flex-direction: column;
   gap: 12px;
 }
+
+/* Train Prep — section layout */
+.tp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tp-section-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted, #64748b);
+}
+.tp-divider {
+  height: 1px;
+  background: var(--line, #1f2937);
+  margin: 2px 0;
+}
+
+/* Stat rows in info cards */
+.tp-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.tp-stat-label { color: var(--muted, #64748b); }
+.tp-stat-value { font-variant-numeric: tabular-nums; }
+.tp-stat-accent { color: var(--text-1, #e2e8f0); font-weight: 600; }
+
+.tp-yaml-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+.tp-yaml-ok     { background: #14532d44; color: #86efac; border: 1px solid #15803d55; }
+.tp-yaml-missing { background: #7f1d1d44; color: #fca5a5; border: 1px solid #b91c1c55; }
+
+/* Generated command output */
+.tp-cmd-wrap {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.tp-cmd-text {
+  flex: 1;
+  min-height: 60px;
+  font: 11px/1.5 'Cascadia Mono', 'Fira Code', Consolas, monospace;
+  resize: vertical;
+  background: var(--surface-subtle, #111827);
+  border: 1px solid var(--line, #1f2937);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--text-1, #e2e8f0);
+  word-break: break-all;
+}
+
+/* Operation status line */
+.tp-op-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted, #64748b);
+  padding: 2px 0;
+}
+.tp-spinner {
+  width: 12px; height: 12px;
+  border: 2px solid var(--line, #1f2937);
+  border-top-color: var(--accent, #3b82f6);
+  border-radius: 50%;
+  animation: tp-spin .7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes tp-spin { to { transform: rotate(360deg); } }
