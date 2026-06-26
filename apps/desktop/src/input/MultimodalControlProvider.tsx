@@ -6,7 +6,8 @@ import {
   useMemo,
   useRef,
   useState,
-  type ReactNode
+  type ReactNode,
+  type RefObject
 } from "react";
 import { CommandArbiter, type CommandDecision } from "./commandArbiter";
 import { MultimodalCommandBus, type CommandListener } from "./commandBus";
@@ -58,7 +59,7 @@ type MultimodalControlContextValue = {
   lastGesture: string;
   gestureError: string;
   lastDecision: CommandDecision | null;
-  cameraVideoRef: React.RefObject<HTMLVideoElement>;
+  cameraVideoRef: RefObject<HTMLVideoElement>;
   publish: (envelope: CommandEnvelope) => CommandDecision;
   subscribe: (listener: CommandListener) => () => void;
 };
@@ -81,10 +82,14 @@ export function MultimodalControlProvider({ children }: { children: ReactNode })
   const publish = useCallback((envelope: CommandEnvelope) => bus.publish(envelope), [bus]);
   const subscribe = useCallback((listener: CommandListener) => bus.subscribe(listener), [bus]);
 
-  useEffect(() => bus.subscribeDecisions((decision) => {
-    setLastDecision(decision);
-    setArmedState(bus.isArmed());
-  }), [bus]);
+  useEffect(
+    () =>
+      bus.subscribeDecisions((decision) => {
+        setLastDecision(decision);
+        setArmedState(bus.isArmed());
+      }),
+    [bus]
+  );
 
   const speech = useBrowserSpeechCommands({
     enabled: voiceEnabled,
@@ -101,9 +106,12 @@ export function MultimodalControlProvider({ children }: { children: ReactNode })
     seekSeconds: 0.1
   });
 
-  const setArmed = useCallback((value: boolean) => {
-    publish(createCommandEnvelope("ui", { type: value ? "controls.arm" : "controls.disarm" }));
-  }, [publish]);
+  const setArmed = useCallback(
+    (value: boolean) => {
+      publish(createCommandEnvelope("ui", { type: value ? "controls.arm" : "controls.disarm" }));
+    },
+    [publish]
+  );
 
   const setVoiceEnabled = useCallback((value: boolean) => {
     setVoiceEnabledState(value);
@@ -131,63 +139,55 @@ export function MultimodalControlProvider({ children }: { children: ReactNode })
     else window.localStorage.removeItem(`${STORAGE_PREFIX}homography`);
   }, []);
 
-  const contextValue = useMemo<MultimodalControlContextValue>(() => ({
-    armed,
-    setArmed,
-    voiceEnabled,
-    setVoiceEnabled,
-    gestureEnabled,
-    setGestureEnabled,
-    requireWakeWord,
-    setRequireWakeWord,
-    mirrorCamera,
-    setMirrorCamera,
-    homography,
-    setHomography,
-    voiceStatus: speech.status,
-    lastTranscript: speech.lastTranscript,
-    gestureStatus: gesture.status,
-    lastGesture: gesture.lastGesture,
-    gestureError: gesture.error,
-    lastDecision,
-    cameraVideoRef,
-    publish,
-    subscribe
-  }), [
-    armed,
-    gesture.error,
-    gesture.lastGesture,
-    gesture.status,
-    gestureEnabled,
-    homography,
-    lastDecision,
-    mirrorCamera,
-    publish,
-    requireWakeWord,
-    setArmed,
-    setGestureEnabled,
-    setHomography,
-    setMirrorCamera,
-    setRequireWakeWord,
-    setVoiceEnabled,
-    speech.lastTranscript,
-    speech.status,
-    subscribe,
-    voiceEnabled
-  ]);
-
-  return (
-    <MultimodalControlContext.Provider value={contextValue}>
-      {children}
-      <video
-        ref={cameraVideoRef}
-        className={`multimodal-camera-feed${mirrorCamera ? " is-mirrored" : ""}`}
-        aria-hidden="true"
-        muted
-        playsInline
-      />
-    </MultimodalControlContext.Provider>
+  const contextValue = useMemo<MultimodalControlContextValue>(
+    () => ({
+      armed,
+      setArmed,
+      voiceEnabled,
+      setVoiceEnabled,
+      gestureEnabled,
+      setGestureEnabled,
+      requireWakeWord,
+      setRequireWakeWord,
+      mirrorCamera,
+      setMirrorCamera,
+      homography,
+      setHomography,
+      voiceStatus: speech.status,
+      lastTranscript: speech.lastTranscript,
+      gestureStatus: gesture.status,
+      lastGesture: gesture.lastGesture,
+      gestureError: gesture.error,
+      lastDecision,
+      cameraVideoRef,
+      publish,
+      subscribe
+    }),
+    [
+      armed,
+      gesture.error,
+      gesture.lastGesture,
+      gesture.status,
+      gestureEnabled,
+      homography,
+      lastDecision,
+      mirrorCamera,
+      publish,
+      requireWakeWord,
+      setArmed,
+      setGestureEnabled,
+      setHomography,
+      setMirrorCamera,
+      setRequireWakeWord,
+      setVoiceEnabled,
+      speech.lastTranscript,
+      speech.status,
+      subscribe,
+      voiceEnabled
+    ]
   );
+
+  return <MultimodalControlContext.Provider value={contextValue}>{children}</MultimodalControlContext.Provider>;
 }
 
 export function useMultimodalControls() {
