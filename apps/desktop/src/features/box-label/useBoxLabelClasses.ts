@@ -5,7 +5,7 @@ import {
   loadDatasetClassNames,
   saveDatasetClassNames
 } from "./boxLabelCore";
-import { classNameFor, loadShortcutSlots, type DragState, type ToolMode } from "./geometry";
+import { classNameFor, loadShortcutSlots, saveShortcutSlots, type DragState, type ToolMode } from "./geometry";
 import type { FixedBoxSlot } from "./session";
 
 type ShortcutOption = {
@@ -63,10 +63,12 @@ export function useBoxLabelClasses({
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
-  const [shortcutSlots, setShortcutSlots] = useState<Array<number | null>>(() => loadShortcutSlots(workspaceRoot));
-  const [fixedBoxSlots, setFixedBoxSlots] = useState<Array<FixedBoxSlot | null>>(() =>
+  const [shortcutSlots, setShortcutSlotsState] = useState<Array<number | null>>(() => loadShortcutSlots(workspaceRoot));
+  const [fixedBoxSlots, setFixedBoxSlotsState] = useState<Array<FixedBoxSlot | null>>(() =>
     Array.from({ length: 10 }, () => null)
   );
+  const shortcutSlotsHydratedRef = useRef(false);
+  const fixedBoxSlotsHydratedRef = useRef(false);
   const [recordingFixedBoxSlot, setRecordingFixedBoxSlot] = useState<number | null>(null);
   const [classNameInput, setClassNameInput] = useState("");
   const [classSearch, setClassSearch] = useState("");
@@ -76,6 +78,20 @@ export function useBoxLabelClasses({
   const [autoFitEnabled, setAutoFitEnabled] = useState(initialAutoFitEnabled);
   const [blackBoxEnabled, setBlackBoxEnabled] = useState(false);
   const [boxAdjustMode, setBoxAdjustMode] = useState<"grow" | "shrink">("grow");
+
+  const setShortcutSlots = useCallback(
+    (next: Array<number | null>) => {
+      shortcutSlotsHydratedRef.current = true;
+      saveShortcutSlots(workspaceRoot, next);
+      setShortcutSlotsState(next);
+    },
+    [workspaceRoot]
+  );
+
+  const setFixedBoxSlots = useCallback((next: Array<FixedBoxSlot | null>) => {
+    fixedBoxSlotsHydratedRef.current = true;
+    setFixedBoxSlotsState(next);
+  }, []);
 
   useEffect(() => {
     classRef.current = currentClass;
@@ -120,18 +136,30 @@ export function useBoxLabelClasses({
   }, []);
 
   useEffect(() => {
-    if (initialShortcutSlots) setShortcutSlots(initialShortcutSlots);
-    else setShortcutSlots(Array.from({ length: 10 }, () => null));
+    shortcutSlotsHydratedRef.current = false;
+    fixedBoxSlotsHydratedRef.current = false;
+    setShortcutSlotsState(loadShortcutSlots(workspaceRoot));
+    setFixedBoxSlotsState(Array.from({ length: 10 }, () => null));
+  }, [workspaceRoot]);
+
+  useEffect(() => {
+    if (!initialShortcutSlots) return;
+    shortcutSlotsHydratedRef.current = true;
+    saveShortcutSlots(workspaceRoot, initialShortcutSlots);
+    setShortcutSlotsState(initialShortcutSlots);
   }, [workspaceRoot, initialShortcutSlots]);
 
   useEffect(() => {
-    if (initialFixedBoxSlots) setFixedBoxSlots(initialFixedBoxSlots);
-    else setFixedBoxSlots(Array.from({ length: 10 }, () => null));
+    if (!initialFixedBoxSlots) return;
+    fixedBoxSlotsHydratedRef.current = true;
+    setFixedBoxSlotsState(initialFixedBoxSlots);
   }, [workspaceRoot, initialFixedBoxSlots]);
 
   useEffect(() => {
+    if (!shortcutSlotsHydratedRef.current && !fixedBoxSlotsHydratedRef.current) return;
+    saveShortcutSlots(workspaceRoot, shortcutSlots);
     onShortcutSlotsChange?.(shortcutSlots, fixedBoxSlots);
-  }, [shortcutSlots, fixedBoxSlots, onShortcutSlotsChange]);
+  }, [shortcutSlots, fixedBoxSlots, onShortcutSlotsChange, workspaceRoot]);
 
   useEffect(() => {
     setPointerToolEnabled(initialPointerToolEnabled);
@@ -245,7 +273,7 @@ export function useBoxLabelClasses({
         `Draw one ${classNameFor(classes, classId)} box to record fixed box ${slot}. Hold Alt+${slot} to use it later.`
       );
     },
-    [applyCurrentClass, classes, currentClass, fixedBoxSlots, recordingFixedBoxSlot, setStatus]
+    [applyCurrentClass, classes, currentClass, fixedBoxSlots, recordingFixedBoxSlot, setFixedBoxSlots, setStatus]
   );
 
   const recordFixedBoxFromBox = useCallback(
@@ -258,7 +286,7 @@ export function useBoxLabelClasses({
       setRecordingFixedBoxSlot(null);
       return `Recorded fixed box ${slot}: ${classNameFor(classes, box.classId)}.`;
     },
-    [classes, fixedBoxSlots, recordingFixedBoxSlot]
+    [classes, fixedBoxSlots, recordingFixedBoxSlot, setFixedBoxSlots]
   );
 
   const addClass = useCallback(async () => {
