@@ -44,9 +44,10 @@ export function parsePoolLabelSession(data: unknown): PoolLabelSession {
   };
 }
 
-export function normalizeShortcutSlotsFromSession(data: PoolLabelSession) {
+export function normalizeShortcutSlotsFromSession(data: PoolLabelSession): Array<number | null> | null {
   const raw = data.poolLabelShortcuts;
   const assigned = data.poolLabelShortcutAssigned;
+  if (!Array.isArray(raw) && !Array.isArray(assigned)) return null;
   const slots = Array.from({ length: 10 }, (_, index) => {
     const value = raw?.[index];
     if (value == null) return null;
@@ -59,8 +60,9 @@ export function normalizeShortcutSlotsFromSession(data: PoolLabelSession) {
   return slots;
 }
 
-export function normalizeFixedBoxSlotsFromSession(data: PoolLabelSession) {
+export function normalizeFixedBoxSlotsFromSession(data: PoolLabelSession): Array<FixedBoxSlot | null> | null {
   const raw = data.poolLabelFixedBoxes;
+  if (!Array.isArray(raw)) return null;
   return Array.from({ length: 10 }, (_, index): FixedBoxSlot | null => {
     const value = raw?.[index];
     if (!value || typeof value !== "object") return null;
