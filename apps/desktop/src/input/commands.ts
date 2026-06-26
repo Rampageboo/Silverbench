@@ -4,6 +4,7 @@ export type WorkbenchCommand =
   | { type: "controls.arm" }
   | { type: "controls.disarm" }
   | { type: "video.seekBy"; seconds: number }
+  | { type: "video.gotoReviewed"; direction: -1 | 1 }
   | { type: "video.copyPreviousBoxes" }
   | { type: "video.markReviewed" }
   | { type: "video.clearFrameRecord" }
@@ -50,6 +51,7 @@ export function commandSafety(command: WorkbenchCommand): CommandSafety {
       return { destructive: true, requiresArmed: true, minimumConfidence: 0.9, cooldownMs: 1800 };
     case "video.copyPreviousBoxes":
     case "video.markReviewed":
+    case "video.gotoReviewed":
       return { ...DEFAULT_SAFETY, cooldownMs: 900 };
     default:
       return DEFAULT_SAFETY;
@@ -86,6 +88,8 @@ export function commandKey(command: WorkbenchCommand) {
   switch (command.type) {
     case "video.seekBy":
       return `${command.type}:${Math.sign(command.seconds)}`;
+    case "video.gotoReviewed":
+      return `${command.type}:${command.direction}`;
     case "video.selectClass":
       return `${command.type}:${command.classId}`;
     case "pointer.move":
