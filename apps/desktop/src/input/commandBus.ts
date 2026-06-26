@@ -32,11 +32,15 @@ export class MultimodalCommandBus {
 
   subscribe(listener: CommandListener) {
     this.commandListeners.add(listener);
-    return () => this.commandListeners.delete(listener);
+    return () => {
+      this.commandListeners.delete(listener);
+    };
   }
 
   subscribeDecisions(listener: DecisionListener) {
     this.decisionListeners.add(listener);
-    return () => this.decisionListeners.delete(listener);
+    return () => {
+      this.decisionListeners.delete(listener);
+    };
   }
 }
