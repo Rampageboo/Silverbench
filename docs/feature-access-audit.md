@@ -1,7 +1,7 @@
 # Feature Access Audit
 
 **Last updated:** 2026-06-27  
-**Branch:** feature/consolidated-productization-pass  
+**Branch:** feature/timestamp-first-detect-clf-architecture  
 **Audited by:** conversation-driven review
 
 Statuses: `exposed` | `hidden` | `partial` | `broken` | `duplicated` | `not implemented` | `not verified`
@@ -177,4 +177,39 @@ This appears in:
 - **Pointing/pinch calibration messaging** — when uncalibrated, pointer commands silently fail. A visible "calibration required" prompt is missing.
 - **Audit log not exposed** — `workbench/auditLog.ts` writes structured logs but no UI reads or displays them.
 - **Video sampling state not persisted** — sampling mode and min spacing reset on page reload. Session persistence for these is not implemented.
-- **Backend startup delay** — `isCurrentBackend()` requires `/api/multimodal/status` to return `{ok: true, calibration: "apriltag-opencv"}`. If the multimodal backend fails, dev-shell kills and restarts the backend, causing the startup splash overlay to show for 90 seconds before timeout. **Fixed in this PR** by moving the `StaticFiles` mount to the startup event handler.
+- **Backend startup delay** — `isCurrentBackend()` requires `/api/multimodal/status` to return `{ok: true, calibration: "apriltag-opencv"}`. If the multimodal backend fails, dev-shell kills and restarts the backend, causing the startup splash overlay to show for 90 seconds before timeout. **Fixed in a prior PR** by moving the `StaticFiles` mount to the startup event handler.
+- **No clf task layer in Video Label** — `VideoFrameAnnotation` (v1 format) stores only detect boxes. The v2 task-layer model (`videoAnnotationTaskDomain.ts`) and types are defined in this branch, but the Video Label session hook (`useVideoAnnotationSession.ts`) still reads v1 format. Full UI wiring of clf task is a follow-up task.
+- **No export UI** — `exportPlanner.ts` defines the export plan types and pure planning functions, but no export button or workflow exists yet in the UI.
+- **No sources.json** — `sourceDomain.ts` defines the Source model, but actual persistence of sources to `workspace/sources.json` is not implemented. Videos are still held as in-memory session state.
+
+---
+
+## Timestamp-first detect+clf architecture audit
+
+This section audits every action that could write persistent image files during the normal annotation workflow. The principle is:
+
+> **Video samples are timestamp annotations, not saved screenshots. Frames are decoded only for preview and export.**
+
+| Feature | Does it write image files? | Should it write image files? | Current behavior | Required fix | Status |
+|---|---|---|---|---|---|
+| Random Next | **No** | No | Calls `sampleTimestamp()` → sets `session.gotoTime()` → triggers debounced `getAnnotationFrameBase64()` which returns base64 in memory only | — | ✓ Correct |
+| Video preview decode | **No** | No | `getAnnotationFrameBase64(videoPath, seconds, "jpg")` is Tauri invoke that decodes frame to base64 string in memory; never written to workspace | — | ✓ Correct |
+| Segment creation | **No** | No | `saveVideoSegmentManifest()` writes only `video_segments/<name>-<hash>.json` metadata | — | ✓ Correct |
+| Segment editing | **No** | No | Same as segment creation | — | ✓ Correct |
+| Marking reviewed | **No** | No | `updateCurrentFrame()` → `updateVideoFrameAnnotation()` → `saveVideoAnnotationManifest()` writes only annotation JSON | — | ✓ Correct |
+| Adding detect boxes | **No** | No | `updateCurrentFrame()` → annotation manifest JSON only | — | ✓ Correct |
+| Adding clf class | **Not yet implemented** | No | No clf UI exists; v1 manifest stores only detect boxes | Add clf task layer UI; never write image file | ⚠ Not implemented |
+| Copying previous boxes | **No** | No | Reads from manifest in memory, calls `updateCurrentFrame()` | — | ✓ Correct |
+| Video annotation save | **No** | No | `saveVideoAnnotationManifest()` writes JSON only | — | ✓ Correct |
+| Box Label video-derived frames | **N/A** | N/A | Box Label operates on `image_pool` (manually imported images), not video timestamps | — | N/A |
+| Explicit frame export (Video Segments tab) | **Yes** | Yes | User explicitly clicks Export Frames → writes to user-chosen folder | — | ✓ Correct (explicit action) |
+| YOLO detect export (planned) | **Yes, at export time** | Yes | `exportPlanner.ts` defines plan; execution would decode frame from video and write to `exports/detect_dataset/` | Implement export executor | Planned |
+| YOLO clf export (planned) | **Yes, at export time** | Yes | Same as detect export but writes to `exports/clf_dataset/<class>/` | Implement export executor | Planned |
+
+### Conclusion
+
+No path in the current normal annotation workflow writes persistent image files. The architecture is correctly timestamp-first. The gaps are:
+
+1. **clf task layer** — type model defined (`videoAnnotationTaskDomain.ts`), UI not wired.
+2. **Export UI** — planner defined (`exportPlanner.ts`), executor not implemented.
+3. **sources.json** — domain model defined (`sourceDomain.ts`), persistence not implemented.
