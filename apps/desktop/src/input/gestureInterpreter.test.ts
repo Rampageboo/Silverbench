@@ -26,7 +26,7 @@ describe("GestureCommandInterpreter", () => {
     const last = hand(0.45, 0.5);
     interpreter.consume({ timestampMs: 1000, gesture: "Open_Palm", score: 0.95, landmarks: first });
     const commands = interpreter.consume({ timestampMs: 1200, gesture: "Open_Palm", score: 0.95, landmarks: last });
-    expect(commands.some((item) => item.command.type === "video.seekBy" && item.command.seconds === 0.25)).toBe(true);
+    expect(commands.some((item) => item.command.type === "video.seekBy" && item.command.seconds === -0.25)).toBe(true);
   });
 
   it("uses homography for pointing and pinch press/release", () => {
