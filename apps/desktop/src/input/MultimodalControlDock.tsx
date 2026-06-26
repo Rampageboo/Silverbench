@@ -1,5 +1,10 @@
 import { useMemo, useState, type MouseEvent } from "react";
-import { computeHomography, type Point2 } from "./homography";
+import {
+  calibrationSheetUrl,
+  captureVideoFrameBase64,
+  detectAprilTags
+} from "./apriltagCalibrationApi";
+import { computeHomography, homographyFromAprilTags, type Point2 } from "./homography";
 import { useMultimodalControls } from "./MultimodalControlProvider";
 import "./multimodal-controls.css";
 
@@ -30,8 +35,10 @@ export function MultimodalControlDock() {
   const controls = useMultimodalControls();
   const [expanded, setExpanded] = useState(false);
   const [calibrating, setCalibrating] = useState(false);
+  const [detectingTags, setDetectingTags] = useState(false);
   const [calibrationPoints, setCalibrationPoints] = useState<Point2[]>([]);
   const [calibrationError, setCalibrationError] = useState("");
+  const [calibrationStatus, setCalibrationStatus] = useState("");
 
   const sourceStatus = useMemo(() => {
     const voice = controls.voiceEnabled ? `语音 ${controls.voiceStatus}` : "语音关闭";
@@ -43,6 +50,7 @@ export function MultimodalControlDock() {
     if (!controls.gestureEnabled) controls.setGestureEnabled(true);
     setCalibrationPoints([]);
     setCalibrationError("");
+    setCalibrationStatus("");
     setCalibrating(true);
     setExpanded(true);
   }
@@ -67,11 +75,46 @@ export function MultimodalControlDock() {
         controls.setHomography(computeHomography(next, TARGET_CORNERS));
         setCalibrating(false);
         setCalibrationError("");
+        setCalibrationStatus("四角手动校准完成");
       } catch (reason) {
         setCalibrationError(reason instanceof Error ? reason.message : String(reason));
         setCalibrationPoints([]);
       }
     }
+  }
+
+  async function autoCalibrateAprilTags() {
+    const video = controls.cameraVideoRef.current;
+    if (!video) {
+      setCalibrationError("摄像头预览尚未挂载。");
+      return;
+    }
+    setDetectingTags(true);
+    setCalibrationError("");
+    setCalibrationStatus("正在识别 AprilTag…");
+    try {
+      const frame = captureVideoFrameBase64(video);
+      const result = await detectAprilTags(frame);
+      if (result.missingIds.length) {
+        throw new Error(`未检测到标签：${result.missingIds.join(", ")}。请确保 0、1、2、3 同时入镜。`);
+      }
+      const calibration = homographyFromAprilTags(result.detections, {
+        mirrored: controls.mirrorCamera,
+        tagIds: [0, 1, 2, 3]
+      });
+      controls.setHomography(calibration.matrix);
+      setCalibrationStatus(`AprilTag 自动校准完成，共识别 ${result.detections.length} 个标签。`);
+    } catch (reason) {
+      setCalibrationStatus("");
+      setCalibrationError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setDetectingTags(false);
+    }
+  }
+
+  function openCalibrationSheet() {
+    const opened = window.open(calibrationSheetUrl(200), "_blank", "noopener,noreferrer");
+    if (!opened) setCalibrationError("浏览器阻止了标定板窗口，请允许弹出窗口。");
   }
 
   return (
@@ -156,12 +199,31 @@ export function MultimodalControlDock() {
           ) : null}
 
           <div className="multimodal-control-row">
+            <button type="button" onClick={openCalibrationSheet}>打开打印标定板</button>
+            <button
+              type="button"
+              className="primary"
+              onClick={() => void autoCalibrateAprilTags()}
+              disabled={detectingTags || controls.gestureStatus !== "running"}
+            >
+              {detectingTags ? "识别中…" : "AprilTag 自动校准"}
+            </button>
+          </div>
+
+          <div className="multimodal-control-row">
             {calibrating ? (
-              <button type="button" onClick={cancelCalibration}>取消校准</button>
+              <button type="button" onClick={cancelCalibration}>取消手动校准</button>
             ) : (
-              <button type="button" onClick={startCalibration}>四角平面校准</button>
+              <button type="button" onClick={startCalibration}>四角手动校准</button>
             )}
-            <button type="button" onClick={() => controls.setHomography(null)} disabled={!controls.homography}>
+            <button
+              type="button"
+              onClick={() => {
+                controls.setHomography(null);
+                setCalibrationStatus("");
+              }}
+              disabled={!controls.homography}
+            >
               清除校准
             </button>
             <span className="status">{controls.homography ? "已校准" : "未校准"}</span>
@@ -171,6 +233,7 @@ export function MultimodalControlDock() {
             <div>{decisionText(controls.lastDecision)}</div>
             {controls.lastTranscript ? <div>语音：{controls.lastTranscript}</div> : null}
             {controls.lastGesture ? <div>手势：{controls.lastGesture}</div> : null}
+            {calibrationStatus ? <div>{calibrationStatus}</div> : null}
             {controls.gestureError ? <div className="error-banner">{controls.gestureError}</div> : null}
             {calibrationError ? <div className="error-banner">{calibrationError}</div> : null}
           </div>
@@ -178,10 +241,9 @@ export function MultimodalControlDock() {
           <details>
             <summary>AprilTag 摆放</summary>
             <p>
-              在操作平面四角外侧放置标签 0、1、2、3，顺序为左上、右上、右下、左下。自动识别会使用各标签朝内的角点；
-              当前界面也支持直接点击四角完成同一套单应性校准。
+              在操作平面四角外侧放置标签 0、1、2、3，顺序为左上、右上、右下、左下。自动识别使用各标签朝内的角点建立单应性矩阵。
             </p>
-            <p>离散手势不需要校准；只有指向、捏合和隔空画框使用该矩阵。</p>
+            <p>离散手势不需要校准；只有指向、捏合和隔空画框使用该矩阵。手离标定平面越远，视差误差越大。</p>
           </details>
         </div>
       ) : null}
