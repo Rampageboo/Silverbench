@@ -31,7 +31,7 @@ describe("PoseMotionInterpreter", () => {
     expect(commands[0]?.gesture).toMatch(/Arm_Left_Left/);
   });
 
-  it("maps upward and downward forearm sweeps to reviewed-frame navigation", () => {
+  it("maps upward and downward forearm sweeps to annotation actions", () => {
     const upInterpreter = new PoseMotionInterpreter({ mirrorX: false, windowMs: 500 });
     const upStart = pose();
     const upEnd = pose();
@@ -39,8 +39,7 @@ describe("PoseMotionInterpreter", () => {
     upEnd[15] = { ...upEnd[15], y: 0.2 };
     upInterpreter.consume({ timestampMs: 2000, landmarks: upStart });
     expect(upInterpreter.consume({ timestampMs: 2250, landmarks: upEnd }).map((item) => item.command)).toContainEqual({
-      type: "video.gotoReviewed",
-      direction: -1
+      type: "video.copyPreviousBoxes"
     });
 
     const downInterpreter = new PoseMotionInterpreter({ mirrorX: false, windowMs: 500 });
@@ -52,8 +51,7 @@ describe("PoseMotionInterpreter", () => {
     downEnd[15] = { ...downEnd[15], y: 0.76 };
     downInterpreter.consume({ timestampMs: 3000, landmarks: downStart });
     expect(downInterpreter.consume({ timestampMs: 3250, landmarks: downEnd }).map((item) => item.command)).toContainEqual({
-      type: "video.gotoReviewed",
-      direction: 1
+      type: "video.markReviewed"
     });
   });
 
