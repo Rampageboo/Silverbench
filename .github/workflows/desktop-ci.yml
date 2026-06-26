@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/direct-video-annotation
+      - feature/multimodal-controls
   pull_request:
     paths:
       - "apps/desktop/**"
@@ -25,6 +26,37 @@ jobs:
       - name: Install desktop dependencies
         run: npm install --no-audit --no-fund
       - name: TypeScript and Vite build
-        run: npm run build
+        id: desktop_build
+        shell: bash
+        run: |
+          set +e
+          npm run build > build-output.txt 2>&1
+          code=$?
+          cat build-output.txt
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
       - name: Unit tests
-        run: npm test
+        id: desktop_tests
+        shell: bash
+        run: |
+          set +e
+          npm test > test-output.txt 2>&1
+          code=$?
+          cat test-output.txt
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Upload desktop diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-ci-diagnostics
+          path: |
+            apps/desktop/build-output.txt
+            apps/desktop/test-output.txt
+          if-no-files-found: warn
+      - name: Enforce desktop validation
+        if: always()
+        shell: bash
+        run: |
+          test "${{ steps.desktop_build.outputs.exit_code }}" = "0"
+          test "${{ steps.desktop_tests.outputs.exit_code }}" = "0"
