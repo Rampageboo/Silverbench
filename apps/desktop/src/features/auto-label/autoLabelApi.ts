@@ -31,9 +31,9 @@ export function chooseAutoLabelModel(title: string) {
 
 export function startAutoLabelJob(task: AutoLabelTask, inputRoot: string, outputRoot: string, modelPath: string, imageSize: number, confidence: number, device: string, confidencePrefix: boolean) {
   if (task === "classify") {
-    return rpc<PtJob>("startClassifyFolderWithPt", [inputRoot, outputRoot, modelPath, imageSize, device, confidencePrefix, "[]"]);
+    return rpc<PtJob>("startClassifyFolderWithPt", [modelPath, inputRoot, outputRoot, imageSize, device, confidencePrefix, "[]"]);
   }
-  return rpc<PtJob>("startDetectFolderWithPt", [inputRoot, outputRoot, modelPath, imageSize, confidence, device, "[]"]);
+  return rpc<PtJob>("startDetectFolderWithPt", [modelPath, inputRoot, outputRoot, imageSize, confidence, device, "[]"]);
 }
 
 export function getAutoLabelJob(jobId: string) {

@@ -371,3 +371,85 @@ Planned workflow:
 5. New `BlackoutOverlay` records are created with `createdBy: "similarity-propagation"`.
 
 First pass uses pHash/dHash. Future methods may include template matching, ORB/AKAZE feature matching, CLIP/DINO embeddings, or optical flow for continuous video propagation.
+
+## Assisted Auto Label and Review Queue
+
+Auto Label generates reviewable annotations: high-confidence predictions become accepted auto boxes, medium-confidence predictions become dashed proposals, and proposals are never exported until materialized.
+
+### Confidence tiers
+
+| Range | Outcome | Origin | Exported? |
+|---|---|---|---|
+| ≥ 0.80 (high) | Placed in `boxes[]` with `origin="auto"` | `"auto"` | Yes, after user reviews the sample |
+| 0.40–0.79 (medium) | Placed in `proposals[]` as a `DetectProposal` | — | Never, until materialized |
+| < 0.40 (low) | Ignored | — | Never |
+
+### Core invariants
+
+- **Boxes = accepted labels.** Only `detect.boxes[]` is read by the export planner. Proposals are structurally invisible to the exporter.
+- **Proposals = suggestions.** `DetectProposal` objects live in `detect.proposals[]` and are displayed as dashed overlay boxes in the UI.
+- **High-confidence auto boxes do not auto-review a sample.** The user must still open the sample and mark it reviewed before it enters the export set.
+- **Auto Label never overwrites manual work.** Incoming predictions are IoU-deduped against existing boxes (threshold 0.85). Any prediction overlapping an existing box at or above the threshold is silently skipped.
+- **Materializing a proposal moves it into `boxes[]` with `origin="manual"`.** The proposal is removed from `proposals[]`. Rejecting a proposal removes it without touching `boxes[]`.
+
+### Types
+
+```ts
+// Extended accepted box
+export type DetectBoxAnnotation = {
+  x: number; y: number; w: number; h: number;
+  classId?: number; classKey?: string;
+  origin?: "manual" | "auto";   // "auto" = placed by model, not yet reviewed
+  confidence?: number;           // stored when origin="auto"
+};
+
+// Proposal (never exported)
+export type DetectProposal = {
+  id: string;
+  x: number; y: number; w: number; h: number;
+  confidence: number;
+  classId?: number; classKey?: string;
+  modelId?: string;
+  createdAt: string;
+};
+
+// Task now carries optional proposals[]
+export type VideoDetectTask = {
+  reviewed: boolean;
+  empty?: boolean;
+  boxes: DetectBoxAnnotation[];
+  proposals?: DetectProposal[];   // never exported until materialized
+};
+```
+
+### Image Box Label proposal sidecar
+
+For the image-pool workflow, proposals are stored in a sidecar file separate from the YOLO `.txt` label files, so model suggestions can never pollute training data:
+
+```text
+workspace/proposals/detect/{image-stem-hash}.json
+```
+
+The sidecar is read and written by `proposalApi.ts`. Accepted boxes continue to be written to the standard YOLO `.txt` label files.
+
+### Review queue
+
+`proposalDomain.ts` provides a score-based review queue that surfaces the most important samples first:
+
+| Score | Condition |
+|---|---|
+| 0 | Has unreviewed proposals |
+| 1 | Has auto boxes (origin="auto"), unreviewed |
+| 2 | Has manual labels, unreviewed |
+| 3 | Empty, unreviewed |
+| 9000 | Already reviewed |
+| 10000 | Junk |
+
+`nextNeedsReviewIndex` and `prevNeedsReviewIndex` traverse the sorted queue and skip reviewed/junk entries by default.
+
+### Auto Label arg order fix
+
+`autoLabelApi.ts` now sends arguments in the order the Python backend expects:
+`[modelPath, inputRoot, outputRoot, imageSize, confidence, device, ...]`
+
+The previous order `[inputRoot, outputRoot, modelPath, ...]` was a silent bug that caused the backend to receive incorrect paths.

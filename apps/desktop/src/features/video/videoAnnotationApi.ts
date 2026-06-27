@@ -30,12 +30,35 @@ export type DetectBoxAnnotation = {
   y: number;
   w: number;
   h: number;
+  /** "manual" = drawn/confirmed by user; "auto" = placed by model, not yet reviewed */
+  origin?: "manual" | "auto";
+  /** Stored when origin="auto"; helps with future dedup and display */
+  confidence?: number;
+};
+
+/**
+ * A model suggestion that has NOT yet been accepted by the user.
+ * Proposals are NEVER exported. They become real boxes only when materialized.
+ */
+export type DetectProposal = {
+  id: string;
+  classKey?: string;
+  classId?: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  confidence: number;
+  modelId?: string;
+  createdAt: string;
 };
 
 export type VideoDetectTask = {
   reviewed: boolean;
   empty?: boolean;
   boxes: DetectBoxAnnotation[];
+  /** Medium-confidence model suggestions. Never exported until materialized into boxes[]. */
+  proposals?: DetectProposal[];
 };
 
 export type VideoClfTask = {
@@ -83,7 +106,33 @@ function normalizeDetectBox(value: unknown): DetectBoxAnnotation | null {
   const result: DetectBoxAnnotation = { x, y, w, h };
   if (typeof box.classId === "number") result.classId = Math.max(0, Math.trunc(box.classId));
   if (typeof box.classKey === "string" && box.classKey.trim()) result.classKey = box.classKey.trim();
+  if (box.origin === "manual" || box.origin === "auto") result.origin = box.origin;
+  const conf = Number(box.confidence);
+  if (Number.isFinite(conf) && conf >= 0) result.confidence = Math.min(1, conf);
   return result;
+}
+
+function normalizeProposal(value: unknown): DetectProposal | null {
+  if (!value || typeof value !== "object") return null;
+  const src = value as Record<string, unknown>;
+  const id = typeof src.id === "string" && src.id.trim() ? src.id.trim() : null;
+  if (!id) return null;
+  const w = clamp01(src.w);
+  const h = clamp01(src.h);
+  if (w <= 0 || h <= 0) return null;
+  const x = Math.max(w / 2, Math.min(1 - w / 2, clamp01(src.x)));
+  const y = Math.max(h / 2, Math.min(1 - h / 2, clamp01(src.y)));
+  const confidence = Math.max(0, Math.min(1, Number(src.confidence) || 0));
+  const proposal: DetectProposal = {
+    id,
+    x, y, w, h,
+    confidence,
+    createdAt: typeof src.createdAt === "string" ? src.createdAt : new Date().toISOString()
+  };
+  if (typeof src.classId === "number") proposal.classId = Math.max(0, Math.trunc(src.classId));
+  if (typeof src.classKey === "string" && src.classKey.trim()) proposal.classKey = src.classKey.trim();
+  if (typeof src.modelId === "string" && src.modelId.trim()) proposal.modelId = src.modelId.trim();
+  return proposal;
 }
 
 function normalizeDetectTask(value: unknown): VideoDetectTask | undefined {
@@ -92,10 +141,14 @@ function normalizeDetectTask(value: unknown): VideoDetectTask | undefined {
   const boxes = Array.isArray(src.boxes)
     ? src.boxes.map(normalizeDetectBox).filter((b): b is DetectBoxAnnotation => b !== null)
     : [];
+  const proposals = Array.isArray(src.proposals)
+    ? src.proposals.map(normalizeProposal).filter((p): p is DetectProposal => p !== null)
+    : undefined;
   const reviewed = Boolean(src.reviewed ?? boxes.length > 0);
   const empty = Boolean(src.empty);
   const task: VideoDetectTask = { reviewed, boxes };
   if (empty) task.empty = true;
+  if (proposals && proposals.length > 0) task.proposals = proposals;
   return task;
 }
 

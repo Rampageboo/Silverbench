@@ -7,7 +7,8 @@ import {
   type VideoSource,
   type VideoDetectTask,
   type VideoClfTask,
-  type DetectBoxAnnotation
+  type DetectBoxAnnotation,
+  type DetectProposal
 } from "./videoAnnotationApi";
 
 // ---------------------------------------------------------------------------
@@ -135,6 +136,11 @@ export function updateVideoDetectBoxes(
     reviewed
   };
   if (reviewed && boxes.length === 0) detect.empty = true;
+  // Preserve existing proposals — updating boxes must not destroy proposals
+  const existingProposals = existing?.tasks.detect?.proposals;
+  if (existingProposals && existingProposals.length > 0) {
+    detect.proposals = [...existingProposals];
+  }
 
   frames[key] = {
     ...(existing ?? {}),
@@ -299,4 +305,230 @@ export function updateVideoFrameAnnotation(
   now = new Date().toISOString()
 ): VideoAnnotationManifest {
   return updateVideoDetectBoxes(manifest, video, seconds, boxes, reviewed, now);
+}
+
+// ---------------------------------------------------------------------------
+// Proposal mutations (pure — return new manifests)
+// ---------------------------------------------------------------------------
+
+function detectBoxIou(
+  a: { x: number; y: number; w: number; h: number },
+  b: { x: number; y: number; w: number; h: number }
+): number {
+  const ax1 = a.x - a.w / 2, ay1 = a.y - a.h / 2;
+  const ax2 = a.x + a.w / 2, ay2 = a.y + a.h / 2;
+  const bx1 = b.x - b.w / 2, by1 = b.y - b.h / 2;
+  const bx2 = b.x + b.w / 2, by2 = b.y + b.h / 2;
+  const ix1 = Math.max(ax1, bx1), iy1 = Math.max(ay1, by1);
+  const ix2 = Math.min(ax2, bx2), iy2 = Math.min(ay2, by2);
+  if (ix2 <= ix1 || iy2 <= iy1) return 0;
+  const inter = (ix2 - ix1) * (iy2 - iy1);
+  const union = a.w * a.h + b.w * b.h - inter;
+  return union > 0 ? inter / union : 0;
+}
+
+/**
+ * Add auto-placed accepted boxes from model output.
+ *
+ * - Does NOT replace existing boxes (preserves manual work).
+ * - Skips incoming boxes whose IoU with an existing box exceeds iouThreshold.
+ * - Does NOT mark the timestamp as reviewed (user still needs to review).
+ * - Preserves existing proposals.
+ */
+export function addVideoAutoBoxes(
+  manifest: VideoAnnotationManifest,
+  video: VideoSource,
+  seconds: number,
+  autoBoxes: DetectBoxAnnotation[],
+  iouThreshold = 0.85,
+  now = new Date().toISOString()
+): VideoAnnotationManifest {
+  const timestampMs = Number(timestampKey(seconds));
+  const key = String(timestampMs);
+  const frames = { ...manifest.frames };
+  const existing = frames[key];
+  const currentDetect = existing?.tasks.detect ?? { reviewed: false, boxes: [] };
+
+  const dedupedNew = autoBoxes.filter(
+    (auto) => !currentDetect.boxes.some((ex) => detectBoxIou(auto, ex) >= iouThreshold)
+  );
+
+  const updatedDetect: VideoDetectTask = {
+    ...currentDetect,
+    boxes: [...currentDetect.boxes, ...dedupedNew]
+    // reviewed stays as-is: high-confidence boxes do not auto-review the sample
+  };
+
+  frames[key] = {
+    ...(existing ?? {}),
+    timestampMs,
+    time: timestampMs / 1000,
+    tasks: { ...(existing?.tasks ?? {}), detect: updatedDetect },
+    updatedAt: now
+  };
+  return { ...manifest, video, updatedAt: now, frames };
+}
+
+/**
+ * Add medium-confidence proposals from model output.
+ *
+ * - Does NOT touch boxes[] or reviewed flag.
+ * - Skips proposals whose IoU with an existing box or existing proposal
+ *   exceeds iouThreshold (avoids duplication against accepted work).
+ */
+export function addVideoProposals(
+  manifest: VideoAnnotationManifest,
+  video: VideoSource,
+  seconds: number,
+  proposals: DetectProposal[],
+  iouThreshold = 0.85,
+  now = new Date().toISOString()
+): VideoAnnotationManifest {
+  const timestampMs = Number(timestampKey(seconds));
+  const key = String(timestampMs);
+  const frames = { ...manifest.frames };
+  const existing = frames[key];
+  const currentDetect = existing?.tasks.detect ?? { reviewed: false, boxes: [] };
+  const existingProposals = currentDetect.proposals ?? [];
+
+  const allExisting = [
+    ...currentDetect.boxes,
+    ...existingProposals.map((p) => ({ x: p.x, y: p.y, w: p.w, h: p.h }))
+  ];
+
+  const newProposals = proposals.filter(
+    (prop) => !allExisting.some((ex) => detectBoxIou(prop, ex) >= iouThreshold)
+  );
+
+  const updatedDetect: VideoDetectTask = {
+    ...currentDetect,
+    proposals: [...existingProposals, ...newProposals]
+    // boxes and reviewed are left completely untouched
+  };
+
+  frames[key] = {
+    ...(existing ?? {}),
+    timestampMs,
+    time: timestampMs / 1000,
+    tasks: { ...(existing?.tasks ?? {}), detect: updatedDetect },
+    updatedAt: now
+  };
+  return { ...manifest, video, updatedAt: now, frames };
+}
+
+/**
+ * Materialize a proposal: move it from proposals[] into boxes[].
+ *
+ * - The resulting box has origin="manual" (user confirmed it).
+ * - Does NOT change the reviewed flag.
+ * - No-op if the proposal id is not found.
+ */
+export function materializeVideoProposal(
+  manifest: VideoAnnotationManifest,
+  video: VideoSource,
+  seconds: number,
+  proposalId: string,
+  now = new Date().toISOString()
+): VideoAnnotationManifest {
+  const timestampMs = Number(timestampKey(seconds));
+  const key = String(timestampMs);
+  const frames = { ...manifest.frames };
+  const existing = frames[key];
+  if (!existing?.tasks.detect) return manifest;
+
+  const detect = existing.tasks.detect;
+  const proposals = detect.proposals ?? [];
+  const target = proposals.find((p) => p.id === proposalId);
+  if (!target) return manifest;
+
+  const materializedBox: DetectBoxAnnotation = {
+    x: target.x, y: target.y, w: target.w, h: target.h,
+    origin: "manual"
+  };
+  if (target.classId !== undefined) materializedBox.classId = target.classId;
+  if (target.classKey) materializedBox.classKey = target.classKey;
+
+  const updatedDetect: VideoDetectTask = {
+    ...detect,
+    boxes: [...detect.boxes, materializedBox],
+    proposals: proposals.filter((p) => p.id !== proposalId)
+  };
+  if (updatedDetect.proposals!.length === 0) delete updatedDetect.proposals;
+
+  frames[key] = {
+    ...existing,
+    tasks: { ...existing.tasks, detect: updatedDetect },
+    updatedAt: now
+  };
+  return { ...manifest, video, updatedAt: now, frames };
+}
+
+/**
+ * Reject a proposal: remove it from proposals[] without touching boxes[].
+ * No-op if the proposal id is not found.
+ */
+export function rejectVideoProposal(
+  manifest: VideoAnnotationManifest,
+  video: VideoSource,
+  seconds: number,
+  proposalId: string,
+  now = new Date().toISOString()
+): VideoAnnotationManifest {
+  const timestampMs = Number(timestampKey(seconds));
+  const key = String(timestampMs);
+  const frames = { ...manifest.frames };
+  const existing = frames[key];
+  if (!existing?.tasks.detect?.proposals) return manifest;
+
+  const detect = existing.tasks.detect;
+  const remaining = detect.proposals!.filter((p) => p.id !== proposalId);
+  const updatedDetect: VideoDetectTask = {
+    ...detect,
+    proposals: remaining.length > 0 ? remaining : undefined
+  };
+
+  frames[key] = {
+    ...existing,
+    tasks: { ...existing.tasks, detect: updatedDetect },
+    updatedAt: now
+  };
+  return { ...manifest, video, updatedAt: now, frames };
+}
+
+/**
+ * Materialize ALL proposals for a timestamp into boxes[].
+ * Clears proposals[]. Does not change reviewed flag.
+ */
+export function acceptAllVideoProposals(
+  manifest: VideoAnnotationManifest,
+  video: VideoSource,
+  seconds: number,
+  now = new Date().toISOString()
+): VideoAnnotationManifest {
+  const timestampMs = Number(timestampKey(seconds));
+  const key = String(timestampMs);
+  const frames = { ...manifest.frames };
+  const existing = frames[key];
+  if (!existing?.tasks.detect?.proposals?.length) return manifest;
+
+  const detect = existing.tasks.detect;
+  const materializedBoxes: DetectBoxAnnotation[] = detect.proposals!.map((p) => {
+    const box: DetectBoxAnnotation = { x: p.x, y: p.y, w: p.w, h: p.h, origin: "manual" };
+    if (p.classId !== undefined) box.classId = p.classId;
+    if (p.classKey) box.classKey = p.classKey;
+    return box;
+  });
+
+  const updatedDetect: VideoDetectTask = {
+    ...detect,
+    boxes: [...detect.boxes, ...materializedBoxes],
+    proposals: undefined
+  };
+
+  frames[key] = {
+    ...existing,
+    tasks: { ...existing.tasks, detect: updatedDetect },
+    updatedAt: now
+  };
+  return { ...manifest, video, updatedAt: now, frames };
 }
