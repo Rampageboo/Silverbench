@@ -574,6 +574,50 @@ When an explicit frame export or dataset build is requested, segments act as fil
 - The segment list is stable enough to be referenced by export manifests; segment IDs
   are UUIDs and are never reused after deletion.
 
+### Timestamp-first detect + clf task-layer architecture
+
+Branch: `feature/timestamp-first-detect-clf-architecture` (continuation of this branch).
+
+**Video annotation manifest upgraded to version 2.** Each timestamp now carries an independent `detect` task (YOLO boxes + reviewed state) and a `clf` task (image-level class key + reviewed state). The two tasks have independent reviewed states and can be written and cleared independently without affecting each other.
+
+Key type changes:
+
+```ts
+// v2 frame — replaces flat { boxes, reviewed }
+type VideoTimestampAnnotation = {
+  timestampMs: number;
+  time: number;
+  tasks: {
+    detect?: VideoDetectTask;   // bounding-box detection annotation
+    clf?: VideoClfTask;         // image-level classification annotation
+  };
+  updatedAt: string;
+};
+type VideoDetectTask = { reviewed: boolean; empty?: boolean; boxes: DetectBoxAnnotation[] };
+type VideoClfTask = { reviewed: boolean; classKey?: string };
+type DetectBoxAnnotation = { classKey?: string; classId?: number; x: number; y: number; w: number; h: number };
+```
+
+**V1 → V2 auto-migration.** Version 1 manifests (`{ boxes, reviewed }`) are migrated on load by `normalizeVideoAnnotationManifest`. Migration logic: `detect.reviewed = oldReviewed || boxes.length > 0`; `detect.empty = oldReviewed && boxes.length === 0`. No manual migration script is required.
+
+**New files:**
+
+- `videoClassKeys.ts` — `classNameToSafeKey`, `classIdToKey`, `classKeyToClassId`, `buildDetectClassKeyIndex`
+- `videoExportPlanner.ts` — pure planning module that derives `DetectExportItem[]` and `ClfExportItem[]` from a v2 manifest; no I/O
+- `videoExportPlanner.test.ts` — 14 tests covering detect/clf items, classKey resolution, policy flags, missing video source
+
+**Updated files:**
+
+- `videoAnnotationApi.ts` — v2 types, `normalizeVideoAnnotationManifest`, `createVideoAnnotationManifest`
+- `videoAnnotationDomain.ts` — `getDetectTask`, `getClfTask`, `updateVideoDetectBoxes`, `markVideoDetectEmpty`, `setVideoClfClass`, `markVideoClfReviewed`, `clearVideoClfLabel`, `clearVideoFrameRecord`, conversion helpers
+- `useVideoAnnotationSession.ts` — exposes `detectTask`, `clfTask`, `setClfClass`, `markClfReviewed`, `clearClfLabel`; `copyPreviousBoxes` copies detect boxes only
+- `useVideoSampling.ts` — reads `frame.tasks.detect?.reviewed` and `frame.tasks.detect?.boxes` for avoidance checks
+- `VideoLabelPage.tsx` — adds Classification panel (class selector, Mark Clf Reviewed, Clear Clf Label)
+- `videoAnnotationApi.test.ts` — updated for v2 output; migration, round-trip, version-rejection tests
+- `videoAnnotationDomain.test.ts` — full task-isolation suite (detect-only, clf-only, both; clear semantics)
+
+**Core invariant: Video samples are timestamp annotations, not saved screenshots. Frames are decoded only for preview and export.**
+
 ### Manual regression checklist
 
 1. Add a video to a workspace. Confirm no files appear in `image_pool` after the add.
@@ -586,9 +630,12 @@ When an explicit frame export or dataset build is requested, segments act as fil
 5. Annotate one of the timestamps (draw at least one box). Save.
 6. Reload the application. Confirm:
    a. The segment list is restored (name, startMs, endMs, enabled state).
-   b. The annotated timestamp record is restored with its boxes.
+   b. The annotated timestamp record is restored with its boxes under `tasks.detect`.
    c. No files have appeared in `image_pool`.
 7. Disable the segment and switch to "segments only" mode. Confirm the app falls back to
    whole-video sampling and displays the warning banner.
-8. Trigger an explicit frame export from the export panel. Confirm exported files appear
-   under `workspace/exports` (or the configured path) and nowhere else.
+8. Assign a classification label to a timestamp. Confirm the clf panel shows the selected
+   class. Mark the detect task empty. Confirm clf label is not affected.
+9. Clear the clf label. Confirm if no detect task exists, the timestamp record is removed.
+10. Trigger an explicit frame export from the export panel. Confirm exported files appear
+    under `workspace/exports` (or the configured path) and nowhere else.

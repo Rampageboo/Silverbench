@@ -1,27 +1,70 @@
-import { readTextFile, writeTextFile, type LabelBox } from "../../api";
+import { readTextFile, writeTextFile } from "../../api";
 import { chooseVideoFiles, getVideoFrameBase64, type VideoItem } from "./videoCaptureApi";
 
 export const DEFAULT_VIDEO_ANNOTATIONS_ROOT = "workspace/video_annotations";
+
+// ---------------------------------------------------------------------------
+// Shared source types
+// ---------------------------------------------------------------------------
 
 export type VideoSource = Pick<VideoItem, "path" | "name" | "duration" | "width" | "height"> & {
   ok?: boolean;
 };
 
-export type VideoFrameAnnotation = {
+export type SamplingMode = "whole-video" | "segments-preferred" | "segments-only";
+
+export type VideoTimestampSource = {
+  kind: "manual" | "random";
+  samplingMode?: SamplingMode;
+  segmentId?: string;
+};
+
+// ---------------------------------------------------------------------------
+// Task-layer annotation types (v2)
+// ---------------------------------------------------------------------------
+
+export type DetectBoxAnnotation = {
+  classKey?: string;
+  classId?: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
+export type VideoDetectTask = {
+  reviewed: boolean;
+  empty?: boolean;
+  boxes: DetectBoxAnnotation[];
+};
+
+export type VideoClfTask = {
+  reviewed: boolean;
+  classKey?: string;
+};
+
+export type VideoTimestampAnnotation = {
   timestampMs: number;
   time: number;
-  boxes: LabelBox[];
-  reviewed: boolean;
+  source?: VideoTimestampSource;
+  tasks: {
+    detect?: VideoDetectTask;
+    clf?: VideoClfTask;
+  };
   updatedAt: string;
 };
 
 export type VideoAnnotationManifest = {
-  version: 1;
+  version: 2;
   video: VideoSource;
   createdAt: string;
   updatedAt: string;
-  frames: Record<string, VideoFrameAnnotation>;
+  frames: Record<string, VideoTimestampAnnotation>;
 };
+
+// ---------------------------------------------------------------------------
+// Normalization helpers
+// ---------------------------------------------------------------------------
 
 function clamp01(value: unknown) {
   const number = Number(value);
@@ -29,22 +72,130 @@ function clamp01(value: unknown) {
   return Math.max(0, Math.min(1, number));
 }
 
-function normalizeBox(value: unknown): LabelBox | null {
+function normalizeDetectBox(value: unknown): DetectBoxAnnotation | null {
   if (!value || typeof value !== "object") return null;
-  const box = value as Partial<LabelBox>;
+  const box = value as Record<string, unknown>;
   const w = clamp01(box.w);
   const h = clamp01(box.h);
   if (w <= 0 || h <= 0) return null;
   const x = Math.max(w / 2, Math.min(1 - w / 2, clamp01(box.x)));
   const y = Math.max(h / 2, Math.min(1 - h / 2, clamp01(box.y)));
+  const result: DetectBoxAnnotation = { x, y, w, h };
+  if (typeof box.classId === "number") result.classId = Math.max(0, Math.trunc(box.classId));
+  if (typeof box.classKey === "string" && box.classKey.trim()) result.classKey = box.classKey.trim();
+  return result;
+}
+
+function normalizeDetectTask(value: unknown): VideoDetectTask | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const src = value as Record<string, unknown>;
+  const boxes = Array.isArray(src.boxes)
+    ? src.boxes.map(normalizeDetectBox).filter((b): b is DetectBoxAnnotation => b !== null)
+    : [];
+  const reviewed = Boolean(src.reviewed ?? boxes.length > 0);
+  const empty = Boolean(src.empty);
+  const task: VideoDetectTask = { reviewed, boxes };
+  if (empty) task.empty = true;
+  return task;
+}
+
+function normalizeClfTask(value: unknown): VideoClfTask | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const src = value as Record<string, unknown>;
+  const classKey = typeof src.classKey === "string" ? src.classKey.trim() : undefined;
+  return { reviewed: Boolean(src.reviewed), classKey: classKey || undefined };
+}
+
+// ---------------------------------------------------------------------------
+// V1 → V2 migration
+// ---------------------------------------------------------------------------
+
+type FrameV1 = {
+  timestampMs?: unknown;
+  time?: unknown;
+  boxes?: unknown;
+  reviewed?: unknown;
+  updatedAt?: unknown;
+};
+
+function migrateV1Frame(rawKey: string, rawFrame: FrameV1): VideoTimestampAnnotation {
+  const timestampMs = Math.max(0, Math.round(Number(rawFrame.timestampMs ?? rawKey) || 0));
+  const boxes = Array.isArray(rawFrame.boxes)
+    ? rawFrame.boxes.map(normalizeDetectBox).filter((b): b is DetectBoxAnnotation => b !== null)
+    : [];
+  const oldReviewed = Boolean(rawFrame.reviewed ?? boxes.length > 0);
+  const detect: VideoDetectTask = {
+    boxes,
+    reviewed: oldReviewed || boxes.length > 0,
+    empty: oldReviewed && boxes.length === 0 ? true : undefined
+  };
+  if (!detect.empty) delete detect.empty;
   return {
-    classId: Math.max(0, Math.trunc(Number(box.classId) || 0)),
-    x,
-    y,
-    w,
-    h
+    timestampMs,
+    time: timestampMs / 1000,
+    tasks: { detect },
+    updatedAt: typeof rawFrame.updatedAt === "string" ? rawFrame.updatedAt : new Date().toISOString()
   };
 }
+
+function normalizeV1Manifest(
+  data: Record<string, unknown>,
+  video: VideoSource
+): VideoAnnotationManifest {
+  const frames: Record<string, VideoTimestampAnnotation> = {};
+  const rawFrames = data.frames && typeof data.frames === "object" ? data.frames as Record<string, unknown> : {};
+  for (const [rawKey, rawFrame] of Object.entries(rawFrames)) {
+    if (!rawFrame || typeof rawFrame !== "object") continue;
+    const annotated = migrateV1Frame(rawKey, rawFrame as FrameV1);
+    frames[String(annotated.timestampMs)] = annotated;
+  }
+  return {
+    version: 2,
+    video,
+    createdAt: typeof data.createdAt === "string" ? data.createdAt : new Date().toISOString(),
+    updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : new Date().toISOString(),
+    frames
+  };
+}
+
+function normalizeV2Manifest(
+  data: Record<string, unknown>,
+  video: VideoSource
+): VideoAnnotationManifest {
+  const frames: Record<string, VideoTimestampAnnotation> = {};
+  const rawFrames = data.frames && typeof data.frames === "object" ? data.frames as Record<string, unknown> : {};
+  for (const [rawKey, rawFrame] of Object.entries(rawFrames)) {
+    if (!rawFrame || typeof rawFrame !== "object") continue;
+    const src = rawFrame as Record<string, unknown>;
+    const timestampMs = Math.max(0, Math.round(Number(src.timestampMs ?? rawKey) || 0));
+    const rawTasks = src.tasks && typeof src.tasks === "object" ? src.tasks as Record<string, unknown> : {};
+    const detect = normalizeDetectTask(rawTasks.detect);
+    const clf = normalizeClfTask(rawTasks.clf);
+    const source = src.source && typeof src.source === "object" ? src.source as VideoTimestampSource : undefined;
+    const updatedAt = typeof src.updatedAt === "string" ? src.updatedAt : new Date().toISOString();
+    const annotation: VideoTimestampAnnotation = {
+      timestampMs,
+      time: timestampMs / 1000,
+      tasks: {},
+      updatedAt
+    };
+    if (detect) annotation.tasks.detect = detect;
+    if (clf) annotation.tasks.clf = clf;
+    if (source) annotation.source = source;
+    frames[String(timestampMs)] = annotation;
+  }
+  return {
+    version: 2,
+    video,
+    createdAt: typeof data.createdAt === "string" ? data.createdAt : new Date().toISOString(),
+    updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : new Date().toISOString(),
+    frames
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Path utilities
+// ---------------------------------------------------------------------------
 
 function hashPath(value: string) {
   let hash = 0x811c9dc5;
@@ -98,10 +249,14 @@ export function normalizeVideoSource(item: VideoItem): VideoSource {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
 export function createVideoAnnotationManifest(video: VideoSource): VideoAnnotationManifest {
   const now = new Date().toISOString();
   return {
-    version: 1,
+    version: 2,
     video,
     createdAt: now,
     updatedAt: now,
@@ -111,31 +266,11 @@ export function createVideoAnnotationManifest(video: VideoSource): VideoAnnotati
 
 export function normalizeVideoAnnotationManifest(value: unknown, video: VideoSource): VideoAnnotationManifest {
   if (!value || typeof value !== "object") throw new Error("Video annotation manifest is not an object.");
-  const data = value as Partial<VideoAnnotationManifest>;
-  if (data.version !== 1) throw new Error(`Unsupported video annotation manifest version: ${String(data.version)}`);
-  const frames: Record<string, VideoFrameAnnotation> = {};
-  for (const [rawKey, rawFrame] of Object.entries(data.frames || {})) {
-    if (!rawFrame || typeof rawFrame !== "object") continue;
-    const source = rawFrame as Partial<VideoFrameAnnotation>;
-    const timestampMs = Math.max(0, Math.round(Number(source.timestampMs ?? rawKey) || 0));
-    const boxes = Array.isArray(source.boxes)
-      ? source.boxes.map(normalizeBox).filter((box): box is LabelBox => box !== null)
-      : [];
-    frames[String(timestampMs)] = {
-      timestampMs,
-      time: timestampMs / 1000,
-      boxes,
-      reviewed: Boolean(source.reviewed || boxes.length),
-      updatedAt: typeof source.updatedAt === "string" ? source.updatedAt : new Date().toISOString()
-    };
-  }
-  return {
-    version: 1,
-    video,
-    createdAt: typeof data.createdAt === "string" ? data.createdAt : new Date().toISOString(),
-    updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : new Date().toISOString(),
-    frames
-  };
+  const data = value as Record<string, unknown>;
+  const version = Number(data.version);
+  if (version === 1) return normalizeV1Manifest(data, video);
+  if (version === 2) return normalizeV2Manifest(data, video);
+  throw new Error(`Unsupported video annotation manifest version: ${String(data.version)}`);
 }
 
 export async function chooseAnnotationVideos() {
@@ -173,7 +308,7 @@ export async function saveVideoAnnotationManifest(
   manifest: VideoAnnotationManifest,
   annotationsRoot = DEFAULT_VIDEO_ANNOTATIONS_ROOT
 ) {
-  const next = { ...manifest, updatedAt: new Date().toISOString() };
+  const next: VideoAnnotationManifest = { ...manifest, updatedAt: new Date().toISOString() };
   await writeTextFile(workspaceRoot, videoManifestRelativePath(next.video, annotationsRoot), `${JSON.stringify(next, null, 2)}\n`);
   return next;
 }

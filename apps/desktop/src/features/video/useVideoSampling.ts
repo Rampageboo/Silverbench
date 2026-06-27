@@ -32,7 +32,6 @@ export function useVideoSampling({
 
   const segmentLoadRef = useRef(0);
 
-  // Load segment manifest whenever video changes
   useEffect(() => {
     if (!workspaceRoot.trim() || !videoPath) {
       setSegmentManifest(null);
@@ -52,14 +51,17 @@ export function useVideoSampling({
       });
   }, [workspaceRoot, videoPath, videoDurationMs]);
 
+  // Random Next seeks to a new timestamp but does NOT create an annotation record.
+  // Sampling checks detect task reviewed/boxes from the v2 structure.
   const randomNext = useCallback((): SampleCandidate | null => {
     if (videoDurationMs <= 0) return null;
 
     const existingTimestamps = annotationManifest
       ? Object.values(annotationManifest.frames).map((frame) => ({
           timestampMs: frame.timestampMs,
-          reviewed: frame.reviewed,
-          boxes: frame.boxes
+          // Use detect task for avoidReviewed/avoidAnnotated checks
+          reviewed: frame.tasks.detect?.reviewed,
+          boxes: frame.tasks.detect?.boxes
         }))
       : [];
 
@@ -85,6 +87,8 @@ export function useVideoSampling({
       setLastSource(source);
     }
 
+    // Returning a candidate does NOT write any annotation record.
+    // The caller (VideoLabelPage) only calls gotoTime.
     return candidate;
   }, [
     videoDurationMs,

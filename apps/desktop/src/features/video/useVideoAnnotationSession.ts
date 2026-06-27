@@ -13,15 +13,25 @@ import {
   saveVideoAnnotationManifest,
   timestampKey,
   type VideoAnnotationManifest,
+  type VideoClfTask,
   type VideoSource
 } from "./videoAnnotationApi";
 import {
   adjacentReviewedFrame,
   clampVideoTime,
-  cloneBoxes,
+  cloneDetectBoxes,
+  clearVideoFrameRecord,
+  detectBoxesToLabelBoxes,
   frameAnnotationAt,
+  getClfTask,
+  getDetectTask,
+  labelBoxToDetectBox,
+  markVideoDetectEmpty,
+  markVideoClfReviewed,
+  clearVideoClfLabel,
+  setVideoClfClass,
   sortedVideoFrames,
-  updateVideoFrameAnnotation
+  updateVideoDetectBoxes
 } from "./videoAnnotationDomain";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -72,8 +82,14 @@ export function useVideoAnnotationSession({
   const maxTime = current?.duration ? Math.max(0, current.duration - 0.001) : 0;
   const currentKey = timestampKey(time);
   const currentFrame = frameAnnotationAt(manifest, time);
-  const boxes = currentFrame?.boxes || [];
-  const reviewed = Boolean(currentFrame?.reviewed);
+
+  // Detect task derived state
+  const detectTask = getDetectTask(currentFrame);
+  const boxes: LabelBox[] = detectBoxesToLabelBoxes(detectTask?.boxes ?? []);
+  const reviewed = Boolean(detectTask?.reviewed);
+
+  // Clf task derived state
+  const clfTask: VideoClfTask | undefined = getClfTask(currentFrame) ?? undefined;
 
   const showError = useCallback(
     (reason: unknown, action = "unknown") => {
@@ -144,12 +160,12 @@ export function useVideoAnnotationSession({
         manifestRef.current = next;
         setManifest(next);
         const reviewedTimes = Object.values(next.frames)
-          .filter((frame) => frame.reviewed)
+          .filter((frame) => frame.tasks.detect?.reviewed)
           .map((frame) => frame.time)
           .sort((a, b) => a - b);
         const initialTime = reviewedTimes[0] ?? 0;
         setTime(clampVideoTime(initialTime, current.duration));
-        setStatus(`Loaded ${Object.keys(next.frames).length} reviewed frame(s) for ${current.name}.`);
+        setStatus(`Loaded ${Object.keys(next.frames).length} annotated frame(s) for ${current.name}.`);
         recordWorkspaceEventBestEffort(workspaceRoot, {
           tool: "video-label",
           action: "annotation.opened",
@@ -176,6 +192,7 @@ export function useVideoAnnotationSession({
     }
     const requestId = ++previewRequestRef.current;
     setPreviewLoading(true);
+    // Preview decode: frame is decoded in memory only; no file is written.
     getAnnotationFrameBase64(current.path, debouncedPreviewTime)
       .then((data) => {
         if (requestId === previewRequestRef.current) setPreviewBase64(data || "");
@@ -207,11 +224,14 @@ export function useVideoAnnotationSession({
     [annotationsRoot, showError, workspaceRoot]
   );
 
+  // Update detect boxes on the current timestamp (canvas onChange handler).
+  // Does NOT touch the clf task.
   const updateCurrentFrame = useCallback(
     (nextBoxes: LabelBox[], nextReviewed = true) => {
       const source = manifestRef.current;
       if (!source || !current) return;
-      const next = updateVideoFrameAnnotation(source, current, time, nextBoxes, nextReviewed);
+      const detectBoxes = nextBoxes.map(labelBoxToDetectBox);
+      const next = updateVideoDetectBoxes(source, current, time, detectBoxes, nextReviewed);
       manifestRef.current = next;
       setManifest(next);
       enqueueSave(next);
@@ -246,12 +266,13 @@ export function useVideoAnnotationSession({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [active, current, gotoTime, stepSeconds, time]);
 
+  // Annotated = has detect boxes; reviewed = detect task reviewed
   const annotatedFrames = useMemo(
-    () => sortedVideoFrames(manifest, (frame) => frame.boxes.length > 0),
+    () => sortedVideoFrames(manifest, (frame) => (frame.tasks.detect?.boxes.length ?? 0) > 0),
     [manifest]
   );
   const reviewedFrames = useMemo(
-    () => sortedVideoFrames(manifest, (frame) => frame.reviewed),
+    () => sortedVideoFrames(manifest, (frame) => Boolean(frame.tasks.detect?.reviewed)),
     [manifest]
   );
 
@@ -303,23 +324,36 @@ export function useVideoAnnotationSession({
     [boxes, selectedIndex, updateCurrentFrame]
   );
 
+  // Copy detect boxes only from the previous annotated timestamp.
+  // Does NOT copy clf label.
   const copyPreviousBoxes = useCallback(() => {
     const previous = [...annotatedFrames].reverse().find((frame) => frame.timestampMs < Number(currentKey));
     if (!previous || !current) {
       showToast("No earlier annotated frame has boxes.", { variant: "error" });
       return;
     }
+    const prevBoxes = previous.tasks.detect?.boxes ?? [];
+    if (!prevBoxes.length) {
+      showToast("No earlier annotated frame has boxes.", { variant: "error" });
+      return;
+    }
     setSelectedIndex(null);
-    updateCurrentFrame(cloneBoxes(previous.boxes), true);
-    setStatus(`Copied ${previous.boxes.length} box(es) from the previous annotated timestamp.`);
+    const source = manifestRef.current;
+    if (!source) return;
+    const detectBoxes = cloneDetectBoxes(prevBoxes);
+    const next = updateVideoDetectBoxes(source, current, time, detectBoxes, true);
+    manifestRef.current = next;
+    setManifest(next);
+    enqueueSave(next);
+    setStatus(`Copied ${detectBoxes.length} box(es) from the previous annotated timestamp.`);
     void recordWorkspaceOperation(workspaceRoot, {
       tool: "video-label",
       action: "copy-previous-boxes",
       status: "done",
       inputs: { videoPath: current.path, fromTimestampMs: previous.timestampMs, toTimestampMs: Number(currentKey) },
-      summary: { boxCount: previous.boxes.length }
+      summary: { boxCount: detectBoxes.length }
     }).catch(() => {});
-  }, [annotatedFrames, current, currentKey, showToast, updateCurrentFrame, workspaceRoot]);
+  }, [annotatedFrames, current, currentKey, enqueueSave, showToast, time, workspaceRoot]);
 
   const gotoReviewed = useCallback(
     (direction: -1 | 1) => {
@@ -329,9 +363,14 @@ export function useVideoAnnotationSession({
     [currentKey, gotoTime, reviewedFrames]
   );
 
+  // Mark detect task empty+reviewed. Does NOT affect clf task.
   const markEmptyReviewed = useCallback(() => {
-    if (!current) return;
-    updateCurrentFrame([], true);
+    const source = manifestRef.current;
+    if (!source || !current) return;
+    const next = markVideoDetectEmpty(source, current, time);
+    manifestRef.current = next;
+    setManifest(next);
+    enqueueSave(next);
     void recordWorkspaceOperation(workspaceRoot, {
       tool: "video-label",
       action: "mark-empty-reviewed",
@@ -339,20 +378,60 @@ export function useVideoAnnotationSession({
       inputs: { videoPath: current.path, timestampMs: Number(currentKey) },
       summary: { boxCount: 0 }
     }).catch(() => {});
-  }, [current, currentKey, updateCurrentFrame, workspaceRoot]);
+  }, [current, currentKey, enqueueSave, time, workspaceRoot]);
 
+  // Clear the whole frame record (both detect and clf).
   const clearFrameRecord = useCallback(() => {
-    if (!currentFrame || !current) return;
-    updateCurrentFrame([], false);
+    const source = manifestRef.current;
+    if (!source || !currentFrame || !current) return;
+    const detectBoxCount = currentFrame.tasks.detect?.boxes.length ?? 0;
+    const next = clearVideoFrameRecord(source, time);
+    manifestRef.current = next;
+    setManifest(next);
     setSelectedIndex(null);
+    enqueueSave(next);
     void recordWorkspaceOperation(workspaceRoot, {
       tool: "video-label",
       action: "clear-frame-record",
       status: "done",
       inputs: { videoPath: current.path, timestampMs: Number(currentKey) },
-      summary: { removedBoxCount: currentFrame.boxes.length }
+      summary: { removedBoxCount: detectBoxCount }
     }).catch(() => {});
-  }, [current, currentFrame, currentKey, updateCurrentFrame, workspaceRoot]);
+  }, [current, currentFrame, currentKey, enqueueSave, time, workspaceRoot]);
+
+  // ---------------------------------------------------------------------------
+  // Clf task actions
+  // ---------------------------------------------------------------------------
+
+  const setClfClass = useCallback(
+    (classKey: string) => {
+      const source = manifestRef.current;
+      if (!source || !current) return;
+      const next = setVideoClfClass(source, current, time, classKey);
+      manifestRef.current = next;
+      setManifest(next);
+      enqueueSave(next);
+    },
+    [current, enqueueSave, time]
+  );
+
+  const markClfReviewed = useCallback(() => {
+    const source = manifestRef.current;
+    if (!source || !current) return;
+    const next = markVideoClfReviewed(source, current, time);
+    manifestRef.current = next;
+    setManifest(next);
+    enqueueSave(next);
+  }, [current, enqueueSave, time]);
+
+  const clearClfLabel = useCallback(() => {
+    const source = manifestRef.current;
+    if (!source || !current) return;
+    const next = clearVideoClfLabel(source, current, time);
+    manifestRef.current = next;
+    setManifest(next);
+    enqueueSave(next);
+  }, [current, enqueueSave, time]);
 
   return {
     annotationsRoot,
@@ -372,8 +451,13 @@ export function useVideoAnnotationSession({
     manifestLoading,
     manifest,
     currentFrame,
+    // Detect derived state
     boxes,
     reviewed,
+    detectTask,
+    // Clf derived state
+    clfTask,
+    // Classes
     classes,
     currentClass,
     assignClass,
@@ -383,11 +467,16 @@ export function useVideoAnnotationSession({
     status,
     annotatedFrames,
     reviewedFrames,
+    // Detect actions
     updateCurrentFrame,
     copyPreviousBoxes,
     gotoReviewed,
     markEmptyReviewed,
     clearFrameRecord,
+    // Clf actions
+    setClfClass,
+    markClfReviewed,
+    clearClfLabel,
     showError
   };
 }

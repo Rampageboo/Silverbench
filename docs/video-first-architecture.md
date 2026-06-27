@@ -88,13 +88,41 @@ Each source video has one deterministic manifest under the configured `paths.vid
 workspace/video_annotations/<safe-video-name>-<path-hash>.json
 ```
 
+The manifest is **version 2**. Each timestamp key maps to a `VideoTimestampAnnotation` with an independent `tasks` object:
+
+```json
+{
+  "version": 2,
+  "video": { "path": "...", "name": "...", "duration": 60, "width": 1920, "height": 1080 },
+  "createdAt": "...",
+  "updatedAt": "...",
+  "frames": {
+    "5000": {
+      "timestampMs": 5000,
+      "time": 5,
+      "tasks": {
+        "detect": { "reviewed": true, "boxes": [{ "classId": 0, "x": 0.5, "y": 0.5, "w": 0.2, "h": 0.3 }] },
+        "clf": { "reviewed": false, "classKey": "cat" }
+      },
+      "updatedAt": "..."
+    }
+  }
+}
+```
+
+**Task-layer design.** Each timestamp can carry an independent `detect` task and `clf` task. Detect and clf tasks have independent `reviewed` states. Clearing one task does not disturb the other. This means a single frame can be labeled for bounding-box detection and image classification simultaneously without coupling the two workflows.
+
+Version 1 manifests (flat `{ boxes, reviewed }` per frame) are auto-migrated to version 2 on load by `normalizeVideoAnnotationManifest`. No migration script is required and no data is lost.
+
 The file stores:
 
 - Source video path and metadata.
 - Millisecond timestamp keys.
-- Reviewed/empty-frame state.
-- Normalized YOLO boxes.
+- Per-task reviewed/empty state and annotation data.
+- Normalized YOLO boxes with optional stable `classKey`.
 - Creation and update timestamps.
+
+**Video samples are timestamp annotations, not saved screenshots. Frames are decoded only for preview and export.**
 
 The storage root must be workspace-relative. Absolute paths and traversal segments are rejected before backend file access.
 

@@ -5,6 +5,7 @@ import { VideoAnnotationCanvas, type RemotePointerState } from "./VideoAnnotatio
 import { formatVideoClock } from "./videoAnnotationDomain";
 import { useVideoAnnotationSession } from "./useVideoAnnotationSession";
 import { useVideoSampling, type SamplingMode } from "./useVideoSampling";
+import { classNameToSafeKey } from "./videoClassKeys";
 import "./VideoLabelPage.css";
 
 type Props = {
@@ -38,12 +39,12 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
     setRemotePointer(null);
   }, [active, session.current?.path]);
 
-  // When the user manually seeks, mark the source as manual
   const handleGotoTime = (nextTime: number) => {
     sampling.setLastSource("manual");
     session.gotoTime(nextTime);
   };
 
+  // Random Next seeks to a new timestamp only; it does NOT create an annotation record.
   const handleRandomNext = () => {
     const candidate = sampling.randomNext();
     if (candidate) {
@@ -124,6 +125,22 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
       : sampling.lastSource === "random-whole-video"
         ? "Random whole-video"
         : "Manual";
+
+  // Detect task status text
+  const detectStatus = session.detectTask
+    ? session.detectTask.empty
+      ? "empty / reviewed"
+      : `${session.boxes.length} box(es)${session.reviewed ? " / reviewed" : ""}`
+    : "none";
+
+  // Clf task status text
+  const clfStatus = session.clfTask
+    ? session.clfTask.classKey
+      ? `${session.clfTask.classKey}${session.clfTask.reviewed ? " / reviewed" : ""}`
+      : session.clfTask.reviewed
+        ? "reviewed (no class)"
+        : "pending"
+    : "pending";
 
   return (
     <main className="video-label-workspace">
@@ -315,8 +332,8 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
 
         <section className="panel">
           <div className="panel-header">
-            <span>Current Frame</span>
-            <span className="status">{session.boxes.length} box(es)</span>
+            <span>Detect</span>
+            <span className="status">{detectStatus}</span>
           </div>
           <div className="panel-body video-label-action-stack">
             <div className="row">
@@ -356,14 +373,54 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
             <div className="video-label-stats">
               <span>{session.reviewedFrames.length} reviewed timestamp(s)</span>
               <span>{session.annotatedFrames.length} with boxes</span>
-              <span>Current: {session.reviewed ? "reviewed" : "not reviewed"}</span>
             </div>
+          </div>
+        </section>
+
+        {/* Classification panel — shares timestamps with detect; independent reviewed state */}
+        <section className="panel">
+          <div className="panel-header">
+            <span>Classification</span>
+            <span className="status">{clfStatus}</span>
+          </div>
+          <div className="panel-body video-label-action-stack">
+            <div className="video-label-class-list">
+              {session.classes.map((item) => {
+                const key = classNameToSafeKey(item.name);
+                const isSelected = session.clfTask?.classKey === key;
+                return (
+                  <button
+                    type="button"
+                    key={item.id}
+                    className={isSelected ? "selected" : ""}
+                    onClick={() => session.setClfClass(key)}
+                    disabled={!session.current}
+                  >
+                    {item.name}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={session.markClfReviewed}
+              disabled={!session.current}
+            >
+              Mark Clf Reviewed
+            </button>
+            <button
+              type="button"
+              onClick={session.clearClfLabel}
+              disabled={!session.clfTask}
+            >
+              Clear Clf Label
+            </button>
           </div>
         </section>
 
         <section className="panel video-label-class-panel">
           <div className="panel-header">
-            <span>Classes</span>
+            <span>Detect Classes</span>
             <span className="status">{session.currentClass}</span>
           </div>
           <div className="panel-body">
@@ -386,7 +443,7 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
           <div className="panel-body">
             <div className="hint">{session.status}</div>
             <div className="hint">
-              Timestamp/box metadata: {session.annotationsRoot}. Preview frames remain in memory and are never added to image_pool.
+              Timestamp/task metadata: {session.annotationsRoot}. Preview frames remain in memory and are never added to image_pool.
             </div>
             <div className="hint">Image-based annotation remains available in Image Box Label.</div>
           </div>
