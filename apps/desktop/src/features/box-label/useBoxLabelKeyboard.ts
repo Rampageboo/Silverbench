@@ -18,6 +18,7 @@ type UseBoxLabelKeyboardOptions = {
   onMarkJunk?: () => Promise<void>;
   onUndoJunk?: () => Promise<void>;
   undoLast: () => Promise<void>;
+  redoLast: () => Promise<void>;
   copySelectedBoxToNext: () => Promise<void>;
   trackCsrtForward: () => Promise<void>;
   scheduleDraw: () => void;
@@ -45,6 +46,7 @@ export function useBoxLabelKeyboard({
   onMarkJunk,
   onUndoJunk,
   undoLast,
+  redoLast,
   copySelectedBoxToNext,
   trackCsrtForward,
   scheduleDraw,
@@ -68,6 +70,16 @@ export function useBoxLabelKeyboard({
       if (event.ctrlKey && !event.shiftKey && event.key.toLowerCase() === "z") {
         event.preventDefault();
         undoLast().catch((err) => setError(errMessage(err)));
+        return;
+      }
+      if (event.ctrlKey && event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        redoLast().catch((err) => setError(errMessage(err)));
+        return;
+      }
+      if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        redoLast().catch((err) => setError(errMessage(err)));
         return;
       }
       if (event.key === "Delete" || event.key === "Backspace") {
@@ -137,11 +149,6 @@ export function useBoxLabelKeyboard({
       if (event.key.toLowerCase() === "j" && !event.ctrlKey && !event.altKey && !event.metaKey) {
         event.preventDefault();
         onMarkJunk?.().catch((err) => setError(errMessage(err)));
-        return;
-      }
-      if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "z") {
-        event.preventDefault();
-        onUndoJunk?.().catch((err) => setError(errMessage(err)));
         return;
       }
       if (event.key.toLowerCase() === "v" && !event.ctrlKey && !event.altKey && !event.metaKey) {

@@ -3,27 +3,6 @@ import type { MetadataRow } from "../image-pool/types";
 import type { BoxLabelEntry } from "./boxLabelCore";
 import type { BoxLabelShortcutSlot, FixedBoxSlot } from "./session";
 
-export type UndoSnapshot =
-  | {
-      type: "labels";
-      action: string;
-      filename: string;
-      boxes: api.LabelBox[];
-      selectedBoxId: number | null;
-      classId: number;
-    }
-  | {
-      type: "batch-labels";
-      action: string;
-      snapshots: Array<{ filename: string; boxes: api.LabelBox[] }>;
-    }
-  | {
-      type: "image";
-      action: string;
-      filename: string;
-      imageBase64: string;
-    };
-
 export type BoxLabelViewProps = {
   workspaceRoot: string;
   datasetRoot: string;

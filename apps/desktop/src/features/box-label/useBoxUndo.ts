@@ -1,129 +1,224 @@
-import { useCallback, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+/**
+ * Scoped undo/redo hook for Box Label.
+ *
+ * Safety guarantees:
+ *  - Ctrl+Z only undoes the CURRENT image (matched by filename scope key).
+ *  - Ctrl+Y / Ctrl+Shift+Z only redoes the CURRENT image.
+ *  - If the current image has no undo history: show a message, do nothing.
+ *  - If the current image has no redo history: show a message, do nothing.
+ *  - Navigating away discards any uncommitted pending transaction for the old image
+ *    so the "after" snapshot is never captured from the wrong image.
+ *  - Batch operations (copySelectedBoxToNext, trackCsrtForward) are not undoable
+ *    via Ctrl+Z to prevent silent cross-image modification.
+ *  - Image source mutations (blackbox tool) are not tracked here; use non-destructive
+ *    overlays instead (see blackout overlay architecture).
+ */
+
+import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import * as api from "../../api";
 import type { BoxLabelEntry } from "./boxLabelCore";
-import type { UndoSnapshot } from "./boxLabelTypes";
+import {
+  emptyUndoRedoState,
+  pushScopedTransaction,
+  undoScoped,
+  redoScoped,
+  type BoxLabelEditorSnapshot,
+  type BoxLabelUndoTransaction,
+  type ScopedUndoRedoState
+} from "./boxLabelUndoDomain";
 
 const UNDO_LIMIT = 50;
 
+let _undoIdCounter = 0;
+function nextUndoId(): string {
+  _undoIdCounter += 1;
+  return `undo_${_undoIdCounter}`;
+}
+
 type UseBoxUndoOptions = {
-  workspaceRoot: string;
+  /** Basename of the currently visible image. Used as the scope key. */
   filename: string;
-  findEntryByBasename: (basename: string) => BoxLabelEntry | null;
+  /** The currently visible entry. Persist target for undo/redo restores. */
+  entry: BoxLabelEntry | null;
   persistEntryLabels: (target: BoxLabelEntry, boxes: api.LabelBox[]) => Promise<api.LabelBox[]>;
-  onLabelsChanged: (filename: string, boxes: api.LabelBox[]) => void;
   boxesRef: MutableRefObject<api.LabelBox[]>;
   selectedRef: MutableRefObject<number | null>;
   classRef: MutableRefObject<number>;
   setBoxes: (boxes: api.LabelBox[]) => void;
   setSelectedBoxId: (id: number | null) => void;
   setCurrentClass: (classId: number) => void;
-  setImageVersion: Dispatch<SetStateAction<number>>;
   setStatus: (status: string) => void;
   scheduleDraw: () => void;
 };
 
 export function useBoxUndo({
-  workspaceRoot,
   filename,
-  findEntryByBasename,
+  entry,
   persistEntryLabels,
-  onLabelsChanged,
   boxesRef,
   selectedRef,
-  classRef,
+  classRef: _classRef,
   setBoxes,
   setSelectedBoxId,
   setCurrentClass,
-  setImageVersion,
   setStatus,
   scheduleDraw
 }: UseBoxUndoOptions) {
-  const undoRef = useRef<UndoSnapshot[]>([]);
+  // All undo/redo state lives here. It is NOT React state (no re-render needed).
+  const undoStateRef = useRef<ScopedUndoRedoState>(emptyUndoRedoState());
 
-  const pushUndo = useCallback(
-    (action: string) => {
-      undoRef.current.push({
-        type: "labels",
-        action,
-        filename,
-        boxes: boxesRef.current.map((box) => ({ ...box })),
-        selectedBoxId: selectedRef.current,
-        classId: classRef.current
-      });
-      if (undoRef.current.length > UNDO_LIMIT) undoRef.current.shift();
-    },
-    [boxesRef, classRef, filename, selectedRef]
-  );
+  // Two-phase commit: pushUndo captures "before", the transaction is committed when
+  // the next pushUndo/undoLast/redoLast runs (capturing current state as "after").
+  const pendingRef = useRef<{
+    label: string;
+    before: BoxLabelEditorSnapshot;
+    scopeKey: string;
+  } | null>(null);
 
-  const pushBatchUndo = useCallback((action: string, snapshots: Array<{ filename: string; boxes: api.LabelBox[] }>) => {
-    undoRef.current.push({ type: "batch-labels", action, snapshots });
-    if (undoRef.current.length > UNDO_LIMIT) undoRef.current.shift();
-  }, []);
+  // When the scope key (filename) changes due to navigation, discard the pending
+  // transaction so the "after" snapshot is never captured from the new image.
+  const prevFilenameRef = useRef(filename);
+  useEffect(() => {
+    if (prevFilenameRef.current !== filename) {
+      pendingRef.current = null;
+    }
+    prevFilenameRef.current = filename;
+  }, [filename]);
 
+  const captureSnapshot = useCallback((): BoxLabelEditorSnapshot => ({
+    boxes: boxesRef.current.map(b => ({ ...b })),
+    proposals: [],        // expanded when proposal UI is integrated into Box Label
+    selectedBoxIndex: selectedRef.current
+  }), [boxesRef, selectedRef]);
+
+  /**
+   * Commit any pending transaction. The current state is the "after" snapshot.
+   * Safe to call when there is no pending transaction (no-op).
+   */
+  const flushPendingTransaction = useCallback(() => {
+    const pending = pendingRef.current;
+    if (!pending) return;
+    // Guard: if the user navigated away, the scope key won't match current filename.
+    if (pending.scopeKey !== filename) {
+      pendingRef.current = null;
+      return;
+    }
+    pendingRef.current = null;
+    const after = captureSnapshot();
+    const transaction: BoxLabelUndoTransaction = {
+      id: nextUndoId(),
+      scopeKey: pending.scopeKey,
+      label: pending.label,
+      before: pending.before,
+      after,
+      createdAt: new Date().toISOString()
+    };
+    undoStateRef.current = pushScopedTransaction(undoStateRef.current, transaction, UNDO_LIMIT);
+  }, [captureSnapshot, filename]);
+
+  /**
+   * Call BEFORE making an edit. Captures the "before" snapshot for this undo unit.
+   * If called again before the previous unit is committed, the previous unit is
+   * committed first with the current state as "after".
+   *
+   * This matches the existing call-site pattern: pushUndo("action") then mutate.
+   */
+  const pushUndo = useCallback((label: string) => {
+    flushPendingTransaction();     // commit previous pending if any
+    if (!filename) return;         // no visible image, nothing to track
+    pendingRef.current = {
+      label,
+      before: captureSnapshot(),
+      scopeKey: filename
+    };
+  }, [captureSnapshot, filename, flushPendingTransaction]);
+
+  /** No-op: image source mutations (blackbox) are not tracked in label undo. */
   const pushImageUndo = useCallback(
-    (action: string, imageBase64: string) => {
-      undoRef.current.push({ type: "image", action, filename, imageBase64 });
-      if (undoRef.current.length > UNDO_LIMIT) undoRef.current.shift();
+    (_action: string, _imageBase64: string) => {
+      // Intentional no-op. Blackbox edits modify source image files, which is a
+      // separate concern from label undo. Use non-destructive blackout overlays instead.
     },
-    [filename]
+    []
   );
 
+  /** No-op: batch operations are not undoable via Ctrl+Z to prevent cross-image modification. */
+  const pushBatchUndo = useCallback(
+    (_action: string, _snapshots: Array<{ filename: string; boxes: api.LabelBox[] }>) => {
+      // Intentional no-op. Batch ops (copy-to-next, CSRT forward) modify multiple images.
+      // Allowing Ctrl+Z to silently restore other images is unsafe. Navigate to each
+      // affected image and use Ctrl+Z there if needed.
+    },
+    []
+  );
+
+  /** Apply a snapshot to the CURRENT entry only. Never touches another file. */
+  const applySnapshot = useCallback(
+    async (snap: BoxLabelEditorSnapshot) => {
+      const target = entry;
+      if (!target) return;
+      boxesRef.current = snap.boxes.map(b => ({ ...b }));
+      setBoxes(boxesRef.current);
+      const nextSelectedIndex =
+        snap.selectedBoxIndex !== null &&
+        snap.selectedBoxIndex !== undefined &&
+        snap.selectedBoxIndex >= 0 &&
+        snap.selectedBoxIndex < snap.boxes.length
+          ? snap.selectedBoxIndex
+          : null;
+      setSelectedBoxId(nextSelectedIndex);
+      if (nextSelectedIndex !== null && snap.boxes[nextSelectedIndex]) {
+        setCurrentClass(snap.boxes[nextSelectedIndex].classId);
+      }
+      await persistEntryLabels(target, boxesRef.current);
+    },
+    [boxesRef, entry, persistEntryLabels, setBoxes, setCurrentClass, setSelectedBoxId]
+  );
+
+  /**
+   * Undo the most recent action for the current image.
+   * If there is nothing to undo for this image: shows a message and does nothing.
+   * Never navigates. Never modifies another image.
+   */
   const undoLast = useCallback(async () => {
-    const snapshot = undoRef.current.pop();
-    if (!snapshot) {
+    if (!filename || !entry) {
       setStatus("Nothing to undo.");
       return;
     }
-    if (snapshot.type === "image") {
-      await api.writeFileBase64(workspaceRoot, `image_pool/${snapshot.filename}`, snapshot.imageBase64);
-      if (snapshot.filename === filename) {
-        setImageVersion((value) => value + 1);
-      }
-      setStatus(`Undid ${snapshot.action}.`);
+    // Commit pending transaction so redo can restore the full "after" state.
+    flushPendingTransaction();
+    const { nextState, transaction } = undoScoped(undoStateRef.current, filename);
+    if (!transaction) {
+      setStatus("Nothing to undo for this image.");
       return;
     }
-    if (snapshot.type === "batch-labels") {
-      for (const item of snapshot.snapshots) {
-        const target = findEntryByBasename(item.filename);
-        if (target) await persistEntryLabels(target, item.boxes);
-      }
-      if (snapshot.snapshots.some((item) => item.filename === filename)) {
-        const current = snapshot.snapshots.find((item) => item.filename === filename);
-        const next = current?.boxes || boxesRef.current;
-        boxesRef.current = next;
-        setBoxes(next);
-        setSelectedBoxId(null);
-      }
-      setStatus(`Undid ${snapshot.action} on ${snapshot.snapshots.length} image(s).`);
-      return;
-    }
-    const target = findEntryByBasename(snapshot.filename);
-    if (target) await persistEntryLabels(target, snapshot.boxes);
-    onLabelsChanged(snapshot.filename, snapshot.boxes);
-    if (snapshot.filename === filename) {
-      boxesRef.current = snapshot.boxes.map((box) => ({ ...box }));
-      setBoxes(boxesRef.current);
-      setSelectedBoxId(
-        snapshot.selectedBoxId !== null && snapshot.selectedBoxId < boxesRef.current.length ? snapshot.selectedBoxId : null
-      );
-      setCurrentClass(snapshot.classId);
-    }
-    setStatus(`Undid ${snapshot.action}.`);
+    undoStateRef.current = nextState;
+    await applySnapshot(transaction.before);
+    setStatus(`Undid "${transaction.label}".`);
     scheduleDraw();
-  }, [
-    boxesRef,
-    filename,
-    findEntryByBasename,
-    onLabelsChanged,
-    persistEntryLabels,
-    scheduleDraw,
-    setBoxes,
-    setCurrentClass,
-    setImageVersion,
-    setSelectedBoxId,
-    setStatus,
-    workspaceRoot
-  ]);
+  }, [applySnapshot, entry, filename, flushPendingTransaction, scheduleDraw, setStatus]);
 
-  return { pushUndo, pushBatchUndo, pushImageUndo, undoLast };
+  /**
+   * Redo the most recently undone action for the current image.
+   * If there is nothing to redo: shows a message and does nothing.
+   * Never navigates. Never modifies another image.
+   */
+  const redoLast = useCallback(async () => {
+    if (!filename || !entry) {
+      setStatus("Nothing to redo.");
+      return;
+    }
+    flushPendingTransaction();
+    const { nextState, transaction } = redoScoped(undoStateRef.current, filename);
+    if (!transaction) {
+      setStatus("Nothing to redo for this image.");
+      return;
+    }
+    undoStateRef.current = nextState;
+    await applySnapshot(transaction.after);
+    setStatus(`Redid "${transaction.label}".`);
+    scheduleDraw();
+  }, [applySnapshot, entry, filename, flushPendingTransaction, scheduleDraw, setStatus]);
+
+  return { pushUndo, pushImageUndo, pushBatchUndo, undoLast, redoLast };
 }

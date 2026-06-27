@@ -80,11 +80,21 @@ export type ExportPlanOptions = {
   includeClf?: boolean;
   /**
    * Detect export policy:
-   *  - "has-boxes": include timestamps that have at least one detect box.
-   *  - "reviewed": include timestamps where detect.reviewed is true (includes empty).
-   * Default: "has-boxes".
+   *  - "reviewed": (default) export only timestamps where detect.reviewed === true.
+   *  - "has-boxes": export any timestamp that has at least one detect box, reviewed or not.
+   *
+   * Default: "reviewed". Pass "has-boxes" explicitly to include unreviewed samples.
+   * Proposals are NEVER exported regardless of policy.
    */
   detectPolicy?: "has-boxes" | "reviewed";
+  /**
+   * CLF export policy:
+   *  - "reviewed": (default) export only timestamps where clf.reviewed === true.
+   *  - "all": export any timestamp that has a classKey set.
+   *
+   * Default: "reviewed". Pass "all" explicitly to include unreviewed clf labels.
+   */
+  clfPolicy?: "reviewed" | "all";
   /**
    * Optional resolver for blackout rects to apply during export.
    * Called once per timestamp; returns rects that have applyOnExport=true.
@@ -126,7 +136,8 @@ export function planVideoExport(
     classes,
     includeDetect = true,
     includeClf = true,
-    detectPolicy = "has-boxes",
+    detectPolicy = "reviewed",
+    clfPolicy = "reviewed",
     resolveBlackouts
   } = options;
 
@@ -189,17 +200,20 @@ export function planVideoExport(
     }
 
     if (includeClf && tasks.clf?.classKey) {
-      const classKey = tasks.clf.classKey;
-      const classFolder = classNameToSafeKey(classKey);
-      items.push({
-        task: "clf",
-        videoPath: video.path,
-        timestampMs,
-        imageOutputPath: `${exportRoot}/clf/${classFolder}/${basename}.jpg`,
-        classFolder,
-        classKey,
-        blackouts
-      });
+      const clfReady = clfPolicy === "reviewed" ? !!tasks.clf.reviewed : true;
+      if (clfReady) {
+        const classKey = tasks.clf.classKey;
+        const classFolder = classNameToSafeKey(classKey);
+        items.push({
+          task: "clf",
+          videoPath: video.path,
+          timestampMs,
+          imageOutputPath: `${exportRoot}/clf/${classFolder}/${basename}.jpg`,
+          classFolder,
+          classKey,
+          blackouts
+        });
+      }
     }
   }
 

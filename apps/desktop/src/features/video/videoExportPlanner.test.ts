@@ -12,6 +12,7 @@ import {
 import {
   updateVideoDetectBoxes,
   setVideoClfClass,
+  markVideoClfReviewed,
   markVideoDetectEmpty
 } from "./videoAnnotationDomain";
 import type { LabelClass } from "../../api";
@@ -93,19 +94,34 @@ describe("planVideoExport — detect", () => {
     expect(detectItems[0].yoloBoxes).toHaveLength(0);
   });
 
-  it("excludes timestamps with no boxes when detectPolicy is 'has-boxes' (default)", () => {
+  it("excludes timestamps with no boxes when detectPolicy is 'has-boxes'", () => {
     let manifest = makeManifest();
     manifest = markVideoDetectEmpty(manifest, video, 2.0);
     const { items } = planVideoExport(manifest, opts({ detectPolicy: "has-boxes" }));
     const detectItems = items.filter((i) => i.task === "detect");
     expect(detectItems).toHaveLength(0);
   });
+
+  it("excludes unreviewed timestamps with the default 'reviewed' policy", () => {
+    let manifest = makeManifest();
+    manifest = updateVideoDetectBoxes(manifest, video, 5.0, [box], false);  // reviewed=false
+    const { items } = planVideoExport(manifest, opts());  // default: reviewed
+    expect(items.filter((i) => i.task === "detect")).toHaveLength(0);
+  });
+
+  it("includes unreviewed timestamps when detectPolicy is 'has-boxes'", () => {
+    let manifest = makeManifest();
+    manifest = updateVideoDetectBoxes(manifest, video, 5.0, [box], false);  // reviewed=false
+    const { items } = planVideoExport(manifest, opts({ detectPolicy: "has-boxes" }));
+    expect(items.filter((i) => i.task === "detect")).toHaveLength(1);
+  });
 });
 
 describe("planVideoExport — clf", () => {
-  it("creates a clf export item from timestamp with clf classKey", () => {
+  it("creates a clf export item from reviewed timestamp with clf classKey", () => {
     let manifest = makeManifest();
     manifest = setVideoClfClass(manifest, video, 3.0, "cat");
+    manifest = markVideoClfReviewed(manifest, video, 3.0);
     const { items } = planVideoExport(manifest, opts());
     const clfItems = items.filter((i) => i.task === "clf");
     expect(clfItems).toHaveLength(1);
@@ -116,18 +132,34 @@ describe("planVideoExport — clf", () => {
   it("clf export item has correct classFolder and image path", () => {
     let manifest = makeManifest();
     manifest = setVideoClfClass(manifest, video, 3.0, "my-dog");
+    manifest = markVideoClfReviewed(manifest, video, 3.0);
     const { items } = planVideoExport(manifest, opts());
     const clfItem = items.find((i) => i.task === "clf")!;
     expect(clfItem.classFolder).toBe("my-dog");
     expect(clfItem.imageOutputPath).toMatch(/^exports\/clf\/my-dog\/.+\.jpg$/);
   });
+
+  it("skips unreviewed clf timestamps with default clfPolicy 'reviewed'", () => {
+    let manifest = makeManifest();
+    manifest = setVideoClfClass(manifest, video, 3.0, "cat");  // NOT reviewed
+    const { items } = planVideoExport(manifest, opts());
+    expect(items.filter((i) => i.task === "clf")).toHaveLength(0);
+  });
+
+  it("includes unreviewed clf timestamps when clfPolicy is 'all'", () => {
+    let manifest = makeManifest();
+    manifest = setVideoClfClass(manifest, video, 3.0, "cat");  // NOT reviewed
+    const { items } = planVideoExport(manifest, opts({ clfPolicy: "all" }));
+    expect(items.filter((i) => i.task === "clf")).toHaveLength(1);
+  });
 });
 
 describe("planVideoExport — both tasks on one timestamp", () => {
-  it("produces both detect and clf items from a single timestamp", () => {
+  it("produces both detect and clf items from a single reviewed timestamp", () => {
     let manifest = makeManifest();
     manifest = updateVideoDetectBoxes(manifest, video, 5.0, [box], true);
     manifest = setVideoClfClass(manifest, video, 5.0, "cat");
+    manifest = markVideoClfReviewed(manifest, video, 5.0);
     const { items } = planVideoExport(manifest, opts());
     const byTimestamp = items.filter((i) => i.timestampMs === 5000);
     const taskTypes = byTimestamp.map((i) => i.task).sort();
@@ -158,6 +190,7 @@ describe("planVideoExport — includeDetect / includeClf flags", () => {
     let manifest = makeManifest();
     manifest = updateVideoDetectBoxes(manifest, video, 1.0, [box], true);
     manifest = setVideoClfClass(manifest, video, 1.0, "cat");
+    manifest = markVideoClfReviewed(manifest, video, 1.0);
     const { items } = planVideoExport(manifest, opts({ includeDetect: false }));
     expect(items.every((i) => i.task !== "detect")).toBe(true);
     expect(items.some((i) => i.task === "clf")).toBe(true);
@@ -167,6 +200,7 @@ describe("planVideoExport — includeDetect / includeClf flags", () => {
     let manifest = makeManifest();
     manifest = updateVideoDetectBoxes(manifest, video, 1.0, [box], true);
     manifest = setVideoClfClass(manifest, video, 1.0, "cat");
+    manifest = markVideoClfReviewed(manifest, video, 1.0);
     const { items } = planVideoExport(manifest, opts({ includeClf: false }));
     expect(items.every((i) => i.task !== "clf")).toBe(true);
     expect(items.some((i) => i.task === "detect")).toBe(true);
@@ -217,6 +251,7 @@ describe("planVideoExport — blackout resolver", () => {
   it("clf export items also carry blackout rects", () => {
     let manifest = makeManifest();
     manifest = setVideoClfClass(manifest, video, 2.0, "cat");
+    manifest = markVideoClfReviewed(manifest, video, 2.0);
     const rect = { type: "rect" as const, x: 0.5, y: 0.5, w: 0.3, h: 0.3 };
     const resolveBlackouts = () => [rect];
     const { items } = planVideoExport(manifest, opts({ resolveBlackouts }));

@@ -86,19 +86,16 @@ export function useBoxLabelEditor({
     [datasetRoot, onLabelsChanged]
   );
 
-  const { pushUndo, pushImageUndo, pushBatchUndo, undoLast } = useBoxUndo({
-    workspaceRoot,
+  const { pushUndo, pushImageUndo, pushBatchUndo, undoLast, redoLast } = useBoxUndo({
     filename,
-    findEntryByBasename,
+    entry,
     persistEntryLabels,
-    onLabelsChanged,
     boxesRef,
     selectedRef,
     classRef,
     setBoxes,
     setSelectedBoxId,
     setCurrentClass: (classId) => classesSetCurrentClassRef.current(classId),
-    setImageVersion,
     setStatus,
     scheduleDraw
   });
@@ -181,6 +178,7 @@ export function useBoxLabelEditor({
     pushUndo,
     pushImageUndo,
     undoLast,
+    redoLast,
     syncBoxToSelected,
     copySelectedBoxToNext,
     trackCsrtForward,

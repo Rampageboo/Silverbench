@@ -453,3 +453,35 @@ The sidecar is read and written by `proposalApi.ts`. Accepted boxes continue to 
 `[modelPath, inputRoot, outputRoot, imageSize, confidence, device, ...]`
 
 The previous order `[inputRoot, outputRoot, modelPath, ...]` was a silent bug that caused the backend to receive incorrect paths.
+
+## Scoped Undo/Redo
+
+Undo and redo are scoped to the current image or timestamp. They never navigate to another item and never modify labels that are not currently visible.
+
+### Core rule
+
+Ctrl+Z undoes the last edit on the **currently visible** image or video timestamp. Ctrl+Y and Ctrl+Shift+Z redo the last undone action on the currently visible item. If the current item has no undo/redo history, the operation is a no-op and a safe status message is shown.
+
+### Scope key
+
+Each undo/redo stack entry is identified by a `UndoScopeKey`:
+- Image pool: `entry.basename` (e.g. `frame_0001.jpg`)
+- Video timestamp: `${videoSourceKey}|${timestampMs}`
+
+`undoScoped` and `redoScoped` only pop transactions that match the current scope key. Transactions from other images or timestamps are never touched.
+
+### Two-phase commit
+
+`pushUndo(label)` captures the "before" snapshot and stages a pending transaction. The transaction is committed (with the "after" snapshot) when the next `pushUndo`, `undoLast`, or `redoLast` call runs. If the filename changes before the transaction commits, the pending entry is discarded — the "after" snapshot is never captured from the wrong image.
+
+### Batch operations
+
+`copySelectedBoxToNext` and `trackCsrtForward` are not undoable via Ctrl+Z. `pushBatchUndo` is a deliberate no-op. Allowing Ctrl+Z to silently restore other images is unsafe; navigate to each affected image and use Ctrl+Z there if needed.
+
+### Export policy
+
+The default export policy for both detect and CLF tasks is `"reviewed"`:
+- `detectPolicy: "reviewed"` — only timestamps where `detect.reviewed === true` are exported.
+- `clfPolicy: "reviewed"` — only timestamps where `clf.reviewed === true` are exported.
+
+Pass `detectPolicy: "has-boxes"` or `clfPolicy: "all"` explicitly to include unreviewed samples.

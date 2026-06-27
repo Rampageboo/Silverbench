@@ -39,6 +39,7 @@ export type UseBoxLabelInteractionOptions = {
   pushUndo: (action: string) => void;
   pushImageUndo: (action: string, imageBase64: string) => void;
   undoLast: () => Promise<void>;
+  redoLast: () => Promise<void>;
   syncBoxToSelected: (
     box: api.LabelBox | undefined,
     action: string,
