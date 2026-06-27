@@ -128,7 +128,7 @@ export function useBoxLabelPersistence({
   }, [boxesRef, persistLabels, pushUndo, scheduleDraw, selectedRef, setBoxes, setSelectedBoxId]);
 
   const updateSelectedBox = useCallback(
-    (mutator: (box: api.LabelBox) => api.LabelBox, message: string) => {
+    (mutator: (box: api.LabelBox) => api.LabelBox, message: string, opts?: { skipZoomUpdate?: boolean }) => {
       const index = selectedRef.current;
       if (index === null) return;
       const current = boxesRef.current[index];
@@ -137,10 +137,12 @@ export function useBoxLabelPersistence({
       next[index] = mutator(current);
       boxesRef.current = next;
       setBoxes(next);
-      const image = imageRef.current;
-      if (image) {
-        zoomPointRef.current = boxCenterPixel(next[index], image.naturalWidth, image.naturalHeight);
-        lastZoomCenterRef.current = zoomPointRef.current;
+      if (!opts?.skipZoomUpdate) {
+        const image = imageRef.current;
+        if (image) {
+          zoomPointRef.current = boxCenterPixel(next[index], image.naturalWidth, image.naturalHeight);
+          lastZoomCenterRef.current = zoomPointRef.current;
+        }
       }
       void persistLabels(message);
       scheduleDraw();
@@ -163,7 +165,7 @@ export function useBoxLabelPersistence({
         const nextX1 = clamp(rect.x1 + dx * stepX, 0, 1 - width);
         const nextY1 = clamp(rect.y1 + dy * stepY, 0, 1 - height);
         return rectToBox({ x1: nextX1, y1: nextY1, x2: nextX1 + width, y2: nextY1 + height }, box.classId);
-      }, "Box moved with keyboard.");
+      }, "Box moved with keyboard.", { skipZoomUpdate: true });
       const index = selectedRef.current;
       if (index !== null) syncBoxToSelected(boxesRef.current[index], "sync keyboard adjust", { pushUndo: false }).catch(() => {});
     },
@@ -188,7 +190,7 @@ export function useBoxLabelPersistence({
         if (key === "2" || key === "5") next.y2 += sign * stepY;
         const normalized = enforceMinRect(next, stepX * 2, stepY * 2);
         return rectToBox(normalized, box.classId);
-      }, `Box resized with numpad (${boxAdjustModeRef.current}).`);
+      }, `Box resized with numpad (${boxAdjustModeRef.current}).`, { skipZoomUpdate: true });
       const index = selectedRef.current;
       if (index !== null) syncBoxToSelected(boxesRef.current[index], "sync keyboard resize", { pushUndo: false }).catch(() => {});
     },

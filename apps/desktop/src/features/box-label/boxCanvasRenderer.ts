@@ -79,7 +79,7 @@ export type ZoomCanvasRenderInput = {
 
 export function renderZoomCanvas(input: ZoomCanvasRenderInput) {
   const { canvas, image, display, boxes, selectedIndex, drag, zoomPoint, lastZoomCenter } = input;
-  if (drag?.type === "box" || drag?.type === "pan") return;
+  if (drag?.type === "pan") return;
 
   const ctx = canvas.getContext("2d");
   if (!ctx) return;

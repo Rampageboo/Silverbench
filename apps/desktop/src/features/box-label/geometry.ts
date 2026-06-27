@@ -23,7 +23,7 @@ export type DisplayRect = {
 export type DragState =
   | null
   | { type: "draw"; start: ImagePoint; current: ImagePoint }
-  | { type: "pan"; startClientX: number; startClientY: number; startPanX: number; startPanY: number }
+  | { type: "pan"; button: number; pureClick: boolean; startClientX: number; startClientY: number; startPanX: number; startPanY: number }
   | {
       type: "box";
       index: number;
@@ -675,14 +675,24 @@ export function resizeOrMoveRect(rect: ImageRect, handle: DragHandle, start: Ima
 
 export const POOL_LABEL_SUBJECT_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Crect x='5.5' y='5.5' width='13' height='13' fill='none' stroke='%23ef4444' stroke-width='2'/%3E%3C/svg%3E") 12 12, crosshair`;
 
+export const POOL_LABEL_POINTER_CURSOR = `url("/assets/webview_cursor_default.png") 8 2, default`;
+export const POOL_LABEL_POINTER_CURSOR_GROW = `url("/assets/webview_cursor_grow.png") 6 3, default`;
+export const POOL_LABEL_POINTER_CURSOR_SHRINK = `url("/assets/webview_cursor_shrink.png") 6 3, default`;
+
+function pointerCursor(adjustMode?: BoxAdjustMode | null): string {
+  if (adjustMode === "grow") return POOL_LABEL_POINTER_CURSOR_GROW;
+  if (adjustMode === "shrink") return POOL_LABEL_POINTER_CURSOR_SHRINK;
+  return POOL_LABEL_POINTER_CURSOR;
+}
+
 export type PoolLabelToolState = {
   pointerToolEnabled: boolean;
   autoFitEnabled: boolean;
   blackBoxEnabled: boolean;
 };
 
-export function defaultPoolLabelCursor(tools: PoolLabelToolState) {
-  if (tools.pointerToolEnabled) return "default";
+export function defaultPoolLabelCursor(tools: PoolLabelToolState, adjustMode?: BoxAdjustMode | null) {
+  if (tools.pointerToolEnabled) return pointerCursor(adjustMode);
   if (tools.blackBoxEnabled) return "crosshair";
   return tools.autoFitEnabled ? POOL_LABEL_SUBJECT_CURSOR : "crosshair";
 }
@@ -694,13 +704,14 @@ export function resolvePoolLabelCursor(
   mode: ToolMode,
   imageWidth: number,
   imageHeight: number,
-  tools: PoolLabelToolState
+  tools: PoolLabelToolState,
+  adjustMode?: BoxAdjustMode | null
 ) {
   if (mode === "pan") return "grab";
   if (tools.pointerToolEnabled) {
-    return cursorForPoint(canvasPoint, display, boxes, "select", imageWidth, imageHeight);
+    return cursorForPoint(canvasPoint, display, boxes, "select", imageWidth, imageHeight, adjustMode);
   }
-  return defaultPoolLabelCursor(tools);
+  return defaultPoolLabelCursor(tools, adjustMode);
 }
 
 export function cursorForPoint(
@@ -709,12 +720,13 @@ export function cursorForPoint(
   boxes: api.LabelBox[],
   mode: ToolMode,
   imageWidth: number,
-  imageHeight: number
+  imageHeight: number,
+  adjustMode?: BoxAdjustMode | null
 ) {
   if (mode === "pan") return "grab";
   if (mode === "draw") return "crosshair";
   const hit = hitTest(canvasPoint, display, boxes, imageWidth, imageHeight);
-  if (hit.index < 0) return "default";
+  if (hit.index < 0) return pointerCursor(adjustMode);
   if (hit.handle === "move") return "move";
   if (hit.handle === "n" || hit.handle === "s") return "ns-resize";
   if (hit.handle === "e" || hit.handle === "w") return "ew-resize";

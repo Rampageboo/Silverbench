@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkspace } from "../../app/useWorkspace";
 import { LogPanel } from "../../components/workbench/LogPanel";
 import { useRunWithConfirm } from "../../components/workbench/useRunWithConfirm";
@@ -8,9 +8,13 @@ import type { WorkspaceInfo } from "../../api";
 import {
   datasetRootForTask,
   ensureTrainPrepDataYaml,
+  getTrainingStatus,
   loadTrainPrepWorkspace,
   moveTrainPrepValBackToTrain,
   prepareTrainPrepValidationSplit,
+  startTraining,
+  stopTraining,
+  trainingStreamUrl,
   type DatasetTask,
   type TrainPrepResult
 } from "./trainPrepApi";
@@ -26,6 +30,15 @@ type LoadState = {
 };
 
 type CmdMode = "train" | "continue" | "export";
+type TrainPhase = "idle" | "running" | "done" | "error" | "stopped";
+
+function formatElapsed(seconds: number) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
 
 const DEFAULT_LOAD_STATE: LoadState = {
   info: null,
@@ -108,6 +121,17 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
   const [opStatus, setOpStatus] = useState("");
   const [log, setLog] = useState("");
 
+  // Training execution state
+  const [trainPhase, setTrainPhase] = useState<TrainPhase>("idle");
+  const [trainLines, setTrainLines] = useState<string[]>([]);
+  const [trainExitCode, setTrainExitCode] = useState<number | null>(null);
+  const [trainElapsed, setTrainElapsed] = useState(0);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const esRef = useRef<EventSource | null>(null);
+  const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startTimeRef = useRef<number>(0);
+  const logRef = useRef<HTMLDivElement>(null);
+
   // Generate command state
   const [cmdMode, setCmdMode] = useState<CmdMode>("train");
   const [cmdModel, setCmdModel] = useState("");
@@ -124,6 +148,100 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
     (err: unknown) => showToast(errMessage(err), { variant: "error" }),
     [showToast]
   );
+
+  // Auto-scroll training log
+  useEffect(() => {
+    if (autoScroll && logRef.current) {
+      logRef.current.scrollTop = logRef.current.scrollHeight;
+    }
+  }, [trainLines, autoScroll]);
+
+  // Training SSE connection
+  const connectStream = useCallback((resuming: boolean) => {
+    esRef.current?.close();
+    if (!resuming) {
+      setTrainLines([]);
+      setTrainExitCode(null);
+    }
+    setTrainPhase("running");
+    startTimeRef.current = Date.now();
+    if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
+    elapsedTimerRef.current = setInterval(() => {
+      setTrainElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
+    }, 1000);
+
+    const es = new EventSource(trainingStreamUrl());
+    esRef.current = es;
+
+    es.onmessage = (e) => {
+      setTrainLines((prev) => [...prev, e.data as string]);
+    };
+
+    es.addEventListener("done", (e) => {
+      const code = parseInt((e as MessageEvent<string>).data, 10);
+      setTrainExitCode(code);
+      setTrainPhase(code === 0 ? "done" : "error");
+      if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
+      es.close();
+      esRef.current = null;
+    });
+
+    es.onerror = () => {
+      // SSE closed (process ended or network drop); phase will be set by "done" event or left as-is
+      es.close();
+      esRef.current = null;
+      if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
+    };
+  }, []);
+
+  // On mount: check if training is already running
+  useEffect(() => {
+    let cancelled = false;
+    getTrainingStatus().then((status) => {
+      if (cancelled) return;
+      if (status.running) {
+        connectStream(true);
+      } else if (status.lineCount > 0) {
+        setTrainLines([]);
+        setTrainExitCode(status.exitCode ?? null);
+        setTrainPhase(
+          status.exitCode === 0 ? "done" : status.stopped ? "stopped" : status.exitCode != null ? "error" : "idle"
+        );
+        // Replay the buffer once to show prior output
+        connectStream(false);
+      }
+    }).catch(() => { /* backend not yet started */ });
+    return () => {
+      cancelled = true;
+      esRef.current?.close();
+      if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
+    };
+  }, [connectStream]);
+
+  async function handleStartTraining() {
+    setTrainLines([]);
+    setTrainExitCode(null);
+    setTrainElapsed(0);
+    const result = await startTraining(generatedCommand).catch((err: unknown) => ({
+      ok: false as const,
+      message: errMessage(err)
+    }));
+    if (!result.ok) {
+      showToast(result.message ?? "Failed to start training", { variant: "error" });
+      return;
+    }
+    connectStream(false);
+  }
+
+  async function handleStopTraining() {
+    const result = await stopTraining().catch(() => ({ ok: false, message: "Request failed" }));
+    if (result.ok) {
+      setTrainPhase("stopped");
+      if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
+    } else {
+      showToast(result.message ?? "Failed to stop", { variant: "error" });
+    }
+  }
 
   const refresh = useCallback(async () => {
     if (!workspaceRoot.trim()) {
@@ -412,14 +530,35 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
 
             <div className="tp-cmd-wrap">
               <textarea className="tp-cmd-text" readOnly value={generatedCommand} rows={3} />
-              <button
-                type="button"
-                className={copied ? "primary" : ""}
-                style={{ flexShrink: 0, minWidth: 72 }}
-                onClick={() => void copyCommand()}
-              >
-                {copied ? "Copied ✓" : "Copy"}
-              </button>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, flexShrink: 0 }}>
+                <button
+                  type="button"
+                  className={copied ? "primary" : ""}
+                  style={{ minWidth: 72 }}
+                  onClick={() => void copyCommand()}
+                >
+                  {copied ? "Copied ✓" : "Copy"}
+                </button>
+                {trainPhase === "running" ? (
+                  <button
+                    type="button"
+                    className="danger"
+                    style={{ minWidth: 72 }}
+                    onClick={() => void handleStopTraining()}
+                  >
+                    ■ Stop
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="primary"
+                    style={{ minWidth: 72 }}
+                    onClick={() => void handleStartTraining()}
+                  >
+                    ▶ Train
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -473,6 +612,61 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
           <LogPanel>
             {log || (loading ? "Loading dataset status…" : "No operation run yet.")}
           </LogPanel>
+
+          <div className="tp-divider" />
+
+          {/* Training output */}
+          <div className="tp-section">
+            <div className="tp-train-header">
+              <p className="tp-section-title" style={{ margin: 0 }}>Training Output</p>
+              <span className={`tp-train-badge ${trainPhase}`}>
+                {trainPhase === "running" && <span className="tp-spinner" style={{ width: 8, height: 8 }} />}
+                {trainPhase}
+              </span>
+              {(trainPhase === "running" || trainElapsed > 0) && (
+                <span className="tp-train-elapsed">{formatElapsed(trainElapsed)}</span>
+              )}
+              {trainExitCode != null && (
+                <span className="tp-train-elapsed">exit {trainExitCode}</span>
+              )}
+              {trainLines.length > 0 && (
+                <span className="tp-train-elapsed" style={{ marginLeft: "auto" }}>
+                  {trainLines.length} lines
+                </span>
+              )}
+            </div>
+            <div className="tp-train-controls">
+              <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
+                <input
+                  type="checkbox"
+                  checked={autoScroll}
+                  onChange={(e) => setAutoScroll(e.target.checked)}
+                />
+                Auto-scroll
+              </label>
+              {trainLines.length > 0 && (
+                <button
+                  type="button"
+                  style={{ fontSize: 11, padding: "2px 8px" }}
+                  onClick={() => { setTrainLines([]); setTrainExitCode(null); setTrainPhase("idle"); setTrainElapsed(0); }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="tp-train-log" ref={logRef}>
+              {trainLines.length > 0
+                ? trainLines.map((line, i) => (
+                    <span key={i} className="tp-train-line">{line || " "}</span>
+                  ))
+                : <span className="tp-train-placeholder">
+                    {trainPhase === "idle"
+                      ? "Press ▶ Train to start. Output will appear here."
+                      : "Waiting for output…"}
+                  </span>
+              }
+            </div>
+          </div>
 
         </div>
       </section>
