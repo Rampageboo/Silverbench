@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import * as api from "../../api";
 import type { BoxLabelEntry } from "./boxLabelCore";
+import type { ProposalShape } from "./geometry";
 import {
   emptyUndoRedoState,
   pushScopedTransaction,
@@ -41,12 +42,17 @@ type UseBoxUndoOptions = {
   /** The currently visible entry. Persist target for undo/redo restores. */
   entry: BoxLabelEntry | null;
   persistEntryLabels: (target: BoxLabelEntry, boxes: api.LabelBox[]) => Promise<api.LabelBox[]>;
+  persistProposals?: (proposals: ProposalShape[]) => Promise<void>;
   boxesRef: MutableRefObject<api.LabelBox[]>;
   selectedRef: MutableRefObject<number | null>;
   classRef: MutableRefObject<number>;
+  proposalsRef?: MutableRefObject<ProposalShape[]>;
+  selectedProposalIdRef?: MutableRefObject<string | null>;
   setBoxes: (boxes: api.LabelBox[]) => void;
   setSelectedBoxId: (id: number | null) => void;
   setCurrentClass: (classId: number) => void;
+  setProposals?: (proposals: ProposalShape[]) => void;
+  setSelectedProposalId?: (id: string | null) => void;
   setStatus: (status: string) => void;
   scheduleDraw: () => void;
 };
@@ -55,12 +61,17 @@ export function useBoxUndo({
   filename,
   entry,
   persistEntryLabels,
+  persistProposals,
   boxesRef,
   selectedRef,
   classRef: _classRef,
+  proposalsRef,
+  selectedProposalIdRef: _selectedProposalIdRef,
   setBoxes,
   setSelectedBoxId,
   setCurrentClass,
+  setProposals,
+  setSelectedProposalId,
   setStatus,
   scheduleDraw
 }: UseBoxUndoOptions) {
@@ -87,9 +98,9 @@ export function useBoxUndo({
 
   const captureSnapshot = useCallback((): BoxLabelEditorSnapshot => ({
     boxes: boxesRef.current.map(b => ({ ...b })),
-    proposals: [],        // expanded when proposal UI is integrated into Box Label
+    proposals: (proposalsRef?.current ?? []).map(p => ({ ...p })) as import("../video/videoAnnotationApi").DetectProposal[],
     selectedBoxIndex: selectedRef.current
-  }), [boxesRef, selectedRef]);
+  }), [boxesRef, proposalsRef, selectedRef]);
 
   /**
    * Commit any pending transaction. The current state is the "after" snapshot.
@@ -157,6 +168,7 @@ export function useBoxUndo({
     async (snap: BoxLabelEditorSnapshot) => {
       const target = entry;
       if (!target) return;
+      // Restore boxes
       boxesRef.current = snap.boxes.map(b => ({ ...b }));
       setBoxes(boxesRef.current);
       const nextSelectedIndex =
@@ -170,9 +182,20 @@ export function useBoxUndo({
       if (nextSelectedIndex !== null && snap.boxes[nextSelectedIndex]) {
         setCurrentClass(snap.boxes[nextSelectedIndex].classId);
       }
+      // Restore proposals (only if the hook received proposal refs and setters)
+      if (proposalsRef && setProposals) {
+        const nextProposals = (snap.proposals ?? []).map(p => ({ ...p }));
+        proposalsRef.current = nextProposals;
+        setProposals(nextProposals);
+      }
+      setSelectedProposalId?.(null);
+      // Persist both boxes and proposals to their respective files
       await persistEntryLabels(target, boxesRef.current);
+      if (persistProposals && proposalsRef) {
+        await persistProposals(proposalsRef.current);
+      }
     },
-    [boxesRef, entry, persistEntryLabels, setBoxes, setCurrentClass, setSelectedBoxId]
+    [boxesRef, entry, persistEntryLabels, persistProposals, proposalsRef, setBoxes, setCurrentClass, setProposals, setSelectedBoxId, setSelectedProposalId]
   );
 
   /**

@@ -7,6 +7,7 @@ import {
   drawCrosshair,
   drawGrid,
   drawImageRect,
+  drawProposals,
   drawZoomBoxes,
   drawZoomGrid,
   imageDisplayRect,
@@ -17,6 +18,7 @@ import {
   type DisplayRect,
   type DragState,
   type ImagePixelPoint,
+  type ProposalShape,
   type Viewport
 } from "./geometry";
 
@@ -32,10 +34,12 @@ export type MainCanvasRenderInput = {
   zoomPoint: ImagePixelPoint | null;
   pointerToolEnabled: boolean;
   autoFitEnabled: boolean;
+  proposals?: ProposalShape[];
+  selectedProposalId?: string | null;
 };
 
 export function renderMainCanvas(input: MainCanvasRenderInput): DisplayRect | null {
-  const { canvas, image, boxes, selectedIndex, classes, showGrid, viewport, drag, zoomPoint, pointerToolEnabled, autoFitEnabled } =
+  const { canvas, image, boxes, selectedIndex, classes, showGrid, viewport, drag, zoomPoint, pointerToolEnabled, autoFitEnabled, proposals, selectedProposalId } =
     input;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
@@ -59,6 +63,7 @@ export function renderMainCanvas(input: MainCanvasRenderInput): DisplayRect | nu
     drawCrosshair(ctx, display, crosshairPoint);
   }
   drawBoxes(ctx, display, boxes, selectedIndex, classes);
+  if (proposals?.length) drawProposals(ctx, display, proposals, selectedProposalId ?? null);
 
   if (drag?.type === "draw") {
     drawImageRect(ctx, display, normalizedImageRect(drag.start, drag.current), "#f59e0b", true);

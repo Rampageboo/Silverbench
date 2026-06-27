@@ -7,6 +7,7 @@ import {
   type DisplayRect,
   type DragState,
   type ImagePixelPoint,
+  type ProposalShape,
   type Viewport
 } from "./geometry";
 
@@ -19,6 +20,8 @@ type UseBoxLabelCanvasOptions = {
   pointerToolEnabled: boolean;
   autoFitEnabled: boolean;
   blackBoxEnabled: boolean;
+  proposalsRef?: MutableRefObject<ProposalShape[]>;
+  selectedProposalIdRef?: MutableRefObject<string | null>;
 };
 
 export function useBoxLabelCanvas({
@@ -29,7 +32,9 @@ export function useBoxLabelCanvas({
   dragRef,
   pointerToolEnabled,
   autoFitEnabled,
-  blackBoxEnabled
+  blackBoxEnabled,
+  proposalsRef,
+  selectedProposalIdRef
 }: UseBoxLabelCanvasOptions) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -57,7 +62,9 @@ export function useBoxLabelCanvas({
       drag: dragRef.current,
       zoomPoint: zoomPointRef.current,
       pointerToolEnabled,
-      autoFitEnabled
+      autoFitEnabled,
+      proposals: proposalsRef?.current,
+      selectedProposalId: selectedProposalIdRef?.current
     });
     if (image && zoomCanvas && displayRef.current) {
       renderZoomCanvas({

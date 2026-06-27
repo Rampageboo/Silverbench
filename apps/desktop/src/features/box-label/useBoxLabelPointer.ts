@@ -12,6 +12,7 @@ import {
   resolvePoolLabelCursor,
   eventCanvasPoint,
   hitTest,
+  hitTestProposals,
   imageDisplayRect,
   imagePixelPointToNormalized,
   normalizedImageRect,
@@ -23,6 +24,7 @@ import {
   type DragState,
   type ImagePixelPoint,
   type ImageRect,
+  type ProposalShape,
   type ToolMode,
   type Viewport
 } from "./geometry";
@@ -56,6 +58,10 @@ type UseBoxLabelPointerOptions = {
   scheduleDraw: () => void;
   applyBlackBox: (rect: ImageRect) => Promise<void>;
   persistLabels: (statusMessage?: string) => Promise<void>;
+  proposalsRef?: MutableRefObject<ProposalShape[]>;
+  selectedProposalIdRef?: MutableRefObject<string | null>;
+  setSelectedProposalId?: (id: string | null) => void;
+  onMaterializeProposal?: (proposalId: string) => Promise<void>;
 };
 
 export function useBoxLabelPointer({
@@ -82,7 +88,11 @@ export function useBoxLabelPointer({
   lastZoomCenterRef,
   scheduleDraw,
   applyBlackBox,
-  persistLabels
+  persistLabels,
+  proposalsRef,
+  selectedProposalIdRef: _selectedProposalIdRef,
+  setSelectedProposalId,
+  onMaterializeProposal
 }: UseBoxLabelPointerOptions) {
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -132,6 +142,7 @@ export function useBoxLabelPointer({
       if (hit.index >= 0) {
         pushUndo("edit box");
         setSelectedBoxId(hit.index);
+        setSelectedProposalId?.(null);
         setCurrentClass(boxesRef.current[hit.index].classId);
         zoomPointRef.current = boxCenterPixel(boxesRef.current[hit.index], imageW, imageH);
         lastZoomCenterRef.current = zoomPointRef.current;
@@ -143,6 +154,16 @@ export function useBoxLabelPointer({
           startRect: boxToImagePixelRect(boxesRef.current[hit.index], imageW, imageH),
           moved: false
         };
+      } else if (proposalsRef && onMaterializeProposal) {
+        const proposals = proposalsRef.current;
+        const proposalIdx = hitTestProposals(canvasPoint, display, proposals, imageW, imageH);
+        if (proposalIdx >= 0) {
+          onMaterializeProposal(proposals[proposalIdx].id).catch((err) => setError(errMessage(err)));
+          scheduleDraw();
+          return;
+        }
+        setSelectedBoxId(null);
+        setSelectedProposalId?.(null);
       } else {
         setSelectedBoxId(null);
       }
@@ -158,10 +179,14 @@ export function useBoxLabelPointer({
       imageRef,
       lastZoomCenterRef,
       modeRef,
+      onMaterializeProposal,
+      proposalsRef,
       pushUndo,
       scheduleDraw,
       setCurrentClass,
+      setError,
       setSelectedBoxId,
+      setSelectedProposalId,
       viewportRef,
       zoomPointRef
     ]

@@ -309,6 +309,69 @@ This branch is a stability pass stacked on `feature/multimodal-controls`. It is 
 
 ---
 
+## Box Label proposal integration (added 2026-06-27)
+
+### Status: implemented on `feature/video-segment-random-sampling-workflow`
+
+### What was added
+
+**Proposal rendering (Canvas)**
+
+- `ProposalShape` type in `geometry.ts` (lightweight: `id, x, y, w, h, confidence`).
+- `drawProposals(ctx, display, proposals, selectedId)` — dashed orange boxes with confidence % label.
+- `hitTestProposals(canvasPoint, display, proposals, imageW, imageH)` — reuses existing box hit-test.
+- `boxCanvasRenderer.ts` / `useBoxLabelCanvas.ts` receive `proposalsRef` and `selectedProposalIdRef`.
+
+**Proposal click-to-materialize (Pointer tool)**
+
+- `useBoxLabelPointer.ts` hit-tests proposals after box hit-test fails in pointer mode.
+- Clicking a dashed box calls `onMaterializeProposal(id)` which converts it to a real box.
+
+**Proposal operations (Editor hook)**
+
+`useBoxLabelEditor.ts` exposes:
+- `proposals` state and `selectedProposalId` state.
+- `materializeProposal(id)` — converts one proposal to a `LabelBox`, persists both.
+- `rejectProposal(id)` — removes one proposal, persists sidecar.
+- `acceptAllProposals()` — converts all proposals to boxes.
+- `rejectAllProposals()` — clears all proposals.
+- Proposals are loaded from sidecar (`workspace/proposals/detect/{key}.json`) on every image change.
+
+**Proposals panel (BoxLabelView.tsx)**
+
+When `proposals.length > 0`, a "Proposals (N)" panel appears in the side stack with:
+- Per-proposal row showing confidence % and coordinates.
+- ✓ (Accept) and ✗ (Reject) per-row buttons.
+- Accept All and Reject All header buttons.
+
+**Proposal undo/redo (useBoxUndo.ts)**
+
+- `captureSnapshot` now captures `proposals: proposalsRef?.current ?? []`.
+- `applySnapshot` restores proposals and calls `persistProposals`.
+- All proposal mutations call `pushUndo("action label")` before mutating.
+- Undo/redo is scoped to the current image only — never navigates.
+
+**Auto Label threshold UI (AutoLabelPage.tsx)**
+
+- Added `highConfidence` (default 0.80) and `mediumConfidence` (default 0.40) fields.
+- Added "Generate proposals for review" checkbox (default on).
+- When enabled, the backend job runs with `confidence = mediumConfidence` as the floor.
+
+**Sidecar storage**
+
+- `proposalApi.ts` handles sidecar read/write at `workspace/proposals/detect/{imageKey}.json`.
+- `imageProposalKey(imagePath)` produces stable path-safe keys.
+- Proposals are separate from YOLO `.txt` files and are **never exported** directly.
+
+### Core invariants
+
+- `boxes[]` = accepted labels (exported after review).
+- `proposals[]` = model suggestions (never exported until materialized).
+- Undo/redo affects current image/timestamp only; never navigates.
+- Blackout edits are non-destructive overlays; source media is never modified.
+
+---
+
 ## Box Label stability hardening pass
 
 Branch: `feature/box-label-stability-hardening` (stacked on `feature/box-label-stability-pass`).

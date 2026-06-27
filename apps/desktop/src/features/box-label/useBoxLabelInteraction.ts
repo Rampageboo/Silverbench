@@ -50,7 +50,11 @@ export function useBoxLabelInteraction({
   setSelectedBoxId,
   setStatus,
   setError,
-  setImageVersion
+  setImageVersion,
+  proposalsRef,
+  selectedProposalIdRef,
+  setSelectedProposalId,
+  onMaterializeProposal
 }: UseBoxLabelInteractionOptions) {
   const canvas = useBoxLabelCanvas({
     boxesRef,
@@ -60,7 +64,9 @@ export function useBoxLabelInteraction({
     dragRef,
     pointerToolEnabled,
     autoFitEnabled,
-    blackBoxEnabled
+    blackBoxEnabled,
+    proposalsRef,
+    selectedProposalIdRef
   });
 
   const persistence = useBoxLabelPersistence({
@@ -116,7 +122,11 @@ export function useBoxLabelInteraction({
     lastZoomCenterRef: canvas.lastZoomCenterRef,
     scheduleDraw: canvas.scheduleDraw,
     applyBlackBox: persistence.applyBlackBox,
-    persistLabels: persistence.persistLabels
+    persistLabels: persistence.persistLabels,
+    proposalsRef,
+    selectedProposalIdRef,
+    setSelectedProposalId,
+    onMaterializeProposal
   });
 
   useBoxLabelKeyboard({

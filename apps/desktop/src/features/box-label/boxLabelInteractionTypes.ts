@@ -1,7 +1,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import * as api from "../../api";
 import type { BoxLabelEntry } from "./boxLabelCore";
-import type { BoxAdjustMode, DragState, ToolMode } from "./geometry";
+import type { BoxAdjustMode, DragState, ProposalShape, ToolMode } from "./geometry";
 
 export type UseBoxLabelInteractionOptions = {
   workspaceRoot: string;
@@ -52,4 +52,8 @@ export type UseBoxLabelInteractionOptions = {
   setStatus: (status: string) => void;
   setError: (status: string) => void;
   setImageVersion: Dispatch<SetStateAction<number>>;
+  proposalsRef?: MutableRefObject<ProposalShape[]>;
+  selectedProposalIdRef?: MutableRefObject<string | null>;
+  setSelectedProposalId?: (id: string | null) => void;
+  onMaterializeProposal?: (proposalId: string) => Promise<void>;
 };

@@ -372,6 +372,61 @@ Planned workflow:
 
 First pass uses pHash/dHash. Future methods may include template matching, ORB/AKAZE feature matching, CLIP/DINO embeddings, or optical flow for continuous video propagation.
 
+## Box Label proposal system
+
+### Proposal data model
+
+Proposals are model suggestions that have not yet been confirmed by the user. They are:
+
+- Displayed as dashed orange boxes on the canvas.
+- Stored in sidecar JSON files separate from YOLO label `.txt` files.
+- **Never exported** until the user materializes them into accepted boxes.
+- Cleared per-image on undo/redo along with the box state.
+
+```text
+workspace/proposals/detect/{image-key}.json
+```
+
+`imageProposalKey(imagePath)` produces a stable path-safe key from the image path hash.
+
+### ProposalShape vs DetectProposal
+
+`ProposalShape` is a lightweight local type used inside `geometry.ts`, `boxCanvasRenderer.ts`, and `useBoxLabelCanvas.ts`:
+
+```ts
+type ProposalShape = { id: string; x: number; y: number; w: number; h: number; confidence: number };
+```
+
+`DetectProposal` (from `videoAnnotationApi.ts`) is the full storage type with `createdAt`, `classId?`, `classKey?`, and `modelId?`. The sidecar stores `DetectProposal[]`; the canvas layer only needs `ProposalShape`.
+
+### Threshold classification (Auto Label)
+
+Auto Label with "Generate proposals for review" mode enabled splits predictions by confidence:
+
+- `confidence >= highConfidence` (default 0.80) → accepted auto box written to YOLO `.txt`
+- `mediumConfidence <= conf < highConfidence` (default 0.40–0.80) → proposal written to sidecar
+- `confidence < mediumConfidence` → ignored
+
+The backend job is run with `confidence = mediumConfidence` as the floor. Frontend post-processing (`applyDetectThresholds`) applies the split.
+
+### Proposal operations and undo/redo
+
+All proposal mutations follow the two-phase commit undo pattern:
+
+1. `pushUndo("action label")` — captures "before" snapshot (includes both `boxes` and `proposals`).
+2. Mutation runs synchronously (update refs + React state).
+3. Next `pushUndo` / `undoLast` / `redoLast` captures "after" and commits the transaction.
+
+| Operation | Effect |
+|---|---|
+| Click dashed box (pointer mode) | Materializes → removes from proposals, adds to boxes |
+| Accept Selected | Materializes selected proposal → adds to boxes |
+| Reject Selected | Removes selected proposal |
+| Accept All | Materializes all proposals → adds all to boxes |
+| Reject All | Removes all proposals |
+
+Undo/redo for each operation is scoped to the current image only. Navigating to another image and pressing Ctrl+Z never restores proposals on a different image.
+
 ## Assisted Auto Label and Review Queue
 
 Auto Label generates reviewable annotations: high-confidence predictions become accepted auto boxes, medium-confidence predictions become dashed proposals, and proposals are never exported until materialized.

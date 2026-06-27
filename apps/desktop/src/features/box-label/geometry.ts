@@ -346,6 +346,56 @@ export function drawBoxes(
   });
 }
 
+export type ProposalShape = { id: string; x: number; y: number; w: number; h: number; confidence: number };
+
+/** Draw dashed proposal boxes. Proposals are model suggestions not yet accepted by the user. */
+export function drawProposals(
+  ctx: CanvasRenderingContext2D,
+  display: DisplayRect,
+  proposals: ProposalShape[],
+  selectedId: string | null = null
+) {
+  if (!proposals.length) return;
+  ctx.save();
+  proposals.forEach((p) => {
+    const isSelected = p.id === selectedId;
+    const color = isSelected ? "#f59e0b" : "#fb923c";
+    const rect: ImageRect = {
+      x1: clamp01(p.x - p.w / 2),
+      y1: clamp01(p.y - p.h / 2),
+      x2: clamp01(p.x + p.w / 2),
+      y2: clamp01(p.y + p.h / 2)
+    };
+    const cr = boxToCanvasRect(rect, display);
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = isSelected ? 3 : 2;
+    ctx.strokeRect(cr.x1, cr.y1, cr.x2 - cr.x1, cr.y2 - cr.y1);
+    ctx.setLineDash([]);
+    ctx.font = "11px monospace";
+    const confText = `${Math.round(p.confidence * 100)}%`;
+    ctx.fillStyle = color;
+    ctx.fillText(confText, cr.x1 + 3, Math.max(11, cr.y1 - 3));
+  });
+  ctx.restore();
+}
+
+/** Hit-test dashed proposals. Returns proposal index, -1 if none hit. */
+export function hitTestProposals(
+  canvasPoint: ImagePoint,
+  display: DisplayRect,
+  proposals: ProposalShape[],
+  imageWidth: number,
+  imageHeight: number
+): number {
+  if (!proposals.length) return -1;
+  const point = pointerImagePointFromCanvas(canvasPoint, display, imageWidth, imageHeight, { clamp: true });
+  if (!point) return -1;
+  const asBoxes = proposals.map((p) => ({ classId: 0, x: p.x, y: p.y, w: p.w, h: p.h })) as api.LabelBox[];
+  const { index } = hitTestAtImagePixel(point, asBoxes, display, imageWidth, imageHeight);
+  return index;
+}
+
 export function drawGrid(ctx: CanvasRenderingContext2D, display: DisplayRect) {
   ctx.save();
   ctx.strokeStyle = "rgba(148, 163, 184, 0.28)";

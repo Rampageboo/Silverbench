@@ -36,6 +36,9 @@ export function AutoLabelPage({ onReady }: Props) {
   const [modelPath, setModelPath] = useState("");
   const [imageSize, setImageSize] = useState(640);
   const [confidence, setConfidence] = useState(0.25);
+  const [highConfidence, setHighConfidence] = useState(0.80);
+  const [mediumConfidence, setMediumConfidence] = useState(0.40);
+  const [proposalMode, setProposalMode] = useState(true);
   const [device, setDevice] = useState("0");
   const [confidencePrefix, setConfidencePrefix] = useState(true);
   const [job, setJob] = useState<PtJob | null>(null);
@@ -118,7 +121,11 @@ export function AutoLabelPage({ onReady }: Props) {
         setImageSize(nextImageSize);
         setPending(true);
         try {
-          const next = await startAutoLabelJob(nextTask, inputRoot, outputRoot, modelPath, nextImageSize, confidence, device, confidencePrefix);
+          // In proposal mode, run with mediumConfidence as the floor so all
+          // medium/high predictions are captured. Post-processing applies the
+          // high/medium split and writes accepted boxes + sidecar proposals.
+          const runConfidence = proposalMode && nextTask === "detect" ? mediumConfidence : confidence;
+          const next = await startAutoLabelJob(nextTask, inputRoot, outputRoot, modelPath, nextImageSize, runConfidence, device, confidencePrefix);
           setJob(next);
           setStatus(`${next.status || "running"}: ${next.done || 0}/${next.total || 0}`);
           setLog(JSON.stringify(next, null, 2));
@@ -164,9 +171,21 @@ export function AutoLabelPage({ onReady }: Props) {
             <FolderPickerRow label="Source" value={inputRoot} placeholder="detect_dataset folder" browseLabel="Source Dataset" disabled={pending || running} onBrowse={() => chooseInput().catch(showError)} />
             <FolderPickerRow label="Output" value={outputRoot} placeholder="auto-labeled dataset folder" browseLabel="Output Folder" disabled={pending || running} onBrowse={() => chooseOutput().catch(showError)} />
             <NumberField label="Image size" value={imageSize} onChange={(value) => setImageSize(Math.max(1, value || 1))} disabled={pending || running} />
-            <NumberField label="Conf" value={confidence} step={0.01} min={0} max={1} onChange={(value) => setConfidence(Math.max(0, Math.min(1, value || 0)))} disabled={pending || running} />
+            <NumberField label="Conf (min)" value={confidence} step={0.01} min={0} max={1} onChange={(value) => setConfidence(Math.max(0, Math.min(1, value || 0)))} disabled={pending || running} />
             <label>Device<input value={device} onChange={(event) => setDevice(event.target.value)} disabled={pending || running} placeholder="0 or cpu" /></label>
           </div>
+          <div className="row">
+            <label className="inline-check">
+              <input type="checkbox" checked={proposalMode} onChange={(event) => setProposalMode(event.target.checked)} disabled={pending || running} />
+              Generate proposals for review
+            </label>
+          </div>
+          {proposalMode && (
+            <div className="train-grid">
+              <NumberField label="High conf (auto box)" value={highConfidence} step={0.01} min={0} max={1} onChange={(value) => setHighConfidence(Math.max(0, Math.min(1, value || 0)))} disabled={pending || running} />
+              <NumberField label="Medium conf (proposal)" value={mediumConfidence} step={0.01} min={0} max={1} onChange={(value) => setMediumConfidence(Math.max(0, Math.min(1, value || 0)))} disabled={pending || running} />
+            </div>
+          )}
           <div className="row">
             <button className="primary" type="button" onClick={() => void runJob("detect")} disabled={pending || running || !canRun}>Auto Label Folder</button>
             <button className="danger" type="button" onClick={() => void cancelJob()} disabled={!running}>Stop</button>

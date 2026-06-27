@@ -4,9 +4,12 @@ import { errMessage } from "../../lib/errors";
 import { datasetImageUrl, invalidateDatasetImageUrl } from "../dataset-review/datasetAssets";
 import { loadMetadataMap } from "../image-pool/metadata";
 import type { MetadataRow } from "../image-pool/types";
+import { materializeProposal as materializeProposalFn } from "../auto-label/proposalDomain";
+import { imageProposalKey, loadImageProposals, saveImageProposals, type ImageProposalManifest } from "../auto-label/proposalApi";
+import type { DetectProposal } from "../video/videoAnnotationApi";
 import { loadEntryLabels, saveEntryLabels, type BoxLabelEntry } from "./boxLabelCore";
 import type { BoxLabelViewProps } from "./boxLabelTypes";
-import { findNearestBoxIndex, loadCanvasImage, type BoxAdjustMode, type DragState } from "./geometry";
+import { findNearestBoxIndex, loadCanvasImage, type BoxAdjustMode, type DragState, type ProposalShape } from "./geometry";
 import { useBoxLabelClasses } from "./useBoxLabelClasses";
 import { useBoxLabelInteraction } from "./useBoxLabelInteraction";
 import { useBoxTracking } from "./useBoxTracking";
@@ -54,9 +57,13 @@ export function useBoxLabelEditor({
   const scheduleDrawRef = useRef<() => void>(() => {});
   const persistLabelsRef = useRef<(statusMessage?: string) => Promise<void>>(async () => {});
   const classesSetCurrentClassRef = useRef<(classId: number) => void>(() => {});
+  const proposalsRef = useRef<ProposalShape[]>([]);
+  const selectedProposalIdRef = useRef<string | null>(null);
 
   const [boxes, setBoxes] = useState<api.LabelBox[]>([]);
+  const [proposals, setProposals] = useState<DetectProposal[]>([]);
   const [selectedBoxId, setSelectedBoxId] = useState<number | null>(null);
+  const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
   const [showGrid] = useState(true);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -86,19 +93,118 @@ export function useBoxLabelEditor({
     [datasetRoot, onLabelsChanged]
   );
 
+  const persistProposals = useCallback(
+    async (proposalsList: ProposalShape[]) => {
+      if (!workspaceRoot || !entry) return;
+      const imageKey = imageProposalKey(entry.imagePath);
+      const manifest: ImageProposalManifest = {
+        version: 1,
+        imageKey,
+        proposals: proposalsList as DetectProposal[],
+        updatedAt: new Date().toISOString()
+      };
+      await saveImageProposals(workspaceRoot, manifest);
+    },
+    [entry, workspaceRoot]
+  );
+
   const { pushUndo, pushImageUndo, pushBatchUndo, undoLast, redoLast } = useBoxUndo({
     filename,
     entry,
     persistEntryLabels,
+    persistProposals,
     boxesRef,
     selectedRef,
     classRef,
+    proposalsRef,
+    selectedProposalIdRef,
     setBoxes,
     setSelectedBoxId,
     setCurrentClass: (classId) => classesSetCurrentClassRef.current(classId),
+    setProposals: (p) => setProposals(p as DetectProposal[]),
+    setSelectedProposalId,
     setStatus,
     scheduleDraw
   });
+
+  const materializeProposal = useCallback(
+    async (proposalId: string) => {
+      if (!entry) return;
+      const proposal = proposalsRef.current.find((p) => p.id === proposalId);
+      if (!proposal) return;
+      pushUndo("materialize proposal");
+      const detectedBox = materializeProposalFn(proposal as DetectProposal);
+      const newBox: api.LabelBox = {
+        classId: detectedBox.classId ?? classRef.current,
+        x: detectedBox.x,
+        y: detectedBox.y,
+        w: detectedBox.w,
+        h: detectedBox.h
+      };
+      const nextBoxes = [...boxesRef.current, newBox];
+      boxesRef.current = nextBoxes;
+      setBoxes(nextBoxes);
+      const nextProposals = proposalsRef.current.filter((p) => p.id !== proposalId);
+      proposalsRef.current = nextProposals;
+      setProposals(nextProposals as DetectProposal[]);
+      setSelectedProposalId(null);
+      setSelectedBoxId(nextBoxes.length - 1);
+      selectedRef.current = nextBoxes.length - 1;
+      await Promise.all([
+        persistEntryLabels(entry, nextBoxes),
+        persistProposals(nextProposals)
+      ]);
+      setStatus(`Proposal accepted (${nextBoxes.length} box(es) total).`);
+    },
+    [boxesRef, classRef, entry, persistEntryLabels, persistProposals, proposalsRef, pushUndo, selectedRef, setBoxes, setStatus]
+  );
+
+  const rejectProposal = useCallback(
+    async (proposalId: string) => {
+      if (!entry) return;
+      pushUndo("reject proposal");
+      const nextProposals = proposalsRef.current.filter((p) => p.id !== proposalId);
+      proposalsRef.current = nextProposals;
+      setProposals(nextProposals as DetectProposal[]);
+      setSelectedProposalId(null);
+      await persistProposals(nextProposals);
+      setStatus(`Proposal rejected (${nextProposals.length} remaining).`);
+    },
+    [entry, persistProposals, proposalsRef, pushUndo, setStatus]
+  );
+
+  const acceptAllProposals = useCallback(
+    async () => {
+      if (!entry || !proposalsRef.current.length) return;
+      pushUndo("accept all proposals");
+      const newBoxes = proposalsRef.current.map((p) => {
+        const det = materializeProposalFn(p as DetectProposal);
+        return { classId: det.classId ?? classRef.current, x: det.x, y: det.y, w: det.w, h: det.h } as api.LabelBox;
+      });
+      const nextBoxes = [...boxesRef.current, ...newBoxes];
+      boxesRef.current = nextBoxes;
+      setBoxes(nextBoxes);
+      proposalsRef.current = [];
+      setProposals([]);
+      setSelectedProposalId(null);
+      await Promise.all([persistEntryLabels(entry, nextBoxes), persistProposals([])]);
+      setStatus(`Accepted all proposals (${newBoxes.length} new box(es)).`);
+    },
+    [boxesRef, classRef, entry, persistEntryLabels, persistProposals, proposalsRef, pushUndo, setBoxes, setStatus]
+  );
+
+  const rejectAllProposals = useCallback(
+    async () => {
+      if (!entry || !proposalsRef.current.length) return;
+      pushUndo("reject all proposals");
+      proposalsRef.current = [];
+      setProposals([]);
+      setSelectedProposalId(null);
+      await persistProposals([]);
+      setStatus("All proposals rejected.");
+    },
+    [entry, persistProposals, proposalsRef, pushUndo, setStatus]
+  );
 
   const labelClasses = useBoxLabelClasses({
     datasetRoot,
@@ -186,7 +292,11 @@ export function useBoxLabelEditor({
     setSelectedBoxId,
     setStatus,
     setError,
-    setImageVersion
+    setImageVersion,
+    proposalsRef,
+    selectedProposalIdRef,
+    setSelectedProposalId,
+    onMaterializeProposal: materializeProposal
   });
 
   scheduleDrawRef.current = interaction.scheduleDraw;
@@ -210,6 +320,16 @@ export function useBoxLabelEditor({
     selectedRef.current = selectedBoxId;
     scheduleDraw();
   }, [selectedBoxId, scheduleDraw]);
+
+  useEffect(() => {
+    proposalsRef.current = proposals as ProposalShape[];
+    scheduleDraw();
+  }, [proposals, scheduleDraw]);
+
+  useEffect(() => {
+    selectedProposalIdRef.current = selectedProposalId;
+    scheduleDraw();
+  }, [selectedProposalId, scheduleDraw]);
 
   useEffect(() => {
     showGridRef.current = showGrid;
@@ -245,15 +365,21 @@ export function useBoxLabelEditor({
       interaction.viewportRef.current = { zoom: 1, panX: 0, panY: 0 };
       try {
         if (imageVersion > 0) invalidateDatasetImageUrl(datasetRoot, entry.imagePath);
-        const [labelBoxes, imageUrl] = await Promise.all([
+        const imageKey = imageProposalKey(entry.imagePath);
+        const [labelBoxes, imageUrl, proposalManifest] = await Promise.all([
           loadEntryLabels(datasetRoot, entry),
-          datasetImageUrl(datasetRoot, entry.imagePath)
+          datasetImageUrl(datasetRoot, entry.imagePath),
+          workspaceRoot ? loadImageProposals(workspaceRoot, imageKey) : Promise.resolve(null)
         ]);
         const image = await loadCanvasImage(imageUrl);
         if (cancelled) return;
         interaction.imageRef.current = image;
         boxesRef.current = labelBoxes;
         setBoxes(labelBoxes);
+        const loadedProposals = proposalManifest?.proposals ?? [];
+        proposalsRef.current = loadedProposals as ProposalShape[];
+        setProposals(loadedProposals);
+        setSelectedProposalId(null);
         if (pendingBoxSelectionRef.current) {
           const pending = pendingBoxSelectionRef.current;
           pendingBoxSelectionRef.current = null;
@@ -278,6 +404,8 @@ export function useBoxLabelEditor({
       } catch (err) {
         if (cancelled) return;
         setBoxes([]);
+        proposalsRef.current = [];
+        setProposals([]);
         setError(errMessage(err));
         setStatus("Load failed.");
       }
@@ -355,6 +483,13 @@ export function useBoxLabelEditor({
     onClearClassFilters,
     onAddIncludeClass,
     onAddExcludeClass,
-    setError
+    setError,
+    proposals,
+    selectedProposalId,
+    setSelectedProposalId,
+    materializeProposal,
+    rejectProposal,
+    acceptAllProposals,
+    rejectAllProposals
   };
 }

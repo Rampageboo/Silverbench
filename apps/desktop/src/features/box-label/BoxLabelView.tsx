@@ -187,6 +187,69 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
           </div>
         </section>
 
+        {editor.proposals.length > 0 && (
+          <section className="panel pool-label-proposals-panel" id="poolLabelProposalsPanel">
+            <div className="panel-header">
+              <span>Proposals ({editor.proposals.length})</span>
+              <span className="pool-label-proposal-actions">
+                <button
+                  type="button"
+                  className="primary"
+                  title="Accept all proposals as boxes"
+                  onClick={() => editor.acceptAllProposals().catch((err) => editor.setError(errMessage(err)))}
+                >
+                  Accept All
+                </button>
+                <button
+                  type="button"
+                  title="Reject all proposals"
+                  onClick={() => editor.rejectAllProposals().catch((err) => editor.setError(errMessage(err)))}
+                >
+                  Reject All
+                </button>
+              </span>
+            </div>
+            <div className="panel-body pool-label-proposals-body">
+              {editor.proposals.map((p) => (
+                <div
+                  key={p.id}
+                  className={`pool-label-proposal-row${editor.selectedProposalId === p.id ? " selected" : ""}`}
+                  onClick={() => editor.setSelectedProposalId(editor.selectedProposalId === p.id ? null : p.id)}
+                >
+                  <span className="pool-label-proposal-conf">{Math.round(p.confidence * 100)}%</span>
+                  <span className="pool-label-proposal-coords">
+                    {p.x.toFixed(3)},{p.y.toFixed(3)} {p.w.toFixed(3)}×{p.h.toFixed(3)}
+                  </span>
+                  <span className="pool-label-proposal-btns">
+                    <button
+                      type="button"
+                      className="primary pool-label-proposal-accept"
+                      title="Materialize this proposal as a box"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        editor.materializeProposal(p.id).catch((err) => editor.setError(errMessage(err)));
+                      }}
+                    >
+                      ✓
+                    </button>
+                    <button
+                      type="button"
+                      className="pool-label-proposal-reject"
+                      title="Reject this proposal"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        editor.rejectProposal(p.id).catch((err) => editor.setError(errMessage(err)));
+                      }}
+                    >
+                      ✗
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         <section className="panel filter-panel pool-label-classes-panel">
           <div className="panel-header">
             <span>Classes</span>
