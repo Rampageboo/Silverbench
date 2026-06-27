@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LabelBox, LabelClass } from "../../api";
+import type { BlackoutRectShape } from "../overlays/blackoutOverlayDomain";
 
 type Point = { x: number; y: number };
 type Corner = "nw" | "ne" | "sw" | "se";
 type DragState =
   | { kind: "draw"; start: Point; current: Point }
+  | { kind: "blackout"; start: Point; current: Point }
   | { kind: "move"; index: number; start: Point; origin: LabelBox; startBoxes: LabelBox[] }
   | { kind: "resize"; index: number; corner: Corner; origin: LabelBox; startBoxes: LabelBox[] }
   | null;
@@ -24,6 +26,12 @@ type Props = {
   selectedIndex: number | null;
   disabled?: boolean;
   remotePointer?: RemotePointerState | null;
+  /** Blackout overlay rects to render on the canvas (normalized, center-based). */
+  blackouts?: BlackoutRectShape[];
+  /** Whether to render blackout overlays. Default true. */
+  showBlackouts?: boolean;
+  /** Called when the user draws a new blackout rect in "blackout" tool mode. */
+  onBlackoutDraw?: (rect: BlackoutRectShape) => void;
   onChange: (boxes: LabelBox[]) => void;
   onSelectedIndexChange: (index: number | null) => void;
 };
@@ -144,6 +152,9 @@ export function VideoAnnotationCanvas({
   selectedIndex,
   disabled = false,
   remotePointer = null,
+  blackouts = [],
+  showBlackouts = true,
+  onBlackoutDraw,
   onChange,
   onSelectedIndexChange
 }: Props) {
@@ -157,7 +168,7 @@ export function VideoAnnotationCanvas({
   const [workingBoxes, setWorkingBoxesState] = useState<LabelBox[]>(boxes);
   const [draftRect, setDraftRect] = useState<{ start: Point; current: Point } | null>(null);
   const [remoteCursor, setRemoteCursor] = useState<Point | null>(null);
-  const [tool, setTool] = useState<"draw" | "select">("draw");
+  const [tool, setTool] = useState<"draw" | "select" | "blackout">("draw");
   const [renderVersion, setRenderVersion] = useState(0);
 
   const classNames = useMemo(() => new Map(classes.map((item) => [item.id, item.name])), [classes]);
@@ -280,6 +291,23 @@ export function VideoAnnotationCanvas({
     context.drawImage(image, display.x, display.y, display.width, display.height);
     const ratio = window.devicePixelRatio || 1;
 
+    // Draw order: image → blackout overlays → annotation boxes → draft → cursor
+    if (showBlackouts && blackouts.length > 0) {
+      for (const blk of blackouts) {
+        const bx = display.x + (blk.x - blk.w / 2) * display.width;
+        const by = display.y + (blk.y - blk.h / 2) * display.height;
+        const bw = blk.w * display.width;
+        const bh = blk.h * display.height;
+        context.fillStyle = "rgba(0, 0, 0, 0.92)";
+        context.fillRect(bx, by, bw, bh);
+        context.strokeStyle = "rgba(239, 68, 68, 0.6)";
+        context.lineWidth = 1.5 * ratio;
+        context.setLineDash([4 * ratio, 3 * ratio]);
+        context.strokeRect(bx, by, bw, bh);
+        context.setLineDash([]);
+      }
+    }
+
     workingBoxes.forEach((box, index) => {
       const edges = boxEdges(box);
       const x = display.x + edges.x1 * display.width;
@@ -321,7 +349,14 @@ export function VideoAnnotationCanvas({
       const y1 = display.y + Math.min(draftRect.start.y, draftRect.current.y) * display.height;
       const x2 = display.x + Math.max(draftRect.start.x, draftRect.current.x) * display.width;
       const y2 = display.y + Math.max(draftRect.start.y, draftRect.current.y) * display.height;
-      context.strokeStyle = "#60a5fa";
+      const isBlackoutDraft = dragRef.current?.kind === "blackout";
+      if (isBlackoutDraft) {
+        context.fillStyle = "rgba(0, 0, 0, 0.6)";
+        context.fillRect(x1, y1, x2 - x1, y2 - y1);
+        context.strokeStyle = "#ef4444";
+      } else {
+        context.strokeStyle = "#60a5fa";
+      }
       context.lineWidth = 2 * ratio;
       context.setLineDash([6 * ratio, 4 * ratio]);
       context.strokeRect(x1, y1, x2 - x1, y2 - y1);
@@ -342,7 +377,7 @@ export function VideoAnnotationCanvas({
       context.lineTo(x, y + radius * 1.5);
       context.stroke();
     }
-  }, [classNames, draftRect, remoteCursor, renderVersion, selectedIndex, workingBoxes]);
+  }, [blackouts, classNames, draftRect, remoteCursor, renderVersion, selectedIndex, showBlackouts, workingBoxes]);
 
   const deleteSelected = useCallback(() => {
     if (selectedIndex === null || selectedIndex < 0 || selectedIndex >= workingBoxesRef.current.length) return;
@@ -393,6 +428,9 @@ export function VideoAnnotationCanvas({
       if (tool === "draw") {
         dragRef.current = { kind: "draw", start: point, current: point };
         setDraftRect({ start: point, current: point });
+      } else if (tool === "blackout") {
+        dragRef.current = { kind: "blackout", start: point, current: point };
+        setDraftRect({ start: point, current: point });
       }
     },
     [disabled, onSelectedIndexChange, selectedIndex, tool]
@@ -405,7 +443,7 @@ export function VideoAnnotationCanvas({
       const drag = dragRef.current;
       if (!canvas || !image || !drag || disabled) return;
       const { point } = eventPoint(event, canvas, image);
-      if (drag.kind === "draw") {
+      if (drag.kind === "draw" || drag.kind === "blackout") {
         drag.current = point;
         setDraftRect({ start: drag.start, current: point });
         return;
@@ -422,6 +460,7 @@ export function VideoAnnotationCanvas({
         setWorkingBoxes(drag.startBoxes.map((box, index) => (index === drag.index ? moved : box)));
         return;
       }
+      if (drag.kind !== "resize") return;
       const resized = resizeBox(drag.origin, drag.corner, point);
       setWorkingBoxes(drag.startBoxes.map((box, index) => (index === drag.index ? resized : box)));
     },
@@ -447,9 +486,21 @@ export function VideoAnnotationCanvas({
         onChange(next);
         return;
       }
+      if (drag.kind === "blackout") {
+        const x1 = Math.min(drag.start.x, point.x);
+        const y1 = Math.min(drag.start.y, point.y);
+        const x2 = Math.max(drag.start.x, point.x);
+        const y2 = Math.max(drag.start.y, point.y);
+        const w = x2 - x1;
+        const h = y2 - y1;
+        if (w >= MIN_BOX_SIZE && h >= MIN_BOX_SIZE && onBlackoutDraw) {
+          onBlackoutDraw({ type: "rect", x: (x1 + x2) / 2, y: (y1 + y2) / 2, w, h });
+        }
+        return;
+      }
       onChange(workingBoxesRef.current);
     },
-    [currentClass, onChange, onSelectedIndexChange, setWorkingBoxes]
+    [currentClass, onChange, onBlackoutDraw, onSelectedIndexChange, setWorkingBoxes]
   );
 
   const cancelPointer = useCallback(() => {
@@ -467,6 +518,17 @@ export function VideoAnnotationCanvas({
         <button type="button" className={tool === "select" ? "primary" : ""} onClick={() => setTool("select")} disabled={disabled}>
           Select
         </button>
+        {onBlackoutDraw && (
+          <button
+            type="button"
+            className={tool === "blackout" ? "primary" : ""}
+            onClick={() => setTool(tool === "blackout" ? "draw" : "blackout")}
+            disabled={disabled}
+            title="Draw a non-destructive blackout overlay"
+          >
+            Blackout
+          </button>
+        )}
         <button type="button" className="danger" onClick={deleteSelected} disabled={disabled || selectedIndex === null}>
           Delete Box
         </button>

@@ -639,3 +639,35 @@ type DetectBoxAnnotation = { classKey?: string; classId?: number; x: number; y: 
 9. Clear the clf label. Confirm if no detect task exists, the timestamp record is removed.
 10. Trigger an explicit frame export from the export panel. Confirm exported files appear
     under `workspace/exports` (or the configured path) and nowhere else.
+
+## Non-destructive blackout overlays and similarity comparator
+
+**Status:** Domain and persistence layer complete. UI wired in VideoLabelPage. Export planner updated. Similarity hashing implemented. Tests green (314/314).
+
+### What was added
+
+| File | Purpose |
+|------|---------|
+| `src/features/overlays/blackoutOverlayDomain.ts` | Pure types + CRUD: `BlackoutShape`, `BlackoutOverlay`, `BlackoutOverlayManifest`, normalization, `findOverlaysForVideoTimestamp`, `visibleRectsForTimestamp`, `exportRectsForTimestamp`, `computeBlackoutBoxOverlapWarnings` |
+| `src/features/overlays/blackoutOverlayApi.ts` | File I/O: load/save/add/remove/toggle per source key; path security (rejects `../`, absolute, Windows drive) |
+| `src/features/similarity/similarityDomain.ts` | Pure perceptual hashing: aHash, dHash, `hammingDistance`, `normalizeSimilarityScore`, `rankSimilarityCandidates` |
+| `VideoAnnotationCanvas.tsx` | New `blackout` tool mode; renders overlays between image and annotation boxes; emits `onBlackoutDraw` callback |
+| `VideoLabelPage.tsx` | Loads/saves overlay manifest per video; Blackout Overlays panel in sidebar; passes `visibleBlackoutRects` and `handleBlackoutDraw` to canvas |
+| `videoExportPlanner.ts` | `DetectExportItem` and `ClfExportItem` gain `blackouts: BlackoutRectShape[]`; `ExportPlanOptions` gains `resolveBlackouts?` callback |
+
+### Design decisions
+
+- **Source never modified.** `blackoutOverlayApi.ts` only calls `readTextFile` / `writeTextFile` on `workspace/overlays/blackouts/`. No path touches source media.
+- **Per-source JSON files.** `workspace/overlays/blackouts/{vid-stem-hash}.json` — avoids one monolithic file growing unbounded.
+- **Center-based coordinates.** x/y = center of rect, w/h = width/height. Consistent with `LabelBox` / `DetectBoxAnnotation`.
+- **Warn-only overlap detection.** `computeBlackoutBoxOverlapWarnings` returns warnings; no labels are deleted automatically.
+- **Export planner remains pure.** The planner receives blackouts via `resolveBlackouts` callback — no I/O inside the planner.
+- **Similarity: aHash + dHash.** Solid-color images are degenerate for aHash (all bits tie the mean). dHash captures spatial gradients and is more useful for frame-to-frame comparison.
+
+### Not done in this pass
+
+- Full similarity comparator UI (candidate list, batch confirm apply)
+- Template matching / ORB / CLIP/DINO
+- Optical flow propagation across continuous video frames
+- Export executor (applies blackouts to the JPEG pixel data during frame write)
+- Image Box Label blackout support (domain types ready; UI pending)

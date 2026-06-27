@@ -15,6 +15,7 @@
 import type { LabelClass } from "../../api";
 import type { VideoAnnotationManifest, VideoSource } from "./videoAnnotationApi";
 import { buildDetectClassKeyIndex, classKeyToClassId, classIdToKey, classNameToSafeKey } from "./videoClassKeys";
+import type { BlackoutRectShape } from "../overlays/blackoutOverlayDomain";
 
 // ---------------------------------------------------------------------------
 // Output types
@@ -35,6 +36,8 @@ export type DetectExportItem = {
   imageOutputPath: string;
   labelOutputPath: string;
   yoloBoxes: YoloBox[];
+  /** Blackout rects to apply when writing the export image (normalized, center-based). */
+  blackouts: BlackoutRectShape[];
 };
 
 export type ClfExportItem = {
@@ -44,6 +47,8 @@ export type ClfExportItem = {
   imageOutputPath: string;
   classFolder: string;
   classKey: string;
+  /** Blackout rects to apply when writing the export image (normalized, center-based). */
+  blackouts: BlackoutRectShape[];
 };
 
 export type ExportItem = DetectExportItem | ClfExportItem;
@@ -80,6 +85,12 @@ export type ExportPlanOptions = {
    * Default: "has-boxes".
    */
   detectPolicy?: "has-boxes" | "reviewed";
+  /**
+   * Optional resolver for blackout rects to apply during export.
+   * Called once per timestamp; returns rects that have applyOnExport=true.
+   * If omitted, export items carry an empty blackouts array.
+   */
+  resolveBlackouts?: (timestampMs: number) => BlackoutRectShape[];
 };
 
 // ---------------------------------------------------------------------------
@@ -115,7 +126,8 @@ export function planVideoExport(
     classes,
     includeDetect = true,
     includeClf = true,
-    detectPolicy = "has-boxes"
+    detectPolicy = "has-boxes",
+    resolveBlackouts
   } = options;
 
   const items: ExportItem[] = [];
@@ -141,6 +153,7 @@ export function planVideoExport(
   for (const frame of frameEntries) {
     const { timestampMs, tasks } = frame;
     const basename = frameBasename(stemId, timestampMs);
+    const blackouts = resolveBlackouts ? resolveBlackouts(timestampMs) : [];
 
     if (includeDetect && tasks.detect) {
       const detect = tasks.detect;
@@ -169,7 +182,8 @@ export function planVideoExport(
           timestampMs,
           imageOutputPath: `${exportRoot}/detect/images/${basename}.jpg`,
           labelOutputPath: `${exportRoot}/detect/labels/${basename}.txt`,
-          yoloBoxes
+          yoloBoxes,
+          blackouts
         });
       }
     }
@@ -183,7 +197,8 @@ export function planVideoExport(
         timestampMs,
         imageOutputPath: `${exportRoot}/clf/${classFolder}/${basename}.jpg`,
         classFolder,
-        classKey
+        classKey,
+        blackouts
       });
     }
   }

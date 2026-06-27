@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkspace } from "../../app/useWorkspace";
 import { useWorkbenchCommands } from "../../input/MultimodalControlProvider";
 import { VideoAnnotationCanvas, type RemotePointerState } from "./VideoAnnotationCanvas";
@@ -6,6 +6,22 @@ import { formatVideoClock } from "./videoAnnotationDomain";
 import { useVideoAnnotationSession } from "./useVideoAnnotationSession";
 import { useVideoSampling, type SamplingMode } from "./useVideoSampling";
 import { classNameToSafeKey } from "./videoClassKeys";
+import {
+  addBlackoutOverlay,
+  loadBlackoutOverlays,
+  removeBlackoutOverlay,
+  toggleBlackoutExport,
+  toggleBlackoutPreview,
+  videoBlackoutSourceKey
+} from "../overlays/blackoutOverlayApi";
+import {
+  emptyBlackoutManifest,
+  findOverlaysForVideoTimestamp,
+  visibleRectsForTimestamp,
+  type BlackoutOverlay,
+  type BlackoutOverlayManifest,
+  type BlackoutRectShape
+} from "../overlays/blackoutOverlayDomain";
 import "./VideoLabelPage.css";
 
 type Props = {
@@ -25,6 +41,78 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
   const { workspaceRoot, chooseWorkspaceFolder } = useWorkspace();
   const session = useVideoAnnotationSession({ workspaceRoot, active, onReady });
   const [remotePointer, setRemotePointer] = useState<RemotePointerState | null>(null);
+
+  // ---------- Blackout overlay state ----------
+  const [blackoutManifest, setBlackoutManifest] = useState<BlackoutOverlayManifest>(emptyBlackoutManifest);
+  const [showBlackouts, setShowBlackouts] = useState(true);
+  const blackoutSourceKey = session.current ? videoBlackoutSourceKey(session.current.path) : null;
+  const blackoutKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const key = session.current ? videoBlackoutSourceKey(session.current.path) : null;
+    blackoutKeyRef.current = key;
+    if (!key || !workspaceRoot.trim()) {
+      setBlackoutManifest(emptyBlackoutManifest());
+      return;
+    }
+    void loadBlackoutOverlays(workspaceRoot, key).then((m) => {
+      if (blackoutKeyRef.current === key) setBlackoutManifest(m);
+    });
+  }, [session.current, workspaceRoot]);
+
+  const currentTimestampMs = Math.round(session.time * 1000);
+
+  const currentBlackouts: BlackoutOverlay[] = session.current
+    ? findOverlaysForVideoTimestamp(blackoutManifest, currentTimestampMs, session.current.path)
+    : [];
+
+  const visibleBlackoutRects: BlackoutRectShape[] = session.current
+    ? visibleRectsForTimestamp(blackoutManifest, currentTimestampMs, session.current.path)
+    : [];
+
+  const handleBlackoutDraw = useCallback(
+    (rect: BlackoutRectShape) => {
+      if (!session.current || !workspaceRoot.trim() || !blackoutSourceKey) return;
+      const now = new Date().toISOString();
+      const overlay: BlackoutOverlay = {
+        id: `blk_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        target: { type: "video-timestamp", videoPath: session.current.path, timestampMs: currentTimestampMs },
+        shape: rect,
+        mode: "black",
+        visibleInPreview: true,
+        applyOnExport: true,
+        createdBy: "manual",
+        createdAt: now,
+        updatedAt: now
+      };
+      void addBlackoutOverlay(workspaceRoot, blackoutSourceKey, overlay).then(setBlackoutManifest);
+    },
+    [blackoutSourceKey, currentTimestampMs, session.current, workspaceRoot]
+  );
+
+  const handleRemoveBlackout = useCallback(
+    (id: string) => {
+      if (!blackoutSourceKey || !workspaceRoot.trim()) return;
+      void removeBlackoutOverlay(workspaceRoot, blackoutSourceKey, id).then(setBlackoutManifest);
+    },
+    [blackoutSourceKey, workspaceRoot]
+  );
+
+  const handleToggleBlackoutPreview = useCallback(
+    (id: string) => {
+      if (!blackoutSourceKey || !workspaceRoot.trim()) return;
+      void toggleBlackoutPreview(workspaceRoot, blackoutSourceKey, id).then(setBlackoutManifest);
+    },
+    [blackoutSourceKey, workspaceRoot]
+  );
+
+  const handleToggleBlackoutExport = useCallback(
+    (id: string) => {
+      if (!blackoutSourceKey || !workspaceRoot.trim()) return;
+      void toggleBlackoutExport(workspaceRoot, blackoutSourceKey, id).then(setBlackoutManifest);
+    },
+    [blackoutSourceKey, workspaceRoot]
+  );
 
   const videoDurationMs = session.current ? Math.round(session.current.duration * 1000) : 0;
 
@@ -179,6 +267,9 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
                 selectedIndex={session.selectedIndex}
                 disabled={session.previewLoading || session.manifestLoading}
                 remotePointer={remotePointer}
+                blackouts={visibleBlackoutRects}
+                showBlackouts={showBlackouts}
+                onBlackoutDraw={handleBlackoutDraw}
                 onChange={(next) => session.updateCurrentFrame(next, true)}
                 onSelectedIndexChange={session.setSelectedIndex}
               />
@@ -415,6 +506,59 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
             >
               Clear Clf Label
             </button>
+          </div>
+        </section>
+
+        {/* Blackout Overlays panel — non-destructive overlay metadata for current timestamp */}
+        <section className="panel">
+          <div className="panel-header">
+            <span>Blackout Overlays</span>
+            <span className="status">{currentBlackouts.length}</span>
+          </div>
+          <div className="panel-body video-label-action-stack">
+            <label>
+              <input
+                type="checkbox"
+                checked={showBlackouts}
+                onChange={(e) => setShowBlackouts(e.target.checked)}
+              />
+              {" Show overlays"}
+            </label>
+            {currentBlackouts.length === 0 && (
+              <div className="hint">No blackouts for this timestamp. Use the canvas Blackout tool to draw one.</div>
+            )}
+            {currentBlackouts.map((overlay) => {
+              const shape = overlay.shape.type === "rect" ? overlay.shape : null;
+              const shapeDesc = shape
+                ? `rect ${(shape.w * 100).toFixed(0)}×${(shape.h * 100).toFixed(0)}%`
+                : overlay.shape.type;
+              return (
+                <div key={overlay.id} className="blackout-overlay-row">
+                  <span className="blackout-overlay-desc" title={overlay.id}>{shapeDesc}</span>
+                  <button
+                    type="button"
+                    title={overlay.visibleInPreview ? "Hide in preview" : "Show in preview"}
+                    onClick={() => handleToggleBlackoutPreview(overlay.id)}
+                  >
+                    {overlay.visibleInPreview ? "👁" : "👁‍🗨"}
+                  </button>
+                  <button
+                    type="button"
+                    title={overlay.applyOnExport ? "Disable on export" : "Enable on export"}
+                    onClick={() => handleToggleBlackoutExport(overlay.id)}
+                  >
+                    {overlay.applyOnExport ? "Exp✓" : "Exp✗"}
+                  </button>
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={() => handleRemoveBlackout(overlay.id)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </section>
 

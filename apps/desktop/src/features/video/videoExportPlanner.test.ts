@@ -191,6 +191,54 @@ describe("resolveDetectClassId", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Task 9 — blackout resolver integration
+// ---------------------------------------------------------------------------
+
+describe("planVideoExport — blackout resolver", () => {
+  it("export items carry empty blackouts when no resolver is provided", () => {
+    let manifest = makeManifest();
+    manifest = updateVideoDetectBoxes(manifest, video, 1.0, [box], true);
+    const { items } = planVideoExport(manifest, opts());
+    const detectItem = items.find((i) => i.task === "detect")!;
+    expect(detectItem.blackouts).toEqual([]);
+  });
+
+  it("export items carry rects from the resolver for matching timestamp", () => {
+    let manifest = makeManifest();
+    manifest = updateVideoDetectBoxes(manifest, video, 1.0, [box], true);
+    const rect = { type: "rect" as const, x: 0.5, y: 0.5, w: 0.2, h: 0.2 };
+    const resolveBlackouts = (ts: number) => ts === 1000 ? [rect] : [];
+    const { items } = planVideoExport(manifest, opts({ resolveBlackouts }));
+    const detectItem = items.find((i) => i.task === "detect")!;
+    expect(detectItem.blackouts).toHaveLength(1);
+    expect(detectItem.blackouts[0]).toEqual(rect);
+  });
+
+  it("clf export items also carry blackout rects", () => {
+    let manifest = makeManifest();
+    manifest = setVideoClfClass(manifest, video, 2.0, "cat");
+    const rect = { type: "rect" as const, x: 0.5, y: 0.5, w: 0.3, h: 0.3 };
+    const resolveBlackouts = () => [rect];
+    const { items } = planVideoExport(manifest, opts({ resolveBlackouts }));
+    const clfItem = items.find((i) => i.task === "clf")!;
+    expect(clfItem.blackouts).toHaveLength(1);
+  });
+
+  it("resolver returning different rects per timestamp is respected", () => {
+    let manifest = makeManifest();
+    manifest = updateVideoDetectBoxes(manifest, video, 1.0, [box], true);
+    manifest = updateVideoDetectBoxes(manifest, video, 2.0, [box], true);
+    const resolveBlackouts = (ts: number) =>
+      ts === 1000 ? [{ type: "rect" as const, x: 0.5, y: 0.5, w: 0.1, h: 0.1 }] : [];
+    const { items } = planVideoExport(manifest, opts({ resolveBlackouts }));
+    const item1 = items.find((i) => i.task === "detect" && i.timestampMs === 1000)!;
+    const item2 = items.find((i) => i.task === "detect" && i.timestampMs === 2000)!;
+    expect(item1.blackouts).toHaveLength(1);
+    expect(item2.blackouts).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Task 10 — no image files created in tests
 // ---------------------------------------------------------------------------
 

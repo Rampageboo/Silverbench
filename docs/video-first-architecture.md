@@ -264,3 +264,99 @@ save, consistent with the existing timestamp-manifest persistence contract.
 No decoded frame is written to disk as part of any of these operations. Explicit frame
 export remains a separate action in the export panel and is not triggered by annotation
 or sampling.
+
+## Non-destructive blackout overlays and similarity comparator
+
+Blackout edits are non-destructive overlays. They are rendered in preview and applied during export, but they never modify source images or source videos.
+
+### Core principle
+
+```text
+source video / image
+  ↓
+annotation layer
+  ├─ detect boxes
+  └─ clf label
+  ↓
+blackout overlay layer
+  └─ rect / polygon / mask metadata
+  ↓
+preview/export renderer
+  ├─ Video Label preview can show blackout blocks (toggle)
+  └─ YOLO export applies blackouts temporarily to the exported frame image
+```
+
+Source files are **never** written by overlay APIs. Export images are derived artifacts — they can be deleted and regenerated.
+
+### Storage
+
+Per-video overlay files stored alongside other workspace metadata:
+
+```text
+workspace/overlays/blackouts/{vid-stem-hash}.json
+workspace/overlays/blackouts/{img-stem-hash}.json
+```
+
+One file per source. Splitting avoids one monolithic JSON growing unbounded as timestamps accumulate.
+
+### Overlay schema
+
+```json
+{
+  "version": 1,
+  "overlays": [
+    {
+      "id": "blk_001",
+      "target": {
+        "type": "video-timestamp",
+        "videoPath": "/path/to/video.mp4",
+        "timestampMs": 123456
+      },
+      "shape": { "type": "rect", "x": 0.5, "y": 0.5, "w": 0.3, "h": 0.15 },
+      "mode": "black",
+      "visibleInPreview": true,
+      "applyOnExport": true,
+      "createdBy": "manual",
+      "createdAt": "2026-06-27T00:00:00.000Z",
+      "updatedAt": "2026-06-27T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+Coordinates are normalized 0–1 with x/y at the **center** of the rect (same convention as `LabelBox` / `DetectBoxAnnotation`).
+
+### Canvas draw order
+
+1. Source image / decoded frame
+2. Blackout overlay rects (filled black; dashed red border for identification)
+3. Detect annotation boxes and handles
+
+A "Show Blackout Overlays" toggle in the UI lets users verify the underlying image without overlays.
+
+### Export integration
+
+The export planner (`videoExportPlanner.ts`) accepts an optional `resolveBlackouts` callback that returns rects for a given timestamp. Each `DetectExportItem` and `ClfExportItem` carries a `blackouts: BlackoutRectShape[]` field. The export executor (not yet implemented) applies these rects to the temporary export bitmap only — the source video is untouched.
+
+### Overlap warning
+
+`computeBlackoutBoxOverlapWarnings` checks if any `applyOnExport` rect overlaps a detect box above an IoU threshold (default 0.1). The first pass strategy is **warn-only** — no labels are automatically removed.
+
+### Similarity comparator
+
+`similarityDomain.ts` provides pure perceptual hashing:
+
+- **aHash** (average hash, 64 bits) — 8×8 downsampled grayscale; bits above mean = 1.
+- **dHash** (difference hash, 64 bits) — 9×8 downsampled; compares adjacent pixels per row.
+- **Hamming distance** — XOR bit count between two hex hash strings.
+- **Similarity score** — normalized 0 (identical) to 1 (maximally different).
+- **`rankSimilarityCandidates`** — sorts a list of candidates against a reference fingerprint.
+
+Planned workflow:
+1. User selects a reference frame/image with a blackout overlay.
+2. App computes or loads fingerprint for candidates (same-session frames or image pool).
+3. App lists visually similar candidates sorted by score.
+4. User selects candidates and confirms applying the same overlay position.
+5. New `BlackoutOverlay` records are created with `createdBy: "similarity-propagation"`.
+
+First pass uses pHash/dHash. Future methods may include template matching, ORB/AKAZE feature matching, CLIP/DINO embeddings, or optical flow for continuous video propagation.
