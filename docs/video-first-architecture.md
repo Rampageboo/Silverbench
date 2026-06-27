@@ -336,11 +336,22 @@ A "Show Blackout Overlays" toggle in the UI lets users verify the underlying ima
 
 ### Export integration
 
-The export planner (`videoExportPlanner.ts`) accepts an optional `resolveBlackouts` callback that returns rects for a given timestamp. Each `DetectExportItem` and `ClfExportItem` carries a `blackouts: BlackoutRectShape[]` field. The export executor (not yet implemented) applies these rects to the temporary export bitmap only — the source video is untouched.
+The export planner (`videoExportPlanner.ts`) accepts an optional `resolveBlackouts` callback that returns rects for a given timestamp. Each `DetectExportItem` and `ClfExportItem` carries a `blackouts: BlackoutRectShape[]` field.
+
+The export executor (`videoExportExecutor.ts`) completes the pipeline:
+
+1. **Frame decode** — calls `getAnnotationFrameBase64(videoPath, seconds)` (read-only; never writes source).
+2. **Blackout apply** — `encodeImageWithBlackouts(base64, rects)` renders rects onto an off-screen canvas and re-encodes as JPEG. `applyBlackoutRectsToImageData` is the pure pixel-level helper used for testing.
+3. **Export write** — `writeFileBase64(workspaceRoot, item.imageOutputPath, ...)` writes the blacked-out frame to the export path only.
+4. **YOLO label write** — for detect items, `writeTextFile(workspaceRoot, item.labelOutputPath, ...)` writes the YOLO `.txt` label.
+
+A Python mirror (`backend/blackout_renderer.py`) provides `apply_blackout_rects(image, rects)` for server-side use. It always returns a copy — the source ndarray is never mutated.
+
+Source files are never in the write path. Only `imageOutputPath` and `labelOutputPath` (both under the export root) are written.
 
 ### Overlap warning
 
-`computeBlackoutBoxOverlapWarnings` checks if any `applyOnExport` rect overlaps a detect box above an IoU threshold (default 0.1). The first pass strategy is **warn-only** — no labels are automatically removed.
+`computeExportBlackoutWarnings` (in `videoExportBlackout.ts`) checks if any export blackout rect overlaps a detect box above an IoU threshold (default 0.1). The executor logs a `console.warn` for each overlap. The first pass strategy is **warn-only** — no labels are automatically removed.
 
 ### Similarity comparator
 
