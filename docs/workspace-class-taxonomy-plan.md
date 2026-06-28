@@ -1,6 +1,6 @@
 # Workspace Class Taxonomy Plan
 
-## Status: Phase 4A complete
+## Status: Phase 4B complete
 
 ---
 
@@ -161,14 +161,109 @@ CLF class keys become `clf_dataset/train/<key>/` folder names (via `classKeyToCl
 
 ---
 
-## 5. Phase 4B plan (not started)
+## 5. Phase 4B — What was implemented
 
-- Wire `workspace/classes.json` as the authoritative class source for both BoxLabelPage and VideoLabelPage.
-- Replace `loadLabelClasses()` call in `useVideoAnnotationSession` with `readTextFile(root, "workspace/classes.json")`.
-- Add a class editor in Library: safe add-at-end for detect classes, full edit for CLF classes.
-- Keep `classes.txt` in sync automatically when detect classes change.
-- Show actual task type in the Label Workbench header (from `workspace/classes.json`).
-- Starter class sets for common use cases.
+### Safe edit policy
+
+All manifest mutations are pure functions (receive + return `ClassesManifest`).
+The caller (`useWorkspaceClasses`) persists to disk after each operation.
+
+**Detect class rules:**
+- New classes always append to the end → YOLO id = `classKeys.length`.
+- Rename updates `classDef.name` only — key and ID are unchanged.
+- Archive marks `classDef.archived: true` but **KEEPS** the key in `tasks.detect.classKeys` so existing label files remain valid. The ID slot is reserved forever.
+- Reorder is intentionally not implemented (would corrupt existing annotations).
+- Hard delete is not implemented (would shift all subsequent IDs).
+
+**Classification class rules:**
+- New classes append to `tasks.clf.classKeys`.
+- Rename updates `classDef.name` only — key stays stable (safe for folder names).
+- Archive removes from `tasks.clf.classKeys` and marks `classDef.archived: true`.
+- No ID sensitivity, so archiving is reversible (restore re-appends to classKeys).
+
+### `ClassDef.archived?: boolean`
+
+Added to `classDomain.ts`. Additive field — existing manifests without it are handled
+by `normalizeClassesManifest` which now passes the field through.
+
+### `useWorkspaceClasses.ts` — new persistence hook
+
+```
+load()         reads classes.json → normalizeClassesManifest()
+               if not found → reads classes.txt → upgradeLegacyToManifest() [legacyMode=true]
+
+persist(next)  writeTextFile(root, "workspace/classes.json", JSON)
+               saveLabelClasses(root, manifestToLegacyClasses(next))
+               ↑ classes.txt includes ALL detect classes (inc. archived) for ID stability
+```
+
+Operations: `addDetect`, `addClf`, `rename`, `archiveDetect`, `unarchiveDetect`,
+`archiveClf`, `unarchiveClf`, `upgradeLegacy`.
+
+### Library Classes panel — upgraded to management UI
+
+- `WorkspaceClassesView` uses `useWorkspaceClasses` hook.
+- Detect class list: all classes shown in YOLO id order (archived dimmed).
+  - Rename inline, Archive with confirm step, Restore for archived.
+  - Warning: "Detect class order cannot be changed."
+  - Add class row: validates uniqueness, appends, saves.
+- Classification class list: active + archived shown.
+  - Rename inline, Archive with confirm step, Restore.
+  - Info note about stable slug keys.
+  - Add class row.
+- Legacy mode (classes.txt only): shows read-only with "Save as classes.json" button.
+- Saving indicator in header.
+
+### New helpers in `workspaceClassTaxonomy.ts`
+
+- `allDetectClassDefs(manifest)` — all detect defs with `yoloId`, including archived
+- `activeDetectClassDefs(manifest)` — non-archived detect defs
+- `activeClfClassDefs(manifest)` — clf defs (only active are in classKeys)
+- `archivedClassDefs(manifest)` — all archived defs
+- `validateNewClassName(name, existingActiveNames)` — empty + duplicate check
+- `addDetectClassToManifest` / `addClfClassToManifest` — append + slug
+- `renameClassInManifest` — name-only update, key stable
+- `archiveDetectClassInManifest` / `unarchiveDetectClassInManifest`
+- `archiveClfClassInManifest` / `unarchiveClfClassInManifest`
+- `upgradeLegacyToManifest(legacyClasses)` — preserve order as detect YOLO IDs
+- `manifestToLegacyClasses(manifest)` — ALL detect classes (inc. archived) for classes.txt
+
+### Detect ID stability — guaranteed by
+
+1. `addDetect*` only appends.
+2. `archiveDetect*` keeps key in `tasks.detect.classKeys`.
+3. `manifestToLegacyClasses` maps ALL `tasks.detect.classKeys` in order (including archived).
+4. Tests: `manifestToLegacyClasses` of an archived manifest still returns archived class at correct id.
+
+### Legacy upgrade path
+
+When `classes.json` is absent:
+- Hook loads `classes.txt` → `upgradeLegacyToManifest()` → `legacyMode = true`.
+- Library panel shows "Legacy class format" notice.
+- "Save as classes.json" button calls `upgradeLegacy()` → `persist()`.
+- `classes.txt` is NOT removed (kept for Box Label and other tools).
+- Class editing is read-only in legacy mode until upgrade.
+
+### Intentionally deferred
+
+- Drag-reorder with annotation migration (shifts IDs — requires label rewriting).
+- Hard delete with full annotation reference scan.
+- Class merge / split.
+- Automatic relabeling on rename.
+- Shared detect class panel across Box/Video Label.
+- Starter class sets.
+
+### Tests added (35 new, 505 total)
+
+- append detect → existing IDs unchanged
+- rename → key and ID unchanged
+- archive detect → key stays in classKeys (ID reserved)
+- unarchive detect → ID still at same position
+- archive/unarchive clf
+- `manifestToLegacyClasses` includes archived classes at correct id
+- `upgradeLegacyToManifest` preserves order
+- `validateNewClassName` rejects empty + case-insensitive duplicates
+- display helpers (allDetect, active*, archived*)
 
 ---
 

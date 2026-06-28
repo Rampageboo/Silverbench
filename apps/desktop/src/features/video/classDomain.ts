@@ -19,6 +19,12 @@ export type ClassDef = {
   name: string;
   /** Optional hex color for UI rendering. */
   color?: string;
+  /**
+   * Archived detect classes stay in tasks.detect.classKeys (ID slot reserved) but
+   * are hidden from the annotation UI and not offered for new assignments.
+   * Archived clf classes are removed from tasks.clf.classKeys.
+   */
+  archived?: boolean;
 };
 
 /**
@@ -126,7 +132,9 @@ export function normalizeClassesManifest(value: unknown): ClassesManifest {
   const data = value as Partial<ClassesManifest>;
   if (data.version !== 1) return createDefaultClassesManifest();
   const classDefs: ClassDef[] = Array.isArray(data.classDefs)
-    ? data.classDefs.filter((d): d is ClassDef => Boolean(d?.key && d?.name))
+    ? data.classDefs
+        .filter((d): d is ClassDef => Boolean(d?.key && d?.name))
+        .map((d) => ({ ...d, ...(d.archived ? { archived: true } : {}) }))
     : [];
   const detectKeys: string[] = Array.isArray(data.tasks?.detect?.classKeys)
     ? (data.tasks.detect.classKeys as string[]).filter((k) => typeof k === "string")

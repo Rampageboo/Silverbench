@@ -6,8 +6,24 @@ import {
   slugifyClassName,
   workspaceClassSummary,
   workspaceClassSummaryFromLegacy,
+  // Phase 4B
+  addDetectClassToManifest,
+  addClfClassToManifest,
+  renameClassInManifest,
+  archiveDetectClassInManifest,
+  unarchiveDetectClassInManifest,
+  archiveClfClassInManifest,
+  unarchiveClfClassInManifest,
+  upgradeLegacyToManifest,
+  manifestToLegacyClasses,
+  validateNewClassName,
+  allDetectClassDefs,
+  activeDetectClassDefs,
+  activeClfClassDefs,
+  archivedClassDefs,
   type WorkspaceClassSetup,
 } from "./workspaceClassTaxonomy";
+import type { ClassesManifest } from "../video/classDomain";
 
 function makeSetup(overrides: Partial<WorkspaceClassSetup> = {}): WorkspaceClassSetup {
   return {
@@ -340,5 +356,338 @@ describe("workspaceClassSummaryFromLegacy", () => {
     const s = workspaceClassSummaryFromLegacy([]);
     expect(s.detectClassCount).toBe(0);
     expect(s.taskType).toBe("detect");
+  });
+});
+
+// =============================================================================
+// Phase 4B — safe manifest editing
+// =============================================================================
+
+function twoClassDetectManifest(): ClassesManifest {
+  return {
+    version: 1,
+    classDefs: [
+      { key: "person", name: "Person" },
+      { key: "car", name: "Car" },
+    ],
+    tasks: { detect: { classKeys: ["person", "car"] }, clf: { classKeys: [] } },
+  };
+}
+
+function bothTaskManifest(): ClassesManifest {
+  return {
+    version: 1,
+    classDefs: [
+      { key: "person", name: "Person" },
+      { key: "car", name: "Car" },
+      { key: "day", name: "Day" },
+      { key: "night", name: "Night" },
+    ],
+    tasks: {
+      detect: { classKeys: ["person", "car"] },
+      clf: { classKeys: ["day", "night"] },
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// addDetectClassToManifest
+// ---------------------------------------------------------------------------
+
+describe("addDetectClassToManifest", () => {
+  it("appends to detect classKeys — existing IDs unchanged", () => {
+    const m = twoClassDetectManifest();
+    const { manifest: next, classKey } = addDetectClassToManifest(m, "truck");
+    expect(next.tasks.detect.classKeys).toEqual(["person", "car", "truck"]);
+    expect(classKey).toBe("truck");
+    // Existing IDs unchanged
+    expect(next.tasks.detect.classKeys[0]).toBe("person");
+    expect(next.tasks.detect.classKeys[1]).toBe("car");
+  });
+
+  it("new class gets next YOLO id", () => {
+    const m = twoClassDetectManifest();
+    const { manifest: next } = addDetectClassToManifest(m, "truck");
+    const defs = allDetectClassDefs(next);
+    expect(defs.find((d) => d.key === "truck")?.yoloId).toBe(2);
+  });
+
+  it("generates a slug key from the name", () => {
+    const m = twoClassDetectManifest();
+    const { classKey } = addDetectClassToManifest(m, "My Class (v2)");
+    expect(classKey).toMatch(/^[a-z0-9_-]+$/);
+  });
+
+  it("deduplicates slug collision", () => {
+    const m = twoClassDetectManifest();
+    // "person" already exists; adding a different name that slugs to "person"
+    const { manifest: next } = addDetectClassToManifest(m, "Person");
+    const keys = next.classDefs.map((d) => d.key);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("does not mutate original manifest", () => {
+    const m = twoClassDetectManifest();
+    addDetectClassToManifest(m, "bike");
+    expect(m.tasks.detect.classKeys).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// renameClassInManifest
+// ---------------------------------------------------------------------------
+
+describe("renameClassInManifest", () => {
+  it("updates name without changing key", () => {
+    const m = twoClassDetectManifest();
+    const next = renameClassInManifest(m, "person", "Human");
+    const def = next.classDefs.find((d) => d.key === "person");
+    expect(def?.name).toBe("Human");
+    expect(def?.key).toBe("person"); // key unchanged
+  });
+
+  it("YOLO id order is preserved after rename", () => {
+    const m = twoClassDetectManifest();
+    const next = renameClassInManifest(m, "person", "Human");
+    expect(next.tasks.detect.classKeys).toEqual(["person", "car"]);
+  });
+
+  it("classKeys list is unchanged after rename", () => {
+    const m = bothTaskManifest();
+    const next = renameClassInManifest(m, "day", "Daytime");
+    expect(next.tasks.clf.classKeys).toEqual(["day", "night"]);
+  });
+
+  it("does not mutate original manifest", () => {
+    const m = twoClassDetectManifest();
+    renameClassInManifest(m, "person", "Human");
+    expect(m.classDefs[0].name).toBe("Person");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// archiveDetectClassInManifest
+// ---------------------------------------------------------------------------
+
+describe("archiveDetectClassInManifest", () => {
+  it("marks classDef as archived", () => {
+    const m = twoClassDetectManifest();
+    const next = archiveDetectClassInManifest(m, "person");
+    const def = next.classDefs.find((d) => d.key === "person");
+    expect(def?.archived).toBe(true);
+  });
+
+  it("KEEPS key in tasks.detect.classKeys — ID slot reserved", () => {
+    const m = twoClassDetectManifest();
+    const next = archiveDetectClassInManifest(m, "person");
+    expect(next.tasks.detect.classKeys).toContain("person");
+    expect(next.tasks.detect.classKeys[0]).toBe("person"); // still at id 0
+  });
+
+  it("remaining class IDs are NOT shifted", () => {
+    const m = twoClassDetectManifest();
+    const next = archiveDetectClassInManifest(m, "person");
+    expect(next.tasks.detect.classKeys[1]).toBe("car"); // car is still id 1
+  });
+
+  it("removes from clf classKeys if present", () => {
+    const m: ClassesManifest = {
+      ...bothTaskManifest(),
+      tasks: {
+        detect: { classKeys: ["person", "car"] },
+        clf: { classKeys: ["person", "day"] }, // person in both
+      },
+    };
+    const next = archiveDetectClassInManifest(m, "person");
+    expect(next.tasks.clf.classKeys).not.toContain("person");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// unarchiveDetectClassInManifest
+// ---------------------------------------------------------------------------
+
+describe("unarchiveDetectClassInManifest", () => {
+  it("unsets archived flag", () => {
+    const m = archiveDetectClassInManifest(twoClassDetectManifest(), "person");
+    const restored = unarchiveDetectClassInManifest(m, "person");
+    const def = restored.classDefs.find((d) => d.key === "person");
+    expect(def?.archived).toBeFalsy();
+  });
+
+  it("YOLO id is still preserved after restore", () => {
+    const m = archiveDetectClassInManifest(twoClassDetectManifest(), "person");
+    const restored = unarchiveDetectClassInManifest(m, "person");
+    expect(restored.tasks.detect.classKeys[0]).toBe("person");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// addClfClassToManifest
+// ---------------------------------------------------------------------------
+
+describe("addClfClassToManifest", () => {
+  it("appends to clf classKeys", () => {
+    const m = bothTaskManifest();
+    const { manifest: next, classKey } = addClfClassToManifest(m, "indoor");
+    expect(next.tasks.clf.classKeys).toContain("indoor");
+    expect(classKey).toBe("indoor");
+  });
+
+  it("does not affect detect classKeys", () => {
+    const m = bothTaskManifest();
+    const { manifest: next } = addClfClassToManifest(m, "indoor");
+    expect(next.tasks.detect.classKeys).toEqual(["person", "car"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// archiveClfClassInManifest + unarchiveClfClassInManifest
+// ---------------------------------------------------------------------------
+
+describe("archiveClfClassInManifest", () => {
+  it("removes from clf classKeys and marks archived", () => {
+    const m = bothTaskManifest();
+    const next = archiveClfClassInManifest(m, "day");
+    expect(next.tasks.clf.classKeys).not.toContain("day");
+    expect(next.classDefs.find((d) => d.key === "day")?.archived).toBe(true);
+  });
+
+  it("does not affect detect classKeys", () => {
+    const m = bothTaskManifest();
+    const next = archiveClfClassInManifest(m, "day");
+    expect(next.tasks.detect.classKeys).toEqual(["person", "car"]);
+  });
+});
+
+describe("unarchiveClfClassInManifest", () => {
+  it("re-adds to clf classKeys and unsets archived", () => {
+    const m = archiveClfClassInManifest(bothTaskManifest(), "day");
+    const restored = unarchiveClfClassInManifest(m, "day");
+    expect(restored.tasks.clf.classKeys).toContain("day");
+    expect(restored.classDefs.find((d) => d.key === "day")?.archived).toBeFalsy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// upgradeLegacyToManifest
+// ---------------------------------------------------------------------------
+
+describe("upgradeLegacyToManifest", () => {
+  it("preserves class order as detect YOLO IDs", () => {
+    const legacy = [{ id: 2, name: "Truck" }, { id: 0, name: "Person" }, { id: 1, name: "Car" }];
+    const m = upgradeLegacyToManifest(legacy);
+    expect(m.tasks.detect.classKeys[0]).toBe(m.classDefs.find((d) => d.name === "Person")!.key);
+    expect(m.tasks.detect.classKeys[1]).toBe(m.classDefs.find((d) => d.name === "Car")!.key);
+    expect(m.tasks.detect.classKeys[2]).toBe(m.classDefs.find((d) => d.name === "Truck")!.key);
+  });
+
+  it("generates slug keys", () => {
+    const legacy = [{ id: 0, name: "My Person Class" }];
+    const m = upgradeLegacyToManifest(legacy);
+    expect(m.classDefs[0].key).toMatch(/^[a-z0-9_-]+$/);
+  });
+
+  it("deduplicates colliding slugs", () => {
+    const legacy = [{ id: 0, name: "Person" }, { id: 1, name: "person" }];
+    const m = upgradeLegacyToManifest(legacy);
+    const keys = m.classDefs.map((d) => d.key);
+    expect(new Set(keys).size).toBe(2);
+  });
+
+  it("clf classKeys is empty (no info in legacy)", () => {
+    const m = upgradeLegacyToManifest([{ id: 0, name: "car" }]);
+    expect(m.tasks.clf.classKeys).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// manifestToLegacyClasses
+// ---------------------------------------------------------------------------
+
+describe("manifestToLegacyClasses", () => {
+  it("returns detect classes in YOLO id order", () => {
+    const m = twoClassDetectManifest();
+    const legacy = manifestToLegacyClasses(m);
+    expect(legacy[0]).toEqual({ id: 0, name: "Person" });
+    expect(legacy[1]).toEqual({ id: 1, name: "Car" });
+  });
+
+  it("includes archived detect classes to preserve IDs", () => {
+    const m = archiveDetectClassInManifest(twoClassDetectManifest(), "person");
+    const legacy = manifestToLegacyClasses(m);
+    // person must remain at id 0 even though archived
+    expect(legacy[0]).toEqual({ id: 0, name: "Person" });
+    expect(legacy[1]).toEqual({ id: 1, name: "Car" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateNewClassName
+// ---------------------------------------------------------------------------
+
+describe("validateNewClassName", () => {
+  it("passes valid unique name", () => {
+    expect(validateNewClassName("truck", ["person", "car"])).toHaveLength(0);
+  });
+
+  it("rejects empty name", () => {
+    const errors = validateNewClassName("", ["person"]);
+    expect(errors.some((e) => e.toLowerCase().includes("empty"))).toBe(true);
+  });
+
+  it("rejects whitespace-only name", () => {
+    const errors = validateNewClassName("   ", ["person"]);
+    expect(errors.some((e) => e.toLowerCase().includes("empty"))).toBe(true);
+  });
+
+  it("rejects case-insensitive duplicate", () => {
+    const errors = validateNewClassName("Person", ["person", "car"]);
+    expect(errors.some((e) => e.toLowerCase().includes("already exists"))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// allDetectClassDefs / activeDetectClassDefs / activeClfClassDefs / archivedClassDefs
+// ---------------------------------------------------------------------------
+
+describe("display helpers", () => {
+  it("allDetectClassDefs returns all detect defs with yoloId", () => {
+    const m = twoClassDetectManifest();
+    const defs = allDetectClassDefs(m);
+    expect(defs).toHaveLength(2);
+    expect(defs[0].yoloId).toBe(0);
+    expect(defs[1].yoloId).toBe(1);
+  });
+
+  it("allDetectClassDefs includes archived defs", () => {
+    const m = archiveDetectClassInManifest(twoClassDetectManifest(), "person");
+    expect(allDetectClassDefs(m)).toHaveLength(2); // still 2, id 0 still exists
+  });
+
+  it("activeDetectClassDefs excludes archived", () => {
+    const m = archiveDetectClassInManifest(twoClassDetectManifest(), "person");
+    const active = activeDetectClassDefs(m);
+    expect(active).toHaveLength(1);
+    expect(active[0].key).toBe("car");
+  });
+
+  it("activeClfClassDefs excludes archived clf classes", () => {
+    const m = archiveClfClassInManifest(bothTaskManifest(), "day");
+    const active = activeClfClassDefs(m);
+    expect(active.map((d) => d.key)).not.toContain("day");
+    expect(active.map((d) => d.key)).toContain("night");
+  });
+
+  it("archivedClassDefs returns archived defs only", () => {
+    const m = archiveDetectClassInManifest(
+      archiveClfClassInManifest(bothTaskManifest(), "day"),
+      "person"
+    );
+    const archived = archivedClassDefs(m);
+    expect(archived.map((d) => d.key)).toContain("person");
+    expect(archived.map((d) => d.key)).toContain("day");
+    expect(archived.map((d) => d.key)).not.toContain("car");
+    expect(archived.map((d) => d.key)).not.toContain("night");
   });
 });
