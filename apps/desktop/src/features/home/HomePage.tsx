@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import * as api from "../../api";
 import { chooseDirectory } from "../../lib/tauri";
 import { useWorkspace } from "../../app/useWorkspace";
 import { CreateWorkspaceDialog, type CreateWorkspaceOptions } from "./CreateWorkspaceDialog";
@@ -83,73 +82,88 @@ export function HomePage({ onReady }: Props) {
 
   return (
     <div className="home-page">
-      <div className="home-hero">
-        <div className="home-brand">
-          <img src="/assets/app-icon.svg" width={40} height={40} alt="" className="home-brand-icon" />
-          <div>
-            <h1 className="home-title">YoloWorkBench</h1>
-            <p className="home-subtitle">Object detection annotation workbench</p>
+      <div className="home-inner">
+        <div className="home-hero">
+          <div className="home-brand">
+            <img src="/assets/app-icon.svg" width={44} height={44} alt="" className="home-brand-icon" />
+            <div>
+              <h1 className="home-title">YoloWorkBench</h1>
+              <p className="home-subtitle">Object detection annotation workbench</p>
+            </div>
           </div>
+          <div className="home-actions">
+            <button
+              type="button"
+              className="glass-btn glass-btn--primary home-action-btn"
+              onClick={() => setCreating(true)}
+            >
+              <span className="home-action-icon">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+                  <path d="M8 2v12M2 8h12"/>
+                </svg>
+              </span>
+              New Workspace
+            </button>
+            <button
+              type="button"
+              className="glass-btn home-action-btn"
+              onClick={() => void handleOpen()}
+            >
+              <span className="home-action-icon">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M1.5 5A1.5 1.5 0 013 3.5h3.086a1.5 1.5 0 011.06.44l.915.914H13.5A1.5 1.5 0 0115 6.354V12.5A1.5 1.5 0 0113.5 14h-11A1.5 1.5 0 011 12.5V6a1.5 1.5 0 01.5-1.118"/>
+                </svg>
+              </span>
+              Open Workspace
+            </button>
+          </div>
+          {openError && <p className="glass-error home-error">{openError}</p>}
         </div>
-        <div className="home-actions">
-          <button
-            type="button"
-            className="glass-btn glass-btn--primary home-action-btn"
-            onClick={() => setCreating(true)}
-          >
-            <span className="home-action-icon">＋</span>
-            Create Workspace
-          </button>
-          <button
-            type="button"
-            className="glass-btn home-action-btn"
-            onClick={() => void handleOpen()}
-          >
-            <span className="home-action-icon">📂</span>
-            Open Workspace
-          </button>
-        </div>
-        {openError && <p className="glass-error home-error">{openError}</p>}
+
+        {recent.length > 0 ? (
+          <div className="home-section">
+            <h2 className="home-section-title">Recent</h2>
+            <div className="home-recent-list">
+              {recent.map((path) => (
+                <div key={path} className="home-recent-item glass-card">
+                  <button
+                    type="button"
+                    className="home-recent-btn"
+                    onClick={() => void handleOpenRecent(path)}
+                    title={path}
+                  >
+                    <span className="home-recent-icon">
+                      <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M1.5 4.5A1.5 1.5 0 013 3h4.086a1.5 1.5 0 011.06.44l.915.914H13.5A1.5 1.5 0 0115 5.854V11.5A1.5 1.5 0 0113.5 13h-11A1.5 1.5 0 011 11.5V6a1.5 1.5 0 01.5-1.118"/>
+                      </svg>
+                    </span>
+                    <span className="home-recent-body">
+                      <span className="home-recent-name">{workspaceName(path)}</span>
+                      <span className="home-recent-path">{path}</span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="home-recent-remove"
+                    onClick={() => handleRemoveRecent(path)}
+                    title="Remove from recent"
+                    aria-label="Remove from recent"
+                  >
+                    <svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+                      <path d="M2 2l8 8M10 2L2 10"/>
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="home-empty">
+            <span>No recent workspaces.</span>
+            <span>Create a new workspace or open an existing one to get started.</span>
+          </div>
+        )}
       </div>
-
-      {recent.length > 0 && (
-        <div className="home-section">
-          <h2 className="home-section-title">Recent Workspaces</h2>
-          <div className="home-recent-list">
-            {recent.map((path) => (
-              <div key={path} className="home-recent-item glass-card">
-                <button
-                  type="button"
-                  className="home-recent-btn"
-                  onClick={() => void handleOpenRecent(path)}
-                  title={path}
-                >
-                  <span className="home-recent-icon">🗂</span>
-                  <span className="home-recent-body">
-                    <span className="home-recent-name">{workspaceName(path)}</span>
-                    <span className="home-recent-path">{path}</span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="home-recent-remove"
-                  onClick={() => handleRemoveRecent(path)}
-                  title="Remove from recent"
-                  aria-label="Remove from recent"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {recent.length === 0 && (
-        <div className="home-empty">
-          <p>Create or open a workspace to get started.</p>
-        </div>
-      )}
 
       <CreateWorkspaceDialog
         open={creating}

@@ -103,12 +103,10 @@ export function ToolNav({ activeTab, imagePoolNewCount = 0, onSelectTab }: ToolN
                   dangerouslySetInnerHTML={{ __html: navIconSvg(tool.tab) }}
                 />
                 <span className="tool-nav-item-body">
-                  <span className="tool-nav-item-title">
-                    {tool.label}
-                    {badge ? ` (${badge})` : ""}
-                  </span>
+                  <span className="tool-nav-item-title">{tool.label}</span>
                   <span className="tool-nav-item-sub">{tool.labelZh}</span>
                 </span>
+                {badge ? <span className="tool-nav-badge">{badge}</span> : null}
               </button>
             );
           })}

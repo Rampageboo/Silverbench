@@ -2287,85 +2287,167 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   white-space: normal;
 }
 
-
 /* ============================================================
-   Liquid-Glass Design Token System
-   Applies to shell UI: sidebar, panels, dialogs, cards.
-   Does NOT apply to annotation canvas or dense data tables.
+   Liquid-Glass Design Token System  –  Phase 2
+   Shell UI: sidebar, panels, dialogs, cards, hub pages.
+   NOT applied to annotation canvas or dense data tables.
    ============================================================ */
 
 :root {
-  --glass-bg: rgba(12, 18, 30, 0.72);
-  --glass-bg-raised: rgba(18, 26, 42, 0.82);
-  --glass-bg-hover: rgba(30, 42, 64, 0.60);
-  --glass-border: rgba(255, 255, 255, 0.07);
-  --glass-border-strong: rgba(255, 255, 255, 0.13);
-  --glass-blur: 18px;
-  --glass-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.28);
-  --glass-shadow: 0 4px 20px rgba(0, 0, 0, 0.38), 0 1px 4px rgba(0, 0, 0, 0.22);
-  --glass-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.54), 0 2px 8px rgba(0, 0, 0, 0.28);
+  /* --- Surfaces --- */
+  --glass-bg: rgba(11, 16, 28, 0.76);
+  --glass-bg-raised: rgba(16, 24, 40, 0.86);
+  --glass-bg-hover: rgba(255, 255, 255, 0.05);
+
+  /* --- Borders --- */
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-border-strong: rgba(255, 255, 255, 0.14);
+  --glass-border-highlight: rgba(255, 255, 255, 0.20); /* subtle top-highlight for lifted surfaces */
+
+  /* --- Blur --- */
+  --glass-blur: 20px;        /* sidebar */
+  --glass-blur-card: 14px;   /* cards */
+  --glass-blur-dialog: 28px; /* modal dialogs */
+
+  /* --- Shadows --- */
+  --glass-shadow-xs: 0 1px 3px rgba(0, 0, 0, 0.22);
+  --glass-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.30);
+  --glass-shadow: 0 4px 20px rgba(0, 0, 0, 0.40), 0 1px 4px rgba(0, 0, 0, 0.22);
+  --glass-shadow-lg: 0 12px 44px rgba(0, 0, 0, 0.58), 0 2px 10px rgba(0, 0, 0, 0.30);
+
+  /* --- Accent (blue) --- */
   --glass-accent: #3b82f6;
-  --glass-accent-glow: rgba(59, 130, 246, 0.22);
-  --glass-accent-active: rgba(59, 130, 246, 0.18);
+  --glass-accent-hover: #2563eb;
+  --glass-accent-glow: rgba(59, 130, 246, 0.24);
+  --glass-accent-active: rgba(59, 130, 246, 0.15);
+  --glass-accent-icon: #60a5fa; /* icon/label color when active */
+
+  /* --- Danger --- */
+  --glass-danger: #ef4444;
+  --glass-danger-bg: rgba(239, 68, 68, 0.10);
+  --glass-danger-border: rgba(239, 68, 68, 0.24);
+
+  /* --- Text --- */
   --glass-text: #e2e8f0;
+  --glass-text-heading: #f1f5f9; /* brighter for page/section headings */
   --glass-text-dim: #94a3b8;
   --glass-text-muted: #64748b;
+
+  /* --- Radius --- */
+  --glass-radius-xs: 4px;
   --glass-radius-sm: 6px;
   --glass-radius: 10px;
   --glass-radius-lg: 14px;
   --glass-radius-xl: 18px;
+
+  /* --- Page layout --- */
+  --glass-page-x: 48px;
+  --glass-page-y: 40px;
   --glass-gap: 12px;
+
+  /* --- Interaction --- */
+  --glass-focus-ring: 0 0 0 2px rgba(59, 130, 246, 0.46);
 }
 
-/* ---- Liquid-glass sidebar ---- */
+/* ============================================================
+   Sidebar shell  (ToolNav tabbar--glass)
+   ============================================================ */
+
 .tabbar--glass .tabbar-surface {
-  background: var(--glass-bg) !important;
-  backdrop-filter: blur(var(--glass-blur)) !important;
-  -webkit-backdrop-filter: blur(var(--glass-blur)) !important;
-  border-right: 1px solid var(--glass-border) !important;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border-right: 1px solid var(--glass-border);
 }
 
 .tabbar--glass .tool-nav-item {
+  position: relative;
   border-radius: var(--glass-radius-sm);
-  margin: 1px 4px;
+  margin: 1px 6px;
   color: var(--glass-text-dim);
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 0.14s ease, color 0.14s ease;
 }
 
 .tabbar--glass .tool-nav-item:hover {
-  background: var(--glass-bg-hover) !important;
+  background: var(--glass-bg-hover);
   color: var(--glass-text);
 }
 
+.tabbar--glass .tool-nav-item:focus-visible {
+  outline: none;
+  box-shadow: var(--glass-focus-ring);
+}
+
+/* Active: tinted background + left accent pill */
 .tabbar--glass .tool-nav-item.active {
-  background: var(--glass-accent-active) !important;
-  box-shadow: inset 3px 0 0 var(--glass-accent) !important;
-  color: var(--glass-text) !important;
+  background: var(--glass-accent-active);
+  color: var(--glass-text);
+}
+
+.tabbar--glass .tool-nav-item.active::before {
+  content: "";
+  position: absolute;
+  left: -2px;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--glass-accent);
 }
 
 .tabbar--glass .tool-nav-item.active .tool-nav-item-icon {
-  color: #93c5fd;
+  color: var(--glass-accent-icon);
 }
 
-/* ---- Glass card ---- */
+/* Badge chip shown in the nav (review new count) */
+.tool-nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 15px;
+  padding: 0 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  background: var(--glass-accent);
+  color: #fff;
+  border-radius: 8px;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* ============================================================
+   Glass card
+   ============================================================ */
+
 .glass-card {
   background: var(--glass-bg-raised);
   border: 1px solid var(--glass-border);
   border-radius: var(--glass-radius);
-  box-shadow: var(--glass-shadow-sm);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--glass-shadow-xs);
+  backdrop-filter: blur(var(--glass-blur-card));
+  -webkit-backdrop-filter: blur(var(--glass-blur-card));
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 
 button.glass-card:hover,
 a.glass-card:hover {
   border-color: var(--glass-border-strong);
-  background: var(--glass-bg-hover);
-  box-shadow: var(--glass-shadow);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: var(--glass-shadow-sm);
 }
 
-/* ---- Glass buttons ---- */
+button.glass-card:focus-visible,
+a.glass-card:focus-visible {
+  outline: none;
+  box-shadow: var(--glass-focus-ring);
+}
+
+/* ============================================================
+   Buttons
+   ============================================================ */
+
 .glass-btn {
   display: inline-flex;
   align-items: center;
@@ -2373,6 +2455,7 @@ a.glass-card:hover {
   padding: 7px 14px;
   font-size: 13px;
   font-weight: 500;
+  line-height: 1;
   color: var(--glass-text);
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--glass-border-strong);
@@ -2384,9 +2467,9 @@ a.glass-card:hover {
 }
 
 .glass-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.18);
-  box-shadow: var(--glass-shadow-sm);
+  background: rgba(255, 255, 255, 0.10);
+  border-color: var(--glass-border-highlight);
+  box-shadow: var(--glass-shadow-xs);
 }
 
 .glass-btn:active:not(:disabled) {
@@ -2394,33 +2477,74 @@ a.glass-card:hover {
   transform: translateY(1px);
 }
 
+.glass-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--glass-focus-ring);
+}
+
 .glass-btn:disabled {
-  opacity: 0.45;
+  opacity: 0.40;
   cursor: default;
 }
 
+/* Primary */
 .glass-btn--primary {
   background: var(--glass-accent);
-  border-color: rgba(59, 130, 246, 0.5);
+  border-color: rgba(59, 130, 246, 0.50);
   color: #fff;
 }
 
 .glass-btn--primary:hover:not(:disabled) {
-  background: #2563eb;
-  border-color: rgba(59, 130, 246, 0.7);
-  box-shadow: 0 0 16px var(--glass-accent-glow);
+  background: var(--glass-accent-hover);
+  border-color: rgba(59, 130, 246, 0.72);
+  box-shadow: 0 0 18px var(--glass-accent-glow), var(--glass-shadow-xs);
 }
 
+/* Ghost */
+.glass-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--glass-text-dim);
+}
+
+.glass-btn--ghost:hover:not(:disabled) {
+  background: var(--glass-bg-hover);
+  border-color: var(--glass-border);
+  color: var(--glass-text);
+}
+
+/* Danger */
+.glass-btn--danger {
+  color: #fca5a5;
+  border-color: var(--glass-danger-border);
+}
+
+.glass-btn--danger:hover:not(:disabled) {
+  background: var(--glass-danger-bg);
+  border-color: rgba(239, 68, 68, 0.40);
+  color: #f87171;
+}
+
+/* Sizes */
 .glass-btn--sm {
   padding: 4px 10px;
   font-size: 12px;
 }
 
-/* ---- Glass form fields ---- */
+.glass-btn--lg {
+  padding: 10px 22px;
+  font-size: 14px;
+  border-radius: var(--glass-radius);
+}
+
+/* ============================================================
+   Form fields
+   ============================================================ */
+
 .glass-field {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
 }
 
 .glass-field-row {
@@ -2433,30 +2557,35 @@ a.glass-card:hover {
 }
 
 .glass-label {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 700;
   color: var(--glass-text-dim);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .glass-input {
-  padding: 8px 10px;
+  padding: 8px 11px;
   font-size: 13px;
   color: var(--glass-text);
-  background: rgba(0, 0, 0, 0.28);
+  background: rgba(0, 0, 0, 0.30);
   border: 1px solid var(--glass-border-strong);
   border-radius: var(--glass-radius-sm);
   outline: none;
   transition: border-color 0.14s ease, box-shadow 0.14s ease;
 }
 
+.glass-input::placeholder {
+  color: var(--glass-text-muted);
+}
+
 .glass-input:focus {
   border-color: var(--glass-accent);
-  box-shadow: 0 0 0 2px var(--glass-accent-glow);
+  box-shadow: var(--glass-focus-ring);
 }
 
 .glass-input:disabled {
-  opacity: 0.5;
+  opacity: 0.46;
 }
 
 .glass-input--flex {
@@ -2473,25 +2602,28 @@ a.glass-card:hover {
 .glass-hint {
   font-size: 11px;
   color: var(--glass-text-muted);
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 .glass-error {
   font-size: 12.5px;
   color: #f87171;
-  margin: 6px 0 0;
-  padding: 6px 10px;
-  background: rgba(239, 68, 68, 0.10);
-  border: 1px solid rgba(239, 68, 68, 0.22);
+  margin: 4px 0 0;
+  padding: 7px 11px;
+  background: var(--glass-danger-bg);
+  border: 1px solid var(--glass-danger-border);
   border-radius: var(--glass-radius-sm);
 }
 
-/* ---- Glass segmented control ---- */
+/* ============================================================
+   Segmented control
+   ============================================================ */
+
 .glass-segmented {
   display: flex;
   gap: 2px;
   padding: 2px;
-  background: rgba(0, 0, 0, 0.24);
+  background: rgba(0, 0, 0, 0.26);
   border: 1px solid var(--glass-border);
   border-radius: var(--glass-radius-sm);
 }
@@ -2504,7 +2636,7 @@ a.glass-card:hover {
   color: var(--glass-text-dim);
   background: transparent;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--glass-radius-xs);
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
@@ -2516,37 +2648,46 @@ a.glass-card:hover {
 
 .glass-seg-btn.active {
   background: var(--glass-accent-active);
-  color: #93c5fd;
-  box-shadow: 0 0 0 1px var(--glass-accent-glow);
+  color: var(--glass-accent-icon);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.20);
+}
+
+.glass-seg-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--glass-focus-ring);
 }
 
 .glass-seg-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.36;
   cursor: default;
 }
 
-/* ---- Glass dialog ---- */
+/* ============================================================
+   Dialog
+   ============================================================ */
+
 .glass-dialog-backdrop {
   position: fixed;
   inset: 0;
   z-index: 200;
-  background: rgba(0, 0, 0, 0.54);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.60);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .glass-dialog {
-  width: 480px;
+  width: 500px;
   max-width: calc(100vw - 40px);
   background: var(--glass-bg-raised);
   border: 1px solid var(--glass-border-strong);
+  border-top-color: var(--glass-border-highlight); /* subtle lifted top edge */
   border-radius: var(--glass-radius-xl);
   box-shadow: var(--glass-shadow-lg);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(var(--glass-blur-dialog));
+  -webkit-backdrop-filter: blur(var(--glass-blur-dialog));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2556,15 +2697,16 @@ a.glass-card:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 20px 14px;
+  padding: 20px 22px 16px;
   border-bottom: 1px solid var(--glass-border);
 }
 
 .glass-dialog-title {
   font-size: 16px;
   font-weight: 600;
-  color: var(--glass-text);
+  color: var(--glass-text-heading);
   margin: 0;
+  letter-spacing: -0.01em;
 }
 
 .glass-dialog-close {
@@ -2587,11 +2729,16 @@ a.glass-card:hover {
   color: var(--glass-text);
 }
 
+.glass-dialog-close:focus-visible {
+  outline: none;
+  box-shadow: var(--glass-focus-ring);
+}
+
 .glass-dialog-body {
-  padding: 18px 20px;
+  padding: 20px 22px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   overflow-y: auto;
 }
 
@@ -2599,7 +2746,7 @@ a.glass-card:hover {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding: 14px 20px;
+  padding: 14px 22px 18px;
   border-top: 1px solid var(--glass-border);
 }
 
@@ -2610,11 +2757,20 @@ a.glass-card:hover {
 .home-page {
   display: flex;
   flex-direction: column;
-  gap: 32px;
-  padding: 40px 48px;
+  align-items: flex-start;
+  padding: var(--glass-page-y) var(--glass-page-x);
   height: 100%;
   overflow-y: auto;
   color: var(--glass-text);
+  box-sizing: border-box;
+}
+
+.home-inner {
+  width: 100%;
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
 }
 
 .home-hero {
@@ -2630,15 +2786,16 @@ a.glass-card:hover {
 }
 
 .home-brand-icon {
-  border-radius: 10px;
+  border-radius: 12px;
+  flex-shrink: 0;
 }
 
 .home-title {
   font-size: 26px;
   font-weight: 700;
-  color: var(--glass-text);
-  margin: 0 0 3px;
-  letter-spacing: -0.01em;
+  color: var(--glass-text-heading);
+  margin: 0 0 4px;
+  letter-spacing: -0.015em;
 }
 
 .home-subtitle {
@@ -2654,30 +2811,31 @@ a.glass-card:hover {
 }
 
 .home-action-btn {
-  padding: 10px 20px;
-  font-size: 14px;
-  font-weight: 500;
+  padding: 9px 20px;
+  font-size: 13.5px;
 }
 
 .home-action-icon {
-  font-style: normal;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .home-error {
-  max-width: 480px;
+  max-width: 520px;
 }
 
 .home-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .home-section-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--glass-text-dim);
-  letter-spacing: 0.04em;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--glass-text-muted);
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   margin: 0;
 }
@@ -2685,8 +2843,7 @@ a.glass-card:hover {
 .home-recent-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-width: 600px;
+  gap: 4px;
 }
 
 .home-recent-item {
@@ -2701,7 +2858,7 @@ a.glass-card:hover {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 9px 12px;
   text-align: left;
   background: transparent;
   border: none;
@@ -2715,15 +2872,22 @@ a.glass-card:hover {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.home-recent-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--glass-focus-ring);
+}
+
 .home-recent-icon {
-  font-size: 18px;
-  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  color: var(--glass-text-dim);
+  flex-shrink: 0;
 }
 
 .home-recent-body {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -2738,6 +2902,7 @@ a.glass-card:hover {
 
 .home-recent-path {
   font-size: 11px;
+  font-family: ui-monospace, Consolas, monospace;
   color: var(--glass-text-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -2758,7 +2923,7 @@ a.glass-card:hover {
   border-left: 1px solid var(--glass-border);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.12s ease, background 0.12s ease;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
   border-radius: 0 var(--glass-radius) var(--glass-radius) 0;
 }
 
@@ -2767,17 +2932,27 @@ a.glass-card:hover {
 }
 
 .home-recent-remove:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(239, 68, 68, 0.08);
   color: #f87171;
+}
+
+.home-recent-remove:focus-visible {
+  outline: none;
+  opacity: 1;
+  box-shadow: var(--glass-focus-ring);
 }
 
 .home-empty {
   color: var(--glass-text-muted);
   font-size: 13px;
+  padding: 20px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 /* ============================================================
-   Library, Review, Export Hub Pages (shared shell)
+   Hub pages: Library, Review, Export
    ============================================================ */
 
 .library-page,
@@ -2786,81 +2961,108 @@ a.glass-card:hover {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  padding: 32px 40px;
+  padding: var(--glass-page-y) var(--glass-page-x);
   height: 100%;
   overflow-y: auto;
   color: var(--glass-text);
+  box-sizing: border-box;
 }
 
 .library-header {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--glass-border);
 }
 
 .library-title {
   font-size: 20px;
   font-weight: 600;
-  color: var(--glass-text);
+  color: var(--glass-text-heading);
   margin: 0;
+  letter-spacing: -0.01em;
 }
 
 .library-subtitle {
   font-size: 12px;
   color: var(--glass-text-muted);
   margin: 0;
+  font-family: ui-monospace, Consolas, monospace;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 500px;
+  max-width: 560px;
 }
 
 .library-sections {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 12px;
-  max-width: 900px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+  max-width: 960px;
 }
 
 .library-section-card {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 14px;
-  padding: 16px 18px;
+  padding: 18px 16px;
   text-align: left;
   cursor: pointer;
   background: transparent;
   border: 1px solid var(--glass-border);
   color: var(--glass-text);
   width: 100%;
+  transition: border-color 0.14s ease, background 0.14s ease, box-shadow 0.14s ease;
 }
 
 .library-section-card:hover:not(.library-section-card--soon) {
   border-color: var(--glass-border-strong);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.03);
   box-shadow: var(--glass-shadow-sm);
 }
 
+.library-section-card:focus-visible {
+  outline: none;
+  box-shadow: var(--glass-focus-ring);
+}
+
 .library-section-card--soon {
-  opacity: 0.55;
+  opacity: 0.48;
   cursor: default;
+}
+
+.library-section-main {
+  flex: 1;
+  min-width: 0;
 }
 
 .library-section-icon {
   flex: 0 0 auto;
-  color: #60a5fa;
-  margin-top: 1px;
+  color: var(--glass-accent-icon);
 }
 
 .library-section-icon--muted {
   color: var(--glass-text-muted);
 }
 
+.library-section-chevron {
+  flex: 0 0 auto;
+  color: var(--glass-text-muted);
+  opacity: 0;
+  transition: opacity 0.13s ease, transform 0.13s ease;
+}
+
+.library-section-card:hover:not(.library-section-card--soon) .library-section-chevron {
+  opacity: 1;
+  transform: translateX(3px);
+}
+
 .library-section-title {
   font-size: 14px;
   font-weight: 600;
   color: var(--glass-text);
-  margin-bottom: 3px;
+  margin: 0 0 4px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -2876,9 +3078,9 @@ a.glass-card:hover {
   font-size: 10px;
   font-weight: 600;
   padding: 1px 6px;
-  background: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
-  border: 1px solid rgba(59, 130, 246, 0.25);
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--glass-accent-icon);
+  border: 1px solid rgba(59, 130, 246, 0.22);
   border-radius: 20px;
   letter-spacing: 0.04em;
 }
@@ -2903,9 +3105,12 @@ a.glass-card:hover {
 .label-mode-bar {
   display: flex;
   align-items: center;
-  padding: 0 14px;
-  height: 44px;
-  background: rgba(9, 13, 20, 0.85);
+  gap: 12px;
+  padding: 0 16px;
+  height: 42px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--glass-border);
   flex: 0 0 auto;
 }
@@ -2919,8 +3124,8 @@ a.glass-card:hover {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 12px;
-  font-size: 13px;
+  padding: 4px 11px;
+  font-size: 12.5px;
   font-weight: 500;
   color: var(--glass-text-dim);
   background: transparent;
@@ -2931,17 +3136,39 @@ a.glass-card:hover {
 }
 
 .label-mode-tab:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--glass-bg-hover);
   color: var(--glass-text);
 }
 
 .label-mode-tab.active {
   background: var(--glass-accent-active);
-  color: #93c5fd;
+  color: var(--glass-accent-icon);
+}
+
+.label-mode-tab:focus-visible {
+  outline: none;
+  box-shadow: var(--glass-focus-ring);
 }
 
 .label-mode-icon {
   flex: 0 0 auto;
+}
+
+.label-mode-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--glass-border-strong);
+  flex-shrink: 0;
+}
+
+.label-mode-context {
+  font-size: 11.5px;
+  color: var(--glass-text-muted);
+  font-family: ui-monospace, Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 360px;
 }
 
 .label-content {
@@ -2965,17 +3192,34 @@ a.glass-card:hover {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  padding: 32px 40px;
+  padding: var(--glass-page-y) var(--glass-page-x);
   height: 100%;
   overflow-y: auto;
   color: var(--glass-text);
-  max-width: 700px;
+  box-sizing: border-box;
+}
+
+.settings-header {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.settings-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--glass-text-heading);
+  margin: 0;
+  letter-spacing: -0.01em;
 }
 
 .settings-body {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  max-width: 640px;
 }
 
 .settings-section {
@@ -2992,7 +3236,7 @@ a.glass-card:hover {
 }
 
 .settings-section-title {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--glass-text);
   margin: 0;
@@ -3002,6 +3246,7 @@ a.glass-card:hover {
   font-size: 12.5px;
   color: var(--glass-text-muted);
   margin: 0;
+  line-height: 1.5;
 }
 
 .settings-options {
@@ -3028,7 +3273,7 @@ a.glass-card:hover {
 
 .settings-option.selected {
   background: var(--glass-accent-active);
-  border-color: rgba(59, 130, 246, 0.35);
+  border-color: rgba(59, 130, 246, 0.32);
 }
 
 .settings-option-copy {
@@ -3047,7 +3292,6 @@ a.glass-card:hover {
 .settings-manifest {
   display: flex;
   flex-direction: column;
-  gap: 6px;
 }
 
 .settings-manifest-row {
@@ -3055,8 +3299,12 @@ a.glass-card:hover {
   grid-template-columns: 160px 1fr;
   gap: 10px;
   font-size: 12.5px;
-  padding: 4px 0;
+  padding: 6px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.settings-manifest-row:last-child {
+  border-bottom: none;
 }
 
 .settings-manifest-key {
@@ -3074,3 +3322,4 @@ a.glass-card:hover {
   color: var(--glass-text-dim);
   word-break: break-all;
 }
+

@@ -43,8 +43,8 @@ export function SettingsPage({ onReady }: Props) {
 
   return (
     <div className="settings-page">
-      <div className="library-header">
-        <h2 className="library-title">Settings</h2>
+      <div className="settings-header">
+        <h2 className="settings-title">Settings</h2>
       </div>
       <div className="settings-body">
         <section className="settings-section glass-card">
