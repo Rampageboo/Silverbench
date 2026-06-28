@@ -6,6 +6,9 @@ import { errMessage } from "../../lib/errors";
 import { isFlaggedFile, isReviewedFile } from "../image-pool/metadata";
 import { isLabelWorkbenchEmbedded, useLabelWorkbench } from "../label/useLabelWorkbench";
 import type { LabelWorkbenchActionGroup } from "../label/labelWorkbenchTypes";
+import { useArchivedClassIds } from "../workspace/useArchivedClassIds";
+import { classificationOptionsForNewAnnotations } from "../workspace/workspaceClassTaxonomy";
+import { classNameToSafeKey } from "../video/videoClassKeys";
 import { BoxLabelGallery } from "./BoxLabelGallery";
 import { BoxLabelView } from "./BoxLabelView";
 import type { BoxLabelWorkbenchBridge } from "./boxLabelTypes";
@@ -15,17 +18,42 @@ type BoxLabelPageProps = {
   onReady?: () => void;
 };
 
+export type BoxLabelPageModel = ReturnType<typeof useBoxLabel>;
+
+type BoxLabelSurfaceProps = {
+  pool: BoxLabelPageModel;
+  showGallery?: boolean;
+  unifiedMedia?: boolean;
+  showSideStack?: boolean;
+  onImageNavigate?: (index: number) => void;
+  onNavigateBoundary?: (delta: -1 | 1) => void;
+};
+
 export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
   const { workspaceRoot, poolLabelFocusFilename, clearPoolLabelFocus, chooseWorkspaceFolder } = useWorkspace();
-  const { showToast } = useToast();
-  const showError = useCallback((err: unknown) => showToast(errMessage(err), { variant: "error" }), [showToast]);
-  const [workbenchBridge, setWorkbenchBridge] = useState<BoxLabelWorkbenchBridge | null>(null);
   const pool = useBoxLabel({
     workspaceRoot,
     focusFilename: poolLabelFocusFilename,
     onFocusConsumed: clearPoolLabelFocus,
     onReady
   });
+
+  return <BoxLabelSurface pool={pool} />;
+}
+
+export function BoxLabelSurface({
+  pool,
+  showGallery = true,
+  unifiedMedia = false,
+  showSideStack = true,
+  onImageNavigate,
+  onNavigateBoundary
+}: BoxLabelSurfaceProps) {
+  const { workspaceRoot, chooseWorkspaceFolder } = useWorkspace();
+  const { showToast } = useToast();
+  const showError = useCallback((err: unknown) => showToast(errMessage(err), { variant: "error" }), [showToast]);
+  const [workbenchBridge, setWorkbenchBridge] = useState<BoxLabelWorkbenchBridge | null>(null);
+  const { manifest: classManifest } = useArchivedClassIds(workspaceRoot);
 
   const workbench = useLabelWorkbench();
   const embedded = isLabelWorkbenchEmbedded(workbench);
@@ -39,13 +67,49 @@ export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
   const imageActionGroups = useMemo<LabelWorkbenchActionGroup[]>(() => {
     const proposalCount = workbenchBridge?.proposalCount ?? 0;
     const activeProposalCount = workbenchBridge?.activeProposalCount ?? 0;
-    const noProposalReason = workbenchBridge ? "No proposals on the current image." : "Proposal panel is not mounted yet.";
-    const noSelectedReason = proposalCount > 0 ? "Select a proposal in the Box Label panel first." : noProposalReason;
+    const hasSelectedProposal = Boolean(workbenchBridge?.selectedProposalId);
     const selectedArchivedReason = "Restore this class in Library before materializing the selected proposal.";
-    const acceptAllReason =
-      proposalCount > 0 && activeProposalCount <= 0
-        ? "All proposals reference archived classes. Restore those classes before materializing."
-        : noProposalReason;
+    const acceptAllReason = "All proposals reference archived classes. Restore those classes before materializing.";
+    const proposalActions: LabelWorkbenchActionGroup["actions"] = [];
+
+    if (workbenchBridge && proposalCount > 0) {
+      if (hasSelectedProposal) {
+        proposalActions.push(
+          {
+            id: "proposal.acceptSelected",
+            label: "Accept Selected",
+            variant: "primary",
+            disabled: workbenchBridge.selectedProposalArchived,
+            unavailableReason: workbenchBridge.selectedProposalArchived ? selectedArchivedReason : undefined,
+            run: workbenchBridge.acceptSelectedProposal ?? undefined,
+          },
+          {
+            id: "proposal.rejectSelected",
+            label: "Reject Selected",
+            run: workbenchBridge.rejectSelectedProposal ?? undefined,
+          }
+        );
+      }
+
+      if (!hasSelectedProposal || proposalCount > 1) {
+        proposalActions.push(
+          {
+            id: "proposal.acceptAll",
+            label: "Accept All",
+            variant: "primary",
+            disabled: activeProposalCount <= 0,
+            unavailableReason: activeProposalCount > 0 ? undefined : acceptAllReason,
+            run: workbenchBridge.acceptAllProposals,
+          },
+          {
+            id: "proposal.rejectAll",
+            label: "Reject All",
+            variant: "danger",
+            run: workbenchBridge.rejectAllProposals,
+          }
+        );
+      }
+    }
 
     return [
       {
@@ -77,43 +141,7 @@ export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
       {
         id: "image-proposals",
         label: "Proposals",
-        actions: [
-          {
-            id: "proposal.acceptSelected",
-            label: "Accept Selected",
-            variant: "primary",
-            disabled: !workbenchBridge?.acceptSelectedProposal || workbenchBridge.selectedProposalArchived,
-            unavailableReason: workbenchBridge?.selectedProposalArchived
-              ? selectedArchivedReason
-              : workbenchBridge?.acceptSelectedProposal
-                ? undefined
-                : noSelectedReason,
-            run: workbenchBridge?.acceptSelectedProposal ?? undefined,
-          },
-          {
-            id: "proposal.rejectSelected",
-            label: "Reject Selected",
-            disabled: !workbenchBridge?.rejectSelectedProposal,
-            unavailableReason: workbenchBridge?.rejectSelectedProposal ? undefined : noSelectedReason,
-            run: workbenchBridge?.rejectSelectedProposal ?? undefined,
-          },
-          {
-            id: "proposal.acceptAll",
-            label: "Accept All",
-            variant: "primary",
-            disabled: !workbenchBridge || proposalCount <= 0 || activeProposalCount <= 0,
-            unavailableReason: workbenchBridge && proposalCount > 0 && activeProposalCount > 0 ? undefined : acceptAllReason,
-            run: workbenchBridge?.acceptAllProposals,
-          },
-          {
-            id: "proposal.rejectAll",
-            label: "Reject All",
-            variant: "danger",
-            disabled: !workbenchBridge || proposalCount <= 0,
-            unavailableReason: workbenchBridge && proposalCount > 0 ? undefined : noProposalReason,
-            run: workbenchBridge?.rejectAllProposals,
-          },
-        ],
+        actions: proposalActions,
       },
     ];
   }, [
@@ -126,6 +154,20 @@ export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
     workbenchBridge,
     workspaceRoot,
   ]);
+
+  const imageClassificationClasses = useMemo(
+    () => classManifest
+      ? classificationOptionsForNewAnnotations(classManifest).map((def) => ({
+          key: def.key,
+          name: def.name,
+          archived: def.archived,
+        }))
+      : (workbenchBridge?.activeDetectClasses ?? []).map((item) => ({
+          key: classNameToSafeKey(item.name),
+          name: item.name,
+        })),
+    [classManifest, workbenchBridge]
+  );
 
   useEffect(() => {
     if (!workbench) return;
@@ -145,17 +187,20 @@ export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
       reviewStatus: currentReviewStatus,
     });
     workbench.reportInspectorState?.({
-      taskKind: "detect",
+      taskKind: "both",
       reviewStatus: currentReviewStatus,
       classSummary: {
         activeDetectCount: workbenchBridge?.activeDetectClasses.length ?? null,
+        activeClassificationCount: imageClassificationClasses.length,
         observedClassCount: pool.classImageCounts.size,
       },
       classPalette: workbenchBridge
         ? {
             detectClasses: workbenchBridge.activeDetectClasses,
+            classificationClasses: imageClassificationClasses,
             currentDetectClassId: workbenchBridge.currentClassId,
-            readOnlyReason: "Class selection remains owned by the Box Label class panel in v1.",
+            currentClassificationKey: null,
+            readOnlyReason: "Class selection remains owned by the Box Label task panels in v1.",
           }
         : null,
       proposalSummary: workbenchBridge
@@ -206,6 +251,7 @@ export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
     currentReviewStatus,
     pool.statusText,
     workbenchBridge,
+    imageClassificationClasses,
     imageActionGroups,
   ]);
 
@@ -244,7 +290,7 @@ export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
 
   if (pool.pending && !pool.entries.length) {
     return (
-      <div className={`app pool-label react-box-label-page react-box-label-page--loading${embedded ? " react-box-label-page--embedded" : ""}`}>
+      <div className={`app pool-label react-box-label-page react-box-label-page--loading${embedded ? " react-box-label-page--embedded" : ""}${unifiedMedia ? " react-box-label-page--unified-media" : ""}`}>
         <div className="page-loading" role="status" aria-live="polite">
           <span className="page-loading-spinner" aria-hidden="true" />
           <span className="page-loading-title">正在加载 Box Label</span>
@@ -256,7 +302,7 @@ export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
 
   if (!pool.currentEntry) {
     return (
-      <div className={`app pool-label react-box-label-page react-box-label-page--empty${embedded ? " react-box-label-page--embedded" : ""}`}>
+      <div className={`app pool-label react-box-label-page react-box-label-page--empty${embedded ? " react-box-label-page--embedded" : ""}${unifiedMedia ? " react-box-label-page--unified-media" : ""}`}>
         {!embedded ? (
           <BoxLabelTopbar
             title="Box Label"
@@ -276,7 +322,7 @@ export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
   }
 
   return (
-    <div className={`app pool-label react-box-label-page${embedded ? " react-box-label-page--embedded" : ""}`}>
+    <div className={`app pool-label react-box-label-page${embedded ? " react-box-label-page--embedded" : ""}${unifiedMedia ? " react-box-label-page--unified-media" : ""}`}>
       {!embedded ? (
         <BoxLabelTopbar
           title="Box Label"
@@ -291,20 +337,22 @@ export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
         />
       ) : null}
       <main className="workspace pool-label-workspace" id="poolLabelWorkspace">
-        <BoxLabelGallery
-          datasetRoot={pool.datasetRoot}
-          entries={pool.entries}
-          currentIndex={pool.currentIndex}
-          shiftSelectedBasenames={pool.shiftSelectedBasenames}
-          metadata={pool.metadata}
-          imageViewMode={pool.imageViewMode}
-          restoreScrollTop={pool.restoreScrollTop}
-          restoreImagePath={pool.restoreImagePath}
-          onSelect={pool.selectGalleryImage}
-          onScrollChange={pool.onGalleryScroll}
-          onViewportRestored={pool.clearRestoreViewport}
-          onImageViewModeChange={pool.setImageViewMode}
-        />
+        {showGallery ? (
+          <BoxLabelGallery
+            datasetRoot={pool.datasetRoot}
+            entries={pool.entries}
+            currentIndex={pool.currentIndex}
+            shiftSelectedBasenames={pool.shiftSelectedBasenames}
+            metadata={pool.metadata}
+            imageViewMode={pool.imageViewMode}
+            restoreScrollTop={pool.restoreScrollTop}
+            restoreImagePath={pool.restoreImagePath}
+            onSelect={pool.selectGalleryImage}
+            onScrollChange={pool.onGalleryScroll}
+            onViewportRestored={pool.clearRestoreViewport}
+            onImageViewModeChange={pool.setImageViewMode}
+          />
+        ) : null}
         <BoxLabelView
           workspaceRoot={workspaceRoot}
           datasetRoot={pool.datasetRoot}
@@ -313,7 +361,12 @@ export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
           currentIndex={pool.currentIndex}
           selectedFilenames={pool.selectedBasenames}
           shiftSelectedFilenames={pool.shiftSelectedBasenames}
-          onNavigate={pool.navigate}
+          onNavigate={(index) => {
+            pool.navigate(index);
+            onImageNavigate?.(index);
+          }}
+          onNavigateBoundary={onNavigateBoundary}
+          showSideStack={showSideStack}
           initialShortcutSlots={pool.initialShortcutSlots}
           initialFixedBoxSlots={pool.initialFixedBoxSlots}
           initialPointerToolEnabled={pool.initialPointerToolEnabled}

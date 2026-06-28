@@ -65,6 +65,13 @@ function proposalText(summary: LabelProposalSummary | null | undefined) {
   return `${total} total`;
 }
 
+function proposalCount(summary: LabelProposalSummary | null | undefined) {
+  if (!summary) return null;
+  const total = safeNumber(summary.totalCount);
+  const pending = safeNumber(summary.pendingCount);
+  return total ?? pending;
+}
+
 function confidenceText(value: number | null | undefined) {
   const confidence = safeNumber(value);
   if (confidence === null) return null;
@@ -77,6 +84,20 @@ function classItemKey(item: { id?: number | null; key?: string | null; name: str
 
 function classItemLabel(item: { id?: number | null; key?: string | null; name: string }) {
   return item.id != null ? `${item.id}: ${item.name}` : item.name;
+}
+
+function selectedProposalLabel(proposal: LabelWorkbenchInspectorState["selectedProposal"]) {
+  if (!proposal) return null;
+  const label = proposal.className || proposal.classKey || proposal.classId;
+  return label != null ? String(label) : proposal.id;
+}
+
+function isSelectedProposalAction(action: LabelWorkbenchAction) {
+  return action.id === "proposal.acceptSelected" || action.id === "proposal.rejectSelected";
+}
+
+function isBatchProposalAction(action: LabelWorkbenchAction) {
+  return action.id === "proposal.acceptAll" || action.id === "proposal.rejectAll";
 }
 
 function actionDisabled(action: LabelWorkbenchAction) {
@@ -127,7 +148,7 @@ function ActionGroupsView({ groups }: { groups: LabelWorkbenchActionGroup[] }) {
     <div className="lwb-inspector-actions">
       {groups.map((group) =>
         group.actions.length ? (
-          <div key={group.id} className="lwb-inspector-action-group">
+          <div key={group.id} className="lwb-inspector-action-group" data-group-id={group.id}>
             <div className="lwb-inspector-action-group-title">{group.label}</div>
             {group.actions.map((action) => (
               <InspectorActionButton key={action.id} action={action} />
@@ -145,22 +166,41 @@ export function LabelWorkbenchInspector({
   inspectorState,
   actionGroups,
 }: Props) {
-  const taskKind = inspectorState?.taskKind ?? (mode === "video" ? "both" : "detect");
+  const taskKind = inspectorState?.taskKind ?? "both";
   const classSummary = inspectorState?.classSummary;
   const proposalSummary = proposalText(inspectorState?.proposalSummary);
+  const proposalCountValue = proposalCount(inspectorState?.proposalSummary);
   const overlayCount = safeNumber(inspectorState?.overlaySummary?.activeCount);
   const segment = inspectorState?.segmentSummary;
   const warnings = inspectorState?.warnings ?? [];
-  const proposalReviewGroups = mode === "image"
-    ? actionGroups.filter((group) => group.id === "image-review" || group.id === "image-proposals")
+  const reviewActionGroups = mode === "image"
+    ? actionGroups.filter((group) => group.id === "image-review")
+    : [];
+  const proposalActionGroups = mode === "image"
+    ? actionGroups.filter((group) => group.id === "image-proposals")
     : [];
   const remainingActionGroups = mode === "image"
     ? actionGroups.filter((group) => group.id !== "image-review" && group.id !== "image-proposals")
     : actionGroups;
-  const hasProposalReviewActions = proposalReviewGroups.some((group) => group.actions.length > 0);
-  const hasActions = remainingActionGroups.some((group) => group.actions.length > 0);
   const selectedProposal = inspectorState?.selectedProposal;
+  const proposalActions = proposalActionGroups.flatMap((group) => group.actions);
+  const visibleProposalActions =
+    proposalCountValue !== null && proposalCountValue > 0
+      ? proposalActions.filter((action) =>
+          selectedProposal
+            ? isSelectedProposalAction(action) || (proposalCountValue > 1 && isBatchProposalAction(action))
+            : isBatchProposalAction(action)
+        )
+      : [];
+  const visibleProposalActionGroups = visibleProposalActions.length
+    ? [{ id: "image-proposals", label: "Proposals", actions: visibleProposalActions }]
+    : [];
+  const hasProposalReviewActions =
+    reviewActionGroups.some((group) => group.actions.length > 0) ||
+    visibleProposalActionGroups.some((group) => group.actions.length > 0);
+  const hasActions = remainingActionGroups.some((group) => group.actions.length > 0);
   const selectedProposalConfidence = confidenceText(selectedProposal?.confidence);
+  const selectedProposalName = selectedProposalLabel(selectedProposal);
   const classPalette = inspectorState?.classPalette;
   const detectClasses = (classPalette?.detectClasses ?? []).filter((item) => !item.archived);
   const classificationClasses = (classPalette?.classificationClasses ?? []).filter((item) => !item.archived);
@@ -192,24 +232,29 @@ export function LabelWorkbenchInspector({
       </section>
 
       {mode === "image" ? (
-        <section className="lwb-inspector-section">
+        <section className="lwb-inspector-section lwb-inspector-proposal-review">
           <div className="lwb-inspector-kicker">Proposal / Review</div>
           <div className="lwb-inspector-grid">
             <span>Review: {reviewLabel(sourceSummary, inspectorState)}</span>
-            {proposalSummary ? <span>Proposals: {proposalSummary}</span> : <span>Proposals: 0 pending</span>}
-            {selectedProposal ? (
+            {proposalCountValue !== null && proposalCountValue <= 0 ? (
+              <span>No proposals on this image.</span>
+            ) : null}
+            {proposalCountValue !== null && proposalCountValue > 0 ? (
+              <span>Proposals: {proposalSummary ?? `${proposalCountValue} total`}</span>
+            ) : null}
+            {proposalCountValue !== null && proposalCountValue > 0 && selectedProposal ? (
               <>
-                <span>
-                  Selected: {selectedProposal.className || selectedProposal.classKey || (selectedProposal.classId ?? selectedProposal.id)}
-                </span>
+                <span>Selected: {selectedProposalName}</span>
                 {selectedProposalConfidence ? <span>Confidence: {selectedProposalConfidence}</span> : null}
                 {selectedProposal.archived ? <span>Selected proposal class is archived.</span> : null}
               </>
-            ) : (
-              <span>No proposal selected.</span>
-            )}
+            ) : null}
+            {proposalCountValue !== null && proposalCountValue > 0 && !selectedProposal ? (
+              <span>Select a proposal to accept or reject it.</span>
+            ) : null}
           </div>
-          {hasProposalReviewActions ? <ActionGroupsView groups={proposalReviewGroups} /> : null}
+          {reviewActionGroups.some((group) => group.actions.length > 0) ? <ActionGroupsView groups={reviewActionGroups} /> : null}
+          {visibleProposalActionGroups.length ? <ActionGroupsView groups={visibleProposalActionGroups} /> : null}
         </section>
       ) : null}
 
@@ -270,11 +315,10 @@ export function LabelWorkbenchInspector({
         </section>
       ) : null}
 
-      {proposalSummary || overlayCount !== null || segment ? (
+      {overlayCount !== null || segment ? (
         <section className="lwb-inspector-section">
           <div className="lwb-inspector-kicker">Context</div>
           <div className="lwb-inspector-grid">
-            {proposalSummary ? <span>Proposals: {proposalSummary}</span> : null}
             {overlayCount !== null ? <span>Blackouts: {overlayCount}</span> : null}
             {segment ? (
               <span>

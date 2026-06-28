@@ -17,6 +17,10 @@ function html(node: ReactElement) {
   return renderToStaticMarkup(node);
 }
 
+function countText(output: string, text: string) {
+  return output.split(text).length - 1;
+}
+
 function childrenOf(props: TestElementProps) {
   return React.Children.toArray(props.children);
 }
@@ -114,6 +118,139 @@ describe("LabelWorkbenchInspector", () => {
     const button = findButtonByText(node, "Accept Selected");
     button?.props.onClick?.();
     expect(accepted).toBe(1);
+  });
+
+  it("hides proposal action buttons and shows one empty state when proposal count is zero", () => {
+    const output = html(inspector({
+      mode: "image",
+      sourceSummary: {
+        kind: "image",
+        filename: "empty.jpg",
+        currentIndex: 0,
+        totalImages: 1,
+        reviewStatus: "unreviewed",
+      },
+      inspectorState: {
+        taskKind: "detect",
+        proposalSummary: { pendingCount: 0, totalCount: 0 },
+      },
+      actionGroups: [{
+        id: "image-proposals",
+        label: "Proposals",
+        actions: [
+          { id: "proposal.acceptSelected", label: "Accept Selected", disabled: true, unavailableReason: "No proposals on the current image." },
+          { id: "proposal.rejectSelected", label: "Reject Selected", disabled: true, unavailableReason: "No proposals on the current image." },
+          { id: "proposal.acceptAll", label: "Accept All", disabled: true, unavailableReason: "No proposals on the current image." },
+          { id: "proposal.rejectAll", label: "Reject All", disabled: true, unavailableReason: "No proposals on the current image." },
+        ],
+      }],
+    }));
+
+    expect(output).toContain("No proposals on this image.");
+    expect(countText(output, "No proposals on this image.")).toBe(1);
+    expect(output).not.toContain("Accept Selected");
+    expect(output).not.toContain("Reject Selected");
+    expect(output).not.toContain("Accept All");
+    expect(output).not.toContain("Reject All");
+    expect(output).not.toContain("No proposals on the current image.");
+  });
+
+  it("shows batch proposal actions and one selection hint when proposals exist without a selected proposal", () => {
+    const output = html(inspector({
+      mode: "image",
+      sourceSummary: {
+        kind: "image",
+        filename: "proposals.jpg",
+        currentIndex: 0,
+        totalImages: 1,
+        reviewStatus: "unreviewed",
+      },
+      inspectorState: {
+        taskKind: "detect",
+        proposalSummary: { pendingCount: 2, totalCount: 2 },
+      },
+      actionGroups: [{
+        id: "image-proposals",
+        label: "Proposals",
+        actions: [
+          { id: "proposal.acceptSelected", label: "Accept Selected", disabled: true, unavailableReason: "Select a proposal first." },
+          { id: "proposal.rejectSelected", label: "Reject Selected", disabled: true, unavailableReason: "Select a proposal first." },
+          { id: "proposal.acceptAll", label: "Accept All", run: () => {} },
+          { id: "proposal.rejectAll", label: "Reject All", run: () => {} },
+        ],
+      }],
+    }));
+
+    expect(output).toContain("Proposals: 2 pending / 2 total");
+    expect(output).toContain("Select a proposal to accept or reject it.");
+    expect(countText(output, "Select a proposal to accept or reject it.")).toBe(1);
+    expect(output).toContain("Accept All");
+    expect(output).toContain("Reject All");
+    expect(output).not.toContain("Accept Selected");
+    expect(output).not.toContain("Reject Selected");
+  });
+
+  it("shows selected proposal actions and summary when a proposal is selected", () => {
+    const output = html(inspector({
+      mode: "image",
+      sourceSummary: {
+        kind: "image",
+        filename: "selected.jpg",
+        currentIndex: 0,
+        totalImages: 1,
+        reviewStatus: "unreviewed",
+      },
+      inspectorState: {
+        taskKind: "detect",
+        proposalSummary: { pendingCount: 2, totalCount: 2 },
+        selectedProposal: {
+          id: "p1",
+          className: "EnemyHP",
+          confidence: 0.72,
+          archived: true,
+        },
+      },
+      actionGroups: [{
+        id: "image-proposals",
+        label: "Proposals",
+        actions: [
+          { id: "proposal.acceptSelected", label: "Accept Selected", run: () => {} },
+          { id: "proposal.rejectSelected", label: "Reject Selected", run: () => {} },
+          { id: "proposal.acceptAll", label: "Accept All", run: () => {} },
+          { id: "proposal.rejectAll", label: "Reject All", run: () => {} },
+        ],
+      }],
+    }));
+
+    expect(output).toContain("Selected: EnemyHP");
+    expect(output).toContain("Confidence: 72%");
+    expect(output).toContain("Selected proposal class is archived.");
+    expect(output).toContain("Accept Selected");
+    expect(output).toContain("Reject Selected");
+    expect(output).toContain("Accept All");
+    expect(output).toContain("Reject All");
+  });
+
+  it("does not duplicate no-proposal messages or render invalid proposal text", () => {
+    const output = html(inspector({
+      mode: "image",
+      sourceSummary: null,
+      inspectorState: {
+        proposalSummary: { pendingCount: 0, totalCount: 0 },
+      },
+      actionGroups: [{
+        id: "image-proposals",
+        label: "Proposals",
+        actions: [
+          { id: "proposal.acceptSelected", label: "Accept Selected", disabled: true, unavailableReason: "No proposals on the current image." },
+          { id: "proposal.rejectSelected", label: "Reject Selected", disabled: true, unavailableReason: "No proposals on the current image." },
+        ],
+      }],
+    }));
+
+    expect(countText(output, "No proposals")).toBe(1);
+    expect(output).not.toContain("undefined");
+    expect(output).not.toContain("NaN");
   });
 
   it("renders class palette and excludes archived classes from active display", () => {

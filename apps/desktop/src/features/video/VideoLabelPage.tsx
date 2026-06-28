@@ -29,6 +29,18 @@ type Props = {
   active?: boolean;
 };
 
+export type VideoLabelSession = ReturnType<typeof useVideoAnnotationSession>;
+
+type VideoLabelSurfaceProps = {
+  session: VideoLabelSession;
+  workspaceRoot: string;
+  chooseWorkspaceFolder: () => Promise<void>;
+  active?: boolean;
+  showVideoList?: boolean;
+  showSourceToolbar?: boolean;
+  unifiedMedia?: boolean;
+};
+
 const SAMPLING_MODE_LABELS: Record<SamplingMode, string> = {
   "whole-video": "Whole video",
   "segments-preferred": "Segments preferred",
@@ -40,6 +52,26 @@ const SAMPLING_MODES: SamplingMode[] = ["whole-video", "segments-preferred", "se
 export function VideoLabelPage({ onReady, active = true }: Props) {
   const { workspaceRoot, chooseWorkspaceFolder } = useWorkspace();
   const session = useVideoAnnotationSession({ workspaceRoot, active, onReady });
+
+  return (
+    <VideoLabelSurface
+      session={session}
+      workspaceRoot={workspaceRoot}
+      chooseWorkspaceFolder={chooseWorkspaceFolder}
+      active={active}
+    />
+  );
+}
+
+export function VideoLabelSurface({
+  session,
+  workspaceRoot,
+  chooseWorkspaceFolder,
+  active = true,
+  showVideoList = true,
+  showSourceToolbar = true,
+  unifiedMedia = false
+}: VideoLabelSurfaceProps) {
   const [remotePointer, setRemotePointer] = useState<RemotePointerState | null>(null);
 
   const workbench = useLabelWorkbench();
@@ -390,7 +422,7 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
     : "pending";
 
   return (
-    <main className={`video-label-workspace${embedded ? " video-label-workspace--embedded" : ""}`}>
+    <main className={`video-label-workspace${embedded ? " video-label-workspace--embedded" : ""}${unifiedMedia ? " video-label-workspace--unified-media" : ""}`}>
     <section className="panel video-label-main-panel">
         {!embedded ? (
           <div className="panel-header">
@@ -399,6 +431,7 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
           </div>
         ) : null}
         <div className="panel-body video-label-main-body">
+          {showSourceToolbar ? (
           <div className="row workspace-toolbar">
             {!embedded ? (
               <button
@@ -419,6 +452,7 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
             </button>
             <span className="status">{saveLabel}</span>
           </div>
+          ) : null}
 
           <div className="video-label-stage">
             {session.current && session.previewBase64 ? (
@@ -503,6 +537,7 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
       </section>
 
       <aside className="side-stack video-label-side-stack">
+        {showVideoList ? (
         <section className="panel">
           <div className="panel-header">
             <span>Videos</span>
@@ -539,6 +574,7 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
             </div>
           </div>
         </section>
+        ) : null}
 
         <section className="panel">
           <div className="panel-header">

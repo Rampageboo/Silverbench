@@ -29,6 +29,8 @@ export type BoxLabelViewProps = {
   selectedFilenames: Set<string>;
   shiftSelectedFilenames: Set<string>;
   onNavigate: (index: number) => void;
+  onNavigateBoundary?: (delta: -1 | 1) => void;
+  showSideStack?: boolean;
   initialShortcutSlots?: Array<BoxLabelShortcutSlot | null> | null;
   initialFixedBoxSlots?: Array<FixedBoxSlot | null> | null;
   initialPointerToolEnabled?: boolean;

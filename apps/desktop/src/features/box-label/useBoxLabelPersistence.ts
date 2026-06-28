@@ -31,6 +31,7 @@ type UseBoxLabelPersistenceOptions = {
   currentIndex: number;
   filename: string;
   onNavigate: (index: number) => void;
+  onNavigateBoundary?: (delta: -1 | 1) => void;
   persistEntryLabels: (target: BoxLabelEntry, nextBoxes: api.LabelBox[]) => Promise<api.LabelBox[]>;
   boxesRef: MutableRefObject<api.LabelBox[]>;
   selectedRef: MutableRefObject<number | null>;
@@ -64,6 +65,7 @@ export function useBoxLabelPersistence({
   currentIndex,
   filename,
   onNavigate,
+  onNavigateBoundary,
   persistEntryLabels,
   boxesRef,
   selectedRef,
@@ -278,6 +280,12 @@ export function useBoxLabelPersistence({
       if (currentIndex < 0) return;
       const nextIndex = currentIndex + delta;
       if (nextIndex < 0 || nextIndex >= entries.length) {
+        if (onNavigateBoundary) {
+          save()
+            .catch(() => {})
+            .finally(() => onNavigateBoundary(delta < 0 ? -1 : 1));
+          return;
+        }
         setStatus(delta < 0 ? "Already at first image." : "Already at last image.");
         return;
       }
@@ -285,7 +293,7 @@ export function useBoxLabelPersistence({
         .catch(() => {})
         .finally(() => onNavigate(nextIndex));
     },
-    [currentIndex, entries.length, onNavigate, save, setStatus]
+    [currentIndex, entries.length, onNavigate, onNavigateBoundary, save, setStatus]
   );
 
   const restoreBackup = useCallback(async () => {

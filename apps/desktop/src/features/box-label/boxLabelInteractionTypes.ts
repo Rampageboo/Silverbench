@@ -11,6 +11,7 @@ export type UseBoxLabelInteractionOptions = {
   currentIndex: number;
   filename: string;
   onNavigate: (index: number) => void;
+  onNavigateBoundary?: (delta: -1 | 1) => void;
   onToggleReviewed: () => Promise<void>;
   onToggleFlagged: () => Promise<void>;
   onMarkJunk?: () => Promise<void>;

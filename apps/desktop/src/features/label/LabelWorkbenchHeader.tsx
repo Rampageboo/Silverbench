@@ -8,10 +8,8 @@ function sourceKindFromMode(mode: LabelWorkbenchMode): LabelSourceKind {
   return mode === "image" ? "image" : "video-timestamp";
 }
 
-function taskKindFromMode(mode: LabelWorkbenchMode): LabelTaskKind {
-  // Video annotation supports both detect and classify layers.
-  // Image (box label) is detect-focused.
-  return mode === "video" ? "both" : "detect";
+function taskKindFromMode(_mode: LabelWorkbenchMode): LabelTaskKind {
+  return "both";
 }
 
 function sourceKindLabel(kind: LabelSourceKind): string {
@@ -98,7 +96,7 @@ const TASK_LABELS: Record<"detect" | "classify", string> = {
 
 function LabelTaskChips({ taskKind }: TaskChipsProps) {
   const tasks: Array<"detect" | "classify"> =
-    taskKind === "both" ? ["detect", "classify"] : ["detect"];
+    taskKind === "both" ? ["detect", "classify"] : [taskKind];
   return (
     <div className="lwb-task-chips" aria-label="Active annotation tasks">
       {tasks.map((t) => (
@@ -165,7 +163,7 @@ function formatMs(ms: number): string {
 
 type HeaderProps = {
   mode: LabelWorkbenchMode;
-  onModeChange: (mode: LabelWorkbenchMode) => void;
+  onModeChange?: (mode: LabelWorkbenchMode) => void;
   workspaceName: string;
   workspacePath: string;
   sourceSummary: LabelSourceSummary | null;
@@ -183,10 +181,11 @@ export function LabelWorkbenchHeader({
 
   return (
     <div className="lwb-header" role="toolbar" aria-label="Label workbench controls">
-      {/* Left: mode switch */}
-      <div className="lwb-section lwb-section--mode">
-        <LabelModeSwitch mode={mode} onChange={onModeChange} />
-      </div>
+      {onModeChange ? (
+        <div className="lwb-section lwb-section--mode">
+          <LabelModeSwitch mode={mode} onChange={onModeChange} />
+        </div>
+      ) : null}
 
       {/* Center: source context */}
       <div className="lwb-section lwb-section--source">

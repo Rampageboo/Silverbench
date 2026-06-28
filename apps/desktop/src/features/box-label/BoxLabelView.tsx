@@ -13,7 +13,7 @@ function fixedBoxReady(slot: FixedBoxSlot | null) {
 
 export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelViewProps) {
   const editor = useBoxLabelEditor(props);
-  const { classImageCounts, onWorkbenchBridgeChange } = props;
+  const { classImageCounts, onWorkbenchBridgeChange, showSideStack = true } = props;
   const auraRef = useRef<HTMLDivElement | null>(null);
   const selectedProposal = editor.selectedProposalId
     ? editor.proposals.find((p) => p.id === editor.selectedProposalId)
@@ -258,26 +258,11 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
         </div>
       </section>
 
+      {showSideStack ? (
       <aside className="side-stack pool-label-side-stack" id="poolLabelSideStack">
         <section className="panel pool-label-box-panel" id="poolLabelBoxPanel">
           <div className="panel-header">
             <span>Current Boxes</span>
-            <span className="pool-label-review-queue-actions">
-              <button
-                type="button"
-                title="Go to previous image that needs review"
-                onClick={() => editor.prevNeedsReview()}
-              >
-                ← Needs Review
-              </button>
-              <button
-                type="button"
-                title="Go to next image that needs review"
-                onClick={() => editor.nextNeedsReview()}
-              >
-                Needs Review →
-              </button>
-            </span>
           </div>
           <div className="panel-body pool-label-box-panel-body">
             <div className="hint" id="poolLabelStatus">
@@ -469,6 +454,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
           </div>
         </section>
       </aside>
+      ) : null}
     </>
   );
 });
