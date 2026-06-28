@@ -1,4 +1,5 @@
 import { useMemo, useState, type MouseEvent } from "react";
+import { createPortal } from "react-dom";
 import {
   calibrationSheetUrl,
   captureVideoFrameBase64,
@@ -38,6 +39,7 @@ export function MultimodalControlDock() {
   const [detectingTags, setDetectingTags] = useState(false);
   const [calibrationPoints, setCalibrationPoints] = useState<Point2[]>([]);
   const [calibrationError, setCalibrationError] = useState("");
+  const [showSheet, setShowSheet] = useState(false);
   const [calibrationStatus, setCalibrationStatus] = useState("");
 
   const sourceStatus = useMemo(() => {
@@ -113,11 +115,12 @@ export function MultimodalControlDock() {
   }
 
   function openCalibrationSheet() {
-    const opened = window.open(calibrationSheetUrl(200), "_blank", "noopener,noreferrer");
-    if (!opened) setCalibrationError("浏览器阻止了标定板窗口，请允许弹出窗口。");
+    setCalibrationError("");
+    setShowSheet(true);
   }
 
   return (
+    <>
     <aside className={`multimodal-control-dock${expanded ? " is-expanded" : ""}`}>
       <button
         type="button"
@@ -254,6 +257,35 @@ export function MultimodalControlDock() {
           </details>
         </div>
       ) : null}
+
     </aside>
+
+      {showSheet ? createPortal(
+        <div
+          className="calibration-sheet-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="打印标定板"
+          onClick={() => setShowSheet(false)}
+        >
+          <div className="calibration-sheet-box" onClick={(e) => e.stopPropagation()}>
+            <div className="calibration-sheet-header">
+              <span>AprilTag 标定板 — 打印后放置于操作平面四角</span>
+              <div className="calibration-sheet-actions">
+                <button type="button" className="primary" onClick={() => window.print()}>打印</button>
+                <button type="button" onClick={() => setShowSheet(false)}>关闭</button>
+              </div>
+            </div>
+            <img
+              className="calibration-sheet-img printable-sheet"
+              src={calibrationSheetUrl(200)}
+              alt="AprilTag 标定板"
+              draggable={false}
+            />
+          </div>
+        </div>,
+        document.body
+      ) : null}
+    </>
   );
 }

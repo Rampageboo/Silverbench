@@ -542,3 +542,121 @@ The default export policy for both detect and CLF tasks is `"reviewed"`:
 - `clfPolicy: "reviewed"` — only timestamps where `clf.reviewed === true` are exported.
 
 Pass `detectPolicy: "has-boxes"` or `clfPolicy: "all"` explicitly to include unreviewed samples.
+---
+
+## Timestamp-first detect + clf architecture
+
+> **Video samples are timestamp annotations, not saved screenshots. Frames are decoded only for preview and export.**
+
+### Why video timestamps are not screenshots
+
+A video sample is identified by:
+
+```text
+videoSourceId + timestampMs + annotation data
+```
+
+not by:
+
+```text
+saved screenshot + annotation data
+```
+
+This distinction matters for:
+
+- **Storage efficiency** — annotations are kilobytes of JSON; screenshot copies waste disk and create data synchronization problems.
+- **Source integrity** — the original video remains the single source of truth. If annotation metadata is wrong, it can be corrected without touching the frame data.
+- **Export flexibility** — the same timestamp can be exported at different resolutions, formats, or crop factors in future without re-annotating.
+- **Clean workspace** — `workspace/` contains only metadata and source references, never redundant pixel data.
+
+### Detect + clf task-layer model
+
+Each video timestamp carries an independent task layer per YOLO task:
+
+```
+video source
+  ↓
+timestamp record (timestampMs)
+  ├─ tasks.detect → reviewed, boxes[]  (detect annotation)
+  └─ tasks.clf    → reviewed, classKey (classification label)
+  ↓
+export (explicit action only)
+  ├─ exports/detect_dataset/images/train/<stem>.jpg
+  │  exports/detect_dataset/labels/train/<stem>.txt
+  └─ exports/clf_dataset/train/<class_name>/<stem>.jpg
+```
+
+Key rules:
+- A timestamp can be detect-only, clf-only, or both.
+- Setting one task layer does not touch the other.
+- Marking detect reviewed does not automatically mark clf reviewed, and vice versa.
+- Setting a clf class never creates a screenshot.
+- The same timestamp may appear in both detect and clf export output. This decode-per-task duplication is acceptable because export is an explicit one-time action.
+
+Implementation files:
+- `apps/desktop/src/features/video/videoAnnotationTaskDomain.ts` — v2 task-layer types and domain functions
+- `apps/desktop/src/features/video/exportPlanner.ts` — pure export planning functions
+- `apps/desktop/src/features/source/sourceDomain.ts` — workspace source model
+
+### Preview decode is in-memory only
+
+The `getAnnotationFrameBase64(videoPath, seconds)` call decodes a frame into a base64 string held in React state (`previewBase64`). It is:
+
+- Never written to `image_pool`.
+- Never written to `workspace/media/`.
+- Never added to `sources.json`.
+- Discarded when the user navigates away or the tab becomes inactive.
+
+### Export decode creates YOLO training images
+
+The export planner (`exportPlanner.ts`) produces an `ExportPlan` describing which frames to decode and where to write them. Execution (not yet implemented in UI) would:
+
+1. Read the source video at the planned `timestampMs`.
+2. Decode the frame to JPEG.
+3. Write it to `exports/detect_dataset/images/train/<stem>.jpg` and/or `exports/clf_dataset/train/<class_name>/<stem>.jpg`.
+
+Exported images are derived artifacts. They can be deleted and regenerated from the source video without data loss.
+
+### Export images are derived artifacts
+
+Exported images are never added to `sources.json`. They are not workspace sources. They can be regenerated at any time from the source video + annotation manifest.
+
+If the source video is deleted or moved, the export plan returns:
+
+```text
+Missing video source — relink required before export.
+```
+
+The original video must be preserved or relinked for future export.
+
+### Manual images are still supported
+
+`image_pool` images and manually imported screenshots are `image` sources (see `sourceDomain.ts`). They can carry both detect and clf task annotations. They differ from video-derived timestamps in that their pixel data is persistent — no source video is needed to display or export them.
+
+`image_pool` is the legacy compatibility path for imported images. It is not the main video annotation workflow.
+
+### Class key architecture
+
+YOLO numeric class IDs are an export-time concern only. Internally, the workspace uses stable string `classKey` values (see `classDomain.ts`). This means:
+
+- Reordering the detect class list does not corrupt existing box annotations.
+- The same `classKey` can appear in both detect and clf class sets.
+- Export maps `classKey → YOLO id` by the ordered `tasks.detect.classKeys` list.
+- Export maps `classKey → folder name` by the class `name` field (sanitized).
+
+### Source / relink policy
+
+- **Managed video** (`storage: "managed"`) — stored inside `workspace/media/video/`, portable.
+- **Linked video** (`storage: "linked"`) — absolute OS path; user must relink if file moves.
+- Export must check that the source video exists before decoding any frames.
+- UI should expose "missing source" status for linked sources.
+
+### Migration from v1 to v2
+
+Existing v1 manifests store frames in a flat format:
+
+```ts
+{ timestampMs, boxes: LabelBox[], reviewed: boolean }
+```
+
+`migrateV1FrameToV2()` in `videoAnnotationTaskDomain.ts` converts these to the v2 task-layer model by placing all boxes into `tasks.detect`. No image files are created during migration. The v1 manifest format remains readable by the existing session hook; the v2 model is additive.

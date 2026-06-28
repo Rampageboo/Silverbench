@@ -5,6 +5,7 @@ import {
   type BackendMethod,
   type WorkspaceInfo
 } from "../../api";
+import { backendBaseUrl } from "../../lib/backendConfig";
 
 export type DatasetTask = "detect" | "classify";
 
@@ -61,4 +62,38 @@ export async function ensureTrainPrepDataYaml(datasetRoot: string) {
 
 export async function moveTrainPrepValBackToTrain(datasetRoot: string, task: DatasetTask) {
   return rpc<TrainPrepResult>("moveValBackToTrain", [datasetRoot, task]);
+}
+
+// ── Training runner ────────────────────────────────────────────────────────
+
+export type TrainingStatus = {
+  running: boolean;
+  stopped: boolean;
+  exitCode: number | null;
+  lineCount: number;
+  command: string;
+  error: string;
+};
+
+export async function startTraining(command: string): Promise<{ ok: boolean; reason?: string; message?: string }> {
+  const res = await fetch(`${backendBaseUrl()}/api/train/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ command }),
+  });
+  return res.json() as Promise<{ ok: boolean; reason?: string; message?: string }>;
+}
+
+export async function stopTraining(): Promise<{ ok: boolean; message?: string }> {
+  const res = await fetch(`${backendBaseUrl()}/api/train/stop`, { method: "POST" });
+  return res.json() as Promise<{ ok: boolean; message?: string }>;
+}
+
+export async function getTrainingStatus(): Promise<TrainingStatus> {
+  const res = await fetch(`${backendBaseUrl()}/api/train/status`);
+  return res.json() as Promise<TrainingStatus>;
+}
+
+export function trainingStreamUrl(): string {
+  return `${backendBaseUrl()}/api/train/stream`;
 }

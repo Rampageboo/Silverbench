@@ -56,7 +56,10 @@ describe("workspace manifest migration", () => {
         video_segments: "video_segments",
         exports: "exports",
         cache: ".cache",
-        logs: "workspace/logs"
+        logs: "workspace/logs",
+        sources: "workspace/sources.json",
+        classes: "workspace/classes.json",
+        annotations: "workspace/annotations"
       },
       tools: {
         videoLabel: {

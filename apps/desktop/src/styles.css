@@ -9,6 +9,14 @@ body {
   color: var(--ink);
   background: var(--bg);
   overflow: hidden;
+  cursor: url("/assets/webview_cursor_default.png") 8 2, default;
+}
+
+/* Interactive elements: red cursor instead of system hand */
+a, button, label, select,
+[role="button"], [role="link"],
+[class*="cursor-pointer"] {
+  cursor: url("/assets/webview_cursor_pointer.png") 6 3, default !important;
 }
 
 
@@ -296,7 +304,7 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   background: transparent;
   color: #94a3b8;
   font-size: 13px;
-  cursor: pointer;
+  cursor: url("/assets/webview_cursor_pointer.png") 6 3, default;
 }
 
 .image-workspace-topbar .image-workspace-mode-toggle .inbox-target-option.active {
@@ -904,7 +912,7 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   color: #e2e8f0;
   font-size: 28px;
   line-height: 1;
-  cursor: pointer;
+  cursor: url("/assets/webview_cursor_pointer.png") 6 3, default;
 }
 
 .react-image-pool-preview-stage {
@@ -940,7 +948,7 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   background: rgba(15, 23, 42, 0.72);
   color: #f8fafc;
   font-size: 28px;
-  cursor: pointer;
+  cursor: url("/assets/webview_cursor_pointer.png") 6 3, default;
   z-index: 2;
 }
 
@@ -954,7 +962,7 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
 
 .react-image-pool-preview-nav:disabled {
   opacity: 0.35;
-  cursor: default;
+  cursor: url("/assets/webview_cursor_default.png") 8 2, default;
 }
 
 .react-image-pool-preview-filmstrip {
@@ -970,7 +978,7 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   border-radius: 6px;
   overflow: hidden;
   background: #1e293b;
-  cursor: pointer;
+  cursor: url("/assets/webview_cursor_pointer.png") 6 3, default;
 }
 
 .react-image-pool-preview-thumb.active {
@@ -1288,7 +1296,58 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
 
 .react-box-label-page .pool-label-shortcut-slot select.pool-label-shortcut-button {
   appearance: auto;
-  cursor: pointer;
+  cursor: url("/assets/webview_cursor_pointer.png") 6 3, default;
+}
+
+.react-box-label-page .pool-label-shortcut-class-row-wrap {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.react-box-label-page .pool-label-shortcut-class-row-wrap .class-slot {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.react-box-label-page .pool-label-shortcut-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #94a3b8;
+  cursor: url("/assets/webview_cursor_pointer.png") 6 3, default;
+  flex-shrink: 0;
+  line-height: 1;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.react-box-label-page .pool-label-shortcut-mode-btn:hover:not(:disabled) {
+  border-color: #60a5fa;
+  color: #93c5fd;
+  background: #1e3a5f;
+}
+
+.react-box-label-page .pool-label-shortcut-mode-btn.mode-ss {
+  border-color: #f59e0b;
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.react-box-label-page .pool-label-shortcut-mode-btn.mode-draw {
+  border-color: #475569;
+  color: #94a3b8;
+}
+
+.react-box-label-page .pool-label-shortcut-mode-btn:disabled {
+  opacity: 0.35;
+  cursor: url("/assets/webview_cursor_default.png") 8 2, default;
 }
 
 .react-box-label-page .pool-label-box-row {
@@ -1500,7 +1559,28 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
 }
 
 .react-box-label-page .canvas-wrap.pool-label-pointer-tool #previewCanvas {
-  cursor: default;
+  cursor: url("/assets/webview_cursor_default.png") 8 2, default;
+}
+
+.react-box-label-page .canvas-wrap .cursor-aura {
+  position: absolute;
+  pointer-events: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+  transition: opacity 0.12s;
+}
+
+.react-box-label-page .canvas-wrap .cursor-aura[data-adjust="grow"] {
+  background: radial-gradient(circle, rgba(34, 197, 94, 0.45) 0%, transparent 70%);
+  box-shadow: 0 0 12px 4px rgba(34, 197, 94, 0.35);
+}
+
+.react-box-label-page .canvas-wrap .cursor-aura[data-adjust="shrink"] {
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.45) 0%, transparent 70%);
+  box-shadow: 0 0 12px 4px rgba(59, 130, 246, 0.35);
 }
 
 .pool-label-status-hint {
@@ -1538,8 +1618,9 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   position: relative;
 }
 
-.boxlabel-gallery-scroll .thumb {
-  cursor: pointer;
+.boxlabel-gallery-scroll .thumb,
+#galleryScroll .thumb {
+  cursor: url("/assets/webview_cursor_pointer.png") 6 3, default;
 }
 
 .boxlabel-gallery-scroll .thumb.active {
@@ -1753,7 +1834,7 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   color: #94a3b8;
   font-size: 22px;
   line-height: 1;
-  cursor: pointer;
+  cursor: url("/assets/webview_cursor_pointer.png") 6 3, default;
   transition: background 0.15s ease, color 0.15s ease;
 }
 
@@ -1792,7 +1873,7 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   border-radius: 10px;
   border: 1px solid #334155;
   background: #111827;
-  cursor: pointer;
+  cursor: url("/assets/webview_cursor_pointer.png") 6 3, default;
   transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
 }
 
@@ -1897,7 +1978,7 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   border-radius: 8px;
   overflow: hidden;
   background: var(--surface-subtle);
-  cursor: pointer;
+  cursor: url("/assets/webview_cursor_pointer.png") 6 3, default;
 }
 
 .mask-folder-item.selected {
@@ -1945,7 +2026,7 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
 }
 
 .batch-crop-advanced summary {
-  cursor: pointer;
+  cursor: url("/assets/webview_cursor_pointer.png") 6 3, default;
   color: var(--muted);
   font-size: 13px;
   user-select: none;
@@ -2065,4 +2146,143 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+/* Train Prep — section layout */
+.tp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tp-section-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted, #64748b);
+}
+.tp-divider {
+  height: 1px;
+  background: var(--line, #1f2937);
+  margin: 2px 0;
+}
+
+/* Stat rows in info cards */
+.tp-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.tp-stat-label { color: var(--muted, #64748b); }
+.tp-stat-value { font-variant-numeric: tabular-nums; }
+.tp-stat-accent { color: var(--text-1, #e2e8f0); font-weight: 600; }
+
+.tp-yaml-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+.tp-yaml-ok     { background: #14532d44; color: #86efac; border: 1px solid #15803d55; }
+.tp-yaml-missing { background: #7f1d1d44; color: #fca5a5; border: 1px solid #b91c1c55; }
+
+/* Generated command output */
+.tp-cmd-wrap {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.tp-cmd-text {
+  flex: 1;
+  min-height: 60px;
+  font: 11px/1.5 'Cascadia Mono', 'Fira Code', Consolas, monospace;
+  resize: vertical;
+  background: var(--surface-subtle, #111827);
+  border: 1px solid var(--line, #1f2937);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--text-1, #e2e8f0);
+  word-break: break-all;
+}
+
+/* Operation status line */
+.tp-op-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted, #64748b);
+  padding: 2px 0;
+}
+.tp-spinner {
+  width: 12px; height: 12px;
+  border: 2px solid var(--line, #1f2937);
+  border-top-color: var(--accent, #3b82f6);
+  border-radius: 50%;
+  animation: tp-spin .7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes tp-spin { to { transform: rotate(360deg); } }
+
+/* Training output panel */
+.tp-train-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tp-train-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.tp-train-badge.idle   { background: rgba(148,163,184,.14); color: var(--text-2, #64748b); }
+.tp-train-badge.running{ background: rgba(34,197,94,.18); color: #4ade80; }
+.tp-train-badge.done   { background: rgba(34,197,94,.12); color: #4ade80; }
+.tp-train-badge.error  { background: rgba(239,68,68,.18); color: #f87171; }
+.tp-train-badge.stopped{ background: rgba(234,179,8,.15); color: #facc15; }
+.tp-train-elapsed {
+  font-size: 11px;
+  color: var(--text-2, #64748b);
+  font-variant-numeric: tabular-nums;
+}
+.tp-train-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 2px;
+}
+.tp-train-log {
+  min-height: 180px;
+  max-height: clamp(180px, calc(100vh - 520px), 500px);
+  overflow-y: auto;
+  overflow-x: auto;
+  background: #070c15;
+  border: 1px solid rgba(148,163,184,.14);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: ui-monospace, 'Cascadia Code', Consolas, 'Courier New', monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: #cbd5e1;
+  white-space: pre;
+}
+.tp-train-line {
+  display: block;
+}
+.tp-train-placeholder {
+  color: var(--text-2, #64748b);
+  font-style: italic;
+  white-space: normal;
 }

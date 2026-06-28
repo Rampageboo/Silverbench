@@ -115,56 +115,106 @@ def _marker_image(marker_id: int, size: int) -> Image.Image:
     return Image.fromarray(marker).convert("RGB")
 
 
+def _pil_font(size: int):
+    """Load a Pillow default bitmap font at the requested point size (Pillow 10+).
+    Falls back to the unsized default so the call never raises."""
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:
+        return ImageFont.load_default()
+
+
 def generate_calibration_sheet_png(dpi: int = 150) -> bytes:
     dpi = max(96, min(600, int(dpi)))
+
+    # A4 canvas in pixels
     width = round(8.27 * dpi)
     height = round(11.69 * dpi)
-    margin = round(0.45 * dpi)
-    marker_size = round(1.35 * dpi)
+
+    # Markers: 2 inches each, 0.4-inch margin from paper edge
+    margin = round(0.4 * dpi)
+    marker_size = round(2.0 * dpi)
+
+    # Fonts scaled to DPI so they look the same at every resolution
+    font_label = _pil_font(max(14, dpi // 10))      # tag ID labels
+    font_title = _pil_font(max(18, dpi // 7))        # center heading
+    font_sub   = _pil_font(max(13, dpi // 11))       # center sub-text
+    font_dot   = _pil_font(max(14, dpi // 10))       # numbers inside red dots
+
     canvas = Image.new("RGB", (width, height), "white")
     draw = ImageDraw.Draw(canvas)
-    font = ImageFont.load_default()
 
+    # ── four AprilTag markers, one per corner ──────────────────────────────
     positions = {
-        0: (margin, margin),
-        1: (width - margin - marker_size, margin),
-        2: (width - margin - marker_size, height - margin - marker_size),
-        3: (margin, height - margin - marker_size),
+        0: (margin, margin),                                                # top-left
+        1: (width - margin - marker_size, margin),                          # top-right
+        2: (width - margin - marker_size, height - margin - marker_size),   # bottom-right
+        3: (margin, height - margin - marker_size),                         # bottom-left
     }
-    for marker_id, position in positions.items():
-        canvas.paste(_marker_image(marker_id, marker_size), position)
-        label_y = position[1] + marker_size + 8 if marker_id in (0, 1) else position[1] - 18
-        draw.text((position[0], label_y), f"AprilTag 36h11 ID {marker_id}", fill="black", font=font)
+    corner_names = {0: "左上 TL", 1: "右上 TR", 2: "右下 BR", 3: "左下 BL"}
 
+    for marker_id, (mx, my) in positions.items():
+        canvas.paste(_marker_image(marker_id, marker_size), (mx, my))
+
+        # Draw a solid label band so text is always readable on white
+        label = f"ID {marker_id}  {corner_names[marker_id]}"
+        lw = max(2, dpi // 60)
+        # Label below top markers, above bottom markers
+        if marker_id in (0, 1):
+            label_y = my + marker_size + lw + 4
+        else:
+            label_y = my - round(dpi // 9) - lw - 4
+        draw.text((mx, label_y), label, fill=(30, 64, 175), font=font_label)
+
+    # ── guide rectangle (well inside the quiet zones) ─────────────────────
+    # Inner corners of the marker footprints
     inward = [
         (positions[0][0] + marker_size, positions[0][1] + marker_size),
-        (positions[1][0], positions[1][1] + marker_size),
-        (positions[2][0], positions[2][1]),
+        (positions[1][0],               positions[1][1] + marker_size),
+        (positions[2][0],               positions[2][1]),
         (positions[3][0] + marker_size, positions[3][1]),
     ]
-    # Keep all visual guides well inside the tag-defined rectangle. Drawing on a tag edge
-    # destroys its quiet boundary and can make every marker undetectable after printing.
-    guide_gap = max(18, round(0.18 * dpi))
+    # Pull guides further inward so they never touch the quiet zone
+    guide_gap = max(20, round(0.20 * dpi))
     guides = [
         (inward[0][0] + guide_gap, inward[0][1] + guide_gap),
         (inward[1][0] - guide_gap, inward[1][1] + guide_gap),
         (inward[2][0] - guide_gap, inward[2][1] - guide_gap),
         (inward[3][0] + guide_gap, inward[3][1] - guide_gap),
     ]
-    draw.line([*guides, guides[0]], fill=(30, 64, 175), width=max(2, dpi // 40))
-    for index, point in enumerate(guides, start=1):
-        radius = max(5, dpi // 30)
-        draw.ellipse(
-            (point[0] - radius, point[1] - radius, point[0] + radius, point[1] + radius),
-            outline=(220, 38, 38),
-            width=max(2, dpi // 60),
-        )
-        draw.text((point[0] + radius + 2, point[1] - radius), str(index), fill=(220, 38, 38), font=font)
 
-    title = "YoloWorkBench AprilTag interaction-plane calibration"
-    subtitle = "IDs clockwise: 0 top-left, 1 top-right, 2 bottom-right, 3 bottom-left"
-    draw.text((width // 2 - len(title) * 3, height // 2 - 18), title, fill="black", font=font)
-    draw.text((width // 2 - len(subtitle) * 3, height // 2 + 2), subtitle, fill="black", font=font)
+    line_w = max(3, dpi // 25)
+    draw.line([*guides, guides[0]], fill=(30, 64, 175), width=line_w)
+
+    # Red filled circles with white numerals at each guide corner
+    dot_r = max(10, dpi // 16)
+    for index, (px, py) in enumerate(guides, start=1):
+        draw.ellipse(
+            (px - dot_r, py - dot_r, px + dot_r, py + dot_r),
+            fill=(220, 38, 38),
+        )
+        draw.text((px, py), str(index), fill="white", font=font_dot, anchor="mm")
+
+    # ── center annotation ──────────────────────────────────────────────────
+    cx = width // 2
+    cy = height // 2
+    line_h = round(dpi // 6)
+
+    draw.text((cx, cy - line_h), "YoloWorkBench 标定板", fill=(15, 23, 42),
+              font=font_title, anchor="mm")
+    draw.text((cx, cy), "AprilTag 36h11  ·  ID 0左上 / 1右上 / 2右下 / 3左下",
+              fill=(51, 65, 85), font=font_sub, anchor="mm")
+    draw.text((cx, cy + line_h), "打印后平放，确保四个标签完整可见",
+              fill=(100, 116, 139), font=font_sub, anchor="mm")
+
+    # ── border ────────────────────────────────────────────────────────────
+    border_inset = round(0.15 * dpi)
+    border_w = max(2, dpi // 50)
+    draw.rectangle(
+        [border_inset, border_inset, width - border_inset, height - border_inset],
+        outline=(203, 213, 225),
+        width=border_w,
+    )
 
     output = BytesIO()
     canvas.save(output, format="PNG", dpi=(dpi, dpi), optimize=True)

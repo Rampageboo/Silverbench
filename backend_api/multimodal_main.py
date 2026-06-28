@@ -12,7 +12,42 @@ from backend.multimodal_calibration import (
     detect_apriltags_base64,
     generate_calibration_sheet_png,
 )
+from backend_api import training_runner
 from backend_api.main import app
+
+
+# ── Training runner endpoints ──────────────────────────────────────────────
+
+
+class TrainStartRequest(BaseModel):
+    command: str = Field(min_length=1)
+
+
+@app.post("/api/train/start")
+async def train_start(payload: TrainStartRequest) -> dict:
+    return await training_runner.start(payload.command)
+
+
+@app.post("/api/train/stop")
+async def train_stop() -> dict:
+    return await training_runner.stop()
+
+
+@app.get("/api/train/status")
+def train_status() -> dict:
+    return training_runner.get_status()
+
+
+@app.get("/api/train/stream")
+async def train_stream() -> StreamingResponse:
+    return StreamingResponse(
+        training_runner.stream_output(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 class AprilTagDetectRequest(BaseModel):

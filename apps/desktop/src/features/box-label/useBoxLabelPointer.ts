@@ -20,6 +20,7 @@ import {
   pointerImagePointFromCanvas,
   rectToBox,
   resizeOrMovePixelRect,
+  type BoxAdjustMode,
   type DisplayRect,
   type DragState,
   type ImagePixelPoint,
@@ -35,6 +36,7 @@ type UseBoxLabelPointerOptions = {
   classRef: MutableRefObject<number>;
   dragRef: MutableRefObject<DragState>;
   modeRef: MutableRefObject<ToolMode>;
+  boxAdjustModeRef: MutableRefObject<BoxAdjustMode>;
   pointerToolEnabled: boolean;
   autoFitEnabled: boolean;
   blackBoxEnabled: boolean;
@@ -70,6 +72,7 @@ export function useBoxLabelPointer({
   classRef,
   dragRef,
   modeRef,
+  boxAdjustModeRef,
   pointerToolEnabled,
   autoFitEnabled,
   blackBoxEnabled,
@@ -113,6 +116,8 @@ export function useBoxLabelPointer({
         zoomPointRef.current = null;
         dragRef.current = {
           type: "pan",
+          button: event.button,
+          pureClick: true,
           startClientX: event.clientX,
           startClientY: event.clientY,
           startPanX: viewportRef.current.panX,
@@ -131,7 +136,7 @@ export function useBoxLabelPointer({
       if (!pixelPoint) return;
       const imagePoint = imagePixelPointToNormalized(pixelPoint, imageW, imageH);
 
-      if (modeRef.current === "draw" || blackBoxEnabled || autoFitEnabled) {
+      if (!pointerToolEnabled && (modeRef.current === "draw" || blackBoxEnabled || autoFitEnabled)) {
         setSelectedBoxId(null);
         dragRef.current = { type: "draw", start: imagePoint, current: imagePoint };
         scheduleDraw();
@@ -144,8 +149,6 @@ export function useBoxLabelPointer({
         setSelectedBoxId(hit.index);
         setSelectedProposalId?.(null);
         setCurrentClass(boxesRef.current[hit.index].classId);
-        zoomPointRef.current = boxCenterPixel(boxesRef.current[hit.index], imageW, imageH);
-        lastZoomCenterRef.current = zoomPointRef.current;
         dragRef.current = {
           type: "box",
           index: hit.index,
@@ -182,6 +185,7 @@ export function useBoxLabelPointer({
       imageRef,
       lastZoomCenterRef,
       modeRef,
+      pointerToolEnabled,
       proposalsRef,
       pushUndo,
       scheduleDraw,
@@ -208,10 +212,13 @@ export function useBoxLabelPointer({
 
       if (drag?.type === "pan") {
         if (!image) return;
+        const dx = event.clientX - drag.startClientX;
+        const dy = event.clientY - drag.startClientY;
+        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) drag.pureClick = false;
         viewportRef.current = clampViewportPan(canvas, image, {
           ...viewportRef.current,
-          panX: drag.startPanX + (event.clientX - drag.startClientX),
-          panY: drag.startPanY + (event.clientY - drag.startClientY)
+          panX: drag.startPanX + dx,
+          panY: drag.startPanY + dy
         });
         canvas.style.cursor = "grabbing";
         scheduleDraw();
@@ -231,7 +238,8 @@ export function useBoxLabelPointer({
           modeRef.current,
           imageW,
           imageH,
-          { pointerToolEnabled, autoFitEnabled, blackBoxEnabled }
+          { pointerToolEnabled, autoFitEnabled, blackBoxEnabled },
+          boxAdjustModeRef.current
         );
         scheduleDraw();
         return;
@@ -290,7 +298,28 @@ export function useBoxLabelPointer({
       if (!drag) return;
 
       if (drag.type === "pan") {
-        canvas.style.cursor = defaultPoolLabelCursor({ pointerToolEnabled, autoFitEnabled, blackBoxEnabled });
+        if (drag.button === 1 && drag.pureClick) {
+          const image = imageRef.current;
+          if (image) {
+            if (viewportRef.current.zoom > 1) {
+              viewportRef.current = clampViewportPan(canvas, image, { zoom: 1, panX: 0, panY: 0 });
+            } else {
+              const point = eventCanvasPoint(event, canvas);
+              const currentDisplay = displayRef.current;
+              if (currentDisplay) {
+                const before = canvasToImagePoint(point, currentDisplay);
+                viewportRef.current = { ...viewportRef.current, zoom: 3 };
+                const nextDisplay = imageDisplayRect(canvas, image, viewportRef.current);
+                if (before) {
+                  viewportRef.current.panX = point.x - (nextDisplay.x + before.x * nextDisplay.w);
+                  viewportRef.current.panY = point.y - (nextDisplay.y + before.y * nextDisplay.h);
+                }
+                viewportRef.current = clampViewportPan(canvas, image, viewportRef.current);
+              }
+            }
+          }
+        }
+        canvas.style.cursor = defaultPoolLabelCursor({ pointerToolEnabled, autoFitEnabled, blackBoxEnabled }, boxAdjustModeRef.current);
         scheduleDraw();
         return;
       }
@@ -351,7 +380,8 @@ export function useBoxLabelPointer({
       setBoxes,
       setError,
       setSelectedBoxId,
-      syncBoxToSelected
+      syncBoxToSelected,
+      viewportRef
     ]
   );
 

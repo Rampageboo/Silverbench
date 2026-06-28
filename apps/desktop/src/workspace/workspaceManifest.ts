@@ -15,6 +15,12 @@ export type WorkspaceManifestPaths = {
   exports: string;
   cache: string;
   logs: string;
+  /** Path to sources.json (workspace source registry — video + image sources). */
+  sources: string;
+  /** Path to classes.json (workspace class key manifest — detect + clf). */
+  classes: string;
+  /** Directory for v2 annotation manifests (timestampMs task-layer format). */
+  annotations: string;
   [key: string]: unknown;
 };
 
@@ -74,7 +80,10 @@ function defaultPaths(): WorkspaceManifestPaths {
     video_segments: "video_segments",
     exports: "exports",
     cache: ".cache",
-    logs: "workspace/logs"
+    logs: "workspace/logs",
+    sources: "workspace/sources.json",
+    classes: "workspace/classes.json",
+    annotations: "workspace/annotations"
   };
 }
 

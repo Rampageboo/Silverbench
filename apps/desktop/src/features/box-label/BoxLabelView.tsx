@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef, useCallback } from "react";
 import { errMessage } from "../../lib/errors";
 import type { BoxLabelViewProps } from "./boxLabelTypes";
 import { BoxLabelPreviewToolbar } from "./BoxLabelPreviewToolbar";
@@ -14,6 +14,21 @@ function fixedBoxReady(slot: FixedBoxSlot | null) {
 export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelViewProps) {
   const editor = useBoxLabelEditor(props);
   const { classImageCounts } = props;
+  const auraRef = useRef<HTMLDivElement | null>(null);
+
+  const handleCanvasWrapMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const aura = auraRef.current;
+    if (!aura) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    aura.style.left = `${e.clientX - rect.left}px`;
+    aura.style.top = `${e.clientY - rect.top}px`;
+    aura.style.opacity = "1";
+  }, []);
+
+  const handleCanvasWrapMouseLeave = useCallback(() => {
+    const aura = auraRef.current;
+    if (aura) aura.style.opacity = "0";
+  }, []);
 
   return (
     <>
@@ -30,47 +45,57 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
             return (
               <div className="pool-label-shortcut-slot" key={slot}>
                 <div className="pool-label-shortcut-number">{slot}</div>
-                <BoxLabelShortcutDropdown
-                  className="class-slot"
-                  title={`Shortcut ${slot}`}
-                  label={bound ? `${slotData!.classId}: ${classNameFor(editor.classes, slotData!.classId)}${modeTag}` : "empty"}
-                  active={bound && slotData!.classId === editor.currentClass && editor.activeShortcutSlot === slot}
-                  options={editor.classShortcutOptions(slot)}
-                  onSelect={(value) => {
-                    const next = editor.shortcutSlots.slice();
-                    if (value === "") {
-                      next[slot] = null;
-                    } else {
-                      // Preserve existing mode when changing class.
-                      const existingMode = next[slot]?.mode ?? "draw";
-                      next[slot] = { classId: Number(value), mode: existingMode };
-                    }
-                    editor.setShortcutSlots(next);
-                    if (value !== "") editor.selectClassShortcut(slot, true);
-                    else editor.setStatus(`Shortcut ${slot} cleared.`);
-                  }}
-                />
-                <button
-                  type="button"
-                  className={`pool-label-shortcut-mode-btn${slotMode === "subject-select" ? " mode-ss" : " mode-draw"}`}
-                  title={`Shortcut ${slot} mode: ${slotMode === "subject-select" ? "Subject Select" : "Draw"} — click to toggle`}
-                  disabled={!bound}
-                  onClick={() => {
-                    const next = editor.shortcutSlots.slice();
-                    const current = next[slot];
-                    if (!current) return;
-                    next[slot] = {
-                      ...current,
-                      mode: current.mode === "draw" ? "subject-select" : "draw"
-                    };
-                    editor.setShortcutSlots(next);
-                    editor.setStatus(
-                      `Shortcut ${slot} mode → ${next[slot]!.mode === "subject-select" ? "Subject Select" : "Draw"}.`
-                    );
-                  }}
-                >
-                  {slotMode === "subject-select" ? "SS" : "D"}
-                </button>
+                <div className="pool-label-shortcut-class-row-wrap">
+                  <BoxLabelShortcutDropdown
+                    className="class-slot"
+                    title={`Shortcut ${slot}`}
+                    label={bound ? `${slotData!.classId}: ${classNameFor(editor.classes, slotData!.classId)}${modeTag}` : "empty"}
+                    active={bound && slotData!.classId === editor.currentClass && editor.activeShortcutSlot === slot}
+                    options={editor.classShortcutOptions(slot)}
+                    onSelect={(value) => {
+                      const next = editor.shortcutSlots.slice();
+                      if (value === "") {
+                        next[slot] = null;
+                      } else {
+                        const existingMode = next[slot]?.mode ?? "draw";
+                        next[slot] = { classId: Number(value), mode: existingMode };
+                      }
+                      editor.setShortcutSlots(next);
+                      if (value !== "") editor.selectClassShortcut(slot, true);
+                      else editor.setStatus(`Shortcut ${slot} cleared.`);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className={`pool-label-shortcut-mode-btn${slotMode === "subject-select" ? " mode-ss" : " mode-draw"}`}
+                    title={`Shortcut ${slot} mode: ${slotMode === "subject-select" ? "Subject Select" : "Draw"} — click to toggle`}
+                    disabled={!bound}
+                    onClick={() => {
+                      const next = editor.shortcutSlots.slice();
+                      const current = next[slot];
+                      if (!current) return;
+                      next[slot] = {
+                        ...current,
+                        mode: current.mode === "draw" ? "subject-select" : "draw"
+                      };
+                      editor.setShortcutSlots(next);
+                      editor.setStatus(
+                        `Shortcut ${slot} mode → ${next[slot]!.mode === "subject-select" ? "Subject Select" : "Draw"}.`
+                      );
+                    }}
+                  >
+                    {slotMode === "subject-select" ? (
+                      <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                        <path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
+                        <rect x="7" y="7" width="10" height="10" rx="1"/>
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" stroke="none" aria-hidden="true">
+                        <path d="M6 3l10 10-5 1.5L8.5 20 6 3z"/>
+                      </svg>
+                    )}
+                  </button>
+                </div>
                 <BoxLabelShortcutDropdown
                   className="fixed-slot"
                   title={`Alt shortcut ${slot}`}
@@ -105,6 +130,8 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
             className={`canvas-wrap${editor.pointerToolEnabled ? " pool-label-pointer-tool" : ""}${editor.autoFitEnabled ? " pool-label-subject-select" : ""}${editor.blackBoxEnabled ? " pool-label-black-box-tool" : ""}`}
             id="dropZone"
             ref={editor.stageRef}
+            onMouseMove={handleCanvasWrapMouseMove}
+            onMouseLeave={handleCanvasWrapMouseLeave}
           >
             <canvas
               id="previewCanvas"
@@ -115,6 +142,13 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
               onPointerCancel={editor.onPointerUp}
               onContextMenu={(event) => event.preventDefault()}
               onWheel={editor.onWheel}
+            />
+            <div
+              ref={auraRef}
+              className="cursor-aura"
+              data-adjust={editor.boxAdjustMode}
+              style={{ opacity: 0 }}
+              aria-hidden="true"
             />
           </div>
           <aside className="pool-label-zoom-side" id="poolLabelZoomSide">

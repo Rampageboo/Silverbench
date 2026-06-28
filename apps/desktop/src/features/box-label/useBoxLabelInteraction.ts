@@ -104,6 +104,7 @@ export function useBoxLabelInteraction({
     classRef,
     dragRef,
     modeRef,
+    boxAdjustModeRef,
     pointerToolEnabled,
     autoFitEnabled,
     blackBoxEnabled,

@@ -1,16 +1,20 @@
 import config from "../../backend.config.json";
 
-export type BackendConfig = { host: string; port: number };
+export type BackendConfig = {
+  host: string;
+  port: number;
+};
 
+function normalizedOrigin(value: string) {
+  return value.trim().replace(/\/+$/, "");
+}
+
+/** Return the configured host and port from backend.config.json. */
 export function resolveBackendConfig(): BackendConfig {
   return {
     host: String(config.host || "127.0.0.1"),
     port: Number(config.port) || 8765
   };
-}
-
-function normalizedOrigin(value: string) {
-  return value.trim().replace(/\/+$/, "");
 }
 
 /** Resolve the local FastAPI origin, allowing explicit query/global overrides for development. */
