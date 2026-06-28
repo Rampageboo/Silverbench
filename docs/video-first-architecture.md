@@ -419,11 +419,13 @@ All proposal mutations follow the two-phase commit undo pattern:
 
 | Operation | Effect |
 |---|---|
-| Click dashed box (pointer mode) | Materializes → removes from proposals, adds to boxes |
-| Accept Selected | Materializes selected proposal → adds to boxes |
-| Reject Selected | Removes selected proposal |
+| Single-click dashed box (pointer mode) | Selects the proposal (highlights it); does not materialize |
+| Materialize Selected button | Materializes the selected proposal → removes from proposals, adds to boxes |
+| Reject Selected button | Removes the selected proposal from proposals |
 | Accept All | Materializes all proposals → adds all to boxes |
 | Reject All | Removes all proposals |
+
+**Review queue:** The "Next Needs Review" and "Previous Needs Review" buttons in the Box Label sidebar navigate to the nearest unreviewed, non-junk image. Reviewed and junk-flagged images are skipped by default.
 
 Undo/redo for each operation is scoped to the current image only. Navigating to another image and pressing Ctrl+Z never restores proposals on a different image.
 
