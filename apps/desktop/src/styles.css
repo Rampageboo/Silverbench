@@ -3323,3 +3323,221 @@ a.glass-card:focus-visible {
   word-break: break-all;
 }
 
+
+/* ============================================================
+   Label Workbench Header  (Phase 3A)
+   .lwb-*  — unified header shell; sits above BoxLabelPage / VideoLabelPage.
+   Canvas and annotation surfaces below this are NOT styled here.
+   ============================================================ */
+
+.lwb-header {
+  display: flex;
+  align-items: stretch;
+  height: 44px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--glass-border);
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+
+/* -- Sections ------------------------------------------------------------ */
+
+.lwb-section {
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  gap: 6px;
+}
+
+/* Mode switch — left, has a right separator */
+.lwb-section--mode {
+  padding: 0 10px;
+  border-right: 1px solid var(--glass-border);
+  flex-shrink: 0;
+}
+
+/* Source context — center, grows to fill */
+.lwb-section--source {
+  flex: 1;
+  min-width: 0;
+  gap: 8px;
+  overflow: hidden;
+}
+
+/* Workspace — right, has a left separator */
+.lwb-section--workspace {
+  border-left: 1px solid var(--glass-border);
+  padding: 0 14px;
+  flex-shrink: 0;
+  max-width: 220px;
+  overflow: hidden;
+}
+
+/* -- Mode switch --------------------------------------------------------- */
+
+.lwb-mode-switch {
+  display: flex;
+  gap: 1px;
+}
+
+.lwb-mode-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--glass-text-dim);
+  background: transparent;
+  border: none;
+  border-radius: var(--glass-radius-sm);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+  white-space: nowrap;
+}
+
+.lwb-mode-tab:hover {
+  background: var(--glass-bg-hover);
+  color: var(--glass-text);
+}
+
+.lwb-mode-tab.active {
+  background: var(--glass-accent-active);
+  color: var(--glass-accent-icon);
+}
+
+.lwb-mode-tab:focus-visible {
+  outline: none;
+  box-shadow: var(--glass-focus-ring);
+}
+
+.lwb-mode-icon {
+  flex: 0 0 auto;
+}
+
+/* -- Source kind badge --------------------------------------------------- */
+
+.lwb-source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--glass-text-dim);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border);
+  border-radius: 20px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  letter-spacing: 0.01em;
+}
+
+/* -- Task chips ---------------------------------------------------------- */
+
+.lwb-task-chips {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.lwb-task-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--glass-text-muted);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.lwb-task-chip--active {
+  color: var(--glass-accent-icon);
+  border-color: rgba(59, 130, 246, 0.24);
+  background: var(--glass-accent-active);
+}
+
+/* -- Live source summary (Phase 3B: populated by children) -------------- */
+
+.lwb-summary-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.lwb-summary-item {
+  font-size: 12px;
+  color: var(--glass-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lwb-summary-filename {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11.5px;
+  color: var(--glass-text-muted);
+  max-width: 220px;
+}
+
+.lwb-summary-count {
+  color: var(--glass-text-muted);
+  font-size: 11.5px;
+  flex-shrink: 0;
+}
+
+.lwb-summary-clock {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11.5px;
+  color: var(--glass-text-muted);
+  flex-shrink: 0;
+}
+
+/* -- Review chip --------------------------------------------------------- */
+
+.lwb-review-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  font-size: 10.5px;
+  font-weight: 600;
+  border-radius: 12px;
+  border: 1px solid;
+  flex-shrink: 0;
+}
+
+.lwb-review-chip--approved {
+  color: #86efac;
+  border-color: rgba(134, 239, 172, 0.28);
+  background: rgba(134, 239, 172, 0.08);
+}
+
+.lwb-review-chip--flagged {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.28);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+/* -- Workspace name ------------------------------------------------------ */
+
+.lwb-workspace-name {
+  font-size: 12px;
+  color: var(--glass-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+/* -- label-page--workbench modifier ------------------------------------- */
+
+.label-page--workbench {
+  /* The workbench shell; label-page base styles (flex col, h:100%) still apply. */
+}

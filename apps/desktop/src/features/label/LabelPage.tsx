@@ -1,18 +1,43 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useWorkspace } from "../../app/useWorkspace";
 import { VideoLabelPage } from "../video/VideoLabelPage";
 import { BoxLabelPage } from "../box-label/BoxLabelPage";
-
-type LabelMode = "video" | "image";
+import { LabelWorkbenchContext } from "./LabelWorkbenchContext";
+import { LabelWorkbenchHeader } from "./LabelWorkbenchHeader";
+import type { LabelSourceSummary, LabelWorkbenchContextValue, LabelWorkbenchMode } from "./labelWorkbenchTypes";
 
 type Props = {
   active?: boolean;
   onReady?: () => void;
 };
 
+/**
+ * Label Workbench shell — Phase 3A.
+ *
+ * Responsibilities:
+ *   - Manage mode state (image / video).
+ *   - Provide LabelWorkbenchContext to all descendant components.
+ *   - Render the unified workbench header (LabelWorkbenchHeader).
+ *   - Delegate canvas rendering to VideoLabelPage (video mode) or
+ *     BoxLabelPage (image mode) — both unchanged.
+ *
+ * Phase 3B will wire child pages up to reportSourceSummary so the
+ * header can show live source/review status.
+ */
 export function LabelPage({ active = true, onReady }: Props) {
   const { workspaceRoot } = useWorkspace();
-  const [mode, setMode] = useState<LabelMode>("video");
+  const [mode, setMode] = useState<LabelWorkbenchMode>("video");
+  const [sourceSummary, setSourceSummary] = useState<LabelSourceSummary | null>(null);
+
+  const reportSourceSummary = useCallback((summary: LabelSourceSummary | null) => {
+    setSourceSummary(summary);
+  }, []);
+
+  const ctxValue: LabelWorkbenchContextValue = {
+    mode,
+    setMode,
+    reportSourceSummary
+  };
 
   if (!workspaceRoot.trim()) {
     return (
@@ -27,42 +52,23 @@ export function LabelPage({ active = true, onReady }: Props) {
   const wsName = workspaceRoot.replace(/[/\\]+$/, "").split(/[/\\]/).at(-1) || workspaceRoot;
 
   return (
-    <div className="label-page">
-      <div className="label-mode-bar">
-        <div className="label-mode-tabs">
-          <button
-            type="button"
-            className={`label-mode-tab${mode === "video" ? " active" : ""}`}
-            onClick={() => setMode("video")}
-          >
-            <svg className="label-mode-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/>
-            </svg>
-            Video
-          </button>
-          <button
-            type="button"
-            className={`label-mode-tab${mode === "image" ? " active" : ""}`}
-            onClick={() => setMode("image")}
-          >
-            <svg className="label-mode-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="4" y="5" width="16" height="14" rx="2"/>
-              <circle cx="8.5" cy="9.5" r="1.5" fill="currentColor" stroke="none"/>
-              <path d="M20 15l-4-4-8 8"/>
-            </svg>
-            Image
-          </button>
+    <LabelWorkbenchContext.Provider value={ctxValue}>
+      <div className="label-page label-page--workbench">
+        <LabelWorkbenchHeader
+          mode={mode}
+          onModeChange={setMode}
+          workspaceName={wsName}
+          workspacePath={workspaceRoot}
+          sourceSummary={sourceSummary}
+        />
+        <div className="label-content">
+          {mode === "video" ? (
+            <VideoLabelPage active={active} onReady={onReady} />
+          ) : (
+            <BoxLabelPage onReady={onReady} />
+          )}
         </div>
-        <div className="label-mode-divider" aria-hidden="true" />
-        <span className="label-mode-context" title={workspaceRoot}>{wsName}</span>
       </div>
-      <div className="label-content">
-        {mode === "video" ? (
-          <VideoLabelPage active={active} onReady={onReady} />
-        ) : (
-          <BoxLabelPage onReady={onReady} />
-        )}
-      </div>
-    </div>
+    </LabelWorkbenchContext.Provider>
   );
 }
