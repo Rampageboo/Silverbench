@@ -96,6 +96,7 @@ export function ToolNav({ activeTab, imagePoolNewCount = 0, onSelectTab }: ToolN
                 type="button"
                 className={`tool-nav-item ${active ? "active" : ""}`}
                 title={`${tool.label} · ${tool.labelZh}${badge ? ` (${badge})` : ""}`}
+                aria-label={`${tool.label} · ${tool.labelZh}${badge ? `, ${badge} new` : ""}`}
                 onClick={() => handleSelectTab(tool.tab)}
               >
                 <span
@@ -106,7 +107,7 @@ export function ToolNav({ activeTab, imagePoolNewCount = 0, onSelectTab }: ToolN
                   <span className="tool-nav-item-title">{tool.label}</span>
                   <span className="tool-nav-item-sub">{tool.labelZh}</span>
                 </span>
-                {badge ? <span className="tool-nav-badge">{badge}</span> : null}
+                {badge ? <span className="tool-nav-badge" aria-hidden="true">{badge}</span> : null}
               </button>
             );
           })}

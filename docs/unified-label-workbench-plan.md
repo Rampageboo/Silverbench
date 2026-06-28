@@ -1,6 +1,6 @@
 # Unified Label Workbench — Architecture Plan
 
-## Status: Label Workbench v1 Consolidation complete
+## Status: Label Workbench v1 Stabilization complete
 
 ---
 
@@ -366,7 +366,68 @@ while keeping child pages in charge of annotation behavior.
 
 ---
 
-## 9. Phase 5D - Shared canvas abstraction (deferred; NOT Workbench v1)
+## 9. Stabilization - Workbench v1 regression pass
+
+The v1 stabilization pass verifies the new product layer without expanding its
+scope. The Workbench remains a shell, inspector, and action bridge over the
+existing child tools.
+
+### Stabilization status
+
+- Automated validation is green for desktop build, desktop unit tests, selected
+  backend Python compilation, and backend unittest discovery.
+- Startup now lands on Home while still restoring the last workspace in memory.
+  User-initiated Open Workspace, Recent Workspace, and Create Workspace flows
+  still move into Label.
+- Primary navigation routes to Home, Library, Label, Review, Export, and the
+  Settings modal without stale route labels.
+- Review and Export hubs still link to the existing legacy tools instead of new
+  replacement flows.
+- Workbench image/video mode switching clears source summary, inspector state,
+  and registered actions before the next child surface reports state.
+- Embedded Box Label and Video Label hide duplicated chrome only when rendered
+  inside `LabelPage`; standalone legacy rendering keeps its full UI.
+- Class compatibility rules remain unchanged: `classes.txt` and `data.yaml`
+  stay compatible, archived detect classes keep their YOLO id slots, archived
+  classes are filtered out of new-label pickers, old archived references still
+  display, and export class order is not compacted.
+
+### Bugs fixed in stabilization
+
+- Startup no longer restores the last active tool tab over Home during automatic
+  workspace bootstrap.
+- The Review navigation badge is now hidden from the button accessible name so
+  the Review route remains identifiable when the badge shows `99+`.
+
+### Known remaining risks
+
+- Manual browser smoke was limited by browser-control session timeouts; the core
+  Home, main navigation, Label, Review, Export, and Settings render paths were
+  checked, but full proposal editing and video timeline interactions still need
+  a hands-on pass with representative media.
+- Create Workspace was code-audited for writing both legacy `classes.txt` /
+  `data.yaml` and new `workspace/classes.json`, but a destructive/create-on-disk
+  manual run was not performed in this stabilization pass.
+- Archived-class behavior is covered by domain/unit tests and code audit; full
+  end-to-end UI coverage depends on a workspace containing archived classes and
+  old annotations.
+- Standalone legacy Box Label and Video Label remain in the registry for
+  compatibility, but their direct legacy routes are not exposed in the primary
+  sidebar.
+
+### Intentionally deferred
+
+- Shared canvas abstraction.
+- Shared command system.
+- Unified undo/redo model.
+- Moving class picker fully into Workbench.
+- Moving timeline fully into Workbench.
+- Export presets.
+- Class merge/split/delete migration.
+
+---
+
+## 10. Phase 5D - Shared canvas abstraction (deferred; NOT Workbench v1)
 
 > **Risk: high. Do not start until Label Workbench v1 is complete and stable.**
 
@@ -391,7 +452,7 @@ behind a shared interface. Do not share DOM or React state between them.
 
 ---
 
-## 10. CSS namespace
+## 11. CSS namespace
 
 Phase 3A introduces the `.lwb-*` CSS namespace for all workbench header components.
 
@@ -406,7 +467,7 @@ DOM (LabelWorkbenchHeader replaces them) but remain in styles.css for reference.
 
 ---
 
-## 11. File map
+## 12. File map
 
 ```
 apps/desktop/src/features/label/

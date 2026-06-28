@@ -332,7 +332,7 @@ export function WorkspaceProvider({
 
 
 
-        await afterWorkspaceOpened(opened.root || candidate);
+        await afterWorkspaceOpened(opened.root || candidate, { restoreTab: false });
 
         if (cancelled) return;
 
