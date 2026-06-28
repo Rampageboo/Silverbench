@@ -3,6 +3,23 @@ import type { MetadataRow } from "../image-pool/types";
 import type { BoxLabelEntry } from "./boxLabelCore";
 import type { BoxLabelShortcutSlot, FixedBoxSlot } from "./session";
 
+export type BoxLabelWorkbenchBridge = {
+  proposalCount: number;
+  activeProposalCount: number;
+  selectedProposalId: string | null;
+  selectedProposalArchived: boolean;
+  selectedProposalClassId: number | null;
+  selectedProposalClassKey: string | null;
+  selectedProposalClassName: string | null;
+  selectedProposalConfidence: number | null;
+  activeDetectClasses: Array<{ id: number; name: string }>;
+  currentClassId: number | null;
+  acceptSelectedProposal: (() => void) | null;
+  rejectSelectedProposal: (() => void) | null;
+  acceptAllProposals: () => void;
+  rejectAllProposals: () => void;
+};
+
 export type BoxLabelViewProps = {
   workspaceRoot: string;
   datasetRoot: string;
@@ -32,6 +49,7 @@ export type BoxLabelViewProps = {
   onLabelsChanged: (filename: string, boxes: api.LabelBox[]) => void;
   onMetadataChanged?: () => Promise<void>;
   onStatusText?: (text: string) => void;
+  onWorkbenchBridgeChange?: (bridge: BoxLabelWorkbenchBridge | null) => void;
   onMarkJunk?: () => Promise<void>;
   onUndoJunk?: () => Promise<void>;
 };

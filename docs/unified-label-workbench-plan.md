@@ -1,6 +1,6 @@
 # Unified Label Workbench — Architecture Plan
 
-## Status: Phase 3A complete
+## Status: Label Workbench v1 Consolidation complete
 
 ---
 
@@ -128,9 +128,247 @@ Change the `title` prop from `"Box Label"` to `"Images"` or similar neutral lang
 
 ---
 
-## 5. Phase 3C — Shared canvas abstraction (deferred; NOT Phase 3A/B)
+## 5. Phase 5A - Shared inspector and control bridge
 
-> **Risk: high. Do not start until Phase 3B is complete and stable.**
+Phase 5A adds an additive Workbench Inspector beside the existing image/video
+labeling surfaces. It does not move ownership of editing state out of
+`BoxLabelPage` or `VideoLabelPage`.
+
+### What was added
+
+- `LabelWorkbenchInspector` displays source status, task chips, review status,
+  class counts, proposal context, blackout/overlay context, segment context,
+  warnings, and contextual actions.
+- `labelWorkbenchTypes.ts` now includes lightweight capability/action models:
+  `LabelWorkbenchCapability`, `LabelWorkbenchActionId`,
+  `LabelWorkbenchAction`, `LabelWorkbenchActionGroup`,
+  `LabelWorkbenchControlState`, and `LabelWorkbenchInspectorState`.
+- `LabelWorkbenchContextValue` now supports optional upward reporting:
+  `reportInspectorState`, `registerWorkbenchActions`, and
+  `clearWorkbenchActions`, in addition to `reportSourceSummary`.
+- `LabelPage` renders the inspector as a right-side rail and clears source,
+  inspector, and action state on mode switch to avoid stale image/video state.
+
+### Child page adapters
+
+- `BoxLabelPage` reports image source status, review state, observed class
+  count, archived-class status warnings when surfaced by the child workflow,
+  and safe review/junk actions.
+- Box proposal actions are shown as unavailable in Phase 5A because proposal
+  materialization/rejection is still owned inside `BoxLabelView`.
+- `VideoLabelPage` reports current video/timestamp, detect/classify status,
+  active class counts, blackout count, segment count, archived-class warnings,
+  and safe actions: Random Next, Copy Previous Boxes, Mark Reviewed, Mark
+  Empty, and Clear Frame Record.
+
+### Existing controls intentionally retained
+
+The inspector duplicates a subset of actions during transition. Existing
+controls remain in place:
+
+- Box Label topbar review/junk controls.
+- Box Label proposal panel materialize/reject controls.
+- Box Label class/shortcut/fixed-box controls.
+- Video Label Random Sampling, Detect, Classification, and Blackout panels.
+
+### Deferred to Phase 5B/5C
+
+- Remove duplicate old controls after inspector actions are proven stable.
+- Move class picker fully into the Workbench.
+- Move proposal panel fully into the Workbench.
+- Add a shared canvas abstraction.
+- Add a shared command system.
+- Add a unified undo/redo command model.
+
+---
+
+## 6. Phase 5B - Workbench action bridge activation
+
+Phase 5B activates inspector actions as bridges into existing child-page
+handlers. The Workbench does not own annotation state, undo/redo state,
+proposal state, sampling state, storage, or export behavior.
+
+### Wired actions
+
+- Image review:
+  - Mark/Unmark Reviewed calls the existing `useBoxLabel` metadata handler.
+  - Mark Junk calls the existing `useBoxLabel` junk handler.
+- Image proposals:
+  - Accept Selected calls `BoxLabelView` / `useBoxLabelEditor.materializeProposal`.
+  - Reject Selected calls `useBoxLabelEditor.rejectProposal`.
+  - Accept All calls `useBoxLabelEditor.acceptAllProposals`.
+  - Reject All calls `useBoxLabelEditor.rejectAllProposals`.
+- Video navigation/review:
+  - Random Next calls the existing segment-aware `useVideoSampling.randomNext` path.
+  - Copy Previous Boxes calls `useVideoAnnotationSession.copyPreviousBoxes`.
+  - Mark Reviewed calls `useVideoAnnotationSession.updateCurrentFrame`.
+  - Mark Empty calls `useVideoAnnotationSession.markEmptyReviewed`.
+  - Clear Frame Record calls `useVideoAnnotationSession.clearFrameRecord`.
+
+### Guardrails preserved
+
+- Box proposal materialize/reject remains owned by `BoxLabelView` and
+  `useBoxLabelEditor`, so scoped undo/redo snapshots still include boxes and
+  proposals exactly as before.
+- Archived-class guards still run inside the existing proposal handlers.
+- Video actions still preserve timestamp-first annotation behavior, current
+  sampling logic, reviewed/empty semantics, and blackout overlay behavior.
+- Disabled inspector actions show a reason instead of silently doing nothing.
+
+### Left disabled or not moved
+
+- Accept Selected and Reject Selected remain disabled until a proposal is
+  selected in the existing Box Label proposal panel.
+- Accept Selected and Accept All remain disabled when the target proposal(s)
+  only reference archived classes.
+- Class picker, proposal panel UI, canvas controls, export controls, and
+  undo/redo UI remain in their existing child-page locations.
+
+### Existing controls intentionally retained
+
+Duplicate controls are expected in Phase 5B. The old Box Label and Video Label
+controls remain the canonical fallback while the Workbench bridge proves stable.
+
+### Deferred
+
+- Removing legacy child-page controls globally.
+- Moving proposal panel fully into the Workbench.
+- Moving class picker fully into the Workbench.
+- Shared command system.
+- Shared canvas abstraction.
+- Unified undo/redo command model.
+
+---
+
+## 7. Phase 5C - Embedded label mode and duplicate UI cleanup
+
+Phase 5C adds render-mode awareness so `BoxLabelPage` and `VideoLabelPage`
+can distinguish standalone rendering from Workbench-embedded rendering. This
+phase is UI de-duplication only.
+
+### Embedded mode
+
+- `LabelWorkbenchContextValue.renderMode` is set to
+  `"workbench-embedded"` by `LabelPage`.
+- Child pages rendered outside `LabelPage` still see no Workbench context and
+  keep their standalone chrome and controls.
+- `useLabelWorkbench` exposes a small helper for embedded-mode checks.
+
+### Duplicate UI audit
+
+Box Label duplicates now covered by the Workbench:
+
+- Top-level `Box Label` title/topbar.
+- Current image source/status text.
+- Mark Reviewed / Mark Junk controls.
+- Proposal accept/reject controls, now available through inspector actions.
+
+Video Label duplicates now covered by the Workbench:
+
+- Top-level `Video Label` title/header and current video summary.
+- Random Next action.
+- Copy Previous Boxes, Mark Empty, and Clear Frame Record actions.
+- Detect/classify task and review status summary chips.
+
+### Hidden or de-emphasized in embedded mode
+
+- Box Label hides the topbar in Workbench embedded mode.
+- Video Label hides the top-level page header in Workbench embedded mode.
+- Video Label hides duplicated embedded controls for Random Next, Copy Previous
+  Boxes, Mark Empty, and Clear Frame Record.
+- Embedded Box/Video layouts reduce nested spacing and shell chrome without
+  applying blur or filters to the annotation canvas.
+
+### Intentionally retained in embedded mode
+
+- Box Label gallery, shortcut/fixed-box controls, canvas tools, current boxes,
+  proposal list/panel, class picker, and keyboard shortcuts.
+- Video canvas/preview, timeline/scrub controls, Add Video, sampling mode/min
+  spacing controls, reviewed-frame navigation, classification controls, blackout
+  overlay controls, detect class picker, and session/status text.
+
+### Preserved behavior
+
+- Standalone Box Label and Video Label render as before.
+- Annotation editing, proposal logic, scoped undo/redo, timestamp/session logic,
+  sampling, persistence, export behavior, and YOLO formats are unchanged.
+
+### Deferred
+
+- Shared canvas abstraction.
+- Moving class picker fully into the Workbench.
+- Moving proposal panel fully into the Workbench.
+- Moving video timeline fully into the Workbench.
+- Removing legacy child page controls globally.
+- Shared command system.
+- Unified undo/redo command model.
+
+---
+
+## 8. Milestone - Label Workbench v1 Consolidation
+
+The v1 consolidation makes the unified Label page feel like a product surface
+while keeping child pages in charge of annotation behavior.
+
+### Workbench now presents
+
+- Consistent image/video source summaries: filename or video name, image index
+  or timestamp, task chips, review status, class counts, proposal counts, segment
+  context, and blackout context.
+- Image Proposal / Review details in the inspector:
+  - proposal count;
+  - selected proposal class and confidence;
+  - archived selected-proposal warning;
+  - Accept Selected, Reject Selected, Accept All, Reject All;
+  - Mark Reviewed / Unreviewed and Mark Junk.
+- Class palette summaries:
+  - active detect classes with YOLO id badges;
+  - active classification classes in video mode;
+  - archived classes are filtered out of normal active class display;
+  - archived references still surface as warnings.
+- Inspector action state: enabled, disabled, unavailable, busy, and danger.
+
+### Child pages still own
+
+- Box and video canvas rendering.
+- Annotation editing, proposal materialization/rejection, and undo/redo snapshots.
+- Class selection and shortcut/fixed-box controls.
+- Video timeline, sampling logic, timestamp/session logic, and blackout editing.
+- Persistence, export behavior, YOLO formats, class id ordering, and
+  `classes.txt` compatibility.
+
+### Embedded duplicate cleanup
+
+- Box Label embedded mode hides the duplicated topbar/title/status.
+- Box Label embedded mode hides old proposal action buttons now that inspector
+  actions have parity, while keeping the proposal list/selection UI.
+- Video Label embedded mode hides duplicated title/status and duplicated action
+  buttons already exposed in the inspector.
+- Standalone Box Label and Video Label keep legacy chrome and controls.
+
+### Still intentionally retained
+
+- Box Label gallery, canvas tools, class picker, current boxes, proposal list,
+  keyboard shortcuts, and local editing controls.
+- Video timeline/scrub controls, sampling parameters, reviewed-frame navigation,
+  class/task controls, blackout controls, and session status.
+
+### Deferred
+
+- Shared canvas abstraction.
+- Moving class picker fully into the Workbench.
+- Moving proposal panel fully into the Workbench.
+- Moving video timeline fully into the Workbench.
+- Removing legacy child-page controls globally.
+- Shared command system.
+- Unified undo/redo command model.
+- Export presets.
+
+---
+
+## 9. Phase 5D - Shared canvas abstraction (deferred; NOT Workbench v1)
+
+> **Risk: high. Do not start until Label Workbench v1 is complete and stable.**
 
 Unifying the annotation canvas (BoxLabelView + VideoAnnotationCanvas) into a shared
 component requires:
@@ -153,7 +391,7 @@ behind a shared interface. Do not share DOM or React state between them.
 
 ---
 
-## 6. CSS namespace
+## 10. CSS namespace
 
 Phase 3A introduces the `.lwb-*` CSS namespace for all workbench header components.
 
@@ -168,7 +406,7 @@ DOM (LabelWorkbenchHeader replaces them) but remain in styles.css for reference.
 
 ---
 
-## 7. File map
+## 11. File map
 
 ```
 apps/desktop/src/features/label/

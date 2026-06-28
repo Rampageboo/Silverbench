@@ -11,3 +11,11 @@ import type { LabelWorkbenchContextValue } from "./labelWorkbenchTypes";
 export function useLabelWorkbench(): LabelWorkbenchContextValue | null {
   return useContext(LabelWorkbenchContext);
 }
+
+export function isLabelWorkbenchEmbedded(workbench: LabelWorkbenchContextValue | null | undefined): boolean {
+  return workbench?.renderMode === "workbench-embedded";
+}
+
+export function useIsLabelWorkbenchEmbedded(): boolean {
+  return isLabelWorkbenchEmbedded(useLabelWorkbench());
+}

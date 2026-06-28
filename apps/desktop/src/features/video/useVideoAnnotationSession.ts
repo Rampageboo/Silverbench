@@ -111,7 +111,10 @@ export function useVideoAnnotationSession({
 
   // Detect task derived state
   const detectTask = getDetectTask(currentFrame);
-  const boxes: LabelBox[] = detectBoxesToLabelBoxes(detectTask?.boxes ?? []);
+  const boxes: LabelBox[] = useMemo(
+    () => detectBoxesToLabelBoxes(detectTask?.boxes ?? []),
+    [detectTask?.boxes]
+  );
   const reviewed = Boolean(detectTask?.reviewed);
 
   // Clf task derived state
@@ -467,6 +470,17 @@ export function useVideoAnnotationSession({
     [classManifest]
   );
 
+  const isArchivedDetectClass = useCallback(
+    (classId: number) => archivedDetectIds.has(classId),
+    [archivedDetectIds]
+  );
+
+  const isArchivedClfClass = useCallback(
+    (classKey: string) =>
+      archivedClassKeys.has(classKey) || (classManifest ? isClassificationClassArchived(classManifest, classKey) : false),
+    [archivedClassKeys, classManifest]
+  );
+
   const markClfReviewed = useCallback(() => {
     const source = manifestRef.current;
     if (!source || !current) return;
@@ -514,10 +528,9 @@ export function useVideoAnnotationSession({
     activeDetectClasses,
     clfClassOptions,
     clfDisplayName,
-    isArchivedDetectClass: (classId: number) => archivedDetectIds.has(classId),
+    isArchivedDetectClass,
     archivedDetectClassIds: archivedDetectIds,
-    isArchivedClfClass: (classKey: string) =>
-      archivedClassKeys.has(classKey) || (classManifest ? isClassificationClassArchived(classManifest, classKey) : false),
+    isArchivedClfClass,
     currentClass,
     assignClass,
     selectedIndex,

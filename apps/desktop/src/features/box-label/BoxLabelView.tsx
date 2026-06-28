@@ -1,4 +1,4 @@
-import React, { useRef, useCallback } from "react";
+import React, { useRef, useCallback, useEffect, useMemo } from "react";
 import { errMessage } from "../../lib/errors";
 import type { BoxLabelViewProps } from "./boxLabelTypes";
 import { BoxLabelPreviewToolbar } from "./BoxLabelPreviewToolbar";
@@ -13,7 +13,7 @@ function fixedBoxReady(slot: FixedBoxSlot | null) {
 
 export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelViewProps) {
   const editor = useBoxLabelEditor(props);
-  const { classImageCounts } = props;
+  const { classImageCounts, onWorkbenchBridgeChange } = props;
   const auraRef = useRef<HTMLDivElement | null>(null);
   const selectedProposal = editor.selectedProposalId
     ? editor.proposals.find((p) => p.id === editor.selectedProposalId)
@@ -21,6 +21,73 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
   const selectedProposalArchived =
     (selectedProposal?.classId != null && editor.isArchivedDetectClass(selectedProposal.classId)) ||
     (Boolean(selectedProposal?.classKey) && editor.isArchivedClassKey(selectedProposal!.classKey!));
+  const activeProposalCount = useMemo(
+    () =>
+      editor.proposals.filter(
+        (proposal) =>
+          !(
+            (proposal.classId != null && editor.isArchivedDetectClass(proposal.classId)) ||
+            (Boolean(proposal.classKey) && editor.isArchivedClassKey(proposal.classKey!))
+          )
+      ).length,
+    [editor.proposals, editor.isArchivedDetectClass, editor.isArchivedClassKey]
+  );
+
+  const handleWorkbenchAcceptSelectedProposal = useCallback(() => {
+    if (!editor.selectedProposalId) return;
+    editor.materializeProposal(editor.selectedProposalId).catch((err) => editor.setError(errMessage(err)));
+  }, [editor.materializeProposal, editor.selectedProposalId, editor.setError]);
+
+  const handleWorkbenchRejectSelectedProposal = useCallback(() => {
+    if (!editor.selectedProposalId) return;
+    editor.rejectProposal(editor.selectedProposalId).catch((err) => editor.setError(errMessage(err)));
+  }, [editor.rejectProposal, editor.selectedProposalId, editor.setError]);
+
+  const handleWorkbenchAcceptAllProposals = useCallback(() => {
+    editor.acceptAllProposals().catch((err) => editor.setError(errMessage(err)));
+  }, [editor.acceptAllProposals, editor.setError]);
+
+  const handleWorkbenchRejectAllProposals = useCallback(() => {
+    editor.rejectAllProposals().catch((err) => editor.setError(errMessage(err)));
+  }, [editor.rejectAllProposals, editor.setError]);
+
+  useEffect(() => {
+    onWorkbenchBridgeChange?.({
+      proposalCount: editor.proposals.length,
+      activeProposalCount,
+      selectedProposalId: editor.selectedProposalId,
+      selectedProposalArchived,
+      selectedProposalClassId: selectedProposal?.classId ?? null,
+      selectedProposalClassKey: selectedProposal?.classKey ?? null,
+      selectedProposalClassName: selectedProposal?.classId != null
+        ? classNameFor(editor.classes, selectedProposal.classId)
+        : selectedProposal?.classKey ?? null,
+      selectedProposalConfidence: selectedProposal?.confidence ?? null,
+      activeDetectClasses: editor.classes.map((item) => ({ id: item.id, name: item.name })),
+      currentClassId: editor.currentClass,
+      acceptSelectedProposal: editor.selectedProposalId ? handleWorkbenchAcceptSelectedProposal : null,
+      rejectSelectedProposal: editor.selectedProposalId ? handleWorkbenchRejectSelectedProposal : null,
+      acceptAllProposals: handleWorkbenchAcceptAllProposals,
+      rejectAllProposals: handleWorkbenchRejectAllProposals,
+    });
+  }, [
+    activeProposalCount,
+    editor.proposals.length,
+    editor.selectedProposalId,
+    editor.classes,
+    editor.currentClass,
+    handleWorkbenchAcceptAllProposals,
+    handleWorkbenchAcceptSelectedProposal,
+    handleWorkbenchRejectAllProposals,
+    handleWorkbenchRejectSelectedProposal,
+    onWorkbenchBridgeChange,
+    selectedProposal,
+    selectedProposalArchived,
+  ]);
+
+  useEffect(() => {
+    return () => onWorkbenchBridgeChange?.(null);
+  }, [onWorkbenchBridgeChange]);
 
   const handleCanvasWrapMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const aura = auraRef.current;

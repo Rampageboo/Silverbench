@@ -4,7 +4,14 @@ import { VideoLabelPage } from "../video/VideoLabelPage";
 import { BoxLabelPage } from "../box-label/BoxLabelPage";
 import { LabelWorkbenchContext } from "./LabelWorkbenchContext";
 import { LabelWorkbenchHeader } from "./LabelWorkbenchHeader";
-import type { LabelSourceSummary, LabelWorkbenchContextValue, LabelWorkbenchMode } from "./labelWorkbenchTypes";
+import { LabelWorkbenchInspector } from "./LabelWorkbenchInspector";
+import type {
+  LabelSourceSummary,
+  LabelWorkbenchActionGroup,
+  LabelWorkbenchContextValue,
+  LabelWorkbenchInspectorState,
+  LabelWorkbenchMode,
+} from "./labelWorkbenchTypes";
 
 type Props = {
   active?: boolean;
@@ -28,14 +35,50 @@ export function LabelPage({ active = true, onReady }: Props) {
   const { workspaceRoot } = useWorkspace();
   const [mode, setMode] = useState<LabelWorkbenchMode>("video");
   const [sourceSummary, setSourceSummary] = useState<LabelSourceSummary | null>(null);
+  const [inspectorState, setInspectorState] = useState<LabelWorkbenchInspectorState | null>(null);
+  const [actionGroups, setActionGroups] = useState<LabelWorkbenchActionGroup[]>([]);
+
+  const clearWorkbenchActions = useCallback(() => {
+    setActionGroups([]);
+  }, []);
 
   const reportSourceSummary = useCallback((summary: LabelSourceSummary | null) => {
     setSourceSummary(summary);
   }, []);
 
+  const reportInspectorState = useCallback((state: LabelWorkbenchInspectorState | null) => {
+    setInspectorState(state);
+  }, []);
+
+  const registerWorkbenchActions = useCallback((groups: LabelWorkbenchActionGroup[] | null) => {
+    setActionGroups(groups ?? []);
+  }, []);
+
+  const handleModeChange = useCallback((nextMode: LabelWorkbenchMode) => {
+    setMode(nextMode);
+    setSourceSummary(null);
+    setInspectorState(null);
+    setActionGroups([]);
+  }, []);
+
   const ctxValue = useMemo<LabelWorkbenchContextValue>(
-    () => ({ mode, setMode, reportSourceSummary }),
-    [mode, setMode, reportSourceSummary]
+    () => ({
+      mode,
+      setMode: handleModeChange,
+      renderMode: "workbench-embedded",
+      reportSourceSummary,
+      reportInspectorState,
+      registerWorkbenchActions,
+      clearWorkbenchActions,
+    }),
+    [
+      clearWorkbenchActions,
+      handleModeChange,
+      mode,
+      reportInspectorState,
+      reportSourceSummary,
+      registerWorkbenchActions,
+    ]
   );
 
   if (!workspaceRoot.trim()) {
@@ -55,17 +98,25 @@ export function LabelPage({ active = true, onReady }: Props) {
       <div className="label-page label-page--workbench">
         <LabelWorkbenchHeader
           mode={mode}
-          onModeChange={setMode}
+          onModeChange={handleModeChange}
           workspaceName={wsName}
           workspacePath={workspaceRoot}
           sourceSummary={sourceSummary}
         />
-        <div className="label-content">
-          {mode === "video" ? (
-            <VideoLabelPage active={active} onReady={onReady} />
-          ) : (
-            <BoxLabelPage onReady={onReady} />
-          )}
+        <div className="label-workbench-body">
+          <div className="label-content">
+            {mode === "video" ? (
+              <VideoLabelPage active={active} onReady={onReady} />
+            ) : (
+              <BoxLabelPage onReady={onReady} />
+            )}
+          </div>
+          <LabelWorkbenchInspector
+            mode={mode}
+            sourceSummary={sourceSummary}
+            inspectorState={inspectorState}
+            actionGroups={actionGroups}
+          />
         </div>
       </div>
     </LabelWorkbenchContext.Provider>

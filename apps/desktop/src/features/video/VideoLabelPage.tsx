@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkspace } from "../../app/useWorkspace";
 import { useWorkbenchCommands } from "../../input/MultimodalControlProvider";
-import { useLabelWorkbench } from "../label/useLabelWorkbench";
+import { isLabelWorkbenchEmbedded, useLabelWorkbench } from "../label/useLabelWorkbench";
 import { VideoAnnotationCanvas, type RemotePointerState } from "./VideoAnnotationCanvas";
 import { formatVideoClock } from "./videoAnnotationDomain";
 import { useVideoAnnotationSession } from "./useVideoAnnotationSession";
@@ -43,16 +43,17 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
   const [remotePointer, setRemotePointer] = useState<RemotePointerState | null>(null);
 
   const workbench = useLabelWorkbench();
+  const embedded = isLabelWorkbenchEmbedded(workbench);
 
   useEffect(() => {
     if (!workbench) return;
     if (!session.current) {
-      workbench.reportSourceSummary(null);
+      workbench.reportSourceSummary?.(null);
       return;
     }
     const videoName =
       session.current.path.split(/[/\\]/).at(-1)?.replace(/\.[^.]+$/, "") ?? null;
-    workbench.reportSourceSummary({
+    workbench.reportSourceSummary?.({
       kind: "video-timestamp",
       videoName,
       timestampMs: Math.round(session.time * 1000),
@@ -60,7 +61,7 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
       hasDetectTask: Boolean(session.detectTask),
       hasClfTask: Boolean(session.clfTask),
     });
-    return () => { workbench.reportSourceSummary(null); };
+    return () => { workbench.reportSourceSummary?.(null); };
   }, [workbench, session.current, session.time, session.reviewed, session.detectTask, session.clfTask]);
 
   // ---------- Blackout overlay state ----------
@@ -148,18 +149,162 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
     setRemotePointer(null);
   }, [active, session.current?.path]);
 
-  const handleGotoTime = (nextTime: number) => {
+  const handleGotoTime = useCallback((nextTime: number) => {
     sampling.setLastSource("manual");
     session.gotoTime(nextTime);
-  };
+  }, [sampling.setLastSource, session.gotoTime]);
 
   // Random Next seeks to a new timestamp only; it does NOT create an annotation record.
-  const handleRandomNext = () => {
+  const handleRandomNext = useCallback(() => {
     const candidate = sampling.randomNext();
     if (candidate) {
       session.gotoTime(candidate.timestampMs / 1000);
     }
-  };
+  }, [sampling.randomNext, session.gotoTime]);
+
+  const sourceLabel =
+    sampling.lastSource === "random-segment"
+      ? "Random segment"
+      : sampling.lastSource === "random-whole-video"
+        ? "Random whole-video"
+        : "Manual";
+
+  useEffect(() => {
+    if (!workbench) return;
+    const selectedBox = session.selectedIndex !== null ? session.boxes[session.selectedIndex] : null;
+    const warnings = [];
+    if (selectedBox && session.isArchivedDetectClass(selectedBox.classId)) {
+      warnings.push({
+        id: "archived-detect-class",
+        label: "Archived detect class",
+        detail: "The selected box references an archived class.",
+        tone: "warning" as const,
+      });
+    }
+    if (session.clfTask?.classKey && session.isArchivedClfClass(session.clfTask.classKey)) {
+      warnings.push({
+        id: "archived-classification-class",
+        label: "Archived classification class",
+        detail: "The current classification label references an archived class.",
+        tone: "warning" as const,
+      });
+    }
+    workbench.reportInspectorState?.({
+      taskKind: "both",
+      reviewStatus: session.reviewed ? "approved" : "unreviewed",
+      timestampLabel: formatVideoClock(session.time),
+      sourceDetail: sourceLabel,
+      classSummary: {
+        activeDetectCount: session.activeDetectClasses.length,
+        totalDetectCount: session.classes.length,
+        activeClassificationCount: session.clfClassOptions.length,
+      },
+      classPalette: {
+        detectClasses: session.activeDetectClasses.map((item) => ({ id: item.id, name: item.name })),
+        classificationClasses: session.clfClassOptions.map((item) => ({ key: item.key, name: item.name })),
+        currentDetectClassId: session.currentClass,
+        currentClassificationKey: session.clfTask?.classKey ?? null,
+        readOnlyReason: "Class selection remains owned by the Video Label task panels in v1.",
+      },
+      overlaySummary: { activeCount: currentBlackouts.length },
+      segmentSummary: sampling.segmentCount > 0
+        ? { label: `${sampling.segmentCount} enabled`, startMs: null, endMs: null }
+        : null,
+      warnings,
+    });
+    workbench.registerWorkbenchActions?.([
+      {
+        id: "video-navigation",
+        label: "Navigation",
+        actions: [
+          {
+            id: "video.randomNext",
+            label: "Random Next",
+            variant: "primary",
+            disabled: !session.current || videoDurationMs <= 0,
+            unavailableReason: !session.current
+              ? "No video selected."
+              : videoDurationMs <= 0
+                ? "Video duration is unavailable."
+                : undefined,
+            run: handleRandomNext,
+          },
+          {
+            id: "video.copyPreviousBoxes",
+            label: "Copy Previous Boxes",
+            disabled: !session.annotatedFrames.length || !session.current,
+            unavailableReason: !session.current
+              ? "No video selected."
+              : !session.annotatedFrames.length
+                ? "No earlier annotated frame to copy from."
+                : undefined,
+            run: session.copyPreviousBoxes,
+          },
+        ],
+      },
+      {
+        id: "video-review",
+        label: "Review",
+        actions: [
+          {
+            id: "review.markReviewed",
+            label: "Mark Reviewed",
+            disabled: !session.current,
+            unavailableReason: session.current ? undefined : "No video selected.",
+            run: () => {
+              if (session.current) session.updateCurrentFrame(session.boxes, true);
+            },
+          },
+          {
+            id: "review.markEmpty",
+            label: "Mark Empty",
+            disabled: !session.current,
+            unavailableReason: session.current ? undefined : "No video selected.",
+            run: session.markEmptyReviewed,
+          },
+          {
+            id: "review.clearRecord",
+            label: "Clear Frame Record",
+            variant: "danger",
+            disabled: !session.currentFrame,
+            unavailableReason: session.currentFrame ? undefined : "No annotation record exists for this timestamp.",
+            run: session.clearFrameRecord,
+          },
+        ],
+      },
+    ]);
+    return () => {
+      workbench.reportInspectorState?.(null);
+      workbench.clearWorkbenchActions?.();
+    };
+  }, [
+    workbench,
+    currentBlackouts.length,
+    handleRandomNext,
+    sampling.segmentCount,
+    session.activeDetectClasses,
+    session.activeDetectClasses.length,
+    session.annotatedFrames.length,
+    session.boxes,
+    session.classes.length,
+    session.clearFrameRecord,
+    session.clfClassOptions.length,
+    session.clfClassOptions,
+    session.clfTask,
+    session.copyPreviousBoxes,
+    session.current,
+    session.currentClass,
+    session.currentFrame,
+    session.isArchivedClfClass,
+    session.isArchivedDetectClass,
+    session.markEmptyReviewed,
+    session.reviewed,
+    session.selectedIndex,
+    session.time,
+    session.updateCurrentFrame,
+    sourceLabel,
+    videoDurationMs,
+  ]);
 
   useWorkbenchCommands((envelope) => {
     if (!active) return;
@@ -228,13 +373,6 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
     ? `${session.current.width}×${session.current.height} · ${formatVideoClock(session.current.duration)}`
     : "No video loaded";
 
-  const sourceLabel =
-    sampling.lastSource === "random-segment"
-      ? "Random segment"
-      : sampling.lastSource === "random-whole-video"
-        ? "Random whole-video"
-        : "Manual";
-
   // Detect task status text
   const detectStatus = session.detectTask
     ? session.detectTask.empty
@@ -252,21 +390,25 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
     : "pending";
 
   return (
-    <main className="video-label-workspace">
+    <main className={`video-label-workspace${embedded ? " video-label-workspace--embedded" : ""}`}>
     <section className="panel video-label-main-panel">
-        <div className="panel-header">
-          <span>Video Label</span>
-          <span className="status">{videoMeta}</span>
-        </div>
+        {!embedded ? (
+          <div className="panel-header">
+            <span>Video Label</span>
+            <span className="status">{videoMeta}</span>
+          </div>
+        ) : null}
         <div className="panel-body video-label-main-body">
           <div className="row workspace-toolbar">
-            <button
-              className="primary"
-              type="button"
-              onClick={() => chooseWorkspaceFolder().catch((reason) => session.showError(reason, "workspace.open"))}
-            >
-              Open Workspace
-            </button>
+            {!embedded ? (
+              <button
+                className="primary"
+                type="button"
+                onClick={() => chooseWorkspaceFolder().catch((reason) => session.showError(reason, "workspace.open"))}
+              >
+                Open Workspace
+              </button>
+            ) : null}
             <button
               className="primary"
               type="button"
@@ -404,14 +546,16 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
             <span className="status">{sampling.segmentCount} segment(s)</span>
           </div>
           <div className="panel-body video-label-action-stack">
-            <button
-              type="button"
-              className="primary"
-              onClick={handleRandomNext}
-              disabled={!session.current || videoDurationMs <= 0}
-            >
-              Random Next
-            </button>
+            {!embedded ? (
+              <button
+                type="button"
+                className="primary"
+                onClick={handleRandomNext}
+                disabled={!session.current || videoDurationMs <= 0}
+              >
+                Random Next
+              </button>
+            ) : null}
             <div className="video-label-stats">
               <span>Source: {sourceLabel}</span>
             </div>
@@ -465,24 +609,28 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
                 Next Reviewed
               </button>
             </div>
-            <button
-              type="button"
-              onClick={session.copyPreviousBoxes}
-              disabled={!session.annotatedFrames.length || !session.current}
-            >
-              Copy Previous Boxes
-            </button>
-            <button type="button" onClick={session.markEmptyReviewed} disabled={!session.current}>
-              Mark Empty / Reviewed
-            </button>
-            <button
-              type="button"
-              className="danger"
-              onClick={session.clearFrameRecord}
-              disabled={!session.currentFrame}
-            >
-              Clear Frame Record
-            </button>
+            {!embedded ? (
+              <>
+                <button
+                  type="button"
+                  onClick={session.copyPreviousBoxes}
+                  disabled={!session.annotatedFrames.length || !session.current}
+                >
+                  Copy Previous Boxes
+                </button>
+                <button type="button" onClick={session.markEmptyReviewed} disabled={!session.current}>
+                  Mark Empty / Reviewed
+                </button>
+                <button
+                  type="button"
+                  className="danger"
+                  onClick={session.clearFrameRecord}
+                  disabled={!session.currentFrame}
+                >
+                  Clear Frame Record
+                </button>
+              </>
+            ) : null}
             <div className="video-label-stats">
               <span>{session.reviewedFrames.length} reviewed timestamp(s)</span>
               <span>{session.annotatedFrames.length} with boxes</span>
