@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+from contextlib import asynccontextmanager
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -95,7 +96,18 @@ class MarkJunkRequest(BaseModel):
         return value
 
 
-app = FastAPI(title="YoloWorkBench API")
+@asynccontextmanager
+async def _lifespan(application: FastAPI):
+    # Mount static files during startup so that API routes registered by
+    # multimodal_main (which imports this module) are added first. A module-
+    # level mount would be inserted before those routes and would intercept
+    # all /api/multimodal/* requests before they could be matched.
+    if WEB_DIR.is_dir():
+        application.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
+    yield
+
+
+app = FastAPI(title="YoloWorkBench API", lifespan=_lifespan)
 service = create_desktop_backend_service(APP_DIR, SESSION_DIR, SESSION_FILE)
 
 app.add_middleware(
@@ -668,5 +680,3 @@ def _error_response(status_code: int, method: str, message: str, *, error_type: 
     )
 
 
-if WEB_DIR.is_dir():
-    app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
