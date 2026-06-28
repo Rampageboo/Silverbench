@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { chooseDirectory } from "../../lib/tauri";
+import { saveLabelClasses, writeTextFile } from "../../api";
 import { useWorkspace } from "../../app/useWorkspace";
+import { workspaceClassSetupToClassesManifest } from "../workspace/workspaceClassTaxonomy";
 import { CreateWorkspaceDialog, type CreateWorkspaceOptions } from "./CreateWorkspaceDialog";
 
 const RECENT_KEY = "ywb.recentWorkspaces";
@@ -42,6 +44,26 @@ export function HomePage({ onReady }: Props) {
   async function handleCreateWorkspace(opts: CreateWorkspaceOptions) {
     const root = `${opts.location.replace(/[/\\]+$/, "")}/${opts.name.trim()}`;
     await openWorkspacePath(root);
+
+    // Write detect classes to classes.txt + data.yaml (legacy system, read by Box Label).
+    if (opts.detectClasses.length > 0) {
+      await saveLabelClasses(root, opts.detectClasses.map((name, id) => ({ id, name })));
+    }
+
+    // Write workspace/classes.json (new class manifest system).
+    const classesManifest = workspaceClassSetupToClassesManifest({
+      taskType: opts.taskType,
+      mediaMode: opts.mediaMode,
+      detectClasses: opts.detectClasses.map((name) => ({ name })),
+      clfClasses: opts.clfClasses.map((name) => ({ name })),
+      setupMode: "manual",
+    });
+    await writeTextFile(
+      root,
+      "workspace/classes.json",
+      `${JSON.stringify(classesManifest, null, 2)}\n`
+    );
+
     pushRecent(root);
     setRecent(loadRecent());
     setCreating(false);

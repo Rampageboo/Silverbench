@@ -3541,3 +3541,294 @@ a.glass-card:focus-visible {
 .label-page--workbench {
   /* The workbench shell; label-page base styles (flex col, h:100%) still apply. */
 }
+
+
+/* ============================================================
+   Phase 4A: Create Workspace — class entry (.cw-*)
+   ============================================================ */
+
+/* Wider dialog variant for wizard with class setup */
+.glass-dialog--wide {
+  width: min(680px, 92vw);
+  max-height: min(82vh, 760px);
+  overflow-y: auto;
+}
+
+.cw-class-section {
+  border-top: 1px solid var(--glass-border);
+  padding-top: 16px;
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.cw-class-section-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.cw-class-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--glass-text);
+}
+
+.cw-class-section-hint {
+  font-size: 11.5px;
+  color: var(--glass-text-muted);
+}
+
+.cw-class-hint {
+  margin-bottom: 6px !important;
+}
+
+.cw-class-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.cw-class-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 6px;
+  background: var(--glass-accent-active);
+  border: 1px solid rgba(59, 130, 246, 0.24);
+  border-radius: 20px;
+  font-size: 12px;
+  color: var(--glass-text);
+  white-space: nowrap;
+}
+
+.cw-class-pill-id {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 10px;
+  color: var(--glass-text-muted);
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  padding: 0 3px;
+  flex-shrink: 0;
+}
+
+.cw-class-pill-name {
+  color: var(--glass-text);
+}
+
+.cw-class-pill-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--glass-text-muted);
+  padding: 0;
+  border-radius: 3px;
+  flex-shrink: 0;
+  transition: color 0.1s;
+}
+
+.cw-class-pill-remove:hover:not(:disabled) {
+  color: var(--glass-danger);
+}
+
+.cw-class-empty-hint {
+  margin-top: 8px;
+  font-style: italic;
+}
+
+
+/* ============================================================
+   Phase 4A: Library — workspace classes detail (.library-classes-*)
+   ============================================================ */
+
+.library-classes-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: var(--glass-page-y) var(--glass-page-x);
+}
+
+.library-classes-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.library-classes-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+}
+
+.library-classes-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--glass-text-heading);
+  margin: 0;
+  flex: 1;
+}
+
+/* Task type badge */
+.library-task-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 20px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+
+.library-task-badge--detect {
+  color: var(--glass-accent-icon);
+  border-color: rgba(59, 130, 246, 0.28);
+  background: var(--glass-accent-active);
+}
+
+.library-task-badge--classify {
+  color: #a78bfa;
+  border-color: rgba(167, 139, 250, 0.28);
+  background: rgba(167, 139, 250, 0.08);
+}
+
+.library-task-badge--both {
+  color: #34d399;
+  border-color: rgba(52, 211, 153, 0.28);
+  background: rgba(52, 211, 153, 0.08);
+}
+
+/* Loading / empty */
+.library-classes-loading,
+.library-classes-empty {
+  font-size: 13px;
+  color: var(--glass-text-dim);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Body */
+.library-classes-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.library-class-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.library-class-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.library-class-group-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--glass-text);
+}
+
+.library-class-group-count {
+  font-size: 11.5px;
+  color: var(--glass-text-muted);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  padding: 0 6px;
+}
+
+.library-class-empty {
+  font-size: 12.5px;
+  color: var(--glass-text-muted);
+  font-style: italic;
+}
+
+.library-class-note {
+  font-size: 11.5px;
+  color: var(--glass-text-muted);
+}
+
+/* Detect class list */
+.library-detect-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.library-detect-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--glass-radius-sm);
+}
+
+.library-detect-id {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 10.5px;
+  color: var(--glass-text-muted);
+  min-width: 22px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.library-detect-name {
+  font-size: 13px;
+  color: var(--glass-text);
+}
+
+/* Classification class list */
+.library-clf-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.library-clf-item {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  background: rgba(167, 139, 250, 0.08);
+  border: 1px solid rgba(167, 139, 250, 0.20);
+  border-radius: 20px;
+}
+
+.library-clf-name {
+  font-size: 12.5px;
+  color: var(--glass-text);
+}
+
+/* Read-only note */
+.library-class-readonly-note {
+  font-size: 11.5px;
+  color: var(--glass-text-muted);
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--glass-radius-sm);
+  line-height: 1.6;
+}
+
+.library-class-code {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin: 0 2px;
+}
