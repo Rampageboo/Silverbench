@@ -15,6 +15,12 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
   const editor = useBoxLabelEditor(props);
   const { classImageCounts } = props;
   const auraRef = useRef<HTMLDivElement | null>(null);
+  const selectedProposal = editor.selectedProposalId
+    ? editor.proposals.find((p) => p.id === editor.selectedProposalId)
+    : null;
+  const selectedProposalArchived =
+    (selectedProposal?.classId != null && editor.isArchivedDetectClass(selectedProposal.classId)) ||
+    (Boolean(selectedProposal?.classKey) && editor.isArchivedClassKey(selectedProposal!.classKey!));
 
   const handleCanvasWrapMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const aura = auraRef.current;
@@ -228,6 +234,9 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
                   >
                     {index + 1}. {classNameFor(editor.classes, box.classId)} x={box.x.toFixed(3)} y={box.y.toFixed(3)}{" "}
                     w={box.w.toFixed(3)} h={box.h.toFixed(3)}
+                    {editor.isArchivedDetectClass(box.classId) ? (
+                      <span className="pool-label-archived-badge">archived</span>
+                    ) : null}
                   </button>
                 ))
               ) : (
@@ -247,7 +256,8 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
                     <button
                       type="button"
                       className="primary"
-                      title="Materialize selected proposal as a box"
+                      title={selectedProposalArchived ? "Restore this class in Library before materializing" : "Materialize selected proposal as a box"}
+                      disabled={selectedProposalArchived}
                       onClick={() =>
                         editor.materializeProposal(editor.selectedProposalId!).catch((err) => editor.setError(errMessage(err)))
                       }
@@ -283,7 +293,11 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
               </span>
             </div>
             <div className="panel-body pool-label-proposals-body">
-              {editor.proposals.map((p) => (
+              {editor.proposals.map((p) => {
+                const archivedProposal =
+                  (p.classId != null && editor.isArchivedDetectClass(p.classId)) ||
+                  (Boolean(p.classKey) && editor.isArchivedClassKey(p.classKey!));
+                return (
                 <div
                   key={p.id}
                   className={`pool-label-proposal-row${editor.selectedProposalId === p.id ? " selected" : ""}`}
@@ -291,13 +305,15 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
                 >
                   <span className="pool-label-proposal-conf">{Math.round(p.confidence * 100)}%</span>
                   <span className="pool-label-proposal-coords">
+                    {archivedProposal ? <span className="pool-label-archived-badge">archived</span> : null}
                     {p.x.toFixed(3)},{p.y.toFixed(3)} {p.w.toFixed(3)}×{p.h.toFixed(3)}
                   </span>
                   <span className="pool-label-proposal-btns">
                     <button
                       type="button"
                       className="primary pool-label-proposal-accept"
-                      title="Materialize this proposal as a box"
+                      title={archivedProposal ? "Restore this class in Library before materializing" : "Materialize this proposal as a box"}
+                      disabled={archivedProposal}
                       onClick={(e) => {
                         e.stopPropagation();
                         editor.materializeProposal(p.id).catch((err) => editor.setError(errMessage(err)));
@@ -318,7 +334,8 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
                     </button>
                   </span>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         )}

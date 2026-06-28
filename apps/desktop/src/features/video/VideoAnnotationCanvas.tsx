@@ -22,6 +22,7 @@ type Props = {
   imageBase64: string;
   boxes: LabelBox[];
   classes: LabelClass[];
+  archivedClassIds?: ReadonlySet<number>;
   currentClass: number;
   selectedIndex: number | null;
   disabled?: boolean;
@@ -148,6 +149,7 @@ export function VideoAnnotationCanvas({
   imageBase64,
   boxes,
   classes,
+  archivedClassIds = new Set(),
   currentClass,
   selectedIndex,
   disabled = false,
@@ -320,7 +322,7 @@ export function VideoAnnotationCanvas({
       context.setLineDash([]);
       context.strokeRect(x, y, width, height);
 
-      const label = `${box.classId}: ${classNames.get(box.classId) || "class"}`;
+      const label = `${box.classId}: ${classNames.get(box.classId) || "class"}${archivedClassIds.has(box.classId) ? " (archived)" : ""}`;
       context.font = `${12 * ratio}px sans-serif`;
       const textWidth = context.measureText(label).width;
       const labelHeight = 18 * ratio;
@@ -377,7 +379,7 @@ export function VideoAnnotationCanvas({
       context.lineTo(x, y + radius * 1.5);
       context.stroke();
     }
-  }, [blackouts, classNames, draftRect, remoteCursor, renderVersion, selectedIndex, showBlackouts, workingBoxes]);
+  }, [archivedClassIds, blackouts, classNames, draftRect, remoteCursor, renderVersion, selectedIndex, showBlackouts, workingBoxes]);
 
   const deleteSelected = useCallback(() => {
     if (selectedIndex === null || selectedIndex < 0 || selectedIndex >= workingBoxesRef.current.length) return;

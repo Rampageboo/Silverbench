@@ -19,8 +19,22 @@ import {
   validateNewClassName,
   allDetectClassDefs,
   activeDetectClassDefs,
+  activeDetectClasses,
+  activeClassificationClasses,
   activeClfClassDefs,
   archivedClassDefs,
+  archivedDetectClassIds,
+  classificationClassDisplayName,
+  classificationOptionsForNewAnnotations,
+  detectClassDisplayName,
+  detectClassOptionsForNewAnnotations,
+  exportDetectClassNamesPreservingIds,
+  findClassificationClassByKey,
+  findDetectClassById,
+  findDetectClassByKey,
+  isClassificationClassArchived,
+  isDetectClassArchived,
+  isDetectClassArchivedById,
   type WorkspaceClassSetup,
 } from "./workspaceClassTaxonomy";
 import type { ClassesManifest } from "../video/classDomain";
@@ -689,5 +703,51 @@ describe("display helpers", () => {
     expect(archived.map((d) => d.key)).toContain("day");
     expect(archived.map((d) => d.key)).not.toContain("car");
     expect(archived.map((d) => d.key)).not.toContain("night");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4C active vs archived consumption helpers
+// ---------------------------------------------------------------------------
+
+describe("Phase 4C consumption helpers", () => {
+  it("archived detect class remains addressable at the same YOLO id", () => {
+    const m = archiveDetectClassInManifest(twoClassDetectManifest(), "person");
+    expect(archivedDetectClassIds(m)).toEqual(new Set([0]));
+    expect(findDetectClassById(m, 0)?.key).toBe("person");
+    expect(findDetectClassByKey(m, "person")?.yoloId).toBe(0);
+    expect(isDetectClassArchivedById(m, 0)).toBe(true);
+    expect(isDetectClassArchived(m, "person")).toBe(true);
+  });
+
+  it("active detect options exclude archived classes without compacting ids", () => {
+    const m = archiveDetectClassInManifest(twoClassDetectManifest(), "person");
+    const allClasses = manifestToLegacyClasses(m);
+    expect(activeDetectClasses(m)).toEqual([{ id: 1, name: "Car" }]);
+    expect(detectClassOptionsForNewAnnotations(m, allClasses)).toEqual([{ id: 1, name: "Car" }]);
+  });
+
+  it("detect display and export still include archived slots in order", () => {
+    const m = archiveDetectClassInManifest(twoClassDetectManifest(), "person");
+    expect(detectClassDisplayName(m, 0)).toBe("Person");
+    expect(exportDetectClassNamesPreservingIds(m)).toEqual(["Person", "Car"]);
+  });
+
+  it("active classification options exclude archived classes while display lookup still works", () => {
+    const m = archiveClfClassInManifest(bothTaskManifest(), "day");
+    expect(activeClassificationClasses(m).map((d) => d.key)).toEqual(["night"]);
+    expect(classificationOptionsForNewAnnotations(m).map((d) => d.key)).toEqual(["night"]);
+    expect(findClassificationClassByKey(m, "day")?.name).toBe("Day");
+    expect(isClassificationClassArchived(m, "day")).toBe(true);
+    expect(classificationClassDisplayName(m, "day")).toBe("Day");
+  });
+
+  it("legacy classes.txt adaptation preserves order", () => {
+    const legacy = [{ id: 1, name: "Car" }, { id: 0, name: "Person" }];
+    const m = upgradeLegacyToManifest(legacy);
+    expect(manifestToLegacyClasses(m)).toEqual([
+      { id: 0, name: "Person" },
+      { id: 1, name: "Car" },
+    ]);
   });
 });

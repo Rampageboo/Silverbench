@@ -5,6 +5,13 @@ import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { errMessage } from "../../lib/errors";
 import { recordWorkspaceEventBestEffort, recordWorkspaceOperation } from "../../workbench/auditLog";
 import { useWorkspaceArchitecture } from "../../workspace/WorkspaceArchitectureProvider";
+import { useArchivedClassIds } from "../workspace/useArchivedClassIds";
+import {
+  classificationClassDisplayName,
+  classificationOptionsForNewAnnotations,
+  isClassificationClassArchived
+} from "../workspace/workspaceClassTaxonomy";
+import { classNameToSafeKey } from "./videoClassKeys";
 import {
   chooseAnnotationVideos,
   DEFAULT_VIDEO_ANNOTATIONS_ROOT,
@@ -51,6 +58,11 @@ export function useVideoAnnotationSession({
 }) {
   const { showToast } = useToast();
   const { manifest: workspaceManifest } = useWorkspaceArchitecture();
+  const {
+    manifest: classManifest,
+    archivedDetectIds,
+    archivedClassKeys
+  } = useArchivedClassIds(workspaceRoot);
   const annotationsRoot = String(
     workspaceManifest?.paths.video_annotations || DEFAULT_VIDEO_ANNOTATIONS_ROOT
   );
@@ -82,6 +94,20 @@ export function useVideoAnnotationSession({
   const maxTime = current?.duration ? Math.max(0, current.duration - 0.001) : 0;
   const currentKey = timestampKey(time);
   const currentFrame = frameAnnotationAt(manifest, time);
+  const activeDetectClasses = useMemo(
+    () => classes.filter((item) => !archivedDetectIds.has(item.id)),
+    [archivedDetectIds, classes]
+  );
+  const clfClassOptions = useMemo(
+    () =>
+      classManifest
+        ? classificationOptionsForNewAnnotations(classManifest).map((def) => ({
+            key: def.key,
+            name: def.name
+          }))
+        : classes.map((item) => ({ key: classNameToSafeKey(item.name), name: item.name })),
+    [classManifest, classes]
+  );
 
   // Detect task derived state
   const detectTask = getDetectTask(currentFrame);
@@ -132,7 +158,11 @@ export function useVideoAnnotationSession({
         if (cancelled) return;
         const next = items.length ? items : defaultClasses();
         setClasses(next);
-        setCurrentClass((value) => (next.some((item) => item.id === value) ? value : next[0].id));
+        setCurrentClass((value) => {
+          const active = next.filter((item) => !archivedDetectIds.has(item.id));
+          if (active.some((item) => item.id === value)) return value;
+          return active[0]?.id ?? next[0].id;
+        });
       })
       .catch((reason) => {
         if (!cancelled) showError(reason, "classes.load");
@@ -140,7 +170,13 @@ export function useVideoAnnotationSession({
     return () => {
       cancelled = true;
     };
-  }, [showError, workspaceRoot]);
+  }, [archivedDetectIds, showError, workspaceRoot]);
+
+  useEffect(() => {
+    if (classes.some((item) => item.id === currentClass && !archivedDetectIds.has(item.id))) return;
+    const next = classes.find((item) => !archivedDetectIds.has(item.id));
+    if (next) setCurrentClass(next.id);
+  }, [archivedDetectIds, classes, currentClass]);
 
   useEffect(() => {
     const requestId = ++manifestRequestRef.current;
@@ -314,6 +350,11 @@ export function useVideoAnnotationSession({
 
   const assignClass = useCallback(
     (classId: number) => {
+      if (archivedDetectIds.has(classId)) {
+        setStatus("Class is archived. Restore it in Library before using it for new video boxes.");
+        showToast("Class is archived. Restore it in Library before using it for new video boxes.", { variant: "error" });
+        return;
+      }
       setCurrentClass(classId);
       if (selectedIndex === null || !boxes[selectedIndex]) return;
       updateCurrentFrame(
@@ -321,7 +362,7 @@ export function useVideoAnnotationSession({
         true
       );
     },
-    [boxes, selectedIndex, updateCurrentFrame]
+    [archivedDetectIds, boxes, selectedIndex, showToast, updateCurrentFrame]
   );
 
   // Copy detect boxes only from the previous annotated timestamp.
@@ -405,6 +446,11 @@ export function useVideoAnnotationSession({
 
   const setClfClass = useCallback(
     (classKey: string) => {
+      if (archivedClassKeys.has(classKey) || (classManifest && isClassificationClassArchived(classManifest, classKey))) {
+        setStatus("Classification class is archived. Restore it in Library before assigning it.");
+        showToast("Classification class is archived. Restore it in Library before assigning it.", { variant: "error" });
+        return;
+      }
       const source = manifestRef.current;
       if (!source || !current) return;
       const next = setVideoClfClass(source, current, time, classKey);
@@ -412,7 +458,13 @@ export function useVideoAnnotationSession({
       setManifest(next);
       enqueueSave(next);
     },
-    [current, enqueueSave, time]
+    [archivedClassKeys, classManifest, current, enqueueSave, showToast, time]
+  );
+
+  const clfDisplayName = useCallback(
+    (classKey: string) =>
+      classManifest ? classificationClassDisplayName(classManifest, classKey) : classKey,
+    [classManifest]
   );
 
   const markClfReviewed = useCallback(() => {
@@ -459,6 +511,13 @@ export function useVideoAnnotationSession({
     clfTask,
     // Classes
     classes,
+    activeDetectClasses,
+    clfClassOptions,
+    clfDisplayName,
+    isArchivedDetectClass: (classId: number) => archivedDetectIds.has(classId),
+    archivedDetectClassIds: archivedDetectIds,
+    isArchivedClfClass: (classKey: string) =>
+      archivedClassKeys.has(classKey) || (classManifest ? isClassificationClassArchived(classManifest, classKey) : false),
     currentClass,
     assignClass,
     selectedIndex,

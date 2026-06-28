@@ -1365,6 +1365,20 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   background: #12305c;
 }
 
+.react-box-label-page .pool-label-archived-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 4px;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.10);
+  font-size: 10px;
+  line-height: 1.2;
+  vertical-align: middle;
+}
+
 .react-box-label-page--loading {
   display: grid;
   grid-template-rows: minmax(0, 1fr);

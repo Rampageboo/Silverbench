@@ -41,7 +41,14 @@ export type ProposalThresholdResult = {
   proposals: DetectProposal[];
   /** Count of predictions below the medium threshold (ignored). */
   ignored: number;
+  /** Count of predictions skipped because their class is archived. */
+  skippedArchived: number;
   total: number;
+};
+
+export type ArchivedDetectClassFilter = {
+  archivedClassIds?: ReadonlySet<number>;
+  archivedClassKeys?: ReadonlySet<string>;
 };
 
 /**
@@ -109,13 +116,19 @@ export function applyDetectThresholds(
   predictions: RawPrediction[],
   highConfidence: number = DEFAULT_HIGH_CONFIDENCE,
   mediumConfidence: number = DEFAULT_MEDIUM_CONFIDENCE,
-  now = new Date().toISOString()
+  now = new Date().toISOString(),
+  archivedFilter: ArchivedDetectClassFilter = {}
 ): ProposalThresholdResult {
   const accepted: DetectBoxAnnotation[] = [];
   const proposals: DetectProposal[] = [];
   let ignored = 0;
+  let skippedArchived = 0;
 
   for (const pred of predictions) {
+    if (detectPredictionUsesArchivedClass(pred, archivedFilter)) {
+      skippedArchived++;
+      continue;
+    }
     const { x, y, w, h, confidence } = pred;
     if (confidence >= highConfidence) {
       const box: DetectBoxAnnotation = { x, y, w, h, origin: "auto", confidence };
@@ -137,7 +150,25 @@ export function applyDetectThresholds(
     }
   }
 
-  return { accepted, proposals, ignored, total: predictions.length };
+  return { accepted, proposals, ignored, skippedArchived, total: predictions.length };
+}
+
+export function detectPredictionUsesArchivedClass(
+  prediction: Pick<RawPrediction, "classId" | "classKey">,
+  filter: ArchivedDetectClassFilter
+): boolean {
+  return (
+    (prediction.classId !== undefined && filter.archivedClassIds?.has(prediction.classId)) ||
+    (Boolean(prediction.classKey) && filter.archivedClassKeys?.has(prediction.classKey!)) ||
+    false
+  );
+}
+
+export function proposalUsesArchivedDetectClass(
+  proposal: Pick<DetectProposal, "classId" | "classKey">,
+  filter: ArchivedDetectClassFilter
+): boolean {
+  return detectPredictionUsesArchivedClass(proposal, filter);
 }
 
 // ---------------------------------------------------------------------------

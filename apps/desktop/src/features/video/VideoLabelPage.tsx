@@ -6,7 +6,6 @@ import { VideoAnnotationCanvas, type RemotePointerState } from "./VideoAnnotatio
 import { formatVideoClock } from "./videoAnnotationDomain";
 import { useVideoAnnotationSession } from "./useVideoAnnotationSession";
 import { useVideoSampling, type SamplingMode } from "./useVideoSampling";
-import { classNameToSafeKey } from "./videoClassKeys";
 import {
   addBlackoutOverlay,
   loadBlackoutOverlays,
@@ -246,7 +245,7 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
   // Clf task status text
   const clfStatus = session.clfTask
     ? session.clfTask.classKey
-      ? `${session.clfTask.classKey}${session.clfTask.reviewed ? " / reviewed" : ""}`
+      ? `${session.clfDisplayName(session.clfTask.classKey)}${session.isArchivedClfClass(session.clfTask.classKey) ? " / archived" : ""}${session.clfTask.reviewed ? " / reviewed" : ""}`
       : session.clfTask.reviewed
         ? "reviewed (no class)"
         : "pending"
@@ -285,6 +284,7 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
                 imageBase64={session.previewBase64}
                 boxes={session.boxes}
                 classes={session.classes}
+                archivedClassIds={session.archivedDetectClassIds}
                 currentClass={session.currentClass}
                 selectedIndex={session.selectedIndex}
                 disabled={session.previewLoading || session.manifestLoading}
@@ -498,13 +498,13 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
           </div>
           <div className="panel-body video-label-action-stack">
             <div className="video-label-class-list">
-              {session.classes.map((item) => {
-                const key = classNameToSafeKey(item.name);
+              {session.clfClassOptions.map((item) => {
+                const key = item.key;
                 const isSelected = session.clfTask?.classKey === key;
                 return (
                   <button
                     type="button"
-                    key={item.id}
+                    key={item.key}
                     className={isSelected ? "selected" : ""}
                     onClick={() => session.setClfClass(key)}
                     disabled={!session.current}
@@ -591,7 +591,7 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
           </div>
           <div className="panel-body">
             <div className="video-label-class-list">
-              {session.classes.map((item) => (
+              {session.activeDetectClasses.map((item) => (
                 <button
                   type="button"
                   key={item.id}

@@ -30,6 +30,7 @@ export type UseBoxLabelInteractionOptions = {
   blackBoxEnabled: boolean;
   fixedBoxSlots: Array<api.LabelBox | null>;
   setCurrentClass: (classId: number) => void;
+  archivedDetectIdsRef?: MutableRefObject<Set<number>>;
   setBoxAdjustMode: (mode: BoxAdjustMode) => void;
   recordFixedBoxFromBox: (box: api.LabelBox) => string;
   selectClassShortcut: (slot: number, useSlot?: boolean) => void;

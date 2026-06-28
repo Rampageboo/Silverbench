@@ -278,7 +278,9 @@ export function activeDetectClassDefs(
 /** Active classification class definitions in their declared order. */
 export function activeClfClassDefs(manifest: ClassesManifest): ClassDef[] {
   const keyToDef = new Map(manifest.classDefs.map((d) => [d.key, d]));
-  return manifest.tasks.clf.classKeys.map((key) => keyToDef.get(key) ?? { key, name: key });
+  return manifest.tasks.clf.classKeys
+    .map((key) => keyToDef.get(key) ?? { key, name: key })
+    .filter((d) => !d.archived);
 }
 
 /** All classDefs that are marked archived (detect + clf). */
@@ -502,4 +504,122 @@ export function manifestToLegacyClasses(
     id,
     name: keyToDef.get(key)?.name ?? key,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4C — active-class consumption helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Set of YOLO numeric IDs that are archived.
+ * Label UIs use this to hide archived classes from new-annotation pickers
+ * while keeping them visible for rendering existing annotations.
+ */
+export function archivedDetectClassIds(manifest: ClassesManifest): Set<number> {
+  const archivedKeys = new Set(manifest.classDefs.filter((d) => d.archived).map((d) => d.key));
+  const ids = new Set<number>();
+  manifest.tasks.detect.classKeys.forEach((key, i) => {
+    if (archivedKeys.has(key)) ids.add(i);
+  });
+  return ids;
+}
+
+/** Active detect classes as legacy LabelClass-style options for new boxes. */
+export function activeDetectClasses(manifest: ClassesManifest): Array<{ id: number; name: string }> {
+  return activeDetectClassDefs(manifest).map((d) => ({ id: d.yoloId, name: d.name }));
+}
+
+/** Active classification classes for new classification decisions. */
+export function activeClassificationClasses(manifest: ClassesManifest): ClassDef[] {
+  return activeClfClassDefs(manifest);
+}
+
+/** Look up a detect class by its YOLO numeric id, including archived classes. */
+export function findDetectClassById(
+  manifest: ClassesManifest,
+  classId: number
+): (ClassDef & { yoloId: number }) | undefined {
+  if (!Number.isInteger(classId) || classId < 0) return undefined;
+  return allDetectClassDefs(manifest).find((d) => d.yoloId === classId);
+}
+
+/**
+ * Check whether the detect class at a given YOLO numeric ID is archived.
+ */
+export function isDetectClassArchivedById(manifest: ClassesManifest, classId: number): boolean {
+  return findDetectClassById(manifest, classId)?.archived === true;
+}
+
+/**
+ * Look up a detect ClassDef by its stable key, including archived classes.
+ */
+export function findDetectClassByKey(
+  manifest: ClassesManifest,
+  key: string
+): (ClassDef & { yoloId: number }) | undefined {
+  return allDetectClassDefs(manifest).find((d) => d.key === key);
+}
+
+/** Check whether the detect class for a stable key is archived. */
+export function isDetectClassArchived(manifest: ClassesManifest, classKey: string): boolean {
+  return findDetectClassByKey(manifest, classKey)?.archived === true;
+}
+
+/** Display name for a detect class id. Includes archived and missing-id fallbacks. */
+export function detectClassDisplayName(manifest: ClassesManifest, classId: number): string {
+  return findDetectClassById(manifest, classId)?.name ?? `class ${Math.max(0, Math.trunc(classId))}`;
+}
+
+/** Look up a classification ClassDef by stable key, including archived classes. */
+export function findClassificationClassByKey(
+  manifest: ClassesManifest,
+  classKey: string
+): ClassDef | undefined {
+  return manifest.classDefs.find((d) => d.key === classKey);
+}
+
+/**
+ * Check whether a classification class (by key) is archived.
+ */
+export function isClassificationClassArchived(
+  manifest: ClassesManifest,
+  classKey: string
+): boolean {
+  return findClassificationClassByKey(manifest, classKey)?.archived === true;
+}
+
+/** Display name for a classification class key, including archived classes. */
+export function classificationClassDisplayName(
+  manifest: ClassesManifest,
+  classKey: string
+): string {
+  return findClassificationClassByKey(manifest, classKey)?.name ?? classKey;
+}
+
+/**
+ * Filter a LabelClass[] to non-archived classes only, using the manifest.
+ * Use this to populate new-annotation class pickers.
+ * The full list (including archived) should still be available for rendering
+ * existing annotations.
+ */
+export function detectClassOptionsForNewAnnotations(
+  manifest: ClassesManifest,
+  allClasses: Array<{ id: number; name: string }>
+): Array<{ id: number; name: string }> {
+  const archived = archivedDetectClassIds(manifest);
+  return allClasses.filter((c) => !archived.has(c.id));
+}
+
+/** Active classification options for new classification decisions. */
+export function classificationOptionsForNewAnnotations(manifest: ClassesManifest): ClassDef[] {
+  return activeClassificationClasses(manifest);
+}
+
+/**
+ * Export class names in YOLO ID order, including archived slot names.
+ * Index N = YOLO class ID N. Use for data.yaml / classes.txt generation.
+ * Archived classes preserve their slot to keep existing label files valid.
+ */
+export function exportDetectClassNamesPreservingIds(manifest: ClassesManifest): string[] {
+  return manifestToLegacyClasses(manifest).map((c) => c.name);
 }

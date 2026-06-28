@@ -4,7 +4,7 @@ import { errMessage } from "../../lib/errors";
 import { datasetImageUrl, invalidateDatasetImageUrl } from "../dataset-review/datasetAssets";
 import { loadMetadataMap } from "../image-pool/metadata";
 import type { MetadataRow } from "../image-pool/types";
-import { materializeProposal as materializeProposalFn, nextNeedsReviewIndex, prevNeedsReviewIndex } from "../auto-label/proposalDomain";
+import { materializeProposal as materializeProposalFn, nextNeedsReviewIndex, prevNeedsReviewIndex, proposalUsesArchivedDetectClass } from "../auto-label/proposalDomain";
 import type { ReviewQueueEntry } from "../auto-label/proposalDomain";
 import { imageProposalKey, loadImageProposals, saveImageProposals, type ImageProposalManifest } from "../auto-label/proposalApi";
 import type { DetectProposal } from "../video/videoAnnotationApi";
@@ -58,6 +58,8 @@ export function useBoxLabelEditor({
   const scheduleDrawRef = useRef<() => void>(() => {});
   const persistLabelsRef = useRef<(statusMessage?: string) => Promise<void>>(async () => {});
   const classesSetCurrentClassRef = useRef<(classId: number) => void>(() => {});
+  const archivedDetectIdsRef = useRef<Set<number>>(new Set());
+  const archivedClassKeysRef = useRef<Set<string>>(new Set());
   const proposalsRef = useRef<ProposalShape[]>([]);
   const selectedProposalIdRef = useRef<string | null>(null);
 
@@ -133,6 +135,13 @@ export function useBoxLabelEditor({
       if (!entry) return;
       const proposal = proposalsRef.current.find((p) => p.id === proposalId);
       if (!proposal) return;
+      if (proposalUsesArchivedDetectClass(proposal as DetectProposal, {
+        archivedClassIds: archivedDetectIdsRef.current,
+        archivedClassKeys: archivedClassKeysRef.current
+      })) {
+        setStatus("Proposal references an archived class. Restore the class in Library before materializing it.");
+        return;
+      }
       pushUndo("materialize proposal");
       const detectedBox = materializeProposalFn(proposal as DetectProposal);
       const newBox: api.LabelBox = {
@@ -177,19 +186,40 @@ export function useBoxLabelEditor({
   const acceptAllProposals = useCallback(
     async () => {
       if (!entry || !proposalsRef.current.length) return;
+      const activeProposals = proposalsRef.current.filter((p) =>
+        !proposalUsesArchivedDetectClass(p as DetectProposal, {
+          archivedClassIds: archivedDetectIdsRef.current,
+          archivedClassKeys: archivedClassKeysRef.current
+        })
+      );
+      const skippedArchived = proposalsRef.current.length - activeProposals.length;
+      if (!activeProposals.length) {
+        setStatus("All proposals reference archived classes. Restore those classes in Library before materializing.");
+        return;
+      }
       pushUndo("accept all proposals");
-      const newBoxes = proposalsRef.current.map((p) => {
+      const newBoxes = activeProposals.map((p) => {
         const det = materializeProposalFn(p as DetectProposal);
         return { classId: det.classId ?? classRef.current, x: det.x, y: det.y, w: det.w, h: det.h } as api.LabelBox;
       });
       const nextBoxes = [...boxesRef.current, ...newBoxes];
       boxesRef.current = nextBoxes;
       setBoxes(nextBoxes);
-      proposalsRef.current = [];
-      setProposals([]);
+      const nextProposals = proposalsRef.current.filter((p) =>
+        proposalUsesArchivedDetectClass(p as DetectProposal, {
+          archivedClassIds: archivedDetectIdsRef.current,
+          archivedClassKeys: archivedClassKeysRef.current
+        })
+      );
+      proposalsRef.current = nextProposals;
+      setProposals(nextProposals as DetectProposal[]);
       setSelectedProposalId(null);
-      await Promise.all([persistEntryLabels(entry, nextBoxes), persistProposals([])]);
-      setStatus(`Accepted all proposals (${newBoxes.length} new box(es)).`);
+      await Promise.all([persistEntryLabels(entry, nextBoxes), persistProposals(nextProposals)]);
+      setStatus(
+        skippedArchived > 0
+          ? `Accepted ${newBoxes.length} proposal(s); ${skippedArchived} archived-class proposal(s) left for restore/reject.`
+          : `Accepted all proposals (${newBoxes.length} new box(es)).`
+      );
     },
     [boxesRef, classRef, entry, persistEntryLabels, persistProposals, proposalsRef, pushUndo, setBoxes, setStatus]
   );
@@ -260,6 +290,8 @@ export function useBoxLabelEditor({
   });
 
   classesSetCurrentClassRef.current = labelClasses.setCurrentClass;
+  archivedDetectIdsRef.current = labelClasses.archivedDetectIdsRef.current;
+  archivedClassKeysRef.current = labelClasses.archivedClassKeysRef.current;
 
   const { pendingBoxSelectionRef, pendingNearestBoxRef, syncBoxToSelected, copySelectedBoxToNext, trackCsrtForward } =
     useBoxTracking({
@@ -308,6 +340,7 @@ export function useBoxLabelEditor({
     blackBoxEnabled: labelClasses.blackBoxEnabled,
     fixedBoxSlots: labelClasses.fixedBoxSlots,
     setCurrentClass: labelClasses.setCurrentClass,
+    archivedDetectIdsRef: labelClasses.archivedDetectIdsRef,
     setBoxAdjustMode: labelClasses.setBoxAdjustMode,
     recordFixedBoxFromBox: labelClasses.recordFixedBoxFromBox,
     selectClassShortcut: labelClasses.selectClassShortcut,
@@ -508,6 +541,8 @@ export function useBoxLabelEditor({
     setStatus,
     setSelectedBoxId,
     setCurrentClass: labelClasses.setCurrentClass,
+    isArchivedDetectClass: labelClasses.isArchivedDetectClass,
+    isArchivedClassKey: labelClasses.isArchivedClassKey,
     classShortcutOptions: labelClasses.classShortcutOptions,
     fixedShortcutOptions: labelClasses.fixedShortcutOptions,
     assignClass: labelClasses.assignClass,

@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   applyDetectThresholds,
   dedupPredictions,
+  detectPredictionUsesArchivedClass,
   materializeProposal,
   nextNeedsReviewIndex,
+  proposalUsesArchivedDetectClass,
   prevNeedsReviewIndex,
   reviewQueueScore,
   predictionIou,
@@ -121,6 +123,38 @@ describe("Task 4 — low-confidence prediction is ignored", () => {
     expect(result.proposals).toHaveLength(1);
     expect(result.ignored).toBe(1);
     expect(result.total).toBe(3);
+  });
+});
+
+describe("Phase 4C archived detect class filtering", () => {
+  it("skips archived high-confidence predictions instead of accepting boxes", () => {
+    const result = applyDetectThresholds(
+      [highPred],
+      0.80,
+      0.40,
+      "2026-01-01T00:00:00.000Z",
+      { archivedClassIds: new Set([0]) }
+    );
+    expect(result.accepted).toHaveLength(0);
+    expect(result.proposals).toHaveLength(0);
+    expect(result.skippedArchived).toBe(1);
+  });
+
+  it("skips archived medium-confidence predictions instead of creating proposals", () => {
+    const result = applyDetectThresholds(
+      [{ ...medPred, classKey: "cat" }],
+      0.80,
+      0.40,
+      "2026-01-01T00:00:00.000Z",
+      { archivedClassKeys: new Set(["cat"]) }
+    );
+    expect(result.proposals).toHaveLength(0);
+    expect(result.skippedArchived).toBe(1);
+  });
+
+  it("detects archived proposal materialization targets", () => {
+    expect(detectPredictionUsesArchivedClass({ classId: 1 }, { archivedClassIds: new Set([1]) })).toBe(true);
+    expect(proposalUsesArchivedDetectClass(makeProposal("archived"), { archivedClassIds: new Set([0]) })).toBe(true);
   });
 });
 

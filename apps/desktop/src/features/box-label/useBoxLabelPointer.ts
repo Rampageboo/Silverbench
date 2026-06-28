@@ -50,6 +50,7 @@ type UseBoxLabelPointerOptions = {
   setBoxes: (boxes: api.LabelBox[]) => void;
   setSelectedBoxId: (id: number | null) => void;
   setCurrentClass: (classId: number) => void;
+  archivedDetectIdsRef?: MutableRefObject<Set<number>>;
   setError: (status: string) => void;
   canvasRef: RefObject<HTMLCanvasElement | null>;
   imageRef: RefObject<HTMLImageElement | null>;
@@ -82,6 +83,7 @@ export function useBoxLabelPointer({
   setBoxes,
   setSelectedBoxId,
   setCurrentClass,
+  archivedDetectIdsRef,
   setError,
   canvasRef,
   imageRef,
@@ -342,6 +344,11 @@ export function useBoxLabelPointer({
           scheduleDraw();
           return;
         }
+        if (archivedDetectIdsRef?.current.has(classRef.current)) {
+          setError("Selected class is archived. Restore it in Library before creating new boxes.");
+          scheduleDraw();
+          return;
+        }
         pushUndo("add box");
         const fittedRect = shouldAutoFit ? autoFitSubjectFromImage(image, rect, drag.start) || rect : rect;
         const box = rectToBox(fittedRect, classRef.current);
@@ -364,6 +371,7 @@ export function useBoxLabelPointer({
     },
     [
       applyBlackBox,
+      archivedDetectIdsRef,
       autoFitEnabled,
       blackBoxEnabled,
       boxesRef,

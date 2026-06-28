@@ -1,6 +1,6 @@
 # Workspace Class Taxonomy Plan
 
-## Status: Phase 4B complete
+## Status: Phase 4C complete
 
 ---
 
@@ -267,11 +267,67 @@ When `classes.json` is absent:
 
 ---
 
-## 6. Phase 4C — deferred
+## 6. Phase 4C - Active vs archived consumption
 
-- Import classes from existing dataset (`classes.txt` / `data.yaml` → wizard).
+Archived classes are historical/read-only targets. They keep enough identity to
+render and export existing annotations, but they are no longer offered for new
+annotation decisions by default.
+
+### Detect consumption rules
+
+- Archived detect classes remain in `tasks.detect.classKeys` at their original
+  YOLO numeric ID.
+- `classes.txt` and `data.yaml` compatibility remains unchanged: detect names
+  are written in full YOLO ID order, including archived slots.
+- Box Label and Video Label keep the full class list for rendering existing
+  boxes, so old annotations still show the archived class name.
+- New class pickers, shortcut dropdowns, fixed-box recording, and Video Label
+  detect buttons use active detect classes only.
+- If the current selected historical box uses an archived class, the UI marks it
+  as `archived` and blocks creation/relabeling/materialization into that class
+  until the class is restored in Library.
+
+### Classification consumption rules
+
+- Active classification choices are derived from `tasks.clf.classKeys` and
+  exclude `classDef.archived`.
+- Existing video classification records can still display an archived
+  `classKey` by looking it up in `classDefs`.
+- New classification assignment is blocked for archived keys.
+
+### Proposal and Auto Label policy
+
+- Proposal materialization is blocked when the proposal references an archived
+  detect class.
+- Accept All materializes active-class proposals and leaves archived-class
+  proposals in the sidecar for restore/reject handling.
+- The pure Auto Label threshold helper can filter archived detect predictions
+  before they become accepted boxes or materializable proposals; skipped
+  archived predictions are counted separately.
+
+### Helper additions
+
+- Detect lookup/display: `findDetectClassById`, `findDetectClassByKey`,
+  `isDetectClassArchivedById`, `isDetectClassArchived`,
+  `detectClassDisplayName`.
+- Active option helpers: `activeDetectClasses`,
+  `detectClassOptionsForNewAnnotations`, `activeClassificationClasses`,
+  `classificationOptionsForNewAnnotations`.
+- Classification lookup/display: `findClassificationClassByKey`,
+  `isClassificationClassArchived`, `classificationClassDisplayName`.
+- Export compatibility: `exportDetectClassNamesPreservingIds`.
+
+### Intentionally deferred
+
+- Import classes from existing dataset (`classes.txt` / `data.yaml` to wizard).
 - Export class config to a sharable JSON file.
 - Cross-workspace class merging (for merge tool).
+- Class merge/split.
+- Hard delete with full annotation reference scanning.
+- Drag reorder with annotation migration.
+- Relabeling old annotations.
+- Shared class-control extraction across Box/Video Label.
+- Shared canvas unification.
 
 ---
 

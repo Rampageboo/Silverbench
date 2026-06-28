@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import * as api from "../../api";
+import { useArchivedClassIds } from "../workspace/useArchivedClassIds";
 import {
   classMapToLabelClasses,
   loadDatasetClassNames,
@@ -54,6 +55,8 @@ export function useBoxLabelClasses({
   setBoxes,
   setStatus
 }: UseBoxLabelClassesOptions) {
+  const { archivedDetectIds, archivedDetectIdsRef, archivedClassKeysRef } = useArchivedClassIds(workspaceRoot);
+
   const [classes, setClasses] = useState<api.LabelClass[]>([]);
   const classesRef = useRef(classes);
   classesRef.current = classes;
@@ -110,6 +113,15 @@ export function useBoxLabelClasses({
       setCurrentClass(classId);
     },
     [classRef]
+  );
+
+  const isArchivedClassId = useCallback(
+    (classId: number) => archivedDetectIdsRef.current.has(classId),
+    [archivedDetectIdsRef]
+  );
+  const isArchivedClassKey = useCallback(
+    (classKey: string) => archivedClassKeysRef.current.has(classKey),
+    [archivedClassKeysRef]
   );
 
   useEffect(() => {
@@ -231,6 +243,10 @@ export function useBoxLabelClasses({
   const assignClass = useCallback(
     async (classId: number) => {
       if (!Number.isInteger(classId) || classId < 0) return;
+      if (isArchivedClassId(classId)) {
+        setStatus(`Class ${classNameFor(classesRef.current, classId)} is archived. Restore it in Library before using it for new boxes.`);
+        return;
+      }
       setActiveShortcutSlot(null);
       applyCurrentClass(classId);
       const cls = classesRef.current.find((item) => item.id === classId);
@@ -250,13 +266,17 @@ export function useBoxLabelClasses({
       }
       setStatus(`Class ${classNameFor(classesRef.current, classId)} selected for new boxes.`);
     },
-    [applyCurrentClass, boxesRef, classesRef, dragRef, pointerToolEnabled, selectedRef, setStatus]
+    [applyCurrentClass, boxesRef, classesRef, dragRef, isArchivedClassId, pointerToolEnabled, selectedRef, setStatus]
   );
 
   // Double-click class from the class panel: intentionally relabel the selected box.
   const applyClassToSelectedBox = useCallback(
     async (classId: number) => {
       if (!Number.isInteger(classId) || classId < 0) return;
+      if (isArchivedClassId(classId)) {
+        setStatus(`Class ${classNameFor(classesRef.current, classId)} is archived. Restore it before relabeling boxes to it.`);
+        return;
+      }
       const index = selectedRef.current;
       if (index === null || !boxesRef.current[index]) return;
       applyCurrentClass(classId);
@@ -271,7 +291,7 @@ export function useBoxLabelClasses({
       await persistLabels(`Relabeled selected box to ${classNameFor(classesRef.current, classId)}.`);
       scheduleDraw();
     },
-    [applyCurrentClass, boxesRef, classesRef, persistLabels, pushUndo, scheduleDraw, selectedRef, setBoxes]
+    [applyCurrentClass, boxesRef, classesRef, isArchivedClassId, persistLabels, pushUndo, scheduleDraw, selectedRef, setBoxes, setStatus]
   );
 
   // Keyboard shortcut 1–0: apply stored class + mode. Does NOT relabel selected box.
@@ -279,7 +299,12 @@ export function useBoxLabelClasses({
     (slot: number, useSlot = true) => {
       const slotData = useSlot ? shortcutSlots[slot] : null;
       const classId = slotData?.classId ?? (useSlot ? undefined : slot);
-      if (classId == null || !classes.some((item) => item.id === classId)) return;
+      if (classId == null || !classes.some((item) => item.id === classId) || isArchivedClassId(classId)) {
+        if (classId != null && isArchivedClassId(classId)) {
+          setStatus(`Shortcut ${slot} points to archived class ${classNameFor(classes, classId)}.`);
+        }
+        return;
+      }
 
       // Apply the mode stored in the slot without touching selected box.
       if (slotData?.mode === "subject-select") {
@@ -308,7 +333,7 @@ export function useBoxLabelClasses({
           : `Class ${classNameFor(classes, classId)} selected.`
       );
     },
-    [applyCurrentClass, classes, classesRef, pointerToolEnabled, setStatus, shortcutSlots]
+    [applyCurrentClass, classes, classesRef, isArchivedClassId, pointerToolEnabled, setStatus, shortcutSlots]
   );
 
   const startFixedBoxRecording = useCallback(
@@ -321,6 +346,10 @@ export function useBoxLabelClasses({
         setStatus(`Fixed box ${slot} cleared.`);
         return;
       }
+      if (isArchivedClassId(classId)) {
+        setStatus(`Class ${classNameFor(classes, classId)} is archived. Restore it before recording a fixed box.`);
+        return;
+      }
       next[slot] = null;
       setFixedBoxSlots(next);
       applyCurrentClass(classId);
@@ -330,7 +359,7 @@ export function useBoxLabelClasses({
         `Draw one ${classNameFor(classes, classId)} box to record fixed box ${slot}. Hold Alt+${slot} to use it later.`
       );
     },
-    [applyCurrentClass, classes, currentClass, fixedBoxSlots, recordingFixedBoxSlot, setFixedBoxSlots, setStatus]
+    [applyCurrentClass, classes, currentClass, fixedBoxSlots, isArchivedClassId, recordingFixedBoxSlot, setFixedBoxSlots, setStatus]
   );
 
   const recordFixedBoxFromBox = useCallback(
@@ -354,6 +383,10 @@ export function useBoxLabelClasses({
     }
     const existing = classes.find((item) => item.name.toLowerCase() === name.toLowerCase());
     if (existing) {
+      if (isArchivedClassId(existing.id)) {
+        setStatus(`Class ${existing.name} is archived. Restore it in Library before using it for new boxes.`);
+        return;
+      }
       await assignClass(existing.id);
       setStatus(`Selected existing class ${classNameFor(classes, existing.id)}.`);
       return;
@@ -364,21 +397,35 @@ export function useBoxLabelClasses({
     setClasses(saved);
     applyCurrentClass(nextId);
     setStatus(`Created class ${nextId}: ${name}.`);
-  }, [applyCurrentClass, assignClass, classNameInput, classes, datasetRoot, setStatus]);
+  }, [applyCurrentClass, assignClass, classNameInput, classes, datasetRoot, isArchivedClassId, setStatus]);
 
   const sortedClasses = useMemo(
     () => [...classes].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }) || a.id - b.id),
     [classes]
   );
 
+  // Active (non-archived) classes for pickers. Archived classes remain in `classes`
+  // and `sortedClasses` so existing annotations still display their class names.
+  const activeSortedClasses = useMemo(
+    () => sortedClasses.filter((c) => !archivedDetectIds.has(c.id)),
+    [sortedClasses, archivedDetectIds]
+  );
+
+  useEffect(() => {
+    if (selectedRef.current !== null) return;
+    if (classes.some((item) => item.id === currentClass && !archivedDetectIds.has(item.id))) return;
+    const next = classes.find((item) => !archivedDetectIds.has(item.id));
+    if (next) applyCurrentClass(next.id);
+  }, [applyCurrentClass, archivedDetectIds, classes, currentClass, selectedRef]);
+
   const filteredClasses = useMemo(() => {
     const terms = classSearch.trim().toLowerCase().split(" ").filter(Boolean);
-    if (!terms.length) return sortedClasses;
-    return sortedClasses.filter((item) => {
+    if (!terms.length) return activeSortedClasses;
+    return activeSortedClasses.filter((item) => {
       const text = `${item.id} ${item.name}`.toLowerCase();
       return terms.every((term) => text.includes(term));
     });
-  }, [classSearch, sortedClasses]);
+  }, [classSearch, activeSortedClasses]);
 
   const classShortcutOptions = useCallback(
     (slot: number): ShortcutOption[] => {
@@ -386,7 +433,7 @@ export function useBoxLabelClasses({
       const boundId = slotData?.classId;
       return [
         { value: "", label: "empty", searchText: "empty none clear", selected: slotData == null },
-        ...sortedClasses.map((item) => ({
+        ...activeSortedClasses.map((item) => ({
           value: String(item.id),
           label: `${item.id}: ${item.name}`,
           searchText: `${item.id} ${item.name}`,
@@ -394,7 +441,7 @@ export function useBoxLabelClasses({
         }))
       ];
     },
-    [shortcutSlots, sortedClasses]
+    [shortcutSlots, activeSortedClasses]
   );
 
   const fixedShortcutOptions = useCallback(
@@ -402,10 +449,10 @@ export function useBoxLabelClasses({
       const template = fixedBoxSlots[slot];
       const ready = Boolean(template && template.w > 0 && template.h > 0);
       const classId = template?.classId;
-      const hasClass = classId != null && classes.some((item) => item.id === classId);
+      const hasClass = classId != null && classes.some((item) => item.id === classId && !archivedDetectIds.has(item.id));
       return [
         { value: "", label: "Alt: empty", searchText: "alt empty none clear", selected: !hasClass },
-        ...sortedClasses.map((item) => ({
+        ...activeSortedClasses.map((item) => ({
           value: String(item.id),
           label: `${item.id}: ${item.name}${ready && classId === item.id ? " ready" : ""}`,
           searchText: `${item.id} ${item.name}`,
@@ -413,7 +460,7 @@ export function useBoxLabelClasses({
         }))
       ];
     },
-    [classes, fixedBoxSlots, sortedClasses]
+    [archivedDetectIds, classes, fixedBoxSlots, activeSortedClasses]
   );
 
   return {
@@ -432,6 +479,11 @@ export function useBoxLabelClasses({
     setClassSearch,
     shortcutSlots,
     setShortcutSlots,
+    archivedDetectIds,
+    archivedDetectIdsRef,
+    archivedClassKeysRef,
+    isArchivedDetectClass: isArchivedClassId,
+    isArchivedClassKey,
     fixedBoxSlots,
     setFixedBoxSlots,
     recordingFixedBoxSlot,
