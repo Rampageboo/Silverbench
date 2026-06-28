@@ -1,4 +1,8 @@
-export type ToolTab =
+/** Primary navigation tabs visible in the redesigned sidebar. */
+export type PrimaryTab = "home" | "library" | "label" | "review" | "export" | "settings";
+
+/** Legacy tool tabs kept alive for KeepAlive rendering; not shown directly in nav. */
+export type LegacyToolTab =
   | "image-pool"
   | "pool-label"
   | "video"
@@ -9,7 +13,10 @@ export type ToolTab =
   | "mask-noise"
   | "merge";
 
-export type WorkbenchToolGroup = "video" | "image" | "dataset" | "utility";
+/** Union of all addressable tabs. */
+export type ToolTab = PrimaryTab | LegacyToolTab;
+
+export type WorkbenchToolGroup = "primary" | "video" | "image" | "dataset" | "utility";
 
 export type WorkbenchTool = {
   tab: ToolTab;
@@ -21,11 +28,79 @@ export type WorkbenchTool = {
   heavy?: boolean;
   requiresWorkspace?: boolean;
   primary?: boolean;
+  /** If true, visible in the primary sidebar navigation. */
+  navPrimary?: boolean;
 };
 
 /**
- * Product-level tool catalogue. Rendering is attached in app/toolRegistry.tsx,
- * while navigation, session validation, and policy all use this same list.
+ * Primary navigation items — the 6 items shown in the new sidebar.
+ */
+export const PRIMARY_NAV_TOOLS: readonly WorkbenchTool[] = [
+  {
+    tab: "home",
+    label: "Home",
+    labelZh: "主页",
+    keywords: "home workspace create open recent",
+    group: "primary",
+    keepAlive: false,
+    navPrimary: true
+  },
+  {
+    tab: "library",
+    label: "Library",
+    labelZh: "资源库",
+    keywords: "library sources classes segments media",
+    group: "primary",
+    keepAlive: false,
+    requiresWorkspace: true,
+    navPrimary: true
+  },
+  {
+    tab: "label",
+    label: "Label",
+    labelZh: "标注",
+    keywords: "label annotate box video image detection",
+    group: "primary",
+    keepAlive: true,
+    heavy: true,
+    requiresWorkspace: true,
+    primary: true,
+    navPrimary: true
+  },
+  {
+    tab: "review",
+    label: "Review",
+    labelZh: "审阅",
+    keywords: "review queue yolo dataset check",
+    group: "primary",
+    keepAlive: true,
+    heavy: true,
+    requiresWorkspace: true,
+    navPrimary: true
+  },
+  {
+    tab: "export",
+    label: "Export",
+    labelZh: "导出",
+    keywords: "export train prep dataset split yaml",
+    group: "primary",
+    keepAlive: true,
+    requiresWorkspace: true,
+    navPrimary: true
+  },
+  {
+    tab: "settings",
+    label: "Settings",
+    labelZh: "设置",
+    keywords: "settings preferences workspace",
+    group: "primary",
+    keepAlive: false,
+    navPrimary: true
+  }
+] as const;
+
+/**
+ * Legacy tool definitions — kept alive for KeepAlive panels, not shown in primary nav.
  */
 export const WORKBENCH_TOOLS: readonly WorkbenchTool[] = [
   {
@@ -113,4 +188,10 @@ export const WORKBENCH_TOOLS: readonly WorkbenchTool[] = [
     keepAlive: true,
     heavy: true
   }
+] as const;
+
+/** All tools combined — primary nav + legacy tools. */
+export const ALL_TOOLS: readonly WorkbenchTool[] = [
+  ...PRIMARY_NAV_TOOLS,
+  ...WORKBENCH_TOOLS
 ] as const;

@@ -8,7 +8,7 @@ import { errMessage } from "../lib/errors";
 
 import { useToast } from "../components/useToast";
 
-import { WORKBENCH_TOOLS, type ToolTab } from "../types/tools";
+import { ALL_TOOLS, PRIMARY_NAV_TOOLS, type ToolTab } from "../types/tools";
 
 import { readWorkspaceSessionLite, saveActiveTabSession } from "../features/image-pool/session";
 
@@ -64,7 +64,7 @@ function applySessionTab(
 
   }
 
-  if (WORKBENCH_TOOLS.some((tool) => tool.tab === tab)) {
+  if (ALL_TOOLS.some((tool) => tool.tab === tab)) {
 
     setActiveTab(tab as ToolTab);
 
@@ -116,7 +116,7 @@ export function WorkspaceProvider({
 
   const [workspaceRoot, setWorkspaceRoot] = useState(readInitialWorkspaceRoot);
 
-  const [activeTab, setActiveTab] = useState<ToolTab>("image-pool");
+  const [activeTab, setActiveTab] = useState<ToolTab>("home");
 
   const [imageWorkspaceTab, setImageWorkspaceTabState] = useState<ImageWorkspaceTab>("image-pool");
 
@@ -376,7 +376,7 @@ export function WorkspaceProvider({
 
     if (!root || initPhase !== "ready") return;
 
-    if (activeTab === "image-pool") return;
+    if (activeTab === "home") return;
 
     saveActiveTabSession(root, activeTab).catch(() => {
 
@@ -392,7 +392,7 @@ export function WorkspaceProvider({
 
     setPoolLabelFocusFilename(item.filename);
 
-    setActiveTab("pool-label");
+    setActiveTab("label");
 
   }, []);
 

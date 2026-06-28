@@ -1,6 +1,6 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from "react";
 import type { ImageWorkspaceTab } from "../features/image-pool/imageWorkspaceMode";
-import { WORKBENCH_TOOLS, type ToolTab, type WorkbenchTool } from "../types/tools";
+import { ALL_TOOLS, type ToolTab, type WorkbenchTool } from "../types/tools";
 
 export type ToolPageProps = {
   active: boolean;
@@ -13,6 +13,40 @@ export type ToolPageProps = {
 export type WorkbenchToolDefinition = WorkbenchTool & {
   component: LazyExoticComponent<ComponentType<ToolPageProps>>;
 };
+
+// ── Primary nav pages ─────────────────────────────────────────────────────────
+
+const HomeTool = lazy(async () => {
+  const { HomePage } = await import("../features/home/HomePage");
+  return { default: (props: ToolPageProps) => <HomePage onReady={props.onReady} /> };
+});
+
+const LibraryTool = lazy(async () => {
+  const { LibraryPage } = await import("../features/library/LibraryPage");
+  return { default: (props: ToolPageProps) => <LibraryPage active={props.active} onReady={props.onReady} /> };
+});
+
+const LabelTool = lazy(async () => {
+  const { LabelPage } = await import("../features/label/LabelPage");
+  return { default: (props: ToolPageProps) => <LabelPage active={props.active} onReady={props.onReady} /> };
+});
+
+const ReviewHubTool = lazy(async () => {
+  const { ReviewHubPage } = await import("../features/review-hub/ReviewHubPage");
+  return { default: (props: ToolPageProps) => <ReviewHubPage active={props.active} onReady={props.onReady} /> };
+});
+
+const ExportHubTool = lazy(async () => {
+  const { ExportHubPage } = await import("../features/export-hub/ExportHubPage");
+  return { default: (props: ToolPageProps) => <ExportHubPage active={props.active} onReady={props.onReady} /> };
+});
+
+const SettingsTool = lazy(async () => {
+  const { SettingsPage } = await import("../features/settings/SettingsPage");
+  return { default: (props: ToolPageProps) => <SettingsPage active={props.active} onReady={props.onReady} /> };
+});
+
+// ── Legacy keep-alive tools ───────────────────────────────────────────────────
 
 const ImageWorkspaceTool = lazy(async () => {
   const module = await import("../features/image-workspace/ImageWorkspaceToolPage");
@@ -73,6 +107,14 @@ const MergeTool = lazy(async () => {
 });
 
 const TOOL_COMPONENTS: Record<ToolTab, WorkbenchToolDefinition["component"]> = {
+  // Primary nav
+  home: HomeTool,
+  library: LibraryTool,
+  label: LabelTool,
+  review: ReviewHubTool,
+  export: ExportHubTool,
+  settings: SettingsTool,
+  // Legacy keep-alive
   video: VideoLabelTool,
   "video-capture": VideoCaptureTool,
   "pool-label": ImageBoxLabelTool,
@@ -85,7 +127,7 @@ const TOOL_COMPONENTS: Record<ToolTab, WorkbenchToolDefinition["component"]> = {
 };
 
 /** Runtime registry: one ordered definition list drives navigation and rendering. */
-export const WORKBENCH_TOOL_DEFINITIONS: readonly WorkbenchToolDefinition[] = WORKBENCH_TOOLS.map((tool) => ({
+export const WORKBENCH_TOOL_DEFINITIONS: readonly WorkbenchToolDefinition[] = ALL_TOOLS.map((tool) => ({
   ...tool,
   component: TOOL_COMPONENTS[tool.tab]
 }));

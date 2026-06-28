@@ -2286,3 +2286,791 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   font-style: italic;
   white-space: normal;
 }
+
+
+/* ============================================================
+   Liquid-Glass Design Token System
+   Applies to shell UI: sidebar, panels, dialogs, cards.
+   Does NOT apply to annotation canvas or dense data tables.
+   ============================================================ */
+
+:root {
+  --glass-bg: rgba(12, 18, 30, 0.72);
+  --glass-bg-raised: rgba(18, 26, 42, 0.82);
+  --glass-bg-hover: rgba(30, 42, 64, 0.60);
+  --glass-border: rgba(255, 255, 255, 0.07);
+  --glass-border-strong: rgba(255, 255, 255, 0.13);
+  --glass-blur: 18px;
+  --glass-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.28);
+  --glass-shadow: 0 4px 20px rgba(0, 0, 0, 0.38), 0 1px 4px rgba(0, 0, 0, 0.22);
+  --glass-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.54), 0 2px 8px rgba(0, 0, 0, 0.28);
+  --glass-accent: #3b82f6;
+  --glass-accent-glow: rgba(59, 130, 246, 0.22);
+  --glass-accent-active: rgba(59, 130, 246, 0.18);
+  --glass-text: #e2e8f0;
+  --glass-text-dim: #94a3b8;
+  --glass-text-muted: #64748b;
+  --glass-radius-sm: 6px;
+  --glass-radius: 10px;
+  --glass-radius-lg: 14px;
+  --glass-radius-xl: 18px;
+  --glass-gap: 12px;
+}
+
+/* ---- Liquid-glass sidebar ---- */
+.tabbar--glass .tabbar-surface {
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(var(--glass-blur)) !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur)) !important;
+  border-right: 1px solid var(--glass-border) !important;
+}
+
+.tabbar--glass .tool-nav-item {
+  border-radius: var(--glass-radius-sm);
+  margin: 1px 4px;
+  color: var(--glass-text-dim);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.tabbar--glass .tool-nav-item:hover {
+  background: var(--glass-bg-hover) !important;
+  color: var(--glass-text);
+}
+
+.tabbar--glass .tool-nav-item.active {
+  background: var(--glass-accent-active) !important;
+  box-shadow: inset 3px 0 0 var(--glass-accent) !important;
+  color: var(--glass-text) !important;
+}
+
+.tabbar--glass .tool-nav-item.active .tool-nav-item-icon {
+  color: #93c5fd;
+}
+
+/* ---- Glass card ---- */
+.glass-card {
+  background: var(--glass-bg-raised);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--glass-radius);
+  box-shadow: var(--glass-shadow-sm);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+button.glass-card:hover,
+a.glass-card:hover {
+  border-color: var(--glass-border-strong);
+  background: var(--glass-bg-hover);
+  box-shadow: var(--glass-shadow);
+}
+
+/* ---- Glass buttons ---- */
+.glass-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--glass-text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--glass-border-strong);
+  border-radius: var(--glass-radius-sm);
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.glass-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: var(--glass-shadow-sm);
+}
+
+.glass-btn:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+  transform: translateY(1px);
+}
+
+.glass-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.glass-btn--primary {
+  background: var(--glass-accent);
+  border-color: rgba(59, 130, 246, 0.5);
+  color: #fff;
+}
+
+.glass-btn--primary:hover:not(:disabled) {
+  background: #2563eb;
+  border-color: rgba(59, 130, 246, 0.7);
+  box-shadow: 0 0 16px var(--glass-accent-glow);
+}
+
+.glass-btn--sm {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+/* ---- Glass form fields ---- */
+.glass-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.glass-field-row {
+  display: flex;
+  gap: 16px;
+}
+
+.glass-field-row > .glass-field {
+  flex: 1;
+}
+
+.glass-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--glass-text-dim);
+  letter-spacing: 0.02em;
+}
+
+.glass-input {
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--glass-text);
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--glass-border-strong);
+  border-radius: var(--glass-radius-sm);
+  outline: none;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.glass-input:focus {
+  border-color: var(--glass-accent);
+  box-shadow: 0 0 0 2px var(--glass-accent-glow);
+}
+
+.glass-input:disabled {
+  opacity: 0.5;
+}
+
+.glass-input--flex {
+  flex: 1;
+  min-width: 0;
+}
+
+.glass-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.glass-hint {
+  font-size: 11px;
+  color: var(--glass-text-muted);
+  margin-top: 2px;
+}
+
+.glass-error {
+  font-size: 12.5px;
+  color: #f87171;
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  background: rgba(239, 68, 68, 0.10);
+  border: 1px solid rgba(239, 68, 68, 0.22);
+  border-radius: var(--glass-radius-sm);
+}
+
+/* ---- Glass segmented control ---- */
+.glass-segmented {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: rgba(0, 0, 0, 0.24);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--glass-radius-sm);
+}
+
+.glass-seg-btn {
+  flex: 1;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--glass-text-dim);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.glass-seg-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--glass-text);
+}
+
+.glass-seg-btn.active {
+  background: var(--glass-accent-active);
+  color: #93c5fd;
+  box-shadow: 0 0 0 1px var(--glass-accent-glow);
+}
+
+.glass-seg-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---- Glass dialog ---- */
+.glass-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.54);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.glass-dialog {
+  width: 480px;
+  max-width: calc(100vw - 40px);
+  background: var(--glass-bg-raised);
+  border: 1px solid var(--glass-border-strong);
+  border-radius: var(--glass-radius-xl);
+  box-shadow: var(--glass-shadow-lg);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.glass-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.glass-dialog-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--glass-text);
+  margin: 0;
+}
+
+.glass-dialog-close {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--glass-text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.glass-dialog-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--glass-text);
+}
+
+.glass-dialog-body {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+
+.glass-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--glass-border);
+}
+
+/* ============================================================
+   Home Page
+   ============================================================ */
+
+.home-page {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  padding: 40px 48px;
+  height: 100%;
+  overflow-y: auto;
+  color: var(--glass-text);
+}
+
+.home-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.home-brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.home-brand-icon {
+  border-radius: 10px;
+}
+
+.home-title {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--glass-text);
+  margin: 0 0 3px;
+  letter-spacing: -0.01em;
+}
+
+.home-subtitle {
+  font-size: 13px;
+  color: var(--glass-text-muted);
+  margin: 0;
+}
+
+.home-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.home-action-btn {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.home-action-icon {
+  font-style: normal;
+}
+
+.home-error {
+  max-width: 480px;
+}
+
+.home-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.home-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--glass-text-dim);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.home-recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 600px;
+}
+
+.home-recent-item {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.home-recent-btn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--glass-text);
+  cursor: pointer;
+  transition: background 0.12s ease;
+  border-radius: var(--glass-radius) 0 0 var(--glass-radius);
+}
+
+.home-recent-btn:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.home-recent-icon {
+  font-size: 18px;
+  flex: 0 0 auto;
+}
+
+.home-recent-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.home-recent-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--glass-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home-recent-path {
+  font-size: 11px;
+  color: var(--glass-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home-recent-remove {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--glass-text-muted);
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--glass-border);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease;
+  border-radius: 0 var(--glass-radius) var(--glass-radius) 0;
+}
+
+.home-recent-item:hover .home-recent-remove {
+  opacity: 1;
+}
+
+.home-recent-remove:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #f87171;
+}
+
+.home-empty {
+  color: var(--glass-text-muted);
+  font-size: 13px;
+}
+
+/* ============================================================
+   Library, Review, Export Hub Pages (shared shell)
+   ============================================================ */
+
+.library-page,
+.review-hub-page,
+.export-hub-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 32px 40px;
+  height: 100%;
+  overflow-y: auto;
+  color: var(--glass-text);
+}
+
+.library-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.library-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--glass-text);
+  margin: 0;
+}
+
+.library-subtitle {
+  font-size: 12px;
+  color: var(--glass-text-muted);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 500px;
+}
+
+.library-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  max-width: 900px;
+}
+
+.library-section-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 18px;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--glass-border);
+  color: var(--glass-text);
+  width: 100%;
+}
+
+.library-section-card:hover:not(.library-section-card--soon) {
+  border-color: var(--glass-border-strong);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: var(--glass-shadow-sm);
+}
+
+.library-section-card--soon {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.library-section-icon {
+  flex: 0 0 auto;
+  color: #60a5fa;
+  margin-top: 1px;
+}
+
+.library-section-icon--muted {
+  color: var(--glass-text-muted);
+}
+
+.library-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--glass-text);
+  margin-bottom: 3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.library-section-desc {
+  font-size: 12px;
+  color: var(--glass-text-dim);
+  line-height: 1.45;
+}
+
+.library-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 20px;
+  letter-spacing: 0.04em;
+}
+
+/* ============================================================
+   Unified Label Page
+   ============================================================ */
+
+.label-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.label-page--no-workspace {
+  align-items: center;
+  justify-content: center;
+}
+
+.label-mode-bar {
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  height: 44px;
+  background: rgba(9, 13, 20, 0.85);
+  border-bottom: 1px solid var(--glass-border);
+  flex: 0 0 auto;
+}
+
+.label-mode-tabs {
+  display: flex;
+  gap: 2px;
+}
+
+.label-mode-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--glass-text-dim);
+  background: transparent;
+  border: none;
+  border-radius: var(--glass-radius-sm);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.label-mode-tab:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--glass-text);
+}
+
+.label-mode-tab.active {
+  background: var(--glass-accent-active);
+  color: #93c5fd;
+}
+
+.label-mode-icon {
+  flex: 0 0 auto;
+}
+
+.label-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.label-content > * {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ============================================================
+   Settings Page
+   ============================================================ */
+
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 32px 40px;
+  height: 100%;
+  overflow-y: auto;
+  color: var(--glass-text);
+  max-width: 700px;
+}
+
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+}
+
+.settings-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--glass-text);
+  margin: 0;
+}
+
+.settings-hint {
+  font-size: 12.5px;
+  color: var(--glass-text-muted);
+  margin: 0;
+}
+
+.settings-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--glass-radius-sm);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.settings-option:hover {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--glass-border-strong);
+}
+
+.settings-option.selected {
+  background: var(--glass-accent-active);
+  border-color: rgba(59, 130, 246, 0.35);
+}
+
+.settings-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--glass-text);
+}
+
+.settings-option-copy > span {
+  font-size: 12px;
+  color: var(--glass-text-muted);
+}
+
+.settings-manifest {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-manifest-row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 10px;
+  font-size: 12.5px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.settings-manifest-key {
+  color: var(--glass-text-muted);
+  font-weight: 500;
+}
+
+.settings-manifest-val {
+  color: var(--glass-text);
+}
+
+.settings-manifest-path {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11.5px;
+  color: var(--glass-text-dim);
+  word-break: break-all;
+}

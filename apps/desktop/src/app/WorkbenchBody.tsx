@@ -19,7 +19,7 @@ type WorkbenchBodyProps = { onNativeTabReady?: () => void };
 export function WorkbenchBody({ onNativeTabReady }: WorkbenchBodyProps) {
   const { workspaceRoot, setActiveTab } = useWorkspace();
   return (
-    <WorkspaceArchitectureProvider workspaceRoot={workspaceRoot} onMigrated={() => setActiveTab("video")}>
+    <WorkspaceArchitectureProvider workspaceRoot={workspaceRoot} onMigrated={() => setActiveTab("label")}>
       <MultimodalControlProvider>
         <ImagePoolBadgeProvider workspaceRoot={workspaceRoot}>
           <WorkbenchBodyContent onNativeTabReady={onNativeTabReady} />
@@ -100,6 +100,8 @@ function WorkbenchBodyContent({ onNativeTabReady }: WorkbenchBodyProps) {
   const { imagePoolNewCount } = useImagePoolBadge();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [imageWorkspaceStatus, setImageWorkspaceStatus] = useState("");
+
+  // Show the image-workspace topbar only when directly on the legacy image-pool tab.
   const showImageWorkspaceTopbar = activeTab === "image-pool";
 
   useEffect(() => {
@@ -111,6 +113,11 @@ function WorkbenchBodyContent({ onNativeTabReady }: WorkbenchBodyProps) {
 
   function selectTab(tab: ToolTab) {
     if (tab === "image-pool") setImageWorkspaceTab("image-pool");
+    // Settings tab opens modal for backward compat; page-based settings also available.
+    if (tab === "settings") {
+      setSettingsOpen(true);
+      return;
+    }
     setActiveTab(tab);
   }
 
