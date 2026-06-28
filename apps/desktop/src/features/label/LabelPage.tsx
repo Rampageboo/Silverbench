@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useWorkspace } from "../../app/useWorkspace";
 import { VideoLabelPage } from "../video/VideoLabelPage";
 import { BoxLabelPage } from "../box-label/BoxLabelPage";
@@ -33,11 +33,10 @@ export function LabelPage({ active = true, onReady }: Props) {
     setSourceSummary(summary);
   }, []);
 
-  const ctxValue: LabelWorkbenchContextValue = {
-    mode,
-    setMode,
-    reportSourceSummary
-  };
+  const ctxValue = useMemo<LabelWorkbenchContextValue>(
+    () => ({ mode, setMode, reportSourceSummary }),
+    [mode, setMode, reportSourceSummary]
+  );
 
   if (!workspaceRoot.trim()) {
     return (

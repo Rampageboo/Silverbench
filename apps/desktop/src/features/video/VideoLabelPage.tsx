@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkspace } from "../../app/useWorkspace";
 import { useWorkbenchCommands } from "../../input/MultimodalControlProvider";
+import { useLabelWorkbench } from "../label/useLabelWorkbench";
 import { VideoAnnotationCanvas, type RemotePointerState } from "./VideoAnnotationCanvas";
 import { formatVideoClock } from "./videoAnnotationDomain";
 import { useVideoAnnotationSession } from "./useVideoAnnotationSession";
@@ -41,6 +42,27 @@ export function VideoLabelPage({ onReady, active = true }: Props) {
   const { workspaceRoot, chooseWorkspaceFolder } = useWorkspace();
   const session = useVideoAnnotationSession({ workspaceRoot, active, onReady });
   const [remotePointer, setRemotePointer] = useState<RemotePointerState | null>(null);
+
+  const workbench = useLabelWorkbench();
+
+  useEffect(() => {
+    if (!workbench) return;
+    if (!session.current) {
+      workbench.reportSourceSummary(null);
+      return;
+    }
+    const videoName =
+      session.current.path.split(/[/\\]/).at(-1)?.replace(/\.[^.]+$/, "") ?? null;
+    workbench.reportSourceSummary({
+      kind: "video-timestamp",
+      videoName,
+      timestampMs: Math.round(session.time * 1000),
+      reviewed: session.reviewed,
+      hasDetectTask: Boolean(session.detectTask),
+      hasClfTask: Boolean(session.clfTask),
+    });
+    return () => { workbench.reportSourceSummary(null); };
+  }, [workbench, session.current, session.time, session.reviewed, session.detectTask, session.clfTask]);
 
   // ---------- Blackout overlay state ----------
   const [blackoutManifest, setBlackoutManifest] = useState<BlackoutOverlayManifest>(emptyBlackoutManifest);

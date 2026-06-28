@@ -1,8 +1,10 @@
+import { useEffect } from "react";
 import { useWorkspace } from "../../app/useWorkspace";
 import { useToast } from "../../components/useToast";
 import { BoxLabelTopbar } from "../../components/BoxLabelTopbar";
 import { errMessage } from "../../lib/errors";
 import { isFlaggedFile, isReviewedFile } from "../image-pool/metadata";
+import { useLabelWorkbench } from "../label/useLabelWorkbench";
 import { BoxLabelGallery } from "./BoxLabelGallery";
 import { BoxLabelView } from "./BoxLabelView";
 import { useBoxLabel } from "./useBoxLabel";
@@ -21,6 +23,31 @@ export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
     onFocusConsumed: clearPoolLabelFocus,
     onReady
   });
+
+  const workbench = useLabelWorkbench();
+
+  useEffect(() => {
+    if (!workbench) return;
+    if (!pool.currentEntry) {
+      workbench.reportSourceSummary(null);
+      return;
+    }
+    const basename = pool.currentEntry.basename;
+    const meta = pool.metadata.get(basename);
+    const reviewStatus = isFlaggedFile(meta)
+      ? "flagged" as const
+      : isReviewedFile(meta)
+        ? "approved" as const
+        : "unreviewed" as const;
+    workbench.reportSourceSummary({
+      kind: "image",
+      totalImages: pool.entries.length,
+      currentIndex: pool.currentIndex,
+      filename: basename,
+      reviewStatus,
+    });
+    return () => { workbench.reportSourceSummary(null); };
+  }, [workbench, pool.currentEntry, pool.entries.length, pool.currentIndex, pool.metadata]);
 
   const topbarStatus =
     pool.statusText ||
