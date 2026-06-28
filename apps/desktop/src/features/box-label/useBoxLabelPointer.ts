@@ -90,9 +90,9 @@ export function useBoxLabelPointer({
   applyBlackBox,
   persistLabels,
   proposalsRef,
-  selectedProposalIdRef: _selectedProposalIdRef,
+  selectedProposalIdRef,
   setSelectedProposalId,
-  onMaterializeProposal
+  onMaterializeProposal: _onMaterializeProposal
 }: UseBoxLabelPointerOptions) {
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -154,16 +154,19 @@ export function useBoxLabelPointer({
           startRect: boxToImagePixelRect(boxesRef.current[hit.index], imageW, imageH),
           moved: false
         };
-      } else if (proposalsRef && onMaterializeProposal) {
+      } else if (proposalsRef && setSelectedProposalId) {
         const proposals = proposalsRef.current;
         const proposalIdx = hitTestProposals(canvasPoint, display, proposals, imageW, imageH);
         if (proposalIdx >= 0) {
-          onMaterializeProposal(proposals[proposalIdx].id).catch((err) => setError(errMessage(err)));
+          const hitId = proposals[proposalIdx].id;
+          // Single-click selects the proposal; clicking selected proposal deselects it.
+          // Materialize via panel ✓ button, keyboard Enter, or double-click.
+          setSelectedProposalId(selectedProposalIdRef?.current === hitId ? null : hitId);
           scheduleDraw();
           return;
         }
         setSelectedBoxId(null);
-        setSelectedProposalId?.(null);
+        setSelectedProposalId(null);
       } else {
         setSelectedBoxId(null);
       }
@@ -179,10 +182,10 @@ export function useBoxLabelPointer({
       imageRef,
       lastZoomCenterRef,
       modeRef,
-      onMaterializeProposal,
       proposalsRef,
       pushUndo,
       scheduleDraw,
+      selectedProposalIdRef,
       setCurrentClass,
       setError,
       setSelectedBoxId,

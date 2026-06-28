@@ -155,6 +155,22 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
         <section className="panel pool-label-box-panel" id="poolLabelBoxPanel">
           <div className="panel-header">
             <span>Current Boxes</span>
+            <span className="pool-label-review-queue-actions">
+              <button
+                type="button"
+                title="Go to previous image that needs review"
+                onClick={() => editor.prevNeedsReview()}
+              >
+                ← Needs Review
+              </button>
+              <button
+                type="button"
+                title="Go to next image that needs review"
+                onClick={() => editor.nextNeedsReview()}
+              >
+                Needs Review →
+              </button>
+            </span>
           </div>
           <div className="panel-body pool-label-box-panel-body">
             <div className="hint" id="poolLabelStatus">
@@ -192,6 +208,29 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
             <div className="panel-header">
               <span>Proposals ({editor.proposals.length})</span>
               <span className="pool-label-proposal-actions">
+                {editor.selectedProposalId && (
+                  <>
+                    <button
+                      type="button"
+                      className="primary"
+                      title="Materialize selected proposal as a box"
+                      onClick={() =>
+                        editor.materializeProposal(editor.selectedProposalId!).catch((err) => editor.setError(errMessage(err)))
+                      }
+                    >
+                      Materialize
+                    </button>
+                    <button
+                      type="button"
+                      title="Reject selected proposal"
+                      onClick={() =>
+                        editor.rejectProposal(editor.selectedProposalId!).catch((err) => editor.setError(errMessage(err)))
+                      }
+                    >
+                      Reject
+                    </button>
+                  </>
+                )}
                 <button
                   type="button"
                   className="primary"

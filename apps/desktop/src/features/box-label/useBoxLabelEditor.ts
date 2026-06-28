@@ -4,7 +4,8 @@ import { errMessage } from "../../lib/errors";
 import { datasetImageUrl, invalidateDatasetImageUrl } from "../dataset-review/datasetAssets";
 import { loadMetadataMap } from "../image-pool/metadata";
 import type { MetadataRow } from "../image-pool/types";
-import { materializeProposal as materializeProposalFn } from "../auto-label/proposalDomain";
+import { materializeProposal as materializeProposalFn, nextNeedsReviewIndex, prevNeedsReviewIndex } from "../auto-label/proposalDomain";
+import type { ReviewQueueEntry } from "../auto-label/proposalDomain";
 import { imageProposalKey, loadImageProposals, saveImageProposals, type ImageProposalManifest } from "../auto-label/proposalApi";
 import type { DetectProposal } from "../video/videoAnnotationApi";
 import { loadEntryLabels, saveEntryLabels, type BoxLabelEntry } from "./boxLabelCore";
@@ -205,6 +206,38 @@ export function useBoxLabelEditor({
     },
     [entry, persistProposals, proposalsRef, pushUndo, setStatus]
   );
+
+  const buildQueueEntries = useCallback((): ReviewQueueEntry[] => {
+    return entries.map((e, i) => ({
+      index: i,
+      key: e.basename,
+      hasProposals: false,
+      hasAutoBoxes: false,
+      isEmpty: false,
+      isReviewed: metadataRef.current.get(e.basename)?.reviewed ?? false,
+      isJunk: metadataRef.current.get(e.basename)?.detect_junk ?? false
+    }));
+  }, [entries]);
+
+  const nextNeedsReview = useCallback(() => {
+    const queueEntries = buildQueueEntries();
+    const idx = nextNeedsReviewIndex(queueEntries, currentIndex);
+    if (idx !== null) {
+      onNavigate(idx);
+    } else {
+      setStatus("All images reviewed — no unreviewed images remaining.");
+    }
+  }, [buildQueueEntries, currentIndex, onNavigate]);
+
+  const prevNeedsReview = useCallback(() => {
+    const queueEntries = buildQueueEntries();
+    const idx = prevNeedsReviewIndex(queueEntries, currentIndex);
+    if (idx !== null) {
+      onNavigate(idx);
+    } else {
+      setStatus("All images reviewed — no unreviewed images remaining.");
+    }
+  }, [buildQueueEntries, currentIndex, onNavigate]);
 
   const labelClasses = useBoxLabelClasses({
     datasetRoot,
@@ -490,6 +523,8 @@ export function useBoxLabelEditor({
     materializeProposal,
     rejectProposal,
     acceptAllProposals,
-    rejectAllProposals
+    rejectAllProposals,
+    nextNeedsReview,
+    prevNeedsReview
   };
 }
