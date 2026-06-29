@@ -3247,6 +3247,109 @@ a.glass-card:focus-visible {
   max-width: 560px;
 }
 
+.library-version-card {
+  max-width: 960px;
+  padding: 16px;
+  border: 1px solid var(--glass-border);
+}
+
+.library-version-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.library-version-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--glass-text-heading);
+}
+
+.library-version-subtitle {
+  margin: 5px 0 0;
+  font-size: 12px;
+  color: var(--glass-text-muted);
+}
+
+.library-version-warning {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--glass-text-dim);
+}
+
+.library-version-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.library-version-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.library-version-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.library-version-item-main strong {
+  font-size: 13px;
+  color: var(--glass-text-heading);
+}
+
+.library-version-item-main span,
+.library-version-paths {
+  font-size: 11px;
+  color: var(--glass-text-muted);
+}
+
+.library-version-active-badge {
+  flex: 0 0 auto;
+  border: 1px solid rgba(34, 197, 94, 0.28);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 650;
+  color: rgb(134, 239, 172);
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.library-version-empty {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px dashed var(--glass-border);
+  border-radius: 8px;
+  color: var(--glass-text-muted);
+  font-size: 12px;
+}
+
+.library-version-error {
+  margin-top: 12px;
+}
+
+.library-version-paths {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 12px;
+  font-family: ui-monospace, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
 .library-sections {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));

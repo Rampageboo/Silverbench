@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useWorkspace } from "../../app/useWorkspace";
+import {
+  createSnapshotVersion,
+  initializeSnapshotVersioning,
+  setActiveSnapshotVersion,
+} from "../workspace-versioning/workspaceSnapshotVersionApi";
+import {
+  listSnapshotVersions,
+  nextSnapshotVersionId,
+  type WorkspaceVersionId,
+} from "../workspace-versioning/workspaceSnapshotVersions";
 import { useWorkspaceClasses } from "../workspace/useWorkspaceClasses";
 import {
   allDetectClassDefs,
@@ -654,6 +664,130 @@ function WorkspaceClassesView({ workspaceRoot, onBack }: WorkspaceClassesViewPro
 // LibraryPage
 // ---------------------------------------------------------------------------
 
+function WorkspaceVersionsPanel() {
+  const {
+    workspaceRoot,
+    workspaceRootPath,
+    activeVersionId,
+    snapshotVersions,
+    openWorkspacePath
+  } = useWorkspace();
+  const [busy, setBusy] = useState<"" | "init" | "create" | WorkspaceVersionId>("");
+  const [error, setError] = useState("");
+
+  const root = (workspaceRootPath || workspaceRoot).trim();
+  const versions = snapshotVersions ? listSnapshotVersions(snapshotVersions) : [];
+  const activeVersion = activeVersionId || snapshotVersions?.activeVersion || null;
+  const nextVersion = snapshotVersions ? nextSnapshotVersionId(snapshotVersions) : "V1";
+
+  async function run(action: "" | "init" | "create" | WorkspaceVersionId, callback: () => Promise<void>) {
+    if (!root || busy) return;
+    setBusy(action);
+    setError("");
+    try {
+      await callback();
+      await openWorkspacePath(root);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function handleInitialize() {
+    void run("init", async () => {
+      await initializeSnapshotVersioning(root);
+    });
+  }
+
+  function handleCreate() {
+    if (!activeVersion) return;
+    void run("create", async () => {
+      await createSnapshotVersion(root, activeVersion);
+    });
+  }
+
+  function handleSwitch(versionId: WorkspaceVersionId) {
+    void run(versionId, async () => {
+      await setActiveSnapshotVersion(root, versionId);
+    });
+  }
+
+  return (
+    <section className="glass-card library-version-card">
+      <div className="library-version-header">
+        <div>
+          <h3 className="library-version-title">Workspace Versions</h3>
+          <p className="library-version-subtitle">
+            Active version: {activeVersion || "not initialized"}
+          </p>
+        </div>
+        {snapshotVersions ? (
+          <button
+            type="button"
+            className="glass-btn glass-btn--primary"
+            onClick={handleCreate}
+            disabled={!activeVersion || busy !== ""}
+          >
+            {busy === "create" ? "Copying..." : `Create ${nextVersion} from ${activeVersion}`}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="glass-btn glass-btn--primary"
+            onClick={handleInitialize}
+            disabled={!root || busy !== ""}
+          >
+            {busy === "init" ? "Initializing..." : "Initialize Versioning"}
+          </button>
+        )}
+      </div>
+
+      <p className="library-version-warning">
+        Copying a version may take time and disk space. Each version is a full workspace snapshot.
+      </p>
+
+      {snapshotVersions ? (
+        <div className="library-version-list">
+          {versions.map((version) => {
+            const isActive = version.id === activeVersion;
+            return (
+              <div key={version.id} className="library-version-item">
+                <div className="library-version-item-main">
+                  <strong>{version.id}</strong>
+                  <span>{version.source || "snapshot"}</span>
+                </div>
+                {isActive ? (
+                  <span className="library-version-active-badge">Active</span>
+                ) : (
+                  <button
+                    type="button"
+                    className="glass-btn glass-btn--sm"
+                    onClick={() => handleSwitch(version.id)}
+                    disabled={busy !== ""}
+                  >
+                    {busy === version.id ? "Switching..." : `Switch to ${version.id}`}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="library-version-empty">
+          This workspace is not versioned yet. Initialize it to create V1 as a full copy.
+        </div>
+      )}
+
+      {error && <p className="glass-error library-version-error">{error}</p>}
+      <div className="library-version-paths">
+        <span>Workspace root: {root || "none"}</span>
+        {activeVersion && <span>Active path: {workspaceRoot}</span>}
+      </div>
+    </section>
+  );
+}
+
 export function LibraryPage({ onReady }: Props) {
   const { workspaceRoot, setActiveTab } = useWorkspace();
   const [view, setView] = useState<LibraryView>("overview");
@@ -694,6 +828,7 @@ export function LibraryPage({ onReady }: Props) {
         <h2 className="library-title">Library</h2>
         <p className="library-subtitle">{workspaceRoot}</p>
       </div>
+      <WorkspaceVersionsPanel />
       <div className="library-sections">
         <button
           type="button"

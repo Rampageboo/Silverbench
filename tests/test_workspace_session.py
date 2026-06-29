@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
@@ -16,6 +17,7 @@ from backend.yolo_workspace import (
     load_workspace_config,
     read_workspace_session_dict,
     normalize_inbox_session,
+    resolve_open_folder,
     workspace_session_file,
     write_workspace_session_dict,
 )
@@ -129,6 +131,53 @@ class WorkspaceSessionTests(unittest.TestCase):
             self.assertTrue(is_workspace_root(inner))
             self.assertEqual(load_workspace_config(inner).root, root.resolve())
             self.assertEqual(workspace_session_file(inner), session_path)
+
+    def test_create_workspace_scaffolds_v2_workspace_structure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_workspace(root)
+
+            manifest_path = root / WORKSPACE_SESSION_DIRNAME / "workspace.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+            self.assertEqual(manifest["version"], 2)
+            self.assertEqual(manifest["type"], "yolo-workbench")
+            self.assertEqual(manifest["paths"]["annotations"], "workspace/annotations")
+            self.assertEqual(manifest["paths"]["sources"], "workspace/sources.json")
+            self.assertEqual(manifest["tools"]["videoLabel"]["persistence"], "timestamp-manifest")
+            self.assertTrue((root / "workspace" / "annotations").is_dir())
+            self.assertTrue((root / "workspace" / "video_annotations").is_dir())
+            self.assertTrue((root / "workspace" / "logs").is_dir())
+            self.assertTrue((root / "video_segments").is_dir())
+            self.assertTrue((root / "exports").is_dir())
+            self.assertTrue((root / ".cache").is_dir())
+            self.assertEqual(
+                json.loads((root / "workspace" / "sources.json").read_text(encoding="utf-8")),
+                {"version": 1, "sources": []},
+            )
+
+    def test_open_existing_workspace_backfills_v2_structure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "image_pool").mkdir()
+            (root / "detect_labels").mkdir()
+            (root / WORKSPACE_SESSION_DIRNAME).mkdir()
+            (root / WORKSPACE_SESSION_DIRNAME / "workspace.json").write_text(
+                (
+                    '{"version":1,"paths":{"image_pool":"image_pool",'
+                    '"detect_labels":"detect_labels","metadata":"metadata.csv",'
+                    '"detect_dataset":"detect_dataset","clf_dataset":"clf_dataset"}}'
+                ),
+                encoding="utf-8",
+            )
+
+            result = resolve_open_folder(root)
+
+            self.assertEqual(result["kind"], "workspace")
+            self.assertFalse(result["initialized"])
+            self.assertTrue((root / "workspace" / "annotations").is_dir())
+            self.assertTrue((root / "workspace" / "video_annotations").is_dir())
+            self.assertTrue((root / "workspace" / "sources.json").is_file())
 
 
 if __name__ == "__main__":

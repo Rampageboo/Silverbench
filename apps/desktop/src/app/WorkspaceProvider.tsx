@@ -20,6 +20,12 @@ import {
 
 } from "../features/image-pool/imageWorkspaceMode";
 
+import {
+  validateWorkspaceVersionsManifest,
+  type WorkspaceVersionId,
+  type WorkspaceVersionsManifest
+} from "../features/workspace-versioning/workspaceSnapshotVersions";
+
 import { clearJunkUndoForWorkspace } from "../features/shared/junkUndo";
 
 import { useWorkspaceCache } from "../features/shared/useWorkspaceCache";
@@ -96,6 +102,38 @@ async function resolveStartupWorkspaceRoot(currentRoot: string) {
 
 
 
+function openedWorkspaceState(opened: api.OpenWorkspaceResponse, fallbackPath: string) {
+
+  const snapshotVersions = opened.workspaceVersions
+
+    ? validateWorkspaceVersionsManifest(opened.workspaceVersions)
+
+    : null;
+
+  const activeRoot = (opened.activeVersionPath || opened.root || fallbackPath).trim();
+
+  const containerRoot = (opened.workspaceRootPath || (snapshotVersions ? fallbackPath : activeRoot)).trim();
+
+  const activeVersionId = (opened.activeVersionId || snapshotVersions?.activeVersion || null) as WorkspaceVersionId | null;
+
+  return {
+
+    workspaceRoot: activeRoot,
+
+    workspaceRootPath: containerRoot || activeRoot,
+
+    activeVersionId,
+
+    activeVersionPath: snapshotVersions ? activeRoot : "",
+
+    snapshotVersions
+
+  };
+
+}
+
+
+
 export function WorkspaceProvider({
 
   connected,
@@ -114,7 +152,15 @@ export function WorkspaceProvider({
 
   const { showToast } = useToast();
 
-  const [workspaceRoot, setWorkspaceRoot] = useState(readInitialWorkspaceRoot);
+  const [workspaceRoot, setWorkspaceRootState] = useState(readInitialWorkspaceRoot);
+
+  const [workspaceRootPath, setWorkspaceRootPath] = useState(readInitialWorkspaceRoot);
+
+  const [activeVersionId, setActiveVersionId] = useState<WorkspaceVersionId | null>(null);
+
+  const [activeVersionPath, setActiveVersionPath] = useState("");
+
+  const [snapshotVersions, setSnapshotVersions] = useState<WorkspaceVersionsManifest | null>(null);
 
   const [activeTab, setActiveTab] = useState<ToolTab>("home");
 
@@ -138,11 +184,27 @@ export function WorkspaceProvider({
 
 
 
+  const setWorkspaceRoot = useCallback((value: string) => {
+
+    setWorkspaceRootState(value);
+
+    setWorkspaceRootPath(value);
+
+    setActiveVersionId(null);
+
+    setActiveVersionPath("");
+
+    setSnapshotVersions(null);
+
+  }, []);
+
+
+
   const setWorkspaceRootInput = useCallback((value: string) => {
 
     setWorkspaceRoot(value);
 
-  }, []);
+  }, [setWorkspaceRoot]);
 
 
 
@@ -172,21 +234,33 @@ export function WorkspaceProvider({
 
 
 
-  const afterWorkspaceOpened = useCallback(async (resolved: string, options?: { restoreTab?: boolean }) => {
+  const afterWorkspaceOpened = useCallback(async (opened: api.OpenWorkspaceResponse, fallbackPath: string, options?: { restoreTab?: boolean }) => {
 
     const { restoreTab = true } = options ?? {};
 
-    const root = resolved.trim();
+    const next = openedWorkspaceState(opened, fallbackPath);
+
+    const root = next.workspaceRoot.trim();
+
+    const containerRoot = next.workspaceRootPath.trim();
 
     if (!root) return;
 
 
 
-    window.localStorage.setItem("ywb.workspaceRoot", root);
+    window.localStorage.setItem("ywb.workspaceRoot", containerRoot || root);
 
-    setWorkspaceRoot(root);
+    setWorkspaceRootState(root);
 
-    await api.writeAppSettings({ lastOpenedWorkspace: root });
+    setWorkspaceRootPath(containerRoot || root);
+
+    setActiveVersionId(next.activeVersionId);
+
+    setActiveVersionPath(next.activeVersionPath);
+
+    setSnapshotVersions(next.snapshotVersions);
+
+    await api.writeAppSettings({ lastOpenedWorkspace: containerRoot || root });
 
 
 
@@ -222,7 +296,7 @@ export function WorkspaceProvider({
 
         const opened = await api.openWorkspace(trimmed);
 
-        await afterWorkspaceOpened(opened.root || trimmed);
+        await afterWorkspaceOpened(opened, trimmed);
 
         bootstrappedRef.current = true;
 
@@ -332,7 +406,7 @@ export function WorkspaceProvider({
 
 
 
-        await afterWorkspaceOpened(opened.root || candidate, { restoreTab: false });
+        await afterWorkspaceOpened(opened, candidate, { restoreTab: false });
 
         if (cancelled) return;
 
@@ -404,6 +478,14 @@ export function WorkspaceProvider({
 
       workspaceRoot,
 
+      workspaceRootPath,
+
+      activeVersionId,
+
+      activeVersionPath,
+
+      snapshotVersions,
+
       setWorkspaceRoot,
 
       setWorkspaceRootInput,
@@ -432,6 +514,14 @@ export function WorkspaceProvider({
 
       workspaceRoot,
 
+      workspaceRootPath,
+
+      activeVersionId,
+
+      activeVersionPath,
+
+      snapshotVersions,
+
       activeTab,
 
       imageWorkspaceTab,
@@ -447,6 +537,8 @@ export function WorkspaceProvider({
       poolLabelFocusFilename,
 
       clearPoolLabelFocus,
+
+      setWorkspaceRoot,
 
       setWorkspaceRootInput
 

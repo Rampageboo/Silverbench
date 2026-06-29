@@ -1,5 +1,6 @@
 import { errMessage } from "./lib/errors";
 import { backendBaseUrl } from "./lib/backendConfig";
+import type { WorkspaceVersionId, WorkspaceVersionsManifest } from "./features/workspace-versioning/workspaceSnapshotVersions";
 
 export const API_BASE_URL = backendBaseUrl();
 
@@ -34,6 +35,11 @@ export type BackendMethod =
   | "getBuildJob"
   | "writeWorkspaceSession"
   | "readWorkspaceSession"
+  | "readSnapshotVersions"
+  | "initializeSnapshotVersioning"
+  | "createSnapshotVersion"
+  | "setActiveSnapshotVersion"
+  | "resolveActiveSnapshotWorkspacePath"
   | "chooseDirectory"
   | "chooseImageFile"
   | "chooseTrainModelFile"
@@ -171,6 +177,11 @@ export type OpenWorkspaceResponse = {
   root?: string;
   name?: string;
   initialized?: boolean;
+  snapshotVersioned?: boolean;
+  workspaceRootPath?: string;
+  activeVersionId?: WorkspaceVersionId;
+  activeVersionPath?: string;
+  workspaceVersions?: WorkspaceVersionsManifest;
   error?: string;
 };
 

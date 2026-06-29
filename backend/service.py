@@ -71,6 +71,13 @@ from .yolo_workspace import (
     write_workspace_session,
     workspace_meta_dir,
 )
+from .workspace_snapshot_versions import (
+    create_snapshot_version,
+    initialize_snapshot_versioning,
+    read_snapshot_versions,
+    resolve_active_version_path,
+    set_active_snapshot_version,
+)
 from .yolo_tracker import track_yolo_forward_from_json
 
 
@@ -140,6 +147,11 @@ class BackendService:
             "writeAppSettings": self._handle_writeAppSettings,
             "openFolder": self._handle_openFolder,
             "createWorkspace": self._handle_createWorkspace,
+            "readSnapshotVersions": self._handle_readSnapshotVersions,
+            "initializeSnapshotVersioning": self._handle_initializeSnapshotVersioning,
+            "createSnapshotVersion": self._handle_createSnapshotVersion,
+            "setActiveSnapshotVersion": self._handle_setActiveSnapshotVersion,
+            "resolveActiveSnapshotWorkspacePath": self._handle_resolveActiveSnapshotWorkspacePath,
             "getWorkspaceInfo": self._handle_getWorkspaceInfo,
             "listWorkspaceFiles": self._handle_listWorkspaceFiles,
             "scanImagePool": self._handle_scanImagePool,
@@ -427,6 +439,54 @@ class BackendService:
             payload["kind"] = "workspace"
             payload["isWorkspace"] = is_workspace_root(Path(root))
             return json.dumps(payload, ensure_ascii=False)
+
+    def _snapshot_root_arg(self, args: list[Any]) -> Path:
+            if not args:
+                raise ValueError("Workspace root is required.")
+            root = self.path_access.remember_parent(str(args[0]))
+            return Path(root).resolve()
+
+    def _remember_snapshot_manifest_paths(self, root: Path, manifest: dict[str, Any]) -> None:
+            self.path_access.remember_path(root)
+            for entry in manifest.get("versions", []):
+                if not isinstance(entry, dict):
+                    continue
+                rel = Path(str(entry.get("path") or entry.get("id") or ""))
+                version_path = rel if rel.is_absolute() else root / rel
+                self.path_access.remember_path(version_path)
+
+    def _handle_readSnapshotVersions(self, args: list[Any]) -> object:
+            root = self._snapshot_root_arg(args)
+            manifest = read_snapshot_versions(root)
+            self._remember_snapshot_manifest_paths(root, manifest)
+            return json.dumps(manifest, ensure_ascii=False)
+
+    def _handle_initializeSnapshotVersioning(self, args: list[Any]) -> object:
+            root = self._snapshot_root_arg(args)
+            manifest = initialize_snapshot_versioning(root)
+            self._remember_snapshot_manifest_paths(root, manifest)
+            return json.dumps(manifest, ensure_ascii=False)
+
+    def _handle_createSnapshotVersion(self, args: list[Any]) -> object:
+            root = self._snapshot_root_arg(args)
+            from_version_id = str(args[1]).strip() if len(args) > 1 and str(args[1]).strip() else None
+            manifest = create_snapshot_version(root, from_version_id)
+            self._remember_snapshot_manifest_paths(root, manifest)
+            return json.dumps(manifest, ensure_ascii=False)
+
+    def _handle_setActiveSnapshotVersion(self, args: list[Any]) -> object:
+            root = self._snapshot_root_arg(args)
+            if len(args) < 2:
+                raise ValueError("Version id is required.")
+            manifest = set_active_snapshot_version(root, str(args[1]))
+            self._remember_snapshot_manifest_paths(root, manifest)
+            return json.dumps(manifest, ensure_ascii=False)
+
+    def _handle_resolveActiveSnapshotWorkspacePath(self, args: list[Any]) -> object:
+            root = self._snapshot_root_arg(args)
+            active_path = resolve_active_version_path(root)
+            self.path_access.remember_path(active_path)
+            return str(active_path)
 
     def _handle_getWorkspaceInfo(self, args: list[Any]) -> object:
             try:

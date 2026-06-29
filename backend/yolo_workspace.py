@@ -3,8 +3,15 @@ from __future__ import annotations
 import json
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from .workspace_snapshot_versions import (
+    find_snapshot_container_for_version,
+    is_snapshot_versioned_workspace,
+    snapshot_open_payload,
+)
 
 WORKSPACE_CONFIG_FILENAME = "workspace.json"
 WORKSPACE_META_DIRNAME = "workspace"
@@ -35,6 +42,18 @@ img005.png,train,0,1,unknown
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 DATASET_META_EXTENSIONS = frozenset({".txt", ".yaml", ".yml", ".csv"})
 VALID_SPLITS = frozenset({"train", "val"})
+V2_WORKSPACE_RELATIVE_DIRS = (
+    Path(WORKSPACE_META_DIRNAME) / "annotations",
+    Path(WORKSPACE_META_DIRNAME) / "logs",
+    Path(WORKSPACE_META_DIRNAME) / "video_annotations",
+    Path(".cache"),
+    Path("exports"),
+    Path("video_segments"),
+)
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def is_dataset_index_file(path: Path) -> bool:
@@ -206,11 +225,21 @@ def resolve_open_folder(root: Path, *, init_if_needed: bool = True) -> dict[str,
     if not root.is_dir():
         raise NotADirectoryError(f"Not a directory: {root}")
 
+    snapshot_container = root if is_snapshot_versioned_workspace(root) else find_snapshot_container_for_version(root)
+    if snapshot_container is not None:
+        payload = snapshot_open_payload(snapshot_container)
+        active_path = Path(str(payload["activeVersionPath"]))
+        if init_if_needed and looks_like_workspace(active_path):
+            ensure_workspace_v2_structure(active_path)
+        return payload
+
     if looks_like_workspace(root):
         initialized = False
         if init_if_needed and not is_workspace_root(root):
             create_workspace(root)
             initialized = True
+        elif init_if_needed:
+            ensure_workspace_v2_structure(root)
         return {
             "ok": True,
             "kind": "workspace",
@@ -393,6 +422,34 @@ def _write_text_file(
     stats.files_created += 1
 
 
+def ensure_workspace_v2_structure(
+    workspace_root: Path,
+    *,
+    dry_run: bool = False,
+    force: bool = False,
+) -> InitStats:
+    workspace_root = workspace_root_path(workspace_root)
+    stats = InitStats()
+    for rel in V2_WORKSPACE_RELATIVE_DIRS:
+        target = workspace_root / rel
+        if target.exists():
+            stats.skipped.append(str(target))
+            continue
+        if dry_run:
+            stats.dirs_created += 1
+            continue
+        target.mkdir(parents=True, exist_ok=True)
+        stats.dirs_created += 1
+    _write_text_file(
+        workspace_root / "workspace" / "sources.json",
+        json.dumps({"version": 1, "sources": []}, indent=2, ensure_ascii=False) + "\n",
+        dry_run=dry_run,
+        force=force,
+        stats=stats,
+    )
+    return stats
+
+
 def create_workspace(
     workspace_root: Path,
     *,
@@ -417,15 +474,45 @@ def create_workspace(
         target.mkdir(parents=True, exist_ok=True)
         stats.dirs_created += 1
 
+    now = _utc_now_iso()
     config = {
-        "version": 1,
+        "version": 2,
+        "type": "yolo-workbench",
         "name": workspace_root.name,
+        "createdAt": now,
+        "updatedAt": now,
         "paths": {
             "image_pool": "image_pool",
             "detect_labels": "detect_labels",
             "metadata": "metadata.csv",
             "detect_dataset": "detect_dataset",
             "clf_dataset": "clf_dataset",
+            "video_annotations": "workspace/video_annotations",
+            "video_segments": "video_segments",
+            "exports": "exports",
+            "cache": ".cache",
+            "logs": "workspace/logs",
+            "sources": "workspace/sources.json",
+            "classes": "workspace/classes.json",
+            "annotations": "workspace/annotations",
+        },
+        "tools": {
+            "videoLabel": {
+                "enabled": True,
+                "primary": True,
+                "persistence": "timestamp-manifest",
+                "saveExtractedFrames": False,
+            },
+            "imageLabel": {
+                "enabled": True,
+                "secondary": True,
+            },
+            "imagePool": {"enabled": True, "secondary": True},
+            "datasetPrep": {"enabled": True},
+            "autoLabel": {"enabled": True},
+            "crop": {"enabled": True},
+            "maskCleanup": {"enabled": True},
+            "merge": {"enabled": True},
         },
         "classification_classes": class_names,
     }
@@ -436,6 +523,11 @@ def create_workspace(
         force=force,
         stats=stats,
     )
+
+    v2_stats = ensure_workspace_v2_structure(workspace_root, dry_run=dry_run, force=force)
+    stats.dirs_created += v2_stats.dirs_created
+    stats.files_created += v2_stats.files_created
+    stats.skipped.extend(v2_stats.skipped)
 
     metadata_path = workspace_root / "metadata.csv"
     if not metadata_path.exists() or force:
@@ -455,12 +547,15 @@ def create_workspace(
 
 Folders
 -------
+workspace/           App metadata, v2 manifests, sources, logs, and annotations.
 image_pool/          Put all source images here (manually managed).
 image_pool_backup/   Auto backup of originals before Crop / black edits (app-managed).
 detect_labels/       YOLO detection .txt labels (stem = image stem).
 metadata.csv         Controls train/val and detect/clf assignment.
 detect_dataset/      Generated detection dataset (hard links).
 clf_dataset/         Generated classification dataset (hard links).
+video_segments/      Captured video segment metadata.
+exports/             Generated video/image export outputs.
 
 App workflow
 ------------

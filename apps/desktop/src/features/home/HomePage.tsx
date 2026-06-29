@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { chooseDirectory } from "../../lib/tauri";
 import { saveLabelClasses, writeTextFile } from "../../api";
 import { useWorkspace } from "../../app/useWorkspace";
+import { initializeSnapshotVersioning } from "../workspace-versioning/workspaceSnapshotVersionApi";
 import { workspaceClassSetupToClassesManifest } from "../workspace/workspaceClassTaxonomy";
 import { CreateWorkspaceDialog, type CreateWorkspaceOptions } from "./CreateWorkspaceDialog";
 
@@ -63,6 +64,9 @@ export function HomePage({ onReady }: Props) {
       "workspace/classes.json",
       `${JSON.stringify(classesManifest, null, 2)}\n`
     );
+
+    await initializeSnapshotVersioning(root);
+    await openWorkspacePath(root);
 
     pushRecent(root);
     setRecent(loadRecent());

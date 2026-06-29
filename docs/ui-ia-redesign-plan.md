@@ -69,6 +69,11 @@
 - Classes viewer/editor
 - Segments overview
 - Workspace summary (counts, paths)
+- Workspace snapshot versions: initialize V1, create V2/V3 by full-folder copy, switch active version
+
+Snapshot versioning uses complete `V1`, `V2`, `V3` workspace folders under a project container.
+The earlier normalized Workspace vNext/source-registry architecture is deferred and is not the
+current implementation target.
 
 ### Label — Unified Annotation Surface
 
