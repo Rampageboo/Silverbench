@@ -1313,6 +1313,23 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   flex-direction: column;
 }
 
+.react-box-label-page .pool-label-class-panels {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  overflow: hidden;
+}
+
+.react-box-label-page .pool-label-class-panels--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.react-box-label-page .pool-label-class-panels .pool-label-classes-panel {
+  min-width: 0;
+}
+
 .react-box-label-page .pool-label-classes-panel .panel-body {
   min-height: 0;
   overflow: hidden;
@@ -1334,6 +1351,91 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   overflow: hidden;
 }
 
+.react-box-label-page .pool-label-class-panel-header,
+.lwb-inspector-classify-slot .pool-label-class-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.react-box-label-page .pool-label-class-header-actions,
+.lwb-inspector-classify-slot .pool-label-class-header-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.react-box-label-page .pool-label-class-icon-btn,
+.lwb-inspector-classify-slot .pool-label-class-icon-btn {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #0b1220;
+  color: #94a3b8;
+  box-shadow: none;
+}
+
+.react-box-label-page .pool-label-class-icon-btn:hover:not(:disabled),
+.lwb-inspector-classify-slot .pool-label-class-icon-btn:hover:not(:disabled) {
+  border-color: #475569;
+  color: #e2e8f0;
+  background: #111827;
+}
+
+.react-box-label-page .pool-label-class-icon-btn.active,
+.lwb-inspector-classify-slot .pool-label-class-icon-btn.active {
+  border-color: #2f81f7;
+  color: #bfdbfe;
+  background: #12305c;
+}
+
+.react-box-label-page .pool-label-class-inline-tool,
+.lwb-inspector-classify-slot .pool-label-class-inline-tool {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  min-width: 0;
+}
+
+.react-box-label-page .pool-label-class-inline-tool input,
+.lwb-inspector-classify-slot .pool-label-class-inline-tool input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.react-box-label-page .pool-label-class-inline-submit,
+.lwb-inspector-classify-slot .pool-label-class-inline-submit {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid #1d4ed8;
+  border-radius: 6px;
+  background: #2563eb;
+  color: #eff6ff;
+}
+
+.react-box-label-page .pool-label-class-inline-submit:hover:not(:disabled),
+.lwb-inspector-classify-slot .pool-label-class-inline-submit:hover:not(:disabled) {
+  border-color: #60a5fa;
+  background: #1d4ed8;
+  color: #ffffff;
+}
+
 .react-box-label-page .pool-label-class-list {
   flex: 1;
   min-height: 86px;
@@ -1342,6 +1444,26 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
 
 .react-box-label-page .pool-label-class-row {
   position: relative;
+}
+
+.react-box-label-page .pool-label-class-row--static {
+  display: block;
+  min-height: 24px;
+  padding: 4px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--glass-radius-sm);
+  color: var(--glass-text);
+  background: rgba(15, 23, 42, 0.42);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.react-box-label-page .pool-label-clf-class-status {
+  flex: 0 0 auto;
+  font-size: 11px;
 }
 
 .react-box-label-page .pool-label-class-row-count {
@@ -3864,6 +3986,84 @@ a.glass-card:focus-visible {
   padding-bottom: 0;
 }
 
+.lwb-inspector-box-placeholder {
+  flex: 0 0 74px;
+  min-height: 74px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: none;
+}
+
+.lwb-inspector-box-placeholder-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.lwb-inspector-classify-slot {
+  flex: 1 1 280px;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+}
+
+.lwb-inspector-classify-slot:empty {
+  display: none;
+}
+
+.lwb-inspector-classify-slot .pool-label-classes-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  box-shadow: none;
+}
+
+.lwb-inspector-classify-slot .pool-label-classes-panel .panel-body,
+.lwb-inspector-classify-slot .pool-label-classes-panel .filter-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.lwb-inspector-classify-slot .pool-label-tools {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.lwb-inspector-classify-slot .pool-label-class-list {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow: auto;
+}
+
+.lwb-inspector-classify-slot .pool-label-class-row--static {
+  display: block;
+  min-height: 24px;
+  padding: 4px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--glass-radius-sm);
+  color: var(--glass-text);
+  background: rgba(15, 23, 42, 0.42);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.lwb-inspector-classify-slot .pool-label-clf-class-status {
+  flex: 0 0 auto;
+  font-size: 11px;
+}
+
 .lwb-inspector-kicker {
   color: var(--glass-text-muted);
   font-size: 10.5px;
@@ -3911,24 +4111,6 @@ a.glass-card:focus-visible {
   background: var(--glass-accent-active);
   font-size: 10.5px;
   font-weight: 650;
-}
-
-.lwb-inspector-class-palette,
-.lwb-inspector-class-group {
-  display: grid;
-  gap: 7px;
-}
-
-.lwb-inspector-class-chip {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.lwb-inspector-class-chip.selected {
-  border-color: rgba(34, 197, 94, 0.42);
-  color: #86efac;
-  background: rgba(34, 197, 94, 0.10);
 }
 
 .lwb-inspector-warning {
@@ -4564,4 +4746,165 @@ a.glass-card:focus-visible {
 
 .glass-btn--danger:hover:not(:disabled) {
   background: rgba(248, 113, 113, 0.1) !important;
+}
+
+/* ============================================================
+   Inspector compact class summary (Phase 4C / Inspector revision)
+   ============================================================ */
+
+.lwb-inspector-class-hint { margin-top: 2px; }
+
+.lwb-inspector-archived-notice {
+  color: #fbbf24;
+  font-size: 11.5px;
+}
+
+.lwb-inspector-link-btn {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--glass-accent-icon, #60a5fa);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.lwb-inspector-link-btn:hover { opacity: 0.8; }
+
+.lwb-inspector-class-disclosure {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.lwb-inspector-class-toggle {
+  appearance: none;
+  background: none;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--glass-radius-sm, 4px);
+  padding: 2px 8px;
+  color: var(--glass-text-muted);
+  font-size: 11.5px;
+  cursor: pointer;
+  text-align: left;
+}
+.lwb-inspector-class-toggle:hover {
+  color: var(--glass-text);
+  border-color: var(--glass-border-hover, var(--glass-border));
+}
+
+.lwb-inspector-class-palette {
+  display: grid;
+  gap: 6px;
+}
+
+.lwb-inspector-class-group-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--glass-text-muted);
+  margin-bottom: 2px;
+}
+
+/* ============================================================
+   Auto Label Model Panel (.alm-panel-*)
+   ============================================================ */
+
+.react-box-label-page #previewViewer {
+  position: relative;
+}
+
+.alm-panel {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  z-index: 10;
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(12, 16, 24, 0.88);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--glass-radius, 8px);
+  padding: 10px 12px 8px;
+  backdrop-filter: blur(8px);
+  /* remove lwb-inspector-section border-bottom in this context */
+  border-bottom: none;
+  padding-bottom: 8px;
+}
+
+.alm-panel-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.alm-panel-col {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.alm-panel-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--glass-text);
+  margin-bottom: 4px;
+}
+
+.alm-panel-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--glass-text-muted);
+  margin-bottom: 2px;
+}
+
+.alm-panel-value {
+  font-size: 12px;
+  color: var(--glass-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alm-panel-value--unset {
+  color: var(--glass-text-muted);
+  font-style: italic;
+}
+
+.alm-panel-btn {
+  appearance: none;
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--glass-radius-sm, 4px);
+  color: var(--glass-text);
+  font-size: 11.5px;
+  padding: 3px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  margin-top: 14px;
+}
+.alm-panel-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+.alm-panel-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.alm-panel-error {
+  font-size: 11.5px;
+  color: var(--glass-danger, #f87171);
+}
+
+.alm-panel-hint {
+  font-size: 11px;
+  color: var(--glass-text-muted);
+  margin-top: 2px;
 }

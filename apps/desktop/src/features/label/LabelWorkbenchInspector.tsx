@@ -78,14 +78,6 @@ function confidenceText(value: number | null | undefined) {
   return confidence <= 1 ? `${Math.round(confidence * 100)}%` : `${confidence.toFixed(1)}%`;
 }
 
-function classItemKey(item: { id?: number | null; key?: string | null; name: string }, index: number) {
-  return item.key || (item.id != null ? String(item.id) : `${item.name}-${index}`);
-}
-
-function classItemLabel(item: { id?: number | null; key?: string | null; name: string }) {
-  return item.id != null ? `${item.id}: ${item.name}` : item.name;
-}
-
 function selectedProposalLabel(proposal: LabelWorkbenchInspectorState["selectedProposal"]) {
   if (!proposal) return null;
   const label = proposal.className || proposal.classKey || proposal.classId;
@@ -167,12 +159,12 @@ export function LabelWorkbenchInspector({
   actionGroups,
 }: Props) {
   const taskKind = inspectorState?.taskKind ?? "both";
-  const classSummary = inspectorState?.classSummary;
   const proposalSummary = proposalText(inspectorState?.proposalSummary);
   const proposalCountValue = proposalCount(inspectorState?.proposalSummary);
   const overlayCount = safeNumber(inspectorState?.overlaySummary?.activeCount);
   const segment = inspectorState?.segmentSummary;
   const warnings = inspectorState?.warnings ?? [];
+
   const reviewActionGroups = mode === "image"
     ? actionGroups.filter((group) => group.id === "image-review")
     : [];
@@ -182,6 +174,7 @@ export function LabelWorkbenchInspector({
   const remainingActionGroups = mode === "image"
     ? actionGroups.filter((group) => group.id !== "image-review" && group.id !== "image-proposals")
     : actionGroups;
+
   const selectedProposal = inspectorState?.selectedProposal;
   const proposalActions = proposalActionGroups.flatMap((group) => group.actions);
   const visibleProposalActions =
@@ -201,13 +194,6 @@ export function LabelWorkbenchInspector({
   const hasActions = remainingActionGroups.some((group) => group.actions.length > 0);
   const selectedProposalConfidence = confidenceText(selectedProposal?.confidence);
   const selectedProposalName = selectedProposalLabel(selectedProposal);
-  const classPalette = inspectorState?.classPalette;
-  const detectClasses = (classPalette?.detectClasses ?? []).filter((item) => !item.archived);
-  const classificationClasses = (classPalette?.classificationClasses ?? []).filter((item) => !item.archived);
-  const visibleDetectClasses = detectClasses.slice(0, 18);
-  const visibleClassificationClasses = classificationClasses.slice(0, 18);
-  const hiddenDetectCount = Math.max(0, detectClasses.length - visibleDetectClasses.length);
-  const hiddenClassificationCount = Math.max(0, classificationClasses.length - visibleClassificationClasses.length);
 
   return (
     <aside className="lwb-inspector" aria-label="Label workbench inspector">
@@ -258,61 +244,16 @@ export function LabelWorkbenchInspector({
         </section>
       ) : null}
 
-      {classSummary ? (
-        <section className="lwb-inspector-section">
-          <div className="lwb-inspector-kicker">Classes</div>
-          <div className="lwb-inspector-grid">
-            {safeNumber(classSummary.activeDetectCount) !== null ? (
-              <span>Detect active: {safeNumber(classSummary.activeDetectCount)}</span>
-            ) : null}
-            {safeNumber(classSummary.totalDetectCount) !== null ? (
-              <span>Detect total: {safeNumber(classSummary.totalDetectCount)}</span>
-            ) : null}
-            {safeNumber(classSummary.activeClassificationCount) !== null ? (
-              <span>Classify active: {safeNumber(classSummary.activeClassificationCount)}</span>
-            ) : null}
-            {safeNumber(classSummary.observedClassCount) !== null ? (
-              <span>Observed: {safeNumber(classSummary.observedClassCount)}</span>
-            ) : null}
-          </div>
-          {classPalette ? (
-            <div className="lwb-inspector-class-palette">
-              {visibleDetectClasses.length ? (
-                <div className="lwb-inspector-class-group">
-                  <div className="lwb-inspector-action-group-title">Active Detect</div>
-                  <div className="lwb-inspector-chip-row">
-                    {visibleDetectClasses.map((item, index) => (
-                      <span
-                        key={classItemKey(item, index)}
-                        className={`lwb-inspector-chip lwb-inspector-class-chip${item.id === classPalette.currentDetectClassId ? " selected" : ""}`}
-                      >
-                        {classItemLabel(item)}
-                      </span>
-                    ))}
-                    {hiddenDetectCount ? <span className="lwb-inspector-muted">+{hiddenDetectCount} more</span> : null}
-                  </div>
-                </div>
-              ) : null}
-              {visibleClassificationClasses.length ? (
-                <div className="lwb-inspector-class-group">
-                  <div className="lwb-inspector-action-group-title">Active Classify</div>
-                  <div className="lwb-inspector-chip-row">
-                    {visibleClassificationClasses.map((item, index) => (
-                      <span
-                        key={classItemKey(item, index)}
-                        className={`lwb-inspector-chip lwb-inspector-class-chip${item.key === classPalette.currentClassificationKey ? " selected" : ""}`}
-                      >
-                        {item.name}
-                      </span>
-                    ))}
-                    {hiddenClassificationCount ? <span className="lwb-inspector-muted">+{hiddenClassificationCount} more</span> : null}
-                  </div>
-                </div>
-              ) : null}
-              {classPalette.readOnlyReason ? <div className="lwb-inspector-muted">{classPalette.readOnlyReason}</div> : null}
+      {mode === "image" ? (
+        <>
+          <section className="panel pool-label-box-panel lwb-inspector-box-placeholder">
+            <div className="panel-header">
+              <span>Current Boxes</span>
             </div>
-          ) : null}
-        </section>
+            <div className="panel-body lwb-inspector-box-placeholder-body" aria-hidden="true" />
+          </section>
+          <div id="lwbClassifyClassesSlot" className="lwb-inspector-classify-slot" />
+        </>
       ) : null}
 
       {overlayCount !== null || segment ? (

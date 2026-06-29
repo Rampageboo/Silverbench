@@ -1,4 +1,5 @@
-import React, { useRef, useCallback, useEffect, useMemo } from "react";
+import React, { useRef, useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { errMessage } from "../../lib/errors";
 import type { BoxLabelViewProps } from "./boxLabelTypes";
 import { BoxLabelPreviewToolbar } from "./BoxLabelPreviewToolbar";
@@ -11,10 +12,44 @@ function fixedBoxReady(slot: FixedBoxSlot | null) {
   return Boolean(slot && slot.w > 0 && slot.h > 0);
 }
 
+type ClassToolMode = "none" | "add" | "search";
+
+function AddIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+      <circle cx="11" cy="11" r="6" />
+      <path d="M16 16l4 4" />
+    </svg>
+  );
+}
+
 export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelViewProps) {
   const editor = useBoxLabelEditor(props);
-  const { classImageCounts, onWorkbenchBridgeChange, showSideStack = true } = props;
+  const {
+    classImageCounts,
+    classificationClasses = [],
+    classificationClassesBusy = false,
+    classificationClassesStatus,
+    classificationClassesPortalId,
+    onAddClassificationClass,
+    onWorkbenchBridgeChange,
+    showSideStack = true,
+    canvasOverlay,
+  } = props;
   const auraRef = useRef<HTMLDivElement | null>(null);
+  const [classificationClassNameInput, setClassificationClassNameInput] = useState("");
+  const [classificationClassSearch, setClassificationClassSearch] = useState("");
+  const [detectClassToolMode, setDetectClassToolMode] = useState<ClassToolMode>("none");
+  const [classificationClassToolMode, setClassificationClassToolMode] = useState<ClassToolMode>("none");
+  const [classificationPortalTarget, setClassificationPortalTarget] = useState<HTMLElement | null>(null);
   const selectedProposal = editor.selectedProposalId
     ? editor.proposals.find((p) => p.id === editor.selectedProposalId)
     : null;
@@ -32,6 +67,155 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
       ).length,
     [editor.proposals, editor.isArchivedDetectClass, editor.isArchivedClassKey]
   );
+  const filteredClassificationClasses = useMemo(() => {
+    const activeClasses = classificationClasses
+      .filter((item) => !item.archived)
+      .sort(
+        (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }) || a.key.localeCompare(b.key)
+      );
+    const terms = classificationClassSearch.trim().toLowerCase().split(" ").filter(Boolean);
+    if (!terms.length) return activeClasses;
+    return activeClasses.filter((item) => {
+      const text = `${item.key} ${item.name}`.toLowerCase();
+      return terms.every((term) => text.includes(term));
+    });
+  }, [classificationClasses, classificationClassSearch]);
+  const showDetectSearchTool = detectClassToolMode === "search" || editor.classSearch.trim().length > 0;
+  const showClassificationSearchTool =
+    classificationClassToolMode === "search" || classificationClassSearch.trim().length > 0;
+
+  const handleAddClassificationClass = useCallback(() => {
+    const name = classificationClassNameInput.trim();
+    if (!name) {
+      editor.setStatus("Enter a classification class name first.");
+      return;
+    }
+    if (!onAddClassificationClass) {
+      editor.setStatus("Classification class management is unavailable for this workspace.");
+      return;
+    }
+    onAddClassificationClass(name)
+      .then((classKey) => {
+        if (!classKey) {
+          editor.setStatus("Classification class was not created.");
+          return;
+        }
+        setClassificationClassNameInput("");
+        editor.setStatus(`Created classification class ${name}.`);
+      })
+      .catch((err) => editor.setError(errMessage(err)));
+  }, [classificationClassNameInput, editor, onAddClassificationClass]);
+
+  useEffect(() => {
+    if (!classificationClassesPortalId || typeof document === "undefined") {
+      setClassificationPortalTarget(null);
+      return;
+    }
+    setClassificationPortalTarget(document.getElementById(classificationClassesPortalId));
+  }, [classificationClassesPortalId]);
+
+  const classificationClassesPanel = (
+    <section className="panel filter-panel pool-label-classes-panel pool-label-clf-classes-panel">
+      <div className="panel-header pool-label-class-panel-header">
+        <span>Classify Classes</span>
+        <div className="pool-label-class-header-actions">
+          <button
+            type="button"
+            className={`pool-label-class-icon-btn${classificationClassToolMode === "add" ? " active" : ""}`}
+            title="Add classify class"
+            aria-label="Add classify class"
+            aria-pressed={classificationClassToolMode === "add"}
+            onClick={() =>
+              setClassificationClassToolMode((mode) => (mode === "add" ? "none" : "add"))
+            }
+          >
+            <AddIcon />
+          </button>
+          <button
+            type="button"
+            className={`pool-label-class-icon-btn${showClassificationSearchTool ? " active" : ""}`}
+            title="Search classify classes"
+            aria-label="Search classify classes"
+            aria-pressed={showClassificationSearchTool}
+            onClick={() =>
+              setClassificationClassToolMode((mode) => (mode === "search" ? "none" : "search"))
+            }
+          >
+            <SearchIcon />
+          </button>
+        </div>
+      </div>
+      <div className="panel-body filter-panel-body">
+        <div className="pool-label-tools">
+          {classificationClassToolMode === "add" ? (
+            <div className="pool-label-class-inline-tool">
+              <input
+                id="poolLabelClfClassNameInput"
+                type="text"
+                placeholder="clf class"
+                value={classificationClassNameInput}
+                onChange={(event) => setClassificationClassNameInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") handleAddClassificationClass();
+                  if (event.key === "Escape") setClassificationClassToolMode("none");
+                }}
+                disabled={classificationClassesBusy}
+                autoFocus
+              />
+              <button
+                id="poolLabelAddClfClassBtn"
+                type="button"
+                className="pool-label-class-inline-submit"
+                onClick={handleAddClassificationClass}
+                disabled={classificationClassesBusy}
+                title="Add classify class"
+                aria-label="Add classify class"
+              >
+                <AddIcon />
+              </button>
+            </div>
+          ) : null}
+          {showClassificationSearchTool ? (
+            <div className="pool-label-class-inline-tool">
+              <input
+                id="poolLabelClfClassSearchInput"
+                className="pool-label-class-search"
+                type="search"
+                placeholder="search clf classes"
+                value={classificationClassSearch}
+                onChange={(event) => setClassificationClassSearch(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    setClassificationClassSearch("");
+                    setClassificationClassToolMode("none");
+                  }
+                }}
+                autoFocus={classificationClassToolMode === "search"}
+              />
+            </div>
+          ) : null}
+          <div className="pool-label-class-list" id="poolLabelClfClassList">
+            {filteredClassificationClasses.length ? (
+              filteredClassificationClasses.map((item) => (
+                <div key={item.key} className="pool-label-class-row pool-label-class-row--static" title={item.key}>
+                  {item.name}
+                </div>
+              ))
+            ) : (
+              <div className="empty">No active clf classes.</div>
+            )}
+          </div>
+          {classificationClassesStatus ? (
+            <div className="hint pool-label-clf-class-status">{classificationClassesStatus}</div>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+  const classificationClassesPortal =
+    classificationClassesPortalId && classificationPortalTarget
+      ? createPortal(classificationClassesPanel, classificationPortalTarget)
+      : null;
 
   const handleWorkbenchAcceptSelectedProposal = useCallback(() => {
     if (!editor.selectedProposalId) return;
@@ -59,16 +243,17 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
       selectedProposalArchived,
       selectedProposalClassId: selectedProposal?.classId ?? null,
       selectedProposalClassKey: selectedProposal?.classKey ?? null,
-      selectedProposalClassName: selectedProposal?.classId != null
-        ? classNameFor(editor.classes, selectedProposal.classId)
-        : selectedProposal?.classKey ?? null,
+      selectedProposalClassName:
+        selectedProposal?.classId != null
+          ? classNameFor(editor.classes, selectedProposal.classId)
+          : (selectedProposal?.classKey ?? null),
       selectedProposalConfidence: selectedProposal?.confidence ?? null,
       activeDetectClasses: editor.classes.map((item) => ({ id: item.id, name: item.name })),
       currentClassId: editor.currentClass,
       acceptSelectedProposal: editor.selectedProposalId ? handleWorkbenchAcceptSelectedProposal : null,
       rejectSelectedProposal: editor.selectedProposalId ? handleWorkbenchRejectSelectedProposal : null,
       acceptAllProposals: handleWorkbenchAcceptAllProposals,
-      rejectAllProposals: handleWorkbenchRejectAllProposals,
+      rejectAllProposals: handleWorkbenchRejectAllProposals
     });
   }, [
     activeProposalCount,
@@ -82,7 +267,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     handleWorkbenchRejectSelectedProposal,
     onWorkbenchBridgeChange,
     selectedProposal,
-    selectedProposalArchived,
+    selectedProposalArchived
   ]);
 
   useEffect(() => {
@@ -122,8 +307,14 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
                   <BoxLabelShortcutDropdown
                     className="class-slot"
                     title={`Shortcut ${slot}`}
-                    label={bound ? `${slotData!.classId}: ${classNameFor(editor.classes, slotData!.classId)}${modeTag}` : "empty"}
-                    active={bound && slotData!.classId === editor.currentClass && editor.activeShortcutSlot === slot}
+                    label={
+                      bound
+                        ? `${slotData!.classId}: ${classNameFor(editor.classes, slotData!.classId)}${modeTag}`
+                        : "empty"
+                    }
+                    active={
+                      bound && slotData!.classId === editor.currentClass && editor.activeShortcutSlot === slot
+                    }
                     options={editor.classShortcutOptions(slot)}
                     onSelect={(value) => {
                       const next = editor.shortcutSlots.slice();
@@ -158,13 +349,28 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
                     }}
                   >
                     {slotMode === "subject-select" ? (
-                      <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-                        <path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
-                        <rect x="7" y="7" width="10" height="10" rx="1"/>
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="11"
+                        height="11"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.2"
+                        aria-hidden="true"
+                      >
+                        <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+                        <rect x="7" y="7" width="10" height="10" rx="1" />
                       </svg>
                     ) : (
-                      <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" stroke="none" aria-hidden="true">
-                        <path d="M6 3l10 10-5 1.5L8.5 20 6 3z"/>
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="11"
+                        height="11"
+                        fill="currentColor"
+                        stroke="none"
+                        aria-hidden="true"
+                      >
+                        <path d="M6 3l10 10-5 1.5L8.5 20 6 3z" />
                       </svg>
                     )}
                   </button>
@@ -255,205 +461,280 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
             onCopyNext={() => editor.copySelectedBoxToNext().catch((err) => editor.setError(errMessage(err)))}
             onCsrtTrack={() => editor.trackCsrtForward().catch((err) => editor.setError(errMessage(err)))}
           />
+          {canvasOverlay ?? null}
         </div>
       </section>
 
+      {classificationClassesPortal}
       {showSideStack ? (
-      <aside className="side-stack pool-label-side-stack" id="poolLabelSideStack">
-        <section className="panel pool-label-box-panel" id="poolLabelBoxPanel">
-          <div className="panel-header">
-            <span>Current Boxes</span>
-          </div>
-          <div className="panel-body pool-label-box-panel-body">
-            <div className="hint" id="poolLabelStatus">
-              {editor.status}
-              {editor.filterText ? ` | ${editor.filterText}` : ""}
-              {editor.shiftSelectedFilenames.size
-                ? ` | selected ${editor.shiftSelectedFilenames.size} image(s)`
-                : ""}
-            </div>
-            <div className="pool-label-box-list" id="poolLabelBoxList">
-              {editor.boxes.length ? (
-                editor.boxes.map((box, index) => (
-                  <button
-                    key={`${index}-${box.classId}-${box.x}-${box.y}`}
-                    type="button"
-                    className={`pool-label-box-row${editor.selectedBoxId === index ? " selected" : ""}`}
-                    onClick={() => {
-                      editor.setSelectedBoxId(index);
-                      editor.setCurrentClass(box.classId);
-                    }}
-                  >
-                    {index + 1}. {classNameFor(editor.classes, box.classId)} x={box.x.toFixed(3)} y={box.y.toFixed(3)}{" "}
-                    w={box.w.toFixed(3)} h={box.h.toFixed(3)}
-                    {editor.isArchivedDetectClass(box.classId) ? (
-                      <span className="pool-label-archived-badge">archived</span>
-                    ) : null}
-                  </button>
-                ))
-              ) : (
-                <div className="empty">No boxes on this image.</div>
-              )}
-            </div>
-          </div>
-        </section>
-
-        {editor.proposals.length > 0 && (
-          <section className="panel pool-label-proposals-panel" id="poolLabelProposalsPanel">
+        <aside className="side-stack pool-label-side-stack" id="poolLabelSideStack">
+          <section className="panel pool-label-box-panel" id="poolLabelBoxPanel">
             <div className="panel-header">
-              <span>Proposals ({editor.proposals.length})</span>
-              <span className="pool-label-proposal-actions">
-                {editor.selectedProposalId && (
-                  <>
-                    <button
-                      type="button"
-                      className="primary"
-                      title={selectedProposalArchived ? "Restore this class in Library before materializing" : "Materialize selected proposal as a box"}
-                      disabled={selectedProposalArchived}
-                      onClick={() =>
-                        editor.materializeProposal(editor.selectedProposalId!).catch((err) => editor.setError(errMessage(err)))
-                      }
-                    >
-                      Materialize
-                    </button>
-                    <button
-                      type="button"
-                      title="Reject selected proposal"
-                      onClick={() =>
-                        editor.rejectProposal(editor.selectedProposalId!).catch((err) => editor.setError(errMessage(err)))
-                      }
-                    >
-                      Reject
-                    </button>
-                  </>
-                )}
-                <button
-                  type="button"
-                  className="primary"
-                  title="Accept all proposals as boxes"
-                  onClick={() => editor.acceptAllProposals().catch((err) => editor.setError(errMessage(err)))}
-                >
-                  Accept All
-                </button>
-                <button
-                  type="button"
-                  title="Reject all proposals"
-                  onClick={() => editor.rejectAllProposals().catch((err) => editor.setError(errMessage(err)))}
-                >
-                  Reject All
-                </button>
-              </span>
+              <span>Current Boxes</span>
             </div>
-            <div className="panel-body pool-label-proposals-body">
-              {editor.proposals.map((p) => {
-                const archivedProposal =
-                  (p.classId != null && editor.isArchivedDetectClass(p.classId)) ||
-                  (Boolean(p.classKey) && editor.isArchivedClassKey(p.classKey!));
-                return (
-                <div
-                  key={p.id}
-                  className={`pool-label-proposal-row${editor.selectedProposalId === p.id ? " selected" : ""}`}
-                  onClick={() => editor.setSelectedProposalId(editor.selectedProposalId === p.id ? null : p.id)}
-                >
-                  <span className="pool-label-proposal-conf">{Math.round(p.confidence * 100)}%</span>
-                  <span className="pool-label-proposal-coords">
-                    {archivedProposal ? <span className="pool-label-archived-badge">archived</span> : null}
-                    {p.x.toFixed(3)},{p.y.toFixed(3)} {p.w.toFixed(3)}×{p.h.toFixed(3)}
-                  </span>
-                  <span className="pool-label-proposal-btns">
+            <div className="panel-body pool-label-box-panel-body">
+              <div className="hint" id="poolLabelStatus">
+                {editor.status}
+                {editor.filterText ? ` | ${editor.filterText}` : ""}
+                {editor.shiftSelectedFilenames.size
+                  ? ` | selected ${editor.shiftSelectedFilenames.size} image(s)`
+                  : ""}
+              </div>
+              <div className="pool-label-box-list" id="poolLabelBoxList">
+                {editor.boxes.length ? (
+                  editor.boxes.map((box, index) => (
                     <button
+                      key={`${index}-${box.classId}-${box.x}-${box.y}`}
                       type="button"
-                      className="primary pool-label-proposal-accept"
-                      title={archivedProposal ? "Restore this class in Library before materializing" : "Materialize this proposal as a box"}
-                      disabled={archivedProposal}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        editor.materializeProposal(p.id).catch((err) => editor.setError(errMessage(err)));
+                      className={`pool-label-box-row${editor.selectedBoxId === index ? " selected" : ""}`}
+                      onClick={() => {
+                        editor.setSelectedBoxId(index);
+                        editor.setCurrentClass(box.classId);
                       }}
                     >
-                      ✓
+                      {index + 1}. {classNameFor(editor.classes, box.classId)} x={box.x.toFixed(3)} y=
+                      {box.y.toFixed(3)} w={box.w.toFixed(3)} h={box.h.toFixed(3)}
+                      {editor.isArchivedDetectClass(box.classId) ? (
+                        <span className="pool-label-archived-badge">archived</span>
+                      ) : null}
                     </button>
-                    <button
-                      type="button"
-                      className="pool-label-proposal-reject"
-                      title="Reject this proposal"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        editor.rejectProposal(p.id).catch((err) => editor.setError(errMessage(err)));
-                      }}
-                    >
-                      ✗
-                    </button>
-                  </span>
-                </div>
-                );
-              })}
+                  ))
+                ) : (
+                  <div className="empty">No boxes on this image.</div>
+                )}
+              </div>
             </div>
           </section>
-        )}
 
-        <section className="panel filter-panel pool-label-classes-panel">
-          <div className="panel-header">
-            <span>Classes</span>
-            <span className="status">{editor.currentClass}</span>
-          </div>
-          <div className="panel-body filter-panel-body">
-            <div className="pool-label-tools">
-              {(editor.includeClasses.size > 0 || editor.excludeClasses.size > 0) && (
-                <div className="row yolo-filter-tools" style={{ marginBottom: 8 }}>
-                  <button type="button" onClick={() => editor.onClearClassFilters()}>
-                    Deselect All Filters
+          {editor.proposals.length > 0 && (
+            <section className="panel pool-label-proposals-panel" id="poolLabelProposalsPanel">
+              <div className="panel-header">
+                <span>Proposals ({editor.proposals.length})</span>
+                <span className="pool-label-proposal-actions">
+                  {editor.selectedProposalId && (
+                    <>
+                      <button
+                        type="button"
+                        className="primary"
+                        title={
+                          selectedProposalArchived
+                            ? "Restore this class in Library before materializing"
+                            : "Materialize selected proposal as a box"
+                        }
+                        disabled={selectedProposalArchived}
+                        onClick={() =>
+                          editor
+                            .materializeProposal(editor.selectedProposalId!)
+                            .catch((err) => editor.setError(errMessage(err)))
+                        }
+                      >
+                        Materialize
+                      </button>
+                      <button
+                        type="button"
+                        title="Reject selected proposal"
+                        onClick={() =>
+                          editor
+                            .rejectProposal(editor.selectedProposalId!)
+                            .catch((err) => editor.setError(errMessage(err)))
+                        }
+                      >
+                        Reject
+                      </button>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    className="primary"
+                    title="Accept all proposals as boxes"
+                    onClick={() =>
+                      editor.acceptAllProposals().catch((err) => editor.setError(errMessage(err)))
+                    }
+                  >
+                    Accept All
+                  </button>
+                  <button
+                    type="button"
+                    title="Reject all proposals"
+                    onClick={() =>
+                      editor.rejectAllProposals().catch((err) => editor.setError(errMessage(err)))
+                    }
+                  >
+                    Reject All
+                  </button>
+                </span>
+              </div>
+              <div className="panel-body pool-label-proposals-body">
+                {editor.proposals.map((p) => {
+                  const archivedProposal =
+                    (p.classId != null && editor.isArchivedDetectClass(p.classId)) ||
+                    (Boolean(p.classKey) && editor.isArchivedClassKey(p.classKey!));
+                  return (
+                    <div
+                      key={p.id}
+                      className={`pool-label-proposal-row${editor.selectedProposalId === p.id ? " selected" : ""}`}
+                      onClick={() =>
+                        editor.setSelectedProposalId(editor.selectedProposalId === p.id ? null : p.id)
+                      }
+                    >
+                      <span className="pool-label-proposal-conf">{Math.round(p.confidence * 100)}%</span>
+                      <span className="pool-label-proposal-coords">
+                        {archivedProposal ? (
+                          <span className="pool-label-archived-badge">archived</span>
+                        ) : null}
+                        {p.x.toFixed(3)},{p.y.toFixed(3)} {p.w.toFixed(3)}×{p.h.toFixed(3)}
+                      </span>
+                      <span className="pool-label-proposal-btns">
+                        <button
+                          type="button"
+                          className="primary pool-label-proposal-accept"
+                          title={
+                            archivedProposal
+                              ? "Restore this class in Library before materializing"
+                              : "Materialize this proposal as a box"
+                          }
+                          disabled={archivedProposal}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            editor.materializeProposal(p.id).catch((err) => editor.setError(errMessage(err)));
+                          }}
+                        >
+                          ✓
+                        </button>
+                        <button
+                          type="button"
+                          className="pool-label-proposal-reject"
+                          title="Reject this proposal"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            editor.rejectProposal(p.id).catch((err) => editor.setError(errMessage(err)));
+                          }}
+                        >
+                          ✗
+                        </button>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          <div
+            className={`pool-label-class-panels${classificationClassesPortalId ? " pool-label-class-panels--single" : ""}`}
+          >
+            <section className="panel filter-panel pool-label-classes-panel pool-label-detect-classes-panel">
+              <div className="panel-header pool-label-class-panel-header">
+                <span>Detect Classes</span>
+                <div className="pool-label-class-header-actions">
+                  <button
+                    type="button"
+                    className={`pool-label-class-icon-btn${detectClassToolMode === "add" ? " active" : ""}`}
+                    title="Add detect class"
+                    aria-label="Add detect class"
+                    aria-pressed={detectClassToolMode === "add"}
+                    onClick={() => setDetectClassToolMode((mode) => (mode === "add" ? "none" : "add"))}
+                  >
+                    <AddIcon />
+                  </button>
+                  <button
+                    type="button"
+                    className={`pool-label-class-icon-btn${showDetectSearchTool ? " active" : ""}`}
+                    title="Search detect classes"
+                    aria-label="Search detect classes"
+                    aria-pressed={showDetectSearchTool}
+                    onClick={() =>
+                      setDetectClassToolMode((mode) => (mode === "search" ? "none" : "search"))
+                    }
+                  >
+                    <SearchIcon />
                   </button>
                 </div>
-              )}
-              <div className="row">
-                <input
-                  id="poolLabelClassNameInput"
-                  type="text"
-                  placeholder="class name"
-                  value={editor.classNameInput}
-                  onChange={(event) => editor.setClassNameInput(event.target.value)}
-                />
-                <button id="poolLabelAddClassBtn" type="button" className="primary" onClick={editor.addClass}>
-                  Add Class
-                </button>
               </div>
-              <input
-                id="poolLabelClassSearchInput"
-                className="pool-label-class-search"
-                type="search"
-                placeholder="search classes"
-                value={editor.classSearch}
-                onChange={(event) => editor.setClassSearch(event.target.value)}
-              />
-              <div className="pool-label-class-list" id="poolLabelClassList">
-                {editor.filteredClasses.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={`pool-label-class-row${item.id === editor.currentClass ? " selected" : ""}${editor.includeClasses.has(item.id) ? " include-filter" : ""}${editor.excludeClasses.has(item.id) ? " exclude-filter" : ""}`}
-                    onClick={() => void editor.assignClass(item.id)}
-                    onDoubleClick={() => void editor.applyClassToSelectedBox(item.id)}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      if (event.shiftKey) editor.onAddExcludeClass(item.id);
-                      else editor.onAddIncludeClass(item.id);
-                    }}
-                    title="Single-click: select class · Double-click: relabel selected box · Right-click: include/exclude filter"
-                  >
-                    {item.id}: {item.name}
-                    {editor.includeClasses.has(item.id) ? " [inc]" : ""}
-                    {editor.excludeClasses.has(item.id) ? " [exc]" : ""}
-                    <span className="pool-label-class-row-count" aria-hidden="true">
-                      {classImageCounts.get(item.id) || 0}
-                    </span>
-                  </button>
-                ))}
+              <div className="panel-body filter-panel-body">
+                <div className="pool-label-tools">
+                  {(editor.includeClasses.size > 0 || editor.excludeClasses.size > 0) && (
+                    <div className="row yolo-filter-tools" style={{ marginBottom: 8 }}>
+                      <button type="button" onClick={() => editor.onClearClassFilters()}>
+                        Deselect All Filters
+                      </button>
+                    </div>
+                  )}
+                  {detectClassToolMode === "add" ? (
+                    <div className="pool-label-class-inline-tool">
+                      <input
+                        id="poolLabelClassNameInput"
+                        type="text"
+                        placeholder="detect class"
+                        value={editor.classNameInput}
+                        onChange={(event) => editor.setClassNameInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") editor.addClass();
+                          if (event.key === "Escape") setDetectClassToolMode("none");
+                        }}
+                        autoFocus
+                      />
+                      <button
+                        id="poolLabelAddClassBtn"
+                        type="button"
+                        className="pool-label-class-inline-submit"
+                        onClick={editor.addClass}
+                        title="Add detect class"
+                        aria-label="Add detect class"
+                      >
+                        <AddIcon />
+                      </button>
+                    </div>
+                  ) : null}
+                  {showDetectSearchTool ? (
+                    <div className="pool-label-class-inline-tool">
+                      <input
+                        id="poolLabelClassSearchInput"
+                        className="pool-label-class-search"
+                        type="search"
+                        placeholder="search detect classes"
+                        value={editor.classSearch}
+                        onChange={(event) => editor.setClassSearch(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            editor.setClassSearch("");
+                            setDetectClassToolMode("none");
+                          }
+                        }}
+                        autoFocus={detectClassToolMode === "search"}
+                      />
+                    </div>
+                  ) : null}
+                  <div className="pool-label-class-list" id="poolLabelClassList">
+                    {editor.filteredClasses.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={`pool-label-class-row${item.id === editor.currentClass ? " selected" : ""}${editor.includeClasses.has(item.id) ? " include-filter" : ""}${editor.excludeClasses.has(item.id) ? " exclude-filter" : ""}`}
+                        onClick={() => void editor.assignClass(item.id)}
+                        onDoubleClick={() => void editor.applyClassToSelectedBox(item.id)}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          if (event.shiftKey) editor.onAddExcludeClass(item.id);
+                          else editor.onAddIncludeClass(item.id);
+                        }}
+                        title="Single-click: select class · Double-click: relabel selected box · Right-click: include/exclude filter"
+                      >
+                        {item.id}: {item.name}
+                        {editor.includeClasses.has(item.id) ? " [inc]" : ""}
+                        {editor.excludeClasses.has(item.id) ? " [exc]" : ""}
+                        <span className="pool-label-class-row-count" aria-hidden="true">
+                          {classImageCounts.get(item.id) || 0}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
+            </section>
+            {classificationClassesPortalId ? null : classificationClassesPanel}
           </div>
-        </section>
-      </aside>
+        </aside>
       ) : null}
     </>
   );

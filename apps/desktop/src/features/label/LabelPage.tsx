@@ -8,6 +8,7 @@ import { LabelWorkbenchContext } from "./LabelWorkbenchContext";
 import { LabelWorkbenchHeader } from "./LabelWorkbenchHeader";
 import { LabelWorkbenchInspector } from "./LabelWorkbenchInspector";
 import { LabelMediaGrid, type LabelMediaSelection } from "./LabelMediaGrid";
+import { AutoLabelModelPanel } from "./AutoLabelModelPanel";
 import type {
   LabelSourceSummary,
   LabelWorkbenchActionGroup,
@@ -262,6 +263,7 @@ export function LabelPage({ active = true, onReady }: Props) {
                 unifiedMedia
                 onImageNavigate={(index) => handleSelectionChange({ kind: "image", index })}
                 onNavigateBoundary={handleMediaBoundaryNavigate}
+                canvasOverlay={<AutoLabelModelPanel workspaceRoot={workspaceRoot} />}
               />
             )}
           </div>

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type * as api from "../../api";
 import type { MetadataRow } from "../image-pool/types";
 import type { BoxLabelEntry } from "./boxLabelCore";
@@ -54,4 +55,10 @@ export type BoxLabelViewProps = {
   onWorkbenchBridgeChange?: (bridge: BoxLabelWorkbenchBridge | null) => void;
   onMarkJunk?: () => Promise<void>;
   onUndoJunk?: () => Promise<void>;
+  classificationClasses?: Array<{ key: string; name: string; archived?: boolean }>;
+  classificationClassesBusy?: boolean;
+  classificationClassesStatus?: string;
+  classificationClassesPortalId?: string;
+  onAddClassificationClass?: (name: string) => Promise<string | null>;
+  canvasOverlay?: ReactNode;
 };

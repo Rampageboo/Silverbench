@@ -6,6 +6,7 @@ import {
   boxCenterPixel,
   boxToImagePixelRect,
   canvasToImagePoint,
+  classNameFor,
   clamp,
   clampViewportPan,
   defaultPoolLabelCursor,
@@ -50,6 +51,9 @@ type UseBoxLabelPointerOptions = {
   setBoxes: (boxes: api.LabelBox[]) => void;
   setSelectedBoxId: (id: number | null) => void;
   setCurrentClass: (classId: number) => void;
+  setClassSearch: (search: string) => void;
+  setStatus: (status: string) => void;
+  classesRef: MutableRefObject<api.LabelClass[]>;
   archivedDetectIdsRef?: MutableRefObject<Set<number>>;
   setError: (status: string) => void;
   canvasRef: RefObject<HTMLCanvasElement | null>;
@@ -83,6 +87,9 @@ export function useBoxLabelPointer({
   setBoxes,
   setSelectedBoxId,
   setCurrentClass,
+  setClassSearch,
+  setStatus,
+  classesRef,
   archivedDetectIdsRef,
   setError,
   canvasRef,
@@ -300,7 +307,23 @@ export function useBoxLabelPointer({
       if (!drag) return;
 
       if (drag.type === "pan") {
-        if (drag.button === 1 && drag.pureClick) {
+        if (drag.button === 2 && drag.pureClick) {
+          const image = imageRef.current;
+          const currentDisplay = displayRef.current;
+          if (image && currentDisplay) {
+            const point = eventCanvasPoint(event, canvas);
+            const hit = hitTest(point, currentDisplay, boxesRef.current, image.naturalWidth, image.naturalHeight);
+            const box = hit.index >= 0 ? boxesRef.current[hit.index] : null;
+            if (box) {
+              const cls = classesRef.current.find((item) => item.id === box.classId);
+              setClassSearch(cls?.name ?? String(box.classId));
+              setSelectedBoxId(hit.index);
+              setSelectedProposalId?.(null);
+              setCurrentClass(box.classId);
+              setStatus(`Searching ${classNameFor(classesRef.current, box.classId)}.`);
+            }
+          }
+        } else if (drag.button === 1 && drag.pureClick) {
           const image = imageRef.current;
           if (image) {
             if (viewportRef.current.zoom > 1) {
@@ -377,6 +400,7 @@ export function useBoxLabelPointer({
       boxesRef,
       canvasRef,
       classRef,
+      classesRef,
       displayRef,
       dragRef,
       imageRef,
@@ -385,9 +409,13 @@ export function useBoxLabelPointer({
       pushUndo,
       recordFixedBoxFromBox,
       scheduleDraw,
+      setClassSearch,
       setBoxes,
       setError,
+      setCurrentClass,
       setSelectedBoxId,
+      setSelectedProposalId,
+      setStatus,
       syncBoxToSelected,
       viewportRef
     ]

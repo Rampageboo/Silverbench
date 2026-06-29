@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useWorkspace } from "../../app/useWorkspace";
 import { useToast } from "../../components/useToast";
 import { BoxLabelTopbar } from "../../components/BoxLabelTopbar";
@@ -7,8 +7,8 @@ import { isFlaggedFile, isReviewedFile } from "../image-pool/metadata";
 import { isLabelWorkbenchEmbedded, useLabelWorkbench } from "../label/useLabelWorkbench";
 import type { LabelWorkbenchActionGroup } from "../label/labelWorkbenchTypes";
 import { useArchivedClassIds } from "../workspace/useArchivedClassIds";
+import { useWorkspaceClasses } from "../workspace/useWorkspaceClasses";
 import { classificationOptionsForNewAnnotations } from "../workspace/workspaceClassTaxonomy";
-import { classNameToSafeKey } from "../video/videoClassKeys";
 import { BoxLabelGallery } from "./BoxLabelGallery";
 import { BoxLabelView } from "./BoxLabelView";
 import type { BoxLabelWorkbenchBridge } from "./boxLabelTypes";
@@ -27,6 +27,7 @@ type BoxLabelSurfaceProps = {
   showSideStack?: boolean;
   onImageNavigate?: (index: number) => void;
   onNavigateBoundary?: (delta: -1 | 1) => void;
+  canvasOverlay?: React.ReactNode;
 };
 
 export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
@@ -47,13 +48,23 @@ export function BoxLabelSurface({
   unifiedMedia = false,
   showSideStack = true,
   onImageNavigate,
-  onNavigateBoundary
+  onNavigateBoundary,
+  canvasOverlay,
 }: BoxLabelSurfaceProps) {
   const { workspaceRoot, chooseWorkspaceFolder } = useWorkspace();
   const { showToast } = useToast();
   const showError = useCallback((err: unknown) => showToast(errMessage(err), { variant: "error" }), [showToast]);
   const [workbenchBridge, setWorkbenchBridge] = useState<BoxLabelWorkbenchBridge | null>(null);
   const { manifest: classManifest } = useArchivedClassIds(workspaceRoot);
+  const {
+    manifest: workspaceClassManifest,
+    loading: workspaceClassesLoading,
+    saving: workspaceClassesSaving,
+    loadError: workspaceClassesLoadError,
+    saveError: workspaceClassesSaveError,
+    load: loadWorkspaceClasses,
+    addClf,
+  } = useWorkspaceClasses(workspaceRoot);
 
   const workbench = useLabelWorkbench();
   const embedded = isLabelWorkbenchEmbedded(workbench);
@@ -156,18 +167,34 @@ export function BoxLabelSurface({
   ]);
 
   const imageClassificationClasses = useMemo(
-    () => classManifest
-      ? classificationOptionsForNewAnnotations(classManifest).map((def) => ({
+    () => (workspaceClassManifest ?? classManifest)
+      ? classificationOptionsForNewAnnotations((workspaceClassManifest ?? classManifest)!).map((def) => ({
           key: def.key,
           name: def.name,
           archived: def.archived,
         }))
-      : (workbenchBridge?.activeDetectClasses ?? []).map((item) => ({
-          key: classNameToSafeKey(item.name),
-          name: item.name,
-        })),
-    [classManifest, workbenchBridge]
+      : [],
+    [classManifest, workspaceClassManifest]
   );
+
+  const classificationClassStatus =
+    workspaceClassesLoading
+      ? "Loading classification classes..."
+      : workspaceClassesLoadError || workspaceClassesSaveError || "";
+
+  const handleAddClassificationClass = useCallback(
+    async (name: string) => {
+      const classKey = await addClf(name);
+      if (!classKey) throw new Error("Classification class manifest is not available.");
+      return classKey;
+    },
+    [addClf]
+  );
+
+  useEffect(() => {
+    if (!workspaceRoot.trim()) return;
+    void loadWorkspaceClasses();
+  }, [loadWorkspaceClasses, workspaceRoot]);
 
   useEffect(() => {
     if (!workbench) return;
@@ -390,6 +417,12 @@ export function BoxLabelSurface({
           onWorkbenchBridgeChange={setWorkbenchBridge}
           onMarkJunk={pool.markJunk}
           onUndoJunk={pool.undoJunk}
+          classificationClasses={imageClassificationClasses}
+          classificationClassesBusy={workspaceClassesLoading || workspaceClassesSaving}
+          classificationClassesStatus={classificationClassStatus}
+          classificationClassesPortalId={embedded ? "lwbClassifyClassesSlot" : undefined}
+          onAddClassificationClass={handleAddClassificationClass}
+          canvasOverlay={canvasOverlay}
         />
       </main>
     </div>

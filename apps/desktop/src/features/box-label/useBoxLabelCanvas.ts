@@ -14,6 +14,7 @@ import {
 type UseBoxLabelCanvasOptions = {
   boxesRef: MutableRefObject<api.LabelBox[]>;
   selectedRef: MutableRefObject<number | null>;
+  classRef: MutableRefObject<number>;
   classesRef: MutableRefObject<api.LabelClass[]>;
   showGridRef: MutableRefObject<boolean>;
   dragRef: MutableRefObject<DragState>;
@@ -27,6 +28,7 @@ type UseBoxLabelCanvasOptions = {
 export function useBoxLabelCanvas({
   boxesRef,
   selectedRef,
+  classRef,
   classesRef,
   showGridRef,
   dragRef,
@@ -57,12 +59,14 @@ export function useBoxLabelCanvas({
       boxes: boxesRef.current,
       selectedIndex: selectedRef.current,
       classes: classesRef.current,
+      currentClassId: classRef.current,
       showGrid: showGridRef.current,
       viewport: viewportRef.current,
       drag: dragRef.current,
       zoomPoint: zoomPointRef.current,
       pointerToolEnabled,
       autoFitEnabled,
+      blackBoxEnabled,
       proposals: proposalsRef?.current,
       selectedProposalId: selectedProposalIdRef?.current
     });
@@ -78,7 +82,7 @@ export function useBoxLabelCanvas({
         lastZoomCenter: lastZoomCenterRef.current
       });
     }
-  }, [autoFitEnabled, boxesRef, classesRef, dragRef, pointerToolEnabled, selectedRef, showGridRef]);
+  }, [autoFitEnabled, blackBoxEnabled, boxesRef, classRef, classesRef, dragRef, pointerToolEnabled, selectedRef, showGridRef]);
 
   const scheduleDraw = useCallback(() => {
     if (rafRef.current !== null) return;

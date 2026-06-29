@@ -338,12 +338,42 @@ export function drawBoxes(
     const label = classNameFor(classes, box.classId);
     ctx.font = "12px Segoe UI";
     const labelWidth = Math.ceil(ctx.measureText(label).width) + 12;
-    ctx.fillStyle = color;
+    ctx.fillStyle = "rgba(2, 6, 23, 0.92)";
     ctx.fillRect(rect.x1, Math.max(0, rect.y1 - 18), Math.max(28, labelWidth), 18);
     ctx.fillStyle = "#ffffff";
     ctx.fillText(label, rect.x1 + 5, Math.max(12, rect.y1 - 5));
     if (selected === index) drawCornerHandles(ctx, rect);
   });
+}
+
+export function drawPointerClassLabel(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  display: DisplayRect,
+  point: ImagePixelPoint,
+  imageWidth: number,
+  imageHeight: number,
+  classId: number,
+  classes: api.LabelClass[] = []
+) {
+  const label = classNameFor(classes, classId);
+  const anchorX = display.x + (point.x / Math.max(1, imageWidth)) * display.w;
+  const anchorY = display.y + (point.y / Math.max(1, imageHeight)) * display.h;
+  ctx.save();
+  ctx.font = "12px Segoe UI";
+  const labelWidth = Math.ceil(ctx.measureText(label).width) + 12;
+  const labelHeight = 18;
+  let x = anchorX + 12;
+  let y = anchorY + 12;
+  if (x + labelWidth > canvas.width - 4) x = anchorX - labelWidth - 12;
+  if (y + labelHeight > canvas.height - 4) y = anchorY - labelHeight - 12;
+  x = clamp(x, 4, Math.max(4, canvas.width - labelWidth - 4));
+  y = clamp(y, 4, Math.max(4, canvas.height - labelHeight - 4));
+  ctx.fillStyle = "rgba(2, 6, 23, 0.92)";
+  ctx.fillRect(x, y, Math.max(28, labelWidth), labelHeight);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(label, x + 5, y + 13);
+  ctx.restore();
 }
 
 export type ProposalShape = { id: string; x: number; y: number; w: number; h: number; confidence: number };

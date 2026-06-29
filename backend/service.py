@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import shutil
 import threading
 import uuid
 from collections.abc import Callable
@@ -190,6 +191,7 @@ class BackendService:
             "getPtJob": self._handle_getPtJob,
             "cancelPtJob": self._handle_cancelPtJob,
             "trackYoloForward": self._handle_trackYoloForward,
+            "copyModelToWorkspace": self._handle_copyModelToWorkspace,
         }
 
     def call(self, method: str, args: list[Any]) -> object:
@@ -1039,6 +1041,15 @@ class BackendService:
             raise RuntimeError("Video picker is not available in this backend.")
         paths = [self.path_access.remember_parent(path) for path in self.choose_video_files(title)]
         return videos_json(paths)
+
+    def _handle_copyModelToWorkspace(self, args: list[Any]) -> object:
+        source = self.path_access.require_path(args[0])
+        if source.suffix.lower() != ".pt":
+            raise ValueError("Only .pt model files are accepted.")
+        dest = self.path_access.safe_child_path(args[1], args[2])
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, dest)
+        return str(dest)
 
     def _unique_path(self, path: Path) -> Path:
         if not path.exists():

@@ -11,7 +11,6 @@ import {
   classificationOptionsForNewAnnotations,
   isClassificationClassArchived
 } from "../workspace/workspaceClassTaxonomy";
-import { classNameToSafeKey } from "./videoClassKeys";
 import {
   chooseAnnotationVideos,
   DEFAULT_VIDEO_ANNOTATIONS_ROOT,
@@ -105,8 +104,8 @@ export function useVideoAnnotationSession({
             key: def.key,
             name: def.name
           }))
-        : classes.map((item) => ({ key: classNameToSafeKey(item.name), name: item.name })),
-    [classManifest, classes]
+        : [],
+    [classManifest]
   );
 
   // Detect task derived state

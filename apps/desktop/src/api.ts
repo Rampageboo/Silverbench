@@ -60,7 +60,8 @@ export type BackendMethod =
   | "batchCropImages"
   | "batchCropFiles"
   | "openFolder"
-  | "moveValBackToTrain";
+  | "moveValBackToTrain"
+  | "copyModelToWorkspace";
 
 export type ApiCallResponse<T = unknown> =
   | {

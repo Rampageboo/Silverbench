@@ -7,6 +7,7 @@ import {
   drawCrosshair,
   drawGrid,
   drawImageRect,
+  drawPointerClassLabel,
   drawProposals,
   drawZoomBoxes,
   drawZoomGrid,
@@ -28,19 +29,36 @@ export type MainCanvasRenderInput = {
   boxes: api.LabelBox[];
   selectedIndex: number | null;
   classes: LabelClass[];
+  currentClassId: number;
   showGrid: boolean;
   viewport: Viewport;
   drag: DragState;
   zoomPoint: ImagePixelPoint | null;
   pointerToolEnabled: boolean;
   autoFitEnabled: boolean;
+  blackBoxEnabled: boolean;
   proposals?: ProposalShape[];
   selectedProposalId?: string | null;
 };
 
 export function renderMainCanvas(input: MainCanvasRenderInput): DisplayRect | null {
-  const { canvas, image, boxes, selectedIndex, classes, showGrid, viewport, drag, zoomPoint, pointerToolEnabled, autoFitEnabled, proposals, selectedProposalId } =
-    input;
+  const {
+    canvas,
+    image,
+    boxes,
+    selectedIndex,
+    classes,
+    currentClassId,
+    showGrid,
+    viewport,
+    drag,
+    zoomPoint,
+    pointerToolEnabled,
+    autoFitEnabled,
+    blackBoxEnabled,
+    proposals,
+    selectedProposalId
+  } = input;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
 
@@ -67,6 +85,19 @@ export function renderMainCanvas(input: MainCanvasRenderInput): DisplayRect | nu
 
   if (drag?.type === "draw") {
     drawImageRect(ctx, display, normalizedImageRect(drag.start, drag.current), "#f59e0b", true);
+  }
+
+  if (zoomPoint && !pointerToolEnabled && !blackBoxEnabled) {
+    drawPointerClassLabel(
+      ctx,
+      canvas,
+      display,
+      zoomPoint,
+      image.naturalWidth,
+      image.naturalHeight,
+      currentClassId,
+      classes
+    );
   }
   return display;
 }

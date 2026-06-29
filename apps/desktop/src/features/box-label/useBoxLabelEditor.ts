@@ -342,6 +342,7 @@ export function useBoxLabelEditor({
     blackBoxEnabled: labelClasses.blackBoxEnabled,
     fixedBoxSlots: labelClasses.fixedBoxSlots,
     setCurrentClass: labelClasses.setCurrentClass,
+    setClassSearch: labelClasses.setClassSearch,
     archivedDetectIdsRef: labelClasses.archivedDetectIdsRef,
     setBoxAdjustMode: labelClasses.setBoxAdjustMode,
     recordFixedBoxFromBox: labelClasses.recordFixedBoxFromBox,
@@ -388,6 +389,10 @@ export function useBoxLabelEditor({
     selectedRef.current = selectedBoxId;
     scheduleDraw();
   }, [selectedBoxId, scheduleDraw]);
+
+  useEffect(() => {
+    scheduleDraw();
+  }, [labelClasses.classes, labelClasses.currentClass, scheduleDraw]);
 
   useEffect(() => {
     proposalsRef.current = proposals as ProposalShape[];

@@ -31,6 +31,7 @@ export type UseBoxLabelInteractionOptions = {
   blackBoxEnabled: boolean;
   fixedBoxSlots: Array<api.LabelBox | null>;
   setCurrentClass: (classId: number) => void;
+  setClassSearch: (search: string) => void;
   archivedDetectIdsRef?: MutableRefObject<Set<number>>;
   setBoxAdjustMode: (mode: BoxAdjustMode) => void;
   recordFixedBoxFromBox: (box: api.LabelBox) => string;
