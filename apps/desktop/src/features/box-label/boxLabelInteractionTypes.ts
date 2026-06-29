@@ -1,11 +1,13 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import * as api from "../../api";
 import type { BoxLabelEntry } from "./boxLabelCore";
+import type { BoxLabelDuplicateFlow } from "./boxLabelTypes";
 import type { BoxAdjustMode, DragState, ProposalShape, ToolMode } from "./geometry";
 
 export type UseBoxLabelInteractionOptions = {
   workspaceRoot: string;
   datasetRoot: string;
+  mediaImagePath: string;
   entry: BoxLabelEntry | null;
   entries: BoxLabelEntry[];
   currentIndex: number;
@@ -49,7 +51,9 @@ export type UseBoxLabelInteractionOptions = {
     options?: { pushUndo?: boolean }
   ) => Promise<number>;
   copySelectedBoxToNext: () => Promise<void>;
+  advanceDuplicateToNext: () => Promise<void>;
   trackCsrtForward: () => Promise<void>;
+  duplicateFlow: BoxLabelDuplicateFlow;
   setBoxes: (boxes: api.LabelBox[]) => void;
   setSelectedBoxId: (id: number | null) => void;
   setStatus: (status: string) => void;

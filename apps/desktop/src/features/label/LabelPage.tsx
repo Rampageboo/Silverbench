@@ -55,6 +55,11 @@ export function LabelPage({ active = true, onReady }: Props) {
     onReady
   });
 
+  useEffect(() => {
+    if (!active || !workspaceRoot.trim()) return;
+    void imagePool.reload({ background: true, force: true });
+  }, [active, imagePool.reload, workspaceRoot]);
+
   const clearWorkbenchActions = useCallback(() => {
     setActionGroups([]);
   }, []);
@@ -254,6 +259,7 @@ export function LabelPage({ active = true, onReady }: Props) {
                 showVideoList={false}
                 showSourceToolbar={false}
                 unifiedMedia
+                classificationClassesPortalId="lwbClassifyClassesSlot"
               />
             ) : (
               <BoxLabelSurface
@@ -263,7 +269,32 @@ export function LabelPage({ active = true, onReady }: Props) {
                 unifiedMedia
                 onImageNavigate={(index) => handleSelectionChange({ kind: "image", index })}
                 onNavigateBoundary={handleMediaBoundaryNavigate}
-                canvasOverlay={<AutoLabelModelPanel workspaceRoot={workspaceRoot} />}
+                canvasOverlay={({
+                  entry,
+                  entries,
+                  currentIndex,
+                  boxes,
+                  proposals,
+                  classificationClasses,
+                  currentClassificationKey,
+                  applyAutoLabelPredictions,
+                  assignClassificationClass,
+                  reloadWorkspaceClasses,
+                }) => (
+                  <AutoLabelModelPanel
+                    workspaceRoot={workspaceRoot}
+                    currentImage={entry}
+                    entries={entries}
+                    currentIndex={currentIndex}
+                    boxCount={boxes.length}
+                    proposalCount={proposals.length}
+                    classificationClasses={classificationClasses}
+                    currentClassificationKey={currentClassificationKey}
+                    onApplyDetectPredictions={applyAutoLabelPredictions}
+                    onAssignClassificationClass={assignClassificationClass}
+                    onClassesChanged={reloadWorkspaceClasses}
+                  />
+                )}
               />
             )}
           </div>

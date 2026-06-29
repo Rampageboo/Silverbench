@@ -24,6 +24,7 @@ import {
   activeClfClassDefs,
   archivedClassDefs,
   archivedDetectClassIds,
+  chooseClassificationManifest,
   classificationClassDisplayName,
   classificationOptionsForNewAnnotations,
   detectClassDisplayName,
@@ -553,6 +554,15 @@ describe("addClfClassToManifest", () => {
     const { manifest: next } = addClfClassToManifest(m, "indoor");
     expect(next.tasks.detect.classKeys).toEqual(["person", "car"]);
   });
+
+  it("reuses an existing active detect class when adding the same clf class name", () => {
+    const m = twoClassDetectManifest();
+    const { manifest: next, classKey } = addClfClassToManifest(m, "Person");
+    expect(classKey).toBe("person");
+    expect(next.tasks.clf.classKeys).toEqual(["person"]);
+    expect(next.classDefs.filter((def) => def.name === "Person")).toHaveLength(1);
+    expect(classificationOptionsForNewAnnotations(next).map((def) => def.key)).toEqual(["person"]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -740,6 +750,14 @@ describe("Phase 4C consumption helpers", () => {
     expect(findClassificationClassByKey(m, "day")?.name).toBe("Day");
     expect(isClassificationClassArchived(m, "day")).toBe(true);
     expect(classificationClassDisplayName(m, "day")).toBe("Day");
+  });
+
+  it("chooses the manifest with more active classification classes", () => {
+    const detectOnly = twoClassDetectManifest();
+    const both = bothTaskManifest();
+    expect(chooseClassificationManifest(detectOnly, both)).toBe(both);
+    expect(chooseClassificationManifest(both, detectOnly)).toBe(both);
+    expect(chooseClassificationManifest(detectOnly, null)).toBe(detectOnly);
   });
 
   it("legacy classes.txt adaptation preserves order", () => {

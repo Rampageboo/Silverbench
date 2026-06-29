@@ -400,10 +400,29 @@ export function addClfClassToManifest(
   manifest: ClassesManifest,
   name: string
 ): { manifest: ClassesManifest; classKey: string } {
+  const cleanName = name.trim();
+  const existing = manifest.classDefs.find(
+    (def) => !def.archived && def.name.trim().toLowerCase() === cleanName.toLowerCase()
+  );
+  if (existing) {
+    const classKeys = manifest.tasks.clf.classKeys.includes(existing.key)
+      ? manifest.tasks.clf.classKeys
+      : [...manifest.tasks.clf.classKeys, existing.key];
+    return {
+      manifest: {
+        ...manifest,
+        tasks: {
+          ...manifest.tasks,
+          clf: { classKeys },
+        },
+      },
+      classKey: existing.key,
+    };
+  }
   const usedKeys = new Set(manifest.classDefs.map((d) => d.key));
-  const base = slugifyClassName(name.trim());
+  const base = slugifyClassName(cleanName);
   const key = uniqueSlug(base, usedKeys);
-  const newDef: ClassDef = { key, name: name.trim() };
+  const newDef: ClassDef = { key, name: cleanName };
   return {
     manifest: {
       ...manifest,
@@ -613,6 +632,17 @@ export function detectClassOptionsForNewAnnotations(
 /** Active classification options for new classification decisions. */
 export function classificationOptionsForNewAnnotations(manifest: ClassesManifest): ClassDef[] {
   return activeClassificationClasses(manifest);
+}
+
+export function chooseClassificationManifest(
+  primary: ClassesManifest | null | undefined,
+  fallback: ClassesManifest | null | undefined
+): ClassesManifest | null {
+  if (!primary) return fallback ?? null;
+  if (!fallback) return primary;
+  const primaryCount = classificationOptionsForNewAnnotations(primary).length;
+  const fallbackCount = classificationOptionsForNewAnnotations(fallback).length;
+  return fallbackCount > primaryCount ? fallback : primary;
 }
 
 /**

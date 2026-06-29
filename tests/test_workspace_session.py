@@ -95,6 +95,7 @@ class WorkspaceSessionTests(unittest.TestCase):
             (legacy_dir / "session.json").write_text('{"version":3,"activeTab":"inbox"}', encoding="utf-8")
 
             self.assertEqual(load_workspace_config(root).root, root.resolve())
+            self.assertEqual(load_workspace_config(root).image_pool, (root / "image_pool").resolve())
             session = read_workspace_session_dict(root)
 
             self.assertEqual(session["activeTab"], "inbox")
@@ -121,7 +122,9 @@ class WorkspaceSessionTests(unittest.TestCase):
             self.assertFalse((root / "workspace.json").exists())
 
             paths = load_workspace_config(root)
-            self.assertEqual(paths.image_pool, (root / "image_pool").resolve())
+            self.assertEqual(paths.image_pool, (root / "media").resolve())
+            self.assertTrue((root / "media").is_dir())
+            self.assertFalse((root / "image_pool").exists())
 
             session_path = Path(write_workspace_session_dict(root, {"version": 3}))
             self.assertEqual(session_path, workspace_session_file(root))
@@ -142,6 +145,7 @@ class WorkspaceSessionTests(unittest.TestCase):
 
             self.assertEqual(manifest["version"], 2)
             self.assertEqual(manifest["type"], "yolo-workbench")
+            self.assertEqual(manifest["paths"]["image_pool"], "media")
             self.assertEqual(manifest["paths"]["annotations"], "workspace/annotations")
             self.assertEqual(manifest["paths"]["sources"], "workspace/sources.json")
             self.assertEqual(manifest["tools"]["videoLabel"]["persistence"], "timestamp-manifest")
@@ -178,6 +182,20 @@ class WorkspaceSessionTests(unittest.TestCase):
             self.assertTrue((root / "workspace" / "annotations").is_dir())
             self.assertTrue((root / "workspace" / "video_annotations").is_dir())
             self.assertTrue((root / "workspace" / "sources.json").is_file())
+
+    def test_open_unconfigured_legacy_image_pool_keeps_existing_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "image_pool").mkdir()
+            (root / "image_pool" / "sample.jpg").write_bytes(b"fake")
+
+            result = resolve_open_folder(root)
+            paths = load_workspace_config(root)
+
+            self.assertEqual(result["kind"], "workspace")
+            self.assertTrue(result["initialized"])
+            self.assertEqual(paths.image_pool, (root / "image_pool").resolve())
+            self.assertFalse((root / "media").exists())
 
 
 if __name__ == "__main__":

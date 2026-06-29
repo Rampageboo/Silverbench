@@ -10,6 +10,7 @@ from .image_preview import image_thumbnail_jpeg_base64
 from .yolo_workspace import (
     IMAGE_EXTENSIONS,
     load_workspace_config,
+    workspace_media_relative_dir,
     workspace_meta_dir,
 )
 
@@ -213,6 +214,7 @@ def _build_hardlink_index(
 def _build_scan_result(
     *,
     root: Path,
+    media_dir: str,
     files: list[str],
     new_files: list[str],
     used_files: list[str],
@@ -231,6 +233,7 @@ def _build_scan_result(
         "usedCount": used_count,
         "unusedCount": total - used_count,
         "snapshotUpdatedAt": snapshot_updated_at,
+        "mediaDir": media_dir,
         "files": files,
         "newFiles": new_files,
         "usedFiles": used_files,
@@ -243,6 +246,7 @@ def _build_scan_result(
 def scan_image_pool(workspace_root: Path, *, fast: bool = False) -> dict[str, Any]:
     paths = load_workspace_config(workspace_root)
     root = paths.root
+    media_dir = workspace_media_relative_dir(paths)
     snapshot = read_snapshot(root)
     known_files = set(snapshot["knownFiles"])
     fingerprint = _pool_fingerprint(paths.image_pool)
@@ -262,6 +266,7 @@ def scan_image_pool(workspace_root: Path, *, fast: bool = False) -> dict[str, An
             new_files = [name for name in cached_files if name not in known_files]
             return _build_scan_result(
                 root=root,
+                media_dir=media_dir,
                 files=cached_files,
                 new_files=new_files,
                 used_files=used_files if usage_scanned else [],
@@ -281,6 +286,7 @@ def scan_image_pool(workspace_root: Path, *, fast: bool = False) -> dict[str, An
                 used_files.append(filename)
         result = _build_scan_result(
             root=root,
+            media_dir=media_dir,
             files=cached_files,
             new_files=new_files,
             used_files=used_files,
@@ -326,6 +332,7 @@ def scan_image_pool(workspace_root: Path, *, fast: bool = False) -> dict[str, An
 
     result = _build_scan_result(
         root=root,
+        media_dir=media_dir,
         files=files,
         new_files=new_files,
         used_files=used_files,
@@ -360,7 +367,7 @@ def image_pool_thumbnail_base64(
     paths = load_workspace_config(workspace_root)
     path = paths.image_pool / Path(filename).name
     if not path.is_file() or path.suffix.lower() not in IMAGE_EXTENSIONS:
-        raise FileNotFoundError(f"Image not found in image_pool: {filename}")
+        raise FileNotFoundError(f"Image not found in media: {filename}")
     return image_thumbnail_jpeg_base64(
         path,
         max_size,

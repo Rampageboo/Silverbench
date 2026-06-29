@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LabelBox, LabelClass } from "../../api";
 import type { BlackoutRectShape } from "../overlays/blackoutOverlayDomain";
+import { classBoxColor } from "../shared/classColors";
 
 type Point = { x: number; y: number };
 type Corner = "nw" | "ne" | "sw" | "se";
@@ -317,7 +318,8 @@ export function VideoAnnotationCanvas({
       const width = box.w * display.width;
       const height = box.h * display.height;
       const selected = index === selectedIndex;
-      context.strokeStyle = selected ? "#f59e0b" : "#4ade80";
+      const color = classBoxColor(box.classId, selected);
+      context.strokeStyle = color;
       context.lineWidth = (selected ? 3 : 2) * ratio;
       context.setLineDash([]);
       context.strokeRect(x, y, width, height);
@@ -329,12 +331,12 @@ export function VideoAnnotationCanvas({
       const labelY = Math.max(display.y, y - labelHeight);
       context.fillStyle = "rgba(0, 0, 0, 0.78)";
       context.fillRect(x, labelY, textWidth + 8 * ratio, labelHeight);
-      context.fillStyle = selected ? "#fbbf24" : "#86efac";
+      context.fillStyle = "#f8fafc";
       context.fillText(label, x + 4 * ratio, labelY + 13 * ratio);
 
       if (selected) {
         const handleSize = 8 * ratio;
-        context.fillStyle = "#f59e0b";
+        context.fillStyle = color;
         for (const [handleX, handleY] of [
           [x, y],
           [x + width, y],
@@ -357,7 +359,7 @@ export function VideoAnnotationCanvas({
         context.fillRect(x1, y1, x2 - x1, y2 - y1);
         context.strokeStyle = "#ef4444";
       } else {
-        context.strokeStyle = "#60a5fa";
+        context.strokeStyle = classBoxColor(currentClass, true);
       }
       context.lineWidth = 2 * ratio;
       context.setLineDash([6 * ratio, 4 * ratio]);
@@ -379,7 +381,7 @@ export function VideoAnnotationCanvas({
       context.lineTo(x, y + radius * 1.5);
       context.stroke();
     }
-  }, [archivedClassIds, blackouts, classNames, draftRect, remoteCursor, renderVersion, selectedIndex, showBlackouts, workingBoxes]);
+  }, [archivedClassIds, blackouts, classNames, currentClass, draftRect, remoteCursor, renderVersion, selectedIndex, showBlackouts, workingBoxes]);
 
   const deleteSelected = useCallback(() => {
     if (selectedIndex === null || selectedIndex < 0 || selectedIndex >= workingBoxesRef.current.length) return;

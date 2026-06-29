@@ -7,7 +7,7 @@ from typing import Any
 
 from .image_pool import _build_hardlink_index, _file_identity, _list_pool_images
 from .image_pool_backup import image_pool_backup_file, image_pool_label_backup_file
-from .yolo_workspace import IMAGE_EXTENSIONS, load_workspace_config
+from .yolo_workspace import IMAGE_EXTENSIONS, load_workspace_config, workspace_media_relative_dir
 
 
 def _sha256_file(path: Path) -> str:
@@ -31,7 +31,7 @@ def _read_metadata_filenames(metadata_path: Path) -> set[str]:
 
 
 def find_image_pool_duplicates(workspace_root: Path) -> dict[str, Any]:
-    """Find exact duplicate files inside image_pool/ only (by SHA-256)."""
+    """Find exact duplicate files inside the configured media folder only (by SHA-256)."""
     paths = load_workspace_config(workspace_root)
     pool_images = _list_pool_images(paths.image_pool)
     metadata_names = _read_metadata_filenames(paths.metadata)
@@ -84,11 +84,12 @@ def _choose_keeper(filenames: list[str], metadata_names: set[str]) -> str:
 def _collect_paths_for_pool_file(
     workspace_root: Path,
     pool_file: Path,
+    media_dir: str,
     hardlink_index: dict[tuple[int, int], list[str]],
 ) -> list[Path]:
     root = workspace_root.expanduser().resolve()
     identity = _file_identity(pool_file)
-    rel_paths: list[str] = [f"image_pool/{pool_file.name}"]
+    rel_paths: list[str] = [f"{media_dir}/{pool_file.name}"]
     if identity is not None:
         rel_paths.extend(hardlink_index.get(identity, []))
     unique: list[Path] = []
@@ -125,7 +126,7 @@ def _remove_metadata_row(metadata_path: Path, filename: str) -> bool:
 
 def delete_pool_image_completely(workspace_root: Path, filename: str) -> dict[str, Any]:
     """
-    Delete an image_pool file and every hard-linked dataset path sharing its inode.
+    Delete a media file and every hard-linked dataset path sharing its inode.
     Also removes detect_labels, metadata.csv row, and image_pool_backup copies.
     """
     paths = load_workspace_config(workspace_root)
@@ -136,10 +137,10 @@ def delete_pool_image_completely(workspace_root: Path, filename: str) -> dict[st
 
     pool_file = paths.image_pool / filename
     if not pool_file.is_file():
-        raise FileNotFoundError(f"Image not found in image_pool: {filename}")
+        raise FileNotFoundError(f"Image not found in media: {filename}")
 
     hardlink_index = _build_hardlink_index(root, paths.detect_out, paths.clf_out)
-    to_delete = _collect_paths_for_pool_file(root, pool_file, hardlink_index)
+    to_delete = _collect_paths_for_pool_file(root, pool_file, workspace_media_relative_dir(paths), hardlink_index)
 
     deleted_paths: list[str] = []
     failed_paths: list[dict[str, str]] = []
@@ -186,7 +187,7 @@ def delete_pool_image_completely(workspace_root: Path, filename: str) -> dict[st
 
 
 def clear_image_pool_duplicates(workspace_root: Path) -> dict[str, Any]:
-    """Remove duplicate image_pool files; keep one per content hash group."""
+    """Remove duplicate media files; keep one per content hash group."""
     paths = load_workspace_config(workspace_root)
     metadata_names = _read_metadata_filenames(paths.metadata)
     scan = find_image_pool_duplicates(workspace_root)

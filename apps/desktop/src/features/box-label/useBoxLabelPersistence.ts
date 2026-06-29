@@ -26,6 +26,7 @@ import {
 type UseBoxLabelPersistenceOptions = {
   workspaceRoot: string;
   datasetRoot: string;
+  mediaImagePath: string;
   entry: BoxLabelEntry | null;
   entries: BoxLabelEntry[];
   currentIndex: number;
@@ -60,6 +61,7 @@ type UseBoxLabelPersistenceOptions = {
 export function useBoxLabelPersistence({
   workspaceRoot,
   datasetRoot,
+  mediaImagePath,
   entry,
   entries,
   currentIndex,
@@ -219,7 +221,7 @@ export function useBoxLabelPersistence({
       const mime = imageMimeForFilename(filename);
       const before = canvas.toDataURL(mime, 0.95).split(",")[1] || "";
       pushImageUndo("black box", before);
-      await api.ensureImagePoolBackup(workspaceRoot, `image_pool/${filename}`);
+      await api.ensureImagePoolBackup(workspaceRoot, mediaImagePath);
       ctx.fillStyle = "#000000";
       ctx.fillRect(
         Math.round(rect.x1 * canvas.width),
@@ -228,11 +230,11 @@ export function useBoxLabelPersistence({
         Math.round((rect.y2 - rect.y1) * canvas.height)
       );
       const base64 = canvas.toDataURL(mime, 0.95).split(",")[1] || "";
-      await api.writeFileBase64(workspaceRoot, `image_pool/${filename}`, base64);
+      await api.writeFileBase64(workspaceRoot, mediaImagePath, base64);
       setImageVersion((value) => value + 1);
       setStatus("Applied black box to image.");
     },
-    [filename, imageMimeForFilename, imageRef, pushImageUndo, setImageVersion, setStatus, workspaceRoot]
+    [filename, imageMimeForFilename, imageRef, mediaImagePath, pushImageUndo, setImageVersion, setStatus, workspaceRoot]
   );
 
   const createFixedBoxFromShortcut = useCallback(
@@ -301,14 +303,14 @@ export function useBoxLabelPersistence({
     if (
       !(await confirm({
         title: "Restore backup",
-        message: `Restore current image and label from image_pool_backup?\n\nimage_pool/${filename}`,
+        message: `Restore current image and label from image_pool_backup?\n\n${mediaImagePath}`,
         confirmLabel: "Restore",
         danger: true
       }))
     ) {
       return;
     }
-    const result = await api.restoreImagePoolBackup(workspaceRoot, `image_pool/${filename}`);
+    const result = await api.restoreImagePoolBackup(workspaceRoot, mediaImagePath);
     const parts: string[] = [];
     if (result.restored?.image) parts.push("image");
     if (result.restored?.label) parts.push("label");
@@ -327,7 +329,7 @@ export function useBoxLabelPersistence({
     datasetRoot,
     dragRef,
     entry,
-    filename,
+    mediaImagePath,
     selectedRef,
     setBoxes,
     setImageVersion,

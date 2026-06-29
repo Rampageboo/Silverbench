@@ -3,6 +3,7 @@ import { backendBaseUrl } from "./lib/backendConfig";
 import type { WorkspaceVersionId, WorkspaceVersionsManifest } from "./features/workspace-versioning/workspaceSnapshotVersions";
 
 export const API_BASE_URL = backendBaseUrl();
+export const REQUIRED_API_SCHEMA_VERSION = 17;
 
 export type BackendMethod =
   | "markImagePoolSeen"
@@ -15,6 +16,7 @@ export type BackendMethod =
   | "ensureImagePoolLabelBackup"
   | "chooseClassifierModel"
   | "classifierModelInfo"
+  | "ptModelInfo"
   | "classifyDatasetImages"
   | "createClassFolder"
   | "moveImagesToClass"
@@ -33,6 +35,7 @@ export type BackendMethod =
   | "listWorkspaceFiles"
   | "startBuildYoloLinks"
   | "getBuildJob"
+  | "importMediaFiles"
   | "writeWorkspaceSession"
   | "readWorkspaceSession"
   | "readSnapshotVersions"
@@ -42,9 +45,12 @@ export type BackendMethod =
   | "resolveActiveSnapshotWorkspacePath"
   | "chooseDirectory"
   | "chooseImageFile"
+  | "chooseImageFiles"
+  | "chooseMediaFiles"
   | "chooseTrainModelFile"
   | "readImageFileBase64"
   | "chooseVideoFiles"
+  | "listWorkspaceVideos"
   | "getVideoFrameBase64"
   | "saveVideoFrame"
   | "startCaptureVideoScreenshotJobs"
@@ -55,8 +61,12 @@ export type BackendMethod =
   | "ensureDataYaml"
   | "startDetectFolderWithPt"
   | "startClassifyFolderWithPt"
+  | "classifyImageWithPt"
+  | "detectImageWithPt"
   | "getPtJob"
   | "cancelPtJob"
+  | "readAutoLabelModelRegistry"
+  | "importAutoLabelModel"
   | "maskNoisePreview"
   | "maskNoiseSaveOne"
   | "maskNoiseExportFolder"
@@ -94,6 +104,7 @@ export type ApiCallResponse<T = unknown> =
  */
 function apiErrorMessage(data: unknown, status: number): string {
   const body = (data ?? {}) as { detail?: unknown; error?: unknown };
+  if (typeof data === "string" && data.trim()) return data.trim();
   if (body.error && typeof body.error === "object") {
     const message = (body.error as { message?: unknown }).message;
     if (typeof message === "string" && message) return message;
@@ -128,7 +139,15 @@ export async function call<T = unknown>(method: BackendMethod, args: unknown[] =
     }
     throw error instanceof Error ? error : new Error(message);
   }
-  const data = (await response.json()) as ApiCallResponse<T>;
+  const text = await response.text();
+  let data: unknown = text;
+  if (text.trim()) {
+    try {
+      data = JSON.parse(text) as ApiCallResponse<T>;
+    } catch {
+      data = text;
+    }
+  }
   assertOk(data, response);
   return data as Extract<ApiCallResponse<T>, { ok: true }>;
 }
@@ -151,14 +170,43 @@ export async function callJson<T>(method: BackendMethod, args: unknown[] = []): 
   return (await callBackend(method, args)) as T;
 }
 
+export type BackendHealth = {
+  ok: boolean;
+  app: string;
+  backend: string;
+  ui?: string;
+  apiSchemaVersion?: number;
+};
+
 export async function health() {
-  const response = await fetch(`${API_BASE_URL}/health`, { cache: "no-store" });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json() as Promise<{ ok: boolean; app: string; backend: string }>;
+  const controller = new AbortController();
+  const timer = globalThis.setTimeout(() => controller.abort(), 2500);
+  try {
+    const response = await fetch(`${API_BASE_URL}/health`, {
+      cache: "no-store",
+      signal: controller.signal
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json() as Promise<BackendHealth>;
+  } finally {
+    globalThis.clearTimeout(timer);
+  }
+}
+
+export async function requireCurrentBackend() {
+  const data = await health();
+  const schema = Number(data.apiSchemaVersion || 0);
+  if (!data.ok || schema < REQUIRED_API_SCHEMA_VERSION) {
+    throw new Error(
+      `Backend is out of date (API schema ${schema || "unknown"}; need ${REQUIRED_API_SCHEMA_VERSION}). Restart YoloWorkBench or the backend process before creating a workspace.`
+    );
+  }
+  return data;
 }
 
 export type ImagePoolItem = {
   filename: string;
+  imagePath?: string;
   isNew: boolean;
   isUsed: boolean;
 };
@@ -188,6 +236,7 @@ export type OpenWorkspaceResponse = {
 export type ImagePoolScan = {
   ok: true;
   workspaceRoot: string;
+  mediaDir?: string;
   total: number;
   newCount: number;
   usedCount: number;
@@ -197,6 +246,28 @@ export type ImagePoolScan = {
   fromCache: boolean;
   usageScanned: boolean;
   files: ImagePoolItem[];
+};
+
+export type MediaImportMode = "copy" | "move";
+
+export type MediaImportResult = {
+  ok: true;
+  workspaceRoot: string;
+  mediaDir: string;
+  mode: MediaImportMode;
+  importedCount: number;
+  skippedCount: number;
+  failedCount: number;
+  imported: Array<{
+    source: string;
+    filename: string;
+    imagePath: string;
+    mediaPath?: string;
+    mediaType?: "image" | "video";
+    action: MediaImportMode;
+  }>;
+  skipped: Array<{ source: string; reason: string }>;
+  failed: Array<{ source: string; error: string }>;
 };
 
 export type LabelClass = {
@@ -261,6 +332,18 @@ export async function markImagePoolSeen(workspaceRoot: string) {
   return callJson<{ markedCount?: number }>("markImagePoolSeen", [workspaceRoot]);
 }
 
+export async function chooseImageFiles(title = "Choose Images to Import") {
+  return callJson<string[]>("chooseImageFiles", [title]);
+}
+
+export async function chooseMediaFiles(title = "Choose Media to Import") {
+  return callJson<string[]>("chooseMediaFiles", [title]);
+}
+
+export async function importMediaFiles(workspaceRoot: string, paths: string[], mode: MediaImportMode) {
+  return callJson<MediaImportResult>("importMediaFiles", [workspaceRoot, JSON.stringify(paths), mode]);
+}
+
 export async function deletePoolImageCompletely(workspaceRoot: string, filename: string) {
   return callJson<{ failedPaths?: { error: string }[] }>("deletePoolImageCompletely", [
     workspaceRoot,
@@ -310,6 +393,23 @@ export async function classifierModelInfo(modelPath: string) {
   return callJson<{ classes?: string[] }>("classifierModelInfo", [modelPath]);
 }
 
+export type PtModelInfo = {
+  ok: true;
+  modelPath: string;
+  task?: string;
+  classes?: Array<{ id: number; name: string }>;
+  classNames?: string[];
+};
+
+export async function ptModelInfo(modelPath: string): Promise<PtModelInfo>;
+export async function ptModelInfo(workspaceRoot: string, relativePath: string): Promise<PtModelInfo>;
+export async function ptModelInfo(pathOrRoot: string, relativePath?: string) {
+  return callJson<PtModelInfo>(
+    "ptModelInfo",
+    relativePath === undefined ? [pathOrRoot] : [pathOrRoot, relativePath]
+  );
+}
+
 export type ClassifierPrediction = {
   classId: number;
   name: string;
@@ -320,6 +420,41 @@ export type ClassifierImageResult = {
   relativePath: string;
   top?: ClassifierPrediction;
   predictions?: ClassifierPrediction[];
+};
+
+export type PtDetectPrediction = {
+  classId: number;
+  className?: string;
+  confidence: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
+export type PtDetectImageResult = {
+  ok: true;
+  modelPath: string;
+  imagePath: string;
+  imageSize: number;
+  confidence: number;
+  predictions: PtDetectPrediction[];
+};
+
+export type PtClassifyPrediction = {
+  classId: number;
+  className?: string;
+  name?: string;
+  confidence: number;
+};
+
+export type PtClassifyImageResult = {
+  ok: true;
+  modelPath: string;
+  imagePath: string;
+  imageSize: number;
+  top?: PtClassifyPrediction | null;
+  predictions: PtClassifyPrediction[];
 };
 
 export async function classifyDatasetImages(
@@ -333,6 +468,42 @@ export async function classifyDatasetImages(
     results?: ClassifierImageResult[];
     errors?: Array<{ relativePath: string; error: string }>;
   }>("classifyDatasetImages", [datasetRoot, modelPath, JSON.stringify(imagePaths), topK]);
+}
+
+export async function classifyImageWithPt(
+  workspaceRoot: string,
+  modelRelativePath: string,
+  imageRelativePath: string,
+  imageSize = 224,
+  device = "0",
+  topK = 5
+) {
+  return callJson<PtClassifyImageResult>("classifyImageWithPt", [
+    workspaceRoot,
+    modelRelativePath,
+    imageRelativePath,
+    imageSize,
+    device,
+    topK,
+  ]);
+}
+
+export async function detectImageWithPt(
+  workspaceRoot: string,
+  modelRelativePath: string,
+  imageRelativePath: string,
+  imageSize = 640,
+  confidence = 0.25,
+  device = "0"
+) {
+  return callJson<PtDetectImageResult>("detectImageWithPt", [
+    workspaceRoot,
+    modelRelativePath,
+    imageRelativePath,
+    imageSize,
+    confidence,
+    device,
+  ]);
 }
 
 export async function createClassFolder(datasetRoot: string, folderName: string) {
@@ -482,6 +653,7 @@ export type WorkspaceInfo = {
   detectDataset: string;
   clfDataset: string;
   imagePool?: string;
+  mediaDir?: string;
   imageCount?: number;
   labelCount?: number;
   error?: string;
@@ -539,7 +711,9 @@ export async function readFileBase64(root: string, relativePath: string) {
 }
 
 export async function readTextFile(root: string, relativePath: string) {
-  return callJson<string>("readTextFile", [root, relativePath]);
+  const data = await call<unknown>("readTextFile", [root, relativePath]);
+  if (typeof data.result === "string") return data.result;
+  return JSON.stringify(data.result ?? "", null, 2);
 }
 
 export async function writeTextFile(root: string, relativePath: string, text: string) {

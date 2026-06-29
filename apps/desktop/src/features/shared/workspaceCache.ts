@@ -14,6 +14,7 @@ export type ImagePoolCacheEntry = {
 
 export type BoxLabelCacheEntry = {
   datasetRoot: string;
+  mediaDir?: string;
   entries: BoxLabelEntry[];
   labelIndex: Map<string, Set<number>> | null;
   cachedAt: number;

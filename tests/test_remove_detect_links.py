@@ -16,8 +16,8 @@ class RemoveDetectDatasetLinksTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             create_workspace(root)
-            (root / "image_pool" / "keep.jpg").write_bytes(b"keep")
-            (root / "image_pool" / "drop.jpg").write_bytes(b"drop")
+            (root / "media" / "keep.jpg").write_bytes(b"keep")
+            (root / "media" / "drop.jpg").write_bytes(b"drop")
 
             detect_out = root / "detect_dataset"
             for split, name in (("train", "keep.jpg"), ("train", "drop.jpg"), ("val", "drop.jpg")):

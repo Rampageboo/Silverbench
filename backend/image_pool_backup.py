@@ -63,6 +63,11 @@ def _pool_filename(image_path: str) -> str:
     return _basename(image_path, error_message="Invalid image path.")
 
 
+def _allows_flat_pool_backup_fallback(image_path: str) -> bool:
+    first = Path(image_path).parts[0] if Path(image_path).parts else ""
+    return first in {"image_pool", "media"}
+
+
 def ensure_image_pool_backup(workspace_root: Path, image_path: str) -> dict[str, Any]:
     """Copy a workspace image to backup once (keeps the first original).
 
@@ -142,7 +147,8 @@ def restore_image_pool_backup(workspace_root: Path, image_path: str) -> dict[str
     root = workspace_root.expanduser().resolve()
     normalized = str(image_path).replace("\\", "/")
     image_backup = generic_backup_file(root, normalized)
-    if not image_backup.is_file() and normalized.startswith("image_pool/"):
+    allow_flat_fallback = _allows_flat_pool_backup_fallback(normalized)
+    if not image_backup.is_file() and allow_flat_fallback:
         image_backup = image_pool_backup_file(root, _pool_filename(normalized))
     if not image_backup.is_file():
         raise FileNotFoundError(f"No backup for {normalized}")
@@ -174,7 +180,7 @@ def restore_image_pool_backup(workspace_root: Path, image_path: str) -> dict[str
             restored["label"] = True
             label_path = candidate
             break
-    if not restored["label"] and normalized.startswith("image_pool/"):
+    if not restored["label"] and allow_flat_fallback:
         old_label_backup = image_pool_label_backup_file(root, f"{stem}.txt")
         old_label_dest = root / "detect_labels" / f"{stem}.txt"
         if old_label_backup.is_file() and old_label_dest.parent.is_dir():

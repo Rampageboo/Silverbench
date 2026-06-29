@@ -29,7 +29,7 @@ SESSION_DIR = APP_DIR / "Sessions"
 SESSION_FILE = SESSION_DIR / "yolo_label_viewer_session.json"
 HEARTBEAT_METHOD = "__heartbeat"
 # Bump when /health or /api/call routing changes so dev startup can restart stale backends.
-API_SCHEMA_VERSION = 3
+API_SCHEMA_VERSION = 17
 
 # Localhost-only desktop backend: allow any registered service method except heartbeat/private.
 BLOCKED_API_METHODS = frozenset({HEARTBEAT_METHOD})
@@ -62,7 +62,7 @@ class SaveLabelsRequest(BaseModel):
     @classmethod
     def validate_filename(cls, value: str) -> str:
         if Path(value).name != value:
-            raise ValueError("filename must be a file name inside image_pool.")
+            raise ValueError("filename must be a file name inside media.")
         return value
 
 
@@ -92,7 +92,7 @@ class MarkJunkRequest(BaseModel):
     @classmethod
     def validate_filename(cls, value: str) -> str:
         if Path(value).name != value:
-            raise ValueError("filename must be a file name inside image_pool.")
+            raise ValueError("filename must be a file name inside media.")
         return value
 
 
@@ -245,16 +245,16 @@ def api_call(payload: ApiCallRequest) -> JSONResponse:
 
     try:
         result = service.call(method, _args_for_backend_call(payload.args))
+        normalized = result if method == "readTextFile" else _normalize_backend_result(result)
+        return JSONResponse(
+            {
+                "ok": True,
+                "method": method,
+                "result": normalized,
+            }
+        )
     except Exception as error:
         return _error_response(500, method, str(error), error_type=type(error).__name__)
-
-    return JSONResponse(
-        {
-            "ok": True,
-            "method": method,
-            "result": _normalize_backend_result(result),
-        }
-    )
 
 
 @app.post("/api/workspace/open")
@@ -415,7 +415,7 @@ def _workspace_paths(workspace_root: str):
         raise NotADirectoryError(f"Workspace root is not a directory: {root}")
     paths = load_workspace_config(root)
     if not paths.image_pool.is_dir():
-        raise NotADirectoryError(f"Workspace image_pool directory not found: {paths.image_pool}")
+        raise NotADirectoryError(f"Workspace media directory not found: {paths.image_pool}")
     return paths
 
 
@@ -434,14 +434,14 @@ def _workspace_paths_for_http(workspace_root: str):
 def _image_pool_file_from_paths(paths, filename: str) -> Path:
     name = Path(filename).name
     if name != filename or not name:
-        raise HTTPException(status_code=400, detail="filename must be a file name inside image_pool.")
+        raise HTTPException(status_code=400, detail="filename must be a file name inside media.")
 
     image_pool = paths.image_pool.resolve()
     path = (image_pool / name).resolve()
     if path.parent != image_pool:
-        raise HTTPException(status_code=403, detail="Image path escapes image_pool.")
+        raise HTTPException(status_code=403, detail="Image path escapes media.")
     if path.suffix.lower() not in IMAGE_EXTENSIONS or not path.is_file():
-        raise HTTPException(status_code=404, detail=f"Image not found in image_pool: {name}")
+        raise HTTPException(status_code=404, detail=f"Image not found in media: {name}")
     return path
 
 
@@ -644,9 +644,11 @@ def _image_pool_payload(result: dict[str, Any]) -> dict[str, Any]:
     files = [str(name) for name in result.get("files", []) if name]
     new_files = {str(name) for name in result.get("newFiles", []) if name}
     used_files = {str(name) for name in result.get("usedFiles", []) if name}
+    media_dir = str(result.get("mediaDir") or "media").strip().strip("/\\") or "media"
     return {
         "ok": True,
         "workspaceRoot": result.get("workspaceRoot", ""),
+        "mediaDir": media_dir,
         "total": int(result.get("total", len(files)) or 0),
         "newCount": int(result.get("newCount", 0) or 0),
         "usedCount": int(result.get("usedCount", 0) or 0),
@@ -658,6 +660,7 @@ def _image_pool_payload(result: dict[str, Any]) -> dict[str, Any]:
         "files": [
             {
                 "filename": name,
+                "imagePath": f"{media_dir}/{name}",
                 "isNew": name in new_files,
                 "isUsed": name in used_files,
             }

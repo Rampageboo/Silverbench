@@ -4,3 +4,11 @@ opencv-contrib-python
 PySide6
 fastapi
 uvicorn[standard]
+matplotlib
+requests
+torch
+torchvision
+psutil
+polars
+nvidia-ml-py
+ultralytics-thop

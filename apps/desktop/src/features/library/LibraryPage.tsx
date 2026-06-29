@@ -844,8 +844,8 @@ export function LibraryPage({ onReady }: Props) {
             </svg>
           </div>
           <div className="library-section-main">
-            <div className="library-section-title">Image Pool</div>
-            <div className="library-section-desc">Browse and manage images in the workspace</div>
+            <div className="library-section-title">Media Images</div>
+            <div className="library-section-desc">Browse and manage image files in workspace media</div>
           </div>
           <ChevronRight />
         </button>
@@ -862,8 +862,8 @@ export function LibraryPage({ onReady }: Props) {
             </svg>
           </div>
           <div className="library-section-main">
-            <div className="library-section-title">Video Segments</div>
-            <div className="library-section-desc">Manage video sources and segment annotations</div>
+            <div className="library-section-title">Media Videos</div>
+            <div className="library-section-desc">Open videos imported into workspace media</div>
           </div>
           <ChevronRight />
         </button>

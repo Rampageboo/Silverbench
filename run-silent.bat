@@ -31,9 +31,10 @@ if errorlevel 1 (
     exit /b 1
 )
 
-python -c "import fastapi, uvicorn" >nul 2>nul
+python -c "import fastapi, uvicorn, ultralytics" >nul 2>nul
 if errorlevel 1 (
     python -m pip install -r "requirements.txt" >>"%LOG_FILE%" 2>&1
+    python -m pip install ultralytics --no-deps >>"%LOG_FILE%" 2>&1
 )
 
 if exist "C:\Program Files\nodejs\node.exe" set "PATH=C:\Program Files\nodejs;%PATH%"

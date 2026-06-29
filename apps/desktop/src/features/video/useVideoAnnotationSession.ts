@@ -5,6 +5,7 @@ import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { errMessage } from "../../lib/errors";
 import { recordWorkspaceEventBestEffort, recordWorkspaceOperation } from "../../workbench/auditLog";
 import { useWorkspaceArchitecture } from "../../workspace/WorkspaceArchitectureProvider";
+import { WORKSPACE_MEDIA_CHANGED_EVENT, isSameWorkspaceRoot, isWorkspaceMediaChangedEvent } from "../shared/mediaEvents";
 import { useArchivedClassIds } from "../workspace/useArchivedClassIds";
 import {
   classificationClassDisplayName,
@@ -22,6 +23,7 @@ import {
   type VideoClfTask,
   type VideoSource
 } from "./videoAnnotationApi";
+import { listWorkspaceVideos } from "./videoCaptureApi";
 import {
   adjacentReviewedFrame,
   clampVideoTime,
@@ -29,21 +31,30 @@ import {
   clearVideoFrameRecord,
   detectBoxesToLabelBoxes,
   frameAnnotationAt,
+  formatVideoClock,
   getClfTask,
   getDetectTask,
   labelBoxToDetectBox,
   markVideoDetectEmpty,
   markVideoClfReviewed,
+  moveVideoFrameRecord,
   clearVideoClfLabel,
   setVideoClfClass,
   sortedVideoFrames,
-  updateVideoDetectBoxes
+  updateVideoDetectBoxes,
+  videoTimelineMarkers
 } from "./videoAnnotationDomain";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
 function defaultClasses(): LabelClass[] {
   return [{ id: 0, name: "object" }];
+}
+
+function mergeVideoSources(existing: VideoSource[], incoming: VideoSource[]) {
+  const known = new Set(existing.map((item) => item.path));
+  const added = incoming.filter((item) => item.path && !known.has(item.path));
+  return added.length ? [...existing, ...added] : existing;
 }
 
 export function useVideoAnnotationSession({
@@ -147,6 +158,59 @@ export function useVideoAnnotationSession({
     setPreviewBase64("");
     setPreviewLoading(false);
   }, [active]);
+
+  const loadWorkspaceVideos = useCallback(
+    async (options: { replace?: boolean; silent?: boolean } = {}) => {
+      const root = workspaceRoot.trim();
+      if (!root) {
+        setVideos([]);
+        setCurrentIndex(-1);
+        return;
+      }
+      try {
+        const workspaceVideos = (await listWorkspaceVideos(root))
+          .filter((item) => item.ok !== false && item.path)
+          .map((item) => ({
+            ok: item.ok,
+            path: String(item.path || ""),
+            name: String(item.name || "video"),
+            duration: Math.max(0, Number(item.duration) || 0),
+            width: Math.max(0, Math.trunc(Number(item.width) || 0)),
+            height: Math.max(0, Math.trunc(Number(item.height) || 0))
+          }));
+        setVideos((items) => options.replace ? workspaceVideos : mergeVideoSources(items, workspaceVideos));
+        setCurrentIndex((index) => {
+          if (options.replace) {
+            if (!workspaceVideos.length) return -1;
+            return index >= 0 ? Math.min(index, workspaceVideos.length - 1) : 0;
+          }
+          if (index >= 0) return index;
+          return workspaceVideos.length ? 0 : -1;
+        });
+        if (!options.silent && workspaceVideos.length) {
+          setStatus(`Loaded ${workspaceVideos.length} workspace video(s) from media.`);
+        }
+      } catch (reason) {
+        if (!options.silent) showError(reason, "videos.workspace.load");
+      }
+    },
+    [showError, workspaceRoot]
+  );
+
+  useEffect(() => {
+    void loadWorkspaceVideos({ replace: true, silent: true });
+  }, [loadWorkspaceVideos]);
+
+  useEffect(() => {
+    if (!workspaceRoot.trim()) return;
+    const onMediaChanged = (event: Event) => {
+      if (!isWorkspaceMediaChangedEvent(event)) return;
+      if (!isSameWorkspaceRoot(event.detail.workspaceRoot, workspaceRoot)) return;
+      void loadWorkspaceVideos({ silent: true });
+    };
+    window.addEventListener(WORKSPACE_MEDIA_CHANGED_EVENT, onMediaChanged);
+    return () => window.removeEventListener(WORKSPACE_MEDIA_CHANGED_EVENT, onMediaChanged);
+  }, [loadWorkspaceVideos, workspaceRoot]);
 
   useEffect(() => {
     let cancelled = false;
@@ -313,6 +377,10 @@ export function useVideoAnnotationSession({
     () => sortedVideoFrames(manifest, (frame) => Boolean(frame.tasks.detect?.reviewed)),
     [manifest]
   );
+  const timelineMarkers = useMemo(
+    () => videoTimelineMarkers(manifest),
+    [manifest]
+  );
 
   const addVideos = useCallback(async () => {
     if (!workspaceRoot.trim()) {
@@ -442,6 +510,40 @@ export function useVideoAnnotationSession({
     }).catch(() => {});
   }, [current, currentFrame, currentKey, enqueueSave, time, workspaceRoot]);
 
+  const moveFrameRecord = useCallback((fromTime: number, toTime: number) => {
+    const source = manifestRef.current;
+    if (!source || !current) return false;
+    const nextTime = clampVideoTime(toTime, current.duration);
+
+    try {
+      const next = moveVideoFrameRecord(source, current, fromTime, nextTime);
+      if (next === source) {
+        gotoTime(nextTime);
+        return true;
+      }
+      manifestRef.current = next;
+      setManifest(next);
+      setSelectedIndex(null);
+      setTime(nextTime);
+      enqueueSave(next);
+      setStatus(`Moved annotation marker to ${formatVideoClock(nextTime)}.`);
+      void recordWorkspaceOperation(workspaceRoot, {
+        tool: "video-label",
+        action: "move-frame-record",
+        status: "done",
+        inputs: {
+          videoPath: current.path,
+          fromTimestampMs: Number(timestampKey(fromTime)),
+          toTimestampMs: Number(timestampKey(nextTime))
+        }
+      }).catch(() => {});
+      return true;
+    } catch (reason) {
+      showError(reason, "annotation.marker.move");
+      return false;
+    }
+  }, [current, enqueueSave, gotoTime, showError, workspaceRoot]);
+
   // ---------------------------------------------------------------------------
   // Clf task actions
   // ---------------------------------------------------------------------------
@@ -538,12 +640,14 @@ export function useVideoAnnotationSession({
     status,
     annotatedFrames,
     reviewedFrames,
+    timelineMarkers,
     // Detect actions
     updateCurrentFrame,
     copyPreviousBoxes,
     gotoReviewed,
     markEmptyReviewed,
     clearFrameRecord,
+    moveFrameRecord,
     // Clf actions
     setClfClass,
     markClfReviewed,

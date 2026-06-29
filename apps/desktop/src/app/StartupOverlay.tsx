@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 
 const STARTUP_FEATURES = [
   { title: "视频截帧", detail: "从视频批量截取训练图片" },
-  { title: "图片库", detail: "管理 image_pool 素材与去重" },
+  { title: "图片库", detail: "管理 media 素材与去重" },
   { title: "框标注", detail: "检测框绘制、跟踪与备份恢复" },
   { title: "数据集审核", detail: "浏览、标记与修正标注" },
   { title: "数据集准备", detail: "划分 train/val、生成 data.yaml" },

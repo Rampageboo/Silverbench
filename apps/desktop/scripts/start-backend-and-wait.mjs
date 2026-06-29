@@ -1,5 +1,6 @@
 import { spawn } from "child_process";
-import { appendFileSync, existsSync, mkdirSync, openSync } from "fs";
+import { appendFileSync, existsSync, mkdirSync, openSync, readFileSync } from "fs";
+import net from "net";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { loadBackendConfig } from "./loadBackendConfig.mjs";
@@ -11,8 +12,16 @@ const logsDir = join(projectRoot, "logs");
 const backendLogPath = join(logsDir, "backend.log");
 const healthUrl = backend.healthUrl;
 const multimodalStatusUrl = `${backend.origin}/api/multimodal/status`;
-// Keep in sync with API_SCHEMA_VERSION in backend_api/main.py.
-const REQUIRED_API_SCHEMA_VERSION = 3;
+const REQUIRED_API_SCHEMA_VERSION = readRequiredApiSchemaVersion();
+
+function readRequiredApiSchemaVersion() {
+  const apiSource = readFileSync(join(desktopDir, "src", "api.ts"), "utf8");
+  const match = apiSource.match(/REQUIRED_API_SCHEMA_VERSION\s*=\s*(\d+)/);
+  if (!match) {
+    throw new Error("Could not read REQUIRED_API_SCHEMA_VERSION from apps/desktop/src/api.ts.");
+  }
+  return Number.parseInt(match[1], 10);
+}
 
 function pythonCandidates() {
   const candidates = [];
@@ -73,7 +82,8 @@ async function resolvePython() {
 async function ensurePythonDeps(python) {
   const markers = [
     [...python.prefixArgs, "-c", "import fastapi, uvicorn"],
-    [...python.prefixArgs, "-c", "import PIL, numpy, cv2; assert hasattr(cv2, 'aruco')"]
+    [...python.prefixArgs, "-c", "import PIL, numpy, cv2; assert hasattr(cv2, 'aruco')"],
+    [...python.prefixArgs, "-c", "import ultralytics"]
   ];
   for (const args of markers) {
     try {
@@ -85,18 +95,27 @@ async function ensurePythonDeps(python) {
         [...python.prefixArgs, "-m", "pip", "install", "-r", "requirements.txt"],
         { stdio: "inherit" }
       );
+      await runCommand(
+        python.command,
+        [...python.prefixArgs, "-m", "pip", "install", "ultralytics", "--no-deps"],
+        { stdio: "inherit" }
+      );
       return;
     }
   }
 }
 
-async function readJson(url) {
+async function readJson(url, timeoutMs = 2000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { cache: "no-store" });
+    const response = await fetch(url, { cache: "no-store", signal: controller.signal });
     if (!response.ok) return null;
     return await response.json();
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -110,10 +129,27 @@ async function isCurrentBackend() {
     data?.ok &&
       data?.backend === "fastapi" &&
       data?.ui === "web" &&
-      data?.apiSchemaVersion === REQUIRED_API_SCHEMA_VERSION &&
+      Number(data?.apiSchemaVersion || 0) >= REQUIRED_API_SCHEMA_VERSION &&
       multimodal?.ok &&
       multimodal?.calibration === "apriltag-opencv"
   );
+}
+
+function isBackendPortOccupied() {
+  return new Promise((resolvePortCheck) => {
+    const server = net.createServer();
+
+    server.once("error", (error) => {
+      const code = error && typeof error === "object" && "code" in error ? error.code : "";
+      resolvePortCheck(code === "EADDRINUSE" || code === "EACCES");
+    });
+
+    server.once("listening", () => {
+      server.close(() => resolvePortCheck(false));
+    });
+
+    server.listen(backend.port, backend.host);
+  });
 }
 
 async function stopBackendOnPort() {
@@ -131,6 +167,15 @@ async function stopBackendOnPort() {
   } catch {
     // Best effort; a stale backend may still block the port.
   }
+}
+
+async function waitForPortToClear(timeoutMs = 5000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (!(await isBackendPortOccupied())) return true;
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+  }
+  return !(await isBackendPortOccupied());
 }
 
 async function waitForHealthy(timeoutMs = 90000) {
@@ -160,7 +205,15 @@ async function main() {
   if (await readHealth()) {
     console.log(`Stopping outdated FastAPI backend on ${backend.origin}...`);
     await stopBackendOnPort();
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 500));
+    if (!(await waitForPortToClear())) {
+      throw new Error(`Port ${backend.port} is still occupied after stopping the old backend.`);
+    }
+  } else if (await isBackendPortOccupied()) {
+    console.log(`Stopping unresponsive process on ${backend.origin}...`);
+    await stopBackendOnPort();
+    if (!(await waitForPortToClear())) {
+      throw new Error(`Port ${backend.port} is occupied by an unresponsive process. Close it and start YoloWorkBench again.`);
+    }
   }
 
   const python = await resolvePython();

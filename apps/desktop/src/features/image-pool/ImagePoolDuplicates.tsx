@@ -82,11 +82,11 @@ export function ImagePoolDuplicates({
               Clear Duplicates
             </button>
           </div>
-          <div className="hint">Scans image_pool only. Deleting duplicates removes hard links and updates metadata.csv.</div>
+          <div className="hint">Scans media only. Deleting duplicates removes hard links and updates metadata.csv.</div>
           <div className="duplicate-photo-results">
             {!scan?.groups?.length ? (
               <div className="empty">
-                {pending ? "正在扫描 image_pool..." : "Click Find Duplicates to scan identical files."}
+                {pending ? "正在扫描 media..." : "Click Find Duplicates to scan identical files."}
               </div>
             ) : (
               scan.groups.map((group, groupIndex) => {

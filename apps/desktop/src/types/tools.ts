@@ -138,7 +138,7 @@ export const WORKBENCH_TOOLS: readonly WorkbenchTool[] = [
     tab: "image-pool",
     label: "Image Pool",
     labelZh: "图片库",
-    keywords: "pool image image_pool",
+    keywords: "pool image media image_pool",
     group: "image",
     keepAlive: true,
     heavy: true,

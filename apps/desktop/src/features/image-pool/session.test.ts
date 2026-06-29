@@ -14,7 +14,7 @@ describe("image-pool session", () => {
         junkScope: "clf",
         hideJunk: "both",
         scrollTop: 42.2,
-        viewportImagePath: "image_pool/x.jpg"
+        viewportImagePath: "media/x.jpg"
       }
     });
     expect(parsed).toEqual({
@@ -22,7 +22,7 @@ describe("image-pool session", () => {
       junkScope: "clf",
       hideJunk: "both",
       scrollTop: 42,
-      viewportImagePath: "image_pool/x.jpg"
+      viewportImagePath: "media/x.jpg"
     });
   });
 

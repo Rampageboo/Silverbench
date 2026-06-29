@@ -19,12 +19,46 @@ export function entryBasename(imagePath: string) {
   return imagePath.split("/").pop() || imagePath;
 }
 
+export function detectLabelPathForMediaFilename(filename: string) {
+  const stem = entryBasename(filename).replace(/\.[^.]+$/, "");
+  return `detect_labels/${stem}.txt`;
+}
+
+export function mediaBoxLabelEntry(mediaDir: string, filename: string, imagePath?: string): BoxLabelEntry {
+  const safeMediaDir = mediaDir.trim().replace(/^\/+|\/+$/g, "") || "media";
+  const basename = entryBasename(filename);
+  return {
+    imagePath: imagePath || `${safeMediaDir}/${basename}`,
+    labelPath: detectLabelPathForMediaFilename(basename),
+    basename
+  };
+}
+
+export async function loadMediaBoxLabelEntries(workspaceRoot: string) {
+  const info = await api.getWorkspaceInfo(workspaceRoot);
+  if (!info.ok) {
+    throw new Error(info.error || "Cannot read workspace info.");
+  }
+  const datasetRoot = info.root || workspaceRoot;
+  const mediaDir = info.mediaDir || "media";
+  const scan = await api.scanImagePool(workspaceRoot, { fast: true });
+  const entries = scan.files.map((item) => mediaBoxLabelEntry(mediaDir, item.filename, item.imagePath));
+  return {
+    datasetRoot,
+    mediaDir,
+    entries,
+    filePaths: new Set(entries.flatMap((entry) => [entry.imagePath, entry.labelPath])),
+    datasetTask: "detect" as const
+  };
+}
+
 export async function loadDetectDatasetEntries(workspaceRoot: string) {
   const info = await api.getWorkspaceInfo(workspaceRoot);
   if (!info.ok) {
     throw new Error(info.error || "Cannot read workspace info.");
   }
   const datasetRoot = info.detectDataset;
+  const mediaDir = info.mediaDir || "media";
   if (!datasetRoot) {
     throw new Error("detect_dataset path is missing for this workspace.");
   }
@@ -45,7 +79,7 @@ export async function loadDetectDatasetEntries(workspaceRoot: string) {
       };
     })
     .filter((entry) => entry.labelPath);
-  return { datasetRoot, entries, filePaths, datasetTask };
+  return { datasetRoot, mediaDir, entries, filePaths, datasetTask };
 }
 
 function defaultLabelPath(imagePath: string) {
@@ -79,7 +113,12 @@ export async function loadDetectDatasetClassIndex(
 }
 
 export async function loadEntryLabels(datasetRoot: string, entry: BoxLabelEntry) {
-  const text = await api.readTextFile(datasetRoot, entry.labelPath);
+  let text = "";
+  try {
+    text = await api.readTextFile(datasetRoot, entry.labelPath);
+  } catch {
+    text = "";
+  }
   return parseLabels(text);
 }
 

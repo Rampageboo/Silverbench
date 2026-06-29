@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { chooseDirectory } from "../../lib/tauri";
-import { saveLabelClasses, writeTextFile } from "../../api";
+import { requireCurrentBackend, saveLabelClasses, writeTextFile } from "../../api";
 import { useWorkspace } from "../../app/useWorkspace";
 import { initializeSnapshotVersioning } from "../workspace-versioning/workspaceSnapshotVersionApi";
 import { workspaceClassSetupToClassesManifest } from "../workspace/workspaceClassTaxonomy";
@@ -44,6 +44,7 @@ export function HomePage({ onReady }: Props) {
 
   async function handleCreateWorkspace(opts: CreateWorkspaceOptions) {
     const root = `${opts.location.replace(/[/\\]+$/, "")}/${opts.name.trim()}`;
+    await requireCurrentBackend();
     await openWorkspacePath(root);
 
     // Write detect classes to classes.txt + data.yaml (legacy system, read by Box Label).

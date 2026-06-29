@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assignVisualState,
   INBOX_JUNK_CLASS,
@@ -9,6 +9,7 @@ import {
   isReviewedFile,
   junkLabelForFile,
   loadMetadataMap,
+  markJunkFilenames,
   passesHideJunk,
   truthyFlag
 } from "./metadata";
@@ -19,6 +20,10 @@ vi.mock("../../api", () => ({
 }));
 
 import { callJson } from "../../api";
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("metadata flags", () => {
   it("truthyFlag accepts legacy and boolean values", () => {
@@ -99,5 +104,34 @@ describe("loadMetadataMap", () => {
       reviewed: true,
       flagged: true
     });
+  });
+});
+
+describe("markJunkFilenames", () => {
+  it("can mark both detect and clf junk in one metadata update", async () => {
+    vi.mocked(callJson).mockResolvedValue({});
+
+    await markJunkFilenames("/workspace", ["img.jpg"], "both");
+
+    expect(callJson).toHaveBeenNthCalledWith(1, "upsertMetadataRows", [
+      "/workspace",
+      JSON.stringify([
+        {
+          filename: "img.jpg",
+          detect_junk: true,
+          detect_enabled: false,
+          clf_enabled: false,
+          clf_class: INBOX_JUNK_CLASS,
+        },
+      ]),
+    ]);
+    expect(callJson).toHaveBeenNthCalledWith(2, "removeDetectDatasetLinks", [
+      "/workspace",
+      JSON.stringify(["img.jpg"]),
+    ]);
+    expect(callJson).toHaveBeenNthCalledWith(3, "removeClfDatasetLinks", [
+      "/workspace",
+      JSON.stringify(["img.jpg"]),
+    ]);
   });
 });

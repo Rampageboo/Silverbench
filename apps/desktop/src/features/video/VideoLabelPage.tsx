@@ -1,9 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent
+} from "react";
+import { createPortal } from "react-dom";
 import { useWorkspace } from "../../app/useWorkspace";
 import { useWorkbenchCommands } from "../../input/MultimodalControlProvider";
 import { isLabelWorkbenchEmbedded, useLabelWorkbench } from "../label/useLabelWorkbench";
 import { VideoAnnotationCanvas, type RemotePointerState } from "./VideoAnnotationCanvas";
-import { formatVideoClock } from "./videoAnnotationDomain";
+import { formatVideoClock, type VideoTimelineMarker } from "./videoAnnotationDomain";
 import { useVideoAnnotationSession } from "./useVideoAnnotationSession";
 import { useVideoSampling, type SamplingMode } from "./useVideoSampling";
 import {
@@ -39,6 +47,7 @@ type VideoLabelSurfaceProps = {
   showVideoList?: boolean;
   showSourceToolbar?: boolean;
   unifiedMedia?: boolean;
+  classificationClassesPortalId?: string;
 };
 
 const SAMPLING_MODE_LABELS: Record<SamplingMode, string> = {
@@ -48,6 +57,15 @@ const SAMPLING_MODE_LABELS: Record<SamplingMode, string> = {
 };
 
 const SAMPLING_MODES: SamplingMode[] = ["whole-video", "segments-preferred", "segments-only"];
+
+type MarkerDragState = {
+  key: string;
+  sourceTime: number;
+  pointerId: number;
+  startX: number;
+  moved: boolean;
+  rect: DOMRect;
+};
 
 export function VideoLabelPage({ onReady, active = true }: Props) {
   const { workspaceRoot, chooseWorkspaceFolder } = useWorkspace();
@@ -70,12 +88,26 @@ export function VideoLabelSurface({
   active = true,
   showVideoList = true,
   showSourceToolbar = true,
-  unifiedMedia = false
+  unifiedMedia = false,
+  classificationClassesPortalId
 }: VideoLabelSurfaceProps) {
   const [remotePointer, setRemotePointer] = useState<RemotePointerState | null>(null);
+  const [classificationPortalTarget, setClassificationPortalTarget] = useState<HTMLElement | null>(null);
+  const timelineTrackRef = useRef<HTMLDivElement | null>(null);
+  const markerDragRef = useRef<MarkerDragState | null>(null);
+  const suppressNextMarkerClickRef = useRef(false);
+  const [markerDragPreview, setMarkerDragPreview] = useState<{ key: string; time: number } | null>(null);
 
   const workbench = useLabelWorkbench();
   const embedded = isLabelWorkbenchEmbedded(workbench);
+
+  useEffect(() => {
+    if (!classificationClassesPortalId || typeof document === "undefined") {
+      setClassificationPortalTarget(null);
+      return;
+    }
+    setClassificationPortalTarget(document.getElementById(classificationClassesPortalId));
+  }, [classificationClassesPortalId]);
 
   useEffect(() => {
     if (!workbench) return;
@@ -185,6 +217,96 @@ export function VideoLabelSurface({
     sampling.setLastSource("manual");
     session.gotoTime(nextTime);
   }, [sampling.setLastSource, session.gotoTime]);
+
+  const markerLeftPercent = useCallback((markerTime: number) => {
+    if (session.maxTime <= 0) return 0;
+    return Math.max(0, Math.min(100, (markerTime / session.maxTime) * 100));
+  }, [session.maxTime]);
+
+  const markerTimeFromClientX = useCallback((clientX: number, rect: DOMRect) => {
+    if (!session.current || session.maxTime <= 0 || rect.width <= 0) return 0;
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    return Math.round(ratio * session.maxTime * 1000) / 1000;
+  }, [session.current, session.maxTime]);
+
+  const suppressNextMarkerClick = useCallback(() => {
+    suppressNextMarkerClickRef.current = true;
+    window.setTimeout(() => {
+      suppressNextMarkerClickRef.current = false;
+    }, 0);
+  }, []);
+
+  const handleMarkerPointerDown = useCallback((
+    event: ReactPointerEvent<HTMLButtonElement>,
+    marker: VideoTimelineMarker
+  ) => {
+    if (!session.current || session.maxTime <= 0) return;
+    const rect = timelineTrackRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    markerDragRef.current = {
+      key: marker.key,
+      sourceTime: marker.time,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      moved: false,
+      rect
+    };
+    setMarkerDragPreview({ key: marker.key, time: marker.time });
+  }, [session.current, session.maxTime]);
+
+  const handleMarkerPointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = markerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (Math.abs(event.clientX - drag.startX) > 3) drag.moved = true;
+    const nextTime = markerTimeFromClientX(event.clientX, drag.rect);
+    setMarkerDragPreview({ key: drag.key, time: nextTime });
+  }, [markerTimeFromClientX]);
+
+  const handleMarkerPointerUp = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = markerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const wasMoved = drag.moved || Math.abs(event.clientX - drag.startX) > 3;
+    const nextTime = markerTimeFromClientX(event.clientX, drag.rect);
+    markerDragRef.current = null;
+    setMarkerDragPreview(null);
+    suppressNextMarkerClick();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (wasMoved) {
+      session.moveFrameRecord(drag.sourceTime, nextTime);
+    } else {
+      handleGotoTime(drag.sourceTime);
+    }
+  }, [handleGotoTime, markerTimeFromClientX, session.moveFrameRecord, suppressNextMarkerClick]);
+
+  const handleMarkerPointerCancel = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = markerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    markerDragRef.current = null;
+    setMarkerDragPreview(null);
+    suppressNextMarkerClick();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }, [suppressNextMarkerClick]);
+
+  const handleMarkerClick = useCallback((
+    event: ReactMouseEvent<HTMLButtonElement>,
+    marker: VideoTimelineMarker
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (suppressNextMarkerClickRef.current) return;
+    handleGotoTime(marker.time);
+  }, [handleGotoTime]);
 
   // Random Next seeks to a new timestamp only; it does NOT create an annotation record.
   const handleRandomNext = useCallback(() => {
@@ -421,8 +543,56 @@ export function VideoLabelSurface({
         : "pending"
     : "pending";
 
+  const classificationPanel = (
+    <section className="panel video-label-classify-panel">
+      <div className="panel-header">
+        <span>Classification</span>
+        <span className="status">{clfStatus}</span>
+      </div>
+      <div className="panel-body video-label-action-stack">
+        <div className="video-label-class-list">
+          {session.clfClassOptions.map((item) => {
+            const key = item.key;
+            const isSelected = session.clfTask?.classKey === key;
+            return (
+              <button
+                type="button"
+                key={item.key}
+                className={isSelected ? "selected" : ""}
+                onClick={() => session.setClfClass(key)}
+                disabled={!session.current}
+              >
+                {item.name}
+              </button>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          onClick={session.markClfReviewed}
+          disabled={!session.current}
+        >
+          Mark Clf Reviewed
+        </button>
+        <button
+          type="button"
+          onClick={session.clearClfLabel}
+          disabled={!session.clfTask}
+        >
+          Clear Clf Label
+        </button>
+      </div>
+    </section>
+  );
+
+  const classificationPanelPortal =
+    classificationClassesPortalId && classificationPortalTarget
+      ? createPortal(classificationPanel, classificationPortalTarget)
+      : null;
+
   return (
     <main className={`video-label-workspace${embedded ? " video-label-workspace--embedded" : ""}${unifiedMedia ? " video-label-workspace--unified-media" : ""}`}>
+      {classificationPanelPortal}
     <section className="panel video-label-main-panel">
         {!embedded ? (
           <div className="panel-header">
@@ -481,16 +651,49 @@ export function VideoLabelSurface({
           </div>
 
           <div className="video-label-timeline">
-            <input
-              type="range"
-              min="0"
-              max={session.maxTime}
-              step="0.001"
-              value={Math.min(session.time, session.maxTime)}
-              disabled={!session.current}
-              onChange={(event) => handleGotoTime(Number(event.target.value))}
-              aria-label="Video timestamp"
-            />
+            <div className="video-label-timeline-track" ref={timelineTrackRef}>
+              <input
+                className="video-label-range"
+                type="range"
+                min="0"
+                max={session.maxTime}
+                step="0.001"
+                value={Math.min(session.time, session.maxTime)}
+                disabled={!session.current}
+                onChange={(event) => handleGotoTime(Number(event.target.value))}
+                aria-label="Video timestamp"
+              />
+              <div className="video-label-markers" aria-label="Annotated timestamps">
+                {session.timelineMarkers.map((marker) => {
+                  const displayTime = markerDragPreview?.key === marker.key ? markerDragPreview.time : marker.time;
+                  return (
+                    <button
+                      key={marker.key}
+                      type="button"
+                      className={`video-label-marker video-label-marker--${marker.kind}${markerDragPreview?.key === marker.key ? " dragging" : ""}`}
+                      style={{ left: `${markerLeftPercent(displayTime)}%` }}
+                      title={marker.label}
+                      aria-label={`Go to ${marker.label}`}
+                      onPointerDown={(event) => handleMarkerPointerDown(event, marker)}
+                      onPointerMove={handleMarkerPointerMove}
+                      onPointerUp={handleMarkerPointerUp}
+                      onPointerCancel={handleMarkerPointerCancel}
+                      onClick={(event) => handleMarkerClick(event, marker)}
+                    >
+                      <span className="sr-only">{marker.label}</span>
+                    </button>
+                  );
+                })}
+                {markerDragPreview ? (
+                  <div
+                    className="video-label-marker-preview"
+                    style={{ left: `${markerLeftPercent(markerDragPreview.time)}%` }}
+                  >
+                    {formatVideoClock(markerDragPreview.time)}
+                  </div>
+                ) : null}
+              </div>
+            </div>
             <div className="row video-label-time-row">
               <button
                 type="button"
@@ -505,6 +708,13 @@ export function VideoLabelSurface({
                 disabled={!session.current}
               >
                 Next
+              </button>
+              <button
+                type="button"
+                onClick={session.clearFrameRecord}
+                disabled={!session.currentFrame}
+              >
+                Clear Marker
               </button>
               <label>
                 Time (s)
@@ -674,46 +884,8 @@ export function VideoLabelSurface({
           </div>
         </section>
 
-        {/* Classification panel — shares timestamps with detect; independent reviewed state */}
-        <section className="panel">
-          <div className="panel-header">
-            <span>Classification</span>
-            <span className="status">{clfStatus}</span>
-          </div>
-          <div className="panel-body video-label-action-stack">
-            <div className="video-label-class-list">
-              {session.clfClassOptions.map((item) => {
-                const key = item.key;
-                const isSelected = session.clfTask?.classKey === key;
-                return (
-                  <button
-                    type="button"
-                    key={item.key}
-                    className={isSelected ? "selected" : ""}
-                    onClick={() => session.setClfClass(key)}
-                    disabled={!session.current}
-                  >
-                    {item.name}
-                  </button>
-                );
-              })}
-            </div>
-            <button
-              type="button"
-              onClick={session.markClfReviewed}
-              disabled={!session.current}
-            >
-              Mark Clf Reviewed
-            </button>
-            <button
-              type="button"
-              onClick={session.clearClfLabel}
-              disabled={!session.clfTask}
-            >
-              Clear Clf Label
-            </button>
-          </div>
-        </section>
+        {/* Classification panel shares timestamps with detect; independent reviewed state. */}
+        {classificationClassesPortalId ? null : classificationPanel}
 
         {/* Blackout Overlays panel — non-destructive overlay metadata for current timestamp */}
         <section className="panel">
@@ -793,7 +965,7 @@ export function VideoLabelSurface({
           <div className="panel-body">
             <div className="hint">{session.status}</div>
             <div className="hint">
-              Timestamp/task metadata: {session.annotationsRoot}. Preview frames remain in memory and are never added to image_pool.
+              Timestamp/task metadata: {session.annotationsRoot}. Preview frames remain in memory and are never added to media.
             </div>
             <div className="hint">Image-based annotation remains available in Image Box Label.</div>
           </div>

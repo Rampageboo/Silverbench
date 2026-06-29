@@ -15,6 +15,8 @@ from .workspace_snapshot_versions import (
 
 WORKSPACE_CONFIG_FILENAME = "workspace.json"
 WORKSPACE_META_DIRNAME = "workspace"
+MEDIA_DIRNAME = "media"
+LEGACY_IMAGE_POOL_DIRNAME = "image_pool"
 APP_SETTINGS_FILENAME = "yolo_app_settings.json"
 WORKSPACE_SESSION_DIRNAME = WORKSPACE_META_DIRNAME
 LEGACY_WORKSPACE_SESSION_DIRNAME = ".yolo_label_viewer"
@@ -121,7 +123,8 @@ def parse_class_names(raw: str) -> list[str]:
 
 def _has_workspace_data_dir(root: Path) -> bool:
     return (
-        (root / "image_pool").is_dir()
+        (root / MEDIA_DIRNAME).is_dir()
+        or (root / LEGACY_IMAGE_POOL_DIRNAME).is_dir()
         or (root / "detect_labels").is_dir()
         or (root / "detect_dataset").is_dir()
         or (root / "clf_dataset").is_dir()
@@ -160,7 +163,7 @@ def looks_like_workspace(root: Path) -> bool:
     root = workspace_root_path(root)
     if is_workspace_root(root):
         return True
-    if (root / "image_pool").is_dir():
+    if (root / MEDIA_DIRNAME).is_dir() or (root / LEGACY_IMAGE_POOL_DIRNAME).is_dir():
         return True
     if (root / "detect_labels").is_dir():
         return True
@@ -175,7 +178,7 @@ def find_parent_workspace(path: Path) -> Path | None:
     for parent in current.parents:
         if is_workspace_root(parent):
             return parent
-        if (parent / "image_pool").is_dir() and (
+        if ((parent / MEDIA_DIRNAME).is_dir() or (parent / LEGACY_IMAGE_POOL_DIRNAME).is_dir()) and (
             (parent / "detect_labels").is_dir()
             or (parent / "detect_dataset").is_dir()
             or (parent / "clf_dataset").is_dir()
@@ -229,8 +232,11 @@ def resolve_open_folder(root: Path, *, init_if_needed: bool = True) -> dict[str,
     if snapshot_container is not None:
         payload = snapshot_open_payload(snapshot_container)
         active_path = Path(str(payload["activeVersionPath"]))
-        if init_if_needed and looks_like_workspace(active_path):
-            ensure_workspace_v2_structure(active_path)
+        if init_if_needed:
+            if is_workspace_root(active_path):
+                ensure_workspace_v2_structure(active_path)
+            else:
+                create_workspace(active_path)
         return payload
 
     if looks_like_workspace(root):
@@ -315,6 +321,14 @@ def load_workspace_config(workspace_root: Path) -> WorkspacePaths:
     )
 
 
+def workspace_media_relative_dir(paths: WorkspacePaths) -> str:
+    try:
+        relative = paths.image_pool.resolve().relative_to(paths.root.resolve()).as_posix()
+    except ValueError:
+        return MEDIA_DIRNAME
+    return relative or MEDIA_DIRNAME
+
+
 def workspace_info(workspace_root: Path) -> dict[str, Any]:
     from .image_pool import read_snapshot
 
@@ -337,6 +351,7 @@ def workspace_info(workspace_root: Path) -> dict[str, Any]:
         "root": str(paths.root),
         "name": paths.root.name,
         "imagePool": str(paths.image_pool),
+        "mediaDir": workspace_media_relative_dir(paths),
         "detectLabels": str(paths.label_source),
         "metadata": str(paths.metadata),
         "detectDataset": str(paths.detect_out),
@@ -359,10 +374,11 @@ def list_workspace_files(workspace_root: Path) -> list[str]:
     paths = load_workspace_config(workspace_root)
     root = paths.root
     files: list[str] = []
+    media_dir = workspace_media_relative_dir(paths)
     if paths.image_pool.is_dir():
         for path in sorted(paths.image_pool.iterdir()):
             if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS:
-                files.append(f"image_pool/{path.name}")
+                files.append(f"{media_dir}/{path.name}")
     if paths.label_source.is_dir():
         for path in sorted(paths.label_source.iterdir()):
             if path.is_file() and path.suffix.lower() == ".txt":
@@ -381,10 +397,16 @@ def list_workspace_files(workspace_root: Path) -> list[str]:
     return sorted(set(files))
 
 
-def _workspace_relative_dirs(classes: list[str]) -> list[Path]:
+def _default_media_dir_for_workspace(workspace_root: Path) -> str:
+    if (workspace_root / LEGACY_IMAGE_POOL_DIRNAME).exists() and not (workspace_root / MEDIA_DIRNAME).exists():
+        return LEGACY_IMAGE_POOL_DIRNAME
+    return MEDIA_DIRNAME
+
+
+def _workspace_relative_dirs(classes: list[str], *, media_dir: str = MEDIA_DIRNAME) -> list[Path]:
     rel_paths = [
         Path(WORKSPACE_META_DIRNAME),
-        Path("image_pool"),
+        Path(media_dir),
         Path("image_pool_backup"),
         Path("image_pool_backup") / "labels",
         Path("detect_labels"),
@@ -462,8 +484,9 @@ def create_workspace(
         workspace_root.mkdir(parents=True, exist_ok=True)
     class_names = list(classes or DEFAULT_CLF_CLASSES)
     stats = InitStats()
+    media_dir = _default_media_dir_for_workspace(workspace_root)
 
-    for rel in _workspace_relative_dirs(class_names):
+    for rel in _workspace_relative_dirs(class_names, media_dir=media_dir):
         target = workspace_root / rel
         if target.exists():
             stats.skipped.append(str(target))
@@ -482,7 +505,7 @@ def create_workspace(
         "createdAt": now,
         "updatedAt": now,
         "paths": {
-            "image_pool": "image_pool",
+            "image_pool": media_dir,
             "detect_labels": "detect_labels",
             "metadata": "metadata.csv",
             "detect_dataset": "detect_dataset",
@@ -548,7 +571,7 @@ def create_workspace(
 Folders
 -------
 workspace/           App metadata, v2 manifests, sources, logs, and annotations.
-image_pool/          Put all source images here (manually managed).
+{media_dir}/          Put all source images here (manually managed).
 image_pool_backup/   Auto backup of originals before Crop / black edits (app-managed).
 detect_labels/       YOLO detection .txt labels (stem = image stem).
 metadata.csv         Controls train/val and detect/clf assignment.
@@ -559,7 +582,7 @@ exports/             Generated video/image export outputs.
 
 App workflow
 ------------
-1. Add images to image_pool/
+1. Add images to {media_dir}/
 2. Annotate in YoloWorkBench (labels save to detect_labels/)
 3. Edit metadata.csv
 4. Build datasets:

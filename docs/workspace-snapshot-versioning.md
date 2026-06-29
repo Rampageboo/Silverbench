@@ -2,7 +2,7 @@
 
 YoloWorkBench uses simple snapshot-based workspace versions for the current product need.
 
-This intentionally avoids a normalized source/version/export architecture. The app already understands one complete workspace folder with `image_pool`, `detect_labels`, `detect_dataset`, `clf_dataset`, `runs`, `workspace`, `metadata.csv`, and related files. Snapshot versioning keeps that model intact and adds a thin container around it.
+This intentionally avoids a normalized source/version/export architecture. The app already understands one complete workspace folder with `media`, `detect_labels`, `detect_dataset`, `clf_dataset`, `runs`, `workspace`, `metadata.csv`, and related files. Snapshot versioning keeps that model intact and adds a thin container around it.
 
 ## Why Snapshot Versioning
 
@@ -32,7 +32,7 @@ ZZZ/
     clf_dataset/
     detect_dataset/
     detect_labels/
-    image_pool/
+    media/
     image_pool_backup/
     runs/
     workspace/
@@ -43,7 +43,7 @@ ZZZ/
     clf_dataset/
     detect_dataset/
     detect_labels/
-    image_pool/
+    media/
     image_pool_backup/
     runs/
     workspace/
@@ -94,7 +94,7 @@ Initializing versioning for a non-versioned workspace:
 5. skips existing `V1`, `V2`, `V3` folders;
 6. skips `workspace_versions.json`.
 
-The copy preserves existing internal folder names and files exactly where possible.
+The copy preserves existing internal folder names and files exactly where possible. Older snapshots that still contain `image_pool/` remain valid because their workspace manifest can still point at that folder.
 
 ## Creating V2 Or V3
 
@@ -125,7 +125,7 @@ After switching:
 
 Inside `V1`, `V2`, or `V3`, the workspace stays normal:
 
-- Box Label reads and writes `image_pool`, `detect_labels`, and class files as before;
+- Box Label reads and writes `media`, `detect_labels`, and class files as before;
 - Video Label reads its existing workspace files as before;
 - Export writes into the active version folder;
 - YOLO format stays unchanged;

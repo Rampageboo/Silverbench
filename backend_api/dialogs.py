@@ -56,6 +56,30 @@ def choose_video_files(title: str) -> list[Path]:
     return _run_topmost_dialog(choose)
 
 
+def choose_media_files(title: str) -> list[Path]:
+    from tkinter import filedialog
+
+    media_pattern = (
+        "*.png *.jpg *.jpeg *.bmp *.webp "
+        "*.mp4 *.mov *.m4v *.avi *.mkv *.webm *.wmv *.mpeg *.mpg"
+    )
+
+    def choose(root: Any) -> list[Path]:
+        paths = filedialog.askopenfilenames(
+            title=title,
+            parent=root,
+            filetypes=[
+                ("Media Files", media_pattern),
+                ("Image Files", "*.png *.jpg *.jpeg *.bmp *.webp"),
+                ("Video Files", "*.mp4 *.mov *.m4v *.avi *.mkv *.webm *.wmv *.mpeg *.mpg"),
+                ("All Files", "*.*"),
+            ],
+        )
+        return [Path(path) for path in paths]
+
+    return _run_topmost_dialog(choose)
+
+
 def choose_image_file(title: str) -> str:
     from tkinter import filedialog
 
@@ -69,6 +93,23 @@ def choose_image_file(title: str) -> str:
             ],
         )
         return str(Path(path)) if path else ""
+
+    return _run_topmost_dialog(choose)
+
+
+def choose_image_files(title: str) -> list[Path]:
+    from tkinter import filedialog
+
+    def choose(root: Any) -> list[Path]:
+        paths = filedialog.askopenfilenames(
+            title=title,
+            parent=root,
+            filetypes=[
+                ("Image Files", "*.png *.jpg *.jpeg *.bmp *.webp"),
+                ("All Files", "*.*"),
+            ],
+        )
+        return [Path(path) for path in paths]
 
     return _run_topmost_dialog(choose)
 
@@ -122,6 +163,8 @@ def create_desktop_backend_service(app_dir: Path, session_dir: Path, session_fil
         app_settings_dir=app_dir,
         choose_directory=choose_directory,
         choose_image_file=choose_image_file,
+        choose_image_files=choose_image_files,
+        choose_media_files=choose_media_files,
         choose_classifier_model=choose_onnx_file,
         choose_train_model_file=choose_model_file,
         choose_video_files=choose_video_files,

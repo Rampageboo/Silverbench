@@ -15,6 +15,7 @@ import {
 import { hasJunkUndo, popJunkUndo, pushJunkUndo } from "../shared/junkUndo";
 import { restoreJunkUndoWithLinks } from "../shared/junkMetadata";
 import { useWorkspaceCache } from "../shared/useWorkspaceCache";
+import { dispatchWorkspaceMediaChanged } from "../shared/mediaEvents";
 import {
   IMAGE_POOL_CACHE_MS,
 } from "../shared/workspaceCache";
@@ -53,7 +54,7 @@ function filterItems(
       if (filter === "used") return item.isUsed;
       return true;
     })
-    .map((item) => ({ ...item, imagePath: `image_pool/${item.filename}` }));
+    .map((item) => ({ ...item, imagePath: item.imagePath || `media/${item.filename}` }));
 }
 
 function junkCounts(files: api.ImagePoolItem[], metadata: Map<string, MetadataRow>) {
@@ -84,6 +85,7 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
   const { showToast } = useToast();
   const {
     getImagePoolCache,
+    invalidateBoxLabelCache,
     patchImagePoolCacheMetadata,
     setImagePoolCache
   } = useWorkspaceCache();
@@ -97,6 +99,7 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
   const [anchorIndex, setAnchorIndex] = useState<number | null>(null);
   const [pending, setPending] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [importing, setImporting] = useState<api.MediaImportMode | null>(null);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [duplicateScan, setDuplicateScan] = useState<DuplicateScan | null>(null);
@@ -364,7 +367,7 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
       if (
         !(await confirm({
           title: "Delete images",
-          message: `Permanently delete ${unique.length} image(s)?\n\nThis removes image_pool files, all detect/clf hard links, detect_labels, and metadata records. This cannot be undone.\n\n${preview}${more}`,
+          message: `Permanently delete ${unique.length} image(s)?\n\nThis removes media files, all detect/clf hard links, detect_labels, and metadata records. This cannot be undone.\n\n${preview}${more}`,
           confirmLabel: "Delete",
           danger: true
         }))
@@ -394,6 +397,8 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
         }
         setSelected(new Set());
         await runScan({ force: true, silent: true });
+        invalidateBoxLabelCache(root);
+        dispatchWorkspaceMediaChanged(root);
         if (duplicateScan?.groups?.length) {
           const dup = (await api.findImagePoolDuplicates(root)) as DuplicateScan;
           setDuplicateScan(dup);
@@ -409,7 +414,7 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
         setStatus("");
       }
     },
-    [confirm, duplicateScan, root, runScan, showToast]
+    [confirm, duplicateScan, invalidateBoxLabelCache, root, runScan, showToast]
   );
 
   const deleteSelected = useCallback(async () => {
@@ -422,13 +427,50 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
     try {
       const result = await api.markImagePoolSeen(root);
       await runScan({ force: true });
-      setStatus(`Marked ${result.markedCount || 0} image_pool image(s) as seen.`);
+      setStatus(`Marked ${result.markedCount || 0} media image(s) as seen.`);
     } catch (err) {
       setError(errMessage(err));
     } finally {
       setPending(false);
     }
   }, [root, runScan]);
+
+  const importMedia = useCallback(
+    async (mode: api.MediaImportMode) => {
+      if (!root) {
+        setError("Open a workspace before importing media.");
+        return;
+      }
+      setPending(true);
+      setImporting(mode);
+      setError("");
+      try {
+        const selectedPaths = await api.chooseMediaFiles(
+          mode === "move" ? "Move Media into Workspace Media" : "Copy Media into Workspace Media"
+        );
+        if (!selectedPaths.length) {
+          setStatus("");
+          return;
+        }
+        setStatus(`${mode === "move" ? "Moving" : "Copying"} ${selectedPaths.length} media file(s) into media...`);
+        const result = await api.importMediaFiles(root, selectedPaths, mode);
+        await runScan({ force: true, silent: true });
+        invalidateBoxLabelCache(root);
+        dispatchWorkspaceMediaChanged(root);
+        const skipped = result.skippedCount ? `, ${result.skippedCount} skipped` : "";
+        const failed = result.failedCount ? `, ${result.failedCount} failed` : "";
+        const message = `${mode === "move" ? "Moved" : "Copied"} ${result.importedCount} media file(s) into media${skipped}${failed}.`;
+        setStatus(message);
+        showToast(message, { variant: result.failedCount ? "error" : "success" });
+      } catch (err) {
+        setError(errMessage(err));
+      } finally {
+        setImporting(null);
+        setPending(false);
+      }
+    },
+    [invalidateBoxLabelCache, root, runScan, showToast]
+  );
 
   const markJunkFiles = useCallback(
     async (filenames: string[]) => {
@@ -538,6 +580,8 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
     try {
       const result = await api.clearImagePoolDuplicates(root);
       await runScan({ force: true, silent: true });
+      invalidateBoxLabelCache(root);
+      dispatchWorkspaceMediaChanged(root);
       const refreshed = (await api.findImagePoolDuplicates(root)) as DuplicateScan;
       setDuplicateScan(refreshed);
       const failed = result.failed?.length || 0;
@@ -549,14 +593,14 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
     } finally {
       setDuplicatePending(false);
     }
-  }, [confirm, duplicateScan, root, runScan, showToast]);
+  }, [confirm, duplicateScan, invalidateBoxLabelCache, root, runScan, showToast]);
 
   const statsText = useMemo(() => {
-    if (!root) return "Open a workspace to scan image_pool";
+    if (!root) return "Open a workspace to scan media";
     if (!scan) {
-      if (pending) return "Scanning image_pool...";
+      if (pending) return "Scanning media...";
       if (error) return error;
-      return "Refresh scan to load image_pool";
+      return "Refresh scan to load media";
     }
     const hideLabel =
       hideJunk === "detect"
@@ -603,13 +647,13 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
   );
 
   const emptyGridMessage = useMemo(() => {
-    if (!root) return "Open a workspace containing image_pool.";
+    if (!root) return "Open a workspace containing media.";
     if (!scan) {
-      if (pending) return "Scanning image_pool...";
+      if (pending) return "Scanning media...";
       if (error) return error;
-      return "Refresh scan to load image_pool.";
+      return "Refresh scan to load media.";
     }
-    if (!scan.files.length) return "image_pool is empty, or refresh the scan.";
+    if (!scan.files.length) return "media is empty, or refresh the scan.";
     if (!items.length) return "No images match the current filter.";
     return "";
   }, [root, scan, pending, error, items.length]);
@@ -625,6 +669,7 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
     selectedFilenames,
     pending,
     deleting,
+    importing,
     error,
     status,
     statsText,
@@ -646,6 +691,7 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
     deleteSelected,
     deleteFilenames,
     markSeen,
+    importMedia,
     markJunk,
     clearJunk,
     markJunkFiles,

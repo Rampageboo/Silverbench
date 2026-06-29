@@ -1,6 +1,7 @@
 import React, { useRef, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { errMessage } from "../../lib/errors";
+import { isFlaggedFile, isReviewedFile } from "../image-pool/metadata";
 import type { BoxLabelViewProps } from "./boxLabelTypes";
 import { BoxLabelPreviewToolbar } from "./BoxLabelPreviewToolbar";
 import { BoxLabelShortcutDropdown } from "./BoxLabelShortcutDropdown";
@@ -39,7 +40,10 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     classificationClassesBusy = false,
     classificationClassesStatus,
     classificationClassesPortalId,
+    currentClassificationKey,
+    onAssignClassificationClass,
     onAddClassificationClass,
+    onWorkspaceClassesChanged,
     onWorkbenchBridgeChange,
     showSideStack = true,
     canvasOverlay,
@@ -106,6 +110,24 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
       .catch((err) => editor.setError(errMessage(err)));
   }, [classificationClassNameInput, editor, onAddClassificationClass]);
 
+  const handleAssignClassificationClass = useCallback(
+    (classKey: string, className: string) => {
+      if (!onAssignClassificationClass) {
+        editor.setStatus("Classification assignment is unavailable for this source.");
+        return;
+      }
+      const nextKey = classKey === currentClassificationKey ? null : classKey;
+      onAssignClassificationClass(nextKey)
+        .then(() =>
+          editor.setStatus(
+            nextKey ? `Assigned classification: ${className}.` : `Removed classification: ${className}.`
+          )
+        )
+        .catch((err) => editor.setError(errMessage(err)));
+    },
+    [currentClassificationKey, editor, onAssignClassificationClass]
+  );
+
   useEffect(() => {
     if (!classificationClassesPortalId || typeof document === "undefined") {
       setClassificationPortalTarget(null);
@@ -117,7 +139,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
   const classificationClassesPanel = (
     <section className="panel filter-panel pool-label-classes-panel pool-label-clf-classes-panel">
       <div className="panel-header pool-label-class-panel-header">
-        <span>Classify Classes</span>
+        <span>Classify Classes{classificationClasses.length ? ` (${classificationClasses.length})` : ""}</span>
         <div className="pool-label-class-header-actions">
           <button
             type="button"
@@ -197,9 +219,21 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
           <div className="pool-label-class-list" id="poolLabelClfClassList">
             {filteredClassificationClasses.length ? (
               filteredClassificationClasses.map((item) => (
-                <div key={item.key} className="pool-label-class-row pool-label-class-row--static" title={item.key}>
+                <button
+                  key={item.key}
+                  type="button"
+                  className={`pool-label-class-row pool-label-class-row--static pool-label-class-row--clf${item.key === currentClassificationKey ? " selected" : ""}`}
+                  title={
+                    item.key === currentClassificationKey
+                      ? `Remove classify class: ${item.name}`
+                      : `Assign classify class: ${item.name}`
+                  }
+                  aria-pressed={item.key === currentClassificationKey}
+                  disabled={classificationClassesBusy || !onAssignClassificationClass}
+                  onClick={() => handleAssignClassificationClass(item.key, item.name)}
+                >
                   {item.name}
-                </div>
+                </button>
               ))
             ) : (
               <div className="empty">No active clf classes.</div>
@@ -235,6 +269,26 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     editor.rejectAllProposals().catch((err) => editor.setError(errMessage(err)));
   }, [editor.rejectAllProposals, editor.setError]);
 
+  const handleWorkbenchStartDuplicate = useCallback(() => {
+    editor.copySelectedBoxToNext().catch((err) => editor.setError(errMessage(err)));
+  }, [editor.copySelectedBoxToNext, editor.setError]);
+
+  const handleWorkbenchSelectDuplicate = useCallback((id: string) => {
+    editor.selectDuplicateItem(id);
+  }, [editor.selectDuplicateItem]);
+
+  const handleWorkbenchPauseDuplicate = useCallback(() => {
+    editor.pauseDuplicateFlow().catch((err) => editor.setError(errMessage(err)));
+  }, [editor.pauseDuplicateFlow, editor.setError]);
+
+  const handleWorkbenchResumeDuplicate = useCallback(() => {
+    editor.resumeDuplicateFlow().catch((err) => editor.setError(errMessage(err)));
+  }, [editor.resumeDuplicateFlow, editor.setError]);
+
+  const handleWorkbenchDeleteDuplicate = useCallback(() => {
+    editor.deleteDuplicateFlow().catch((err) => editor.setError(errMessage(err)));
+  }, [editor.deleteDuplicateFlow, editor.setError]);
+
   useEffect(() => {
     onWorkbenchBridgeChange?.({
       proposalCount: editor.proposals.length,
@@ -253,7 +307,13 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
       acceptSelectedProposal: editor.selectedProposalId ? handleWorkbenchAcceptSelectedProposal : null,
       rejectSelectedProposal: editor.selectedProposalId ? handleWorkbenchRejectSelectedProposal : null,
       acceptAllProposals: handleWorkbenchAcceptAllProposals,
-      rejectAllProposals: handleWorkbenchRejectAllProposals
+      rejectAllProposals: handleWorkbenchRejectAllProposals,
+      duplicateFlow: editor.duplicateFlow,
+      startDuplicateToNext: handleWorkbenchStartDuplicate,
+      selectDuplicateItem: handleWorkbenchSelectDuplicate,
+      pauseDuplicateFlow: handleWorkbenchPauseDuplicate,
+      resumeDuplicateFlow: handleWorkbenchResumeDuplicate,
+      deleteDuplicateFlow: handleWorkbenchDeleteDuplicate
     });
   }, [
     activeProposalCount,
@@ -263,9 +323,15 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     editor.currentClass,
     handleWorkbenchAcceptAllProposals,
     handleWorkbenchAcceptSelectedProposal,
+    handleWorkbenchDeleteDuplicate,
+    handleWorkbenchPauseDuplicate,
+    handleWorkbenchResumeDuplicate,
+    handleWorkbenchSelectDuplicate,
     handleWorkbenchRejectAllProposals,
     handleWorkbenchRejectSelectedProposal,
+    handleWorkbenchStartDuplicate,
     onWorkbenchBridgeChange,
+    editor.duplicateFlow,
     selectedProposal,
     selectedProposalArchived
   ]);
@@ -287,6 +353,33 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     const aura = auraRef.current;
     if (aura) aura.style.opacity = "0";
   }, []);
+
+  const renderedCanvasOverlay =
+    typeof canvasOverlay === "function"
+      ? canvasOverlay({
+          entry: props.entry,
+          entries: props.entries,
+          currentIndex: props.currentIndex,
+          boxes: editor.boxes,
+          proposals: editor.proposals,
+          activeDetectClasses: editor.classes.map((item) => ({ id: item.id, name: item.name })),
+          classificationClasses,
+          currentClassificationKey: currentClassificationKey ?? null,
+          addProposals: editor.addProposals,
+          applyAutoLabelPredictions: editor.applyAutoLabelPredictions,
+          assignClassificationClass: onAssignClassificationClass,
+          reloadWorkspaceClasses: onWorkspaceClassesChanged,
+        })
+      : canvasOverlay;
+  const currentMetadata = props.entry ? props.metadata.get(props.entry.basename) : undefined;
+  const previewSourceName = props.entry?.basename ?? "No media selected";
+  const previewIndexText =
+    props.entry && props.entries.length > 0 ? `${props.currentIndex + 1} / ${props.entries.length}` : "0 / 0";
+  const previewReviewLabel = isFlaggedFile(currentMetadata)
+    ? "Flagged"
+    : isReviewedFile(currentMetadata)
+      ? "Reviewed"
+      : "Unreviewed";
 
   return (
     <>
@@ -397,11 +490,22 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
       </section>
 
       <section className="panel" id="previewPanel">
-        <div className="panel-header">
-          <span>Preview</span>
-          <span id="boxCount" className="status">
-            {editor.boxes.length} box(es)
-          </span>
+        <div className="panel-header pool-label-preview-header">
+          <div className="pool-label-preview-heading">
+            <span className="pool-label-preview-title">Preview</span>
+            <span className="pool-label-preview-source" title={previewSourceName}>
+              {previewSourceName}
+            </span>
+          </div>
+          <div className="pool-label-preview-status-row">
+            <span className="pool-label-preview-index">{previewIndexText}</span>
+            <span className="pool-label-preview-chip">Detect</span>
+            <span className="pool-label-preview-chip">Classify</span>
+            <span className="pool-label-preview-chip">{previewReviewLabel}</span>
+            <span id="boxCount" className="status pool-label-preview-box-count">
+              {editor.boxes.length} box(es)
+            </span>
+          </div>
         </div>
         <div className="panel-body viewer" id="previewViewer">
           {editor.error ? <div className="error-banner">{editor.error}</div> : null}
@@ -446,11 +550,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
             blackBoxEnabled={editor.blackBoxEnabled}
             boxAdjustMode={editor.boxAdjustMode}
             tracking={editor.tracking}
-            canCopyNext={
-              editor.selectedBoxId !== null &&
-              editor.currentIndex >= 0 &&
-              editor.currentIndex < editor.entries.length - 1
-            }
+            canCopyNext={editor.selectedBoxId !== null && editor.currentIndex >= 0}
             onTogglePointerTool={editor.togglePointerTool}
             onToggleAutoFit={editor.toggleAutoFitTool}
             onToggleBlackBox={editor.toggleBlackBoxTool}
@@ -461,7 +561,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
             onCopyNext={() => editor.copySelectedBoxToNext().catch((err) => editor.setError(errMessage(err)))}
             onCsrtTrack={() => editor.trackCsrtForward().catch((err) => editor.setError(errMessage(err)))}
           />
-          {canvasOverlay ?? null}
+          {renderedCanvasOverlay ?? null}
         </div>
       </section>
 
@@ -505,120 +605,6 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
               </div>
             </div>
           </section>
-
-          {editor.proposals.length > 0 && (
-            <section className="panel pool-label-proposals-panel" id="poolLabelProposalsPanel">
-              <div className="panel-header">
-                <span>Proposals ({editor.proposals.length})</span>
-                <span className="pool-label-proposal-actions">
-                  {editor.selectedProposalId && (
-                    <>
-                      <button
-                        type="button"
-                        className="primary"
-                        title={
-                          selectedProposalArchived
-                            ? "Restore this class in Library before materializing"
-                            : "Materialize selected proposal as a box"
-                        }
-                        disabled={selectedProposalArchived}
-                        onClick={() =>
-                          editor
-                            .materializeProposal(editor.selectedProposalId!)
-                            .catch((err) => editor.setError(errMessage(err)))
-                        }
-                      >
-                        Materialize
-                      </button>
-                      <button
-                        type="button"
-                        title="Reject selected proposal"
-                        onClick={() =>
-                          editor
-                            .rejectProposal(editor.selectedProposalId!)
-                            .catch((err) => editor.setError(errMessage(err)))
-                        }
-                      >
-                        Reject
-                      </button>
-                    </>
-                  )}
-                  <button
-                    type="button"
-                    className="primary"
-                    title="Accept all proposals as boxes"
-                    onClick={() =>
-                      editor.acceptAllProposals().catch((err) => editor.setError(errMessage(err)))
-                    }
-                  >
-                    Accept All
-                  </button>
-                  <button
-                    type="button"
-                    title="Reject all proposals"
-                    onClick={() =>
-                      editor.rejectAllProposals().catch((err) => editor.setError(errMessage(err)))
-                    }
-                  >
-                    Reject All
-                  </button>
-                </span>
-              </div>
-              <div className="panel-body pool-label-proposals-body">
-                {editor.proposals.map((p) => {
-                  const archivedProposal =
-                    (p.classId != null && editor.isArchivedDetectClass(p.classId)) ||
-                    (Boolean(p.classKey) && editor.isArchivedClassKey(p.classKey!));
-                  return (
-                    <div
-                      key={p.id}
-                      className={`pool-label-proposal-row${editor.selectedProposalId === p.id ? " selected" : ""}`}
-                      onClick={() =>
-                        editor.setSelectedProposalId(editor.selectedProposalId === p.id ? null : p.id)
-                      }
-                    >
-                      <span className="pool-label-proposal-conf">{Math.round(p.confidence * 100)}%</span>
-                      <span className="pool-label-proposal-coords">
-                        {archivedProposal ? (
-                          <span className="pool-label-archived-badge">archived</span>
-                        ) : null}
-                        {p.x.toFixed(3)},{p.y.toFixed(3)} {p.w.toFixed(3)}×{p.h.toFixed(3)}
-                      </span>
-                      <span className="pool-label-proposal-btns">
-                        <button
-                          type="button"
-                          className="primary pool-label-proposal-accept"
-                          title={
-                            archivedProposal
-                              ? "Restore this class in Library before materializing"
-                              : "Materialize this proposal as a box"
-                          }
-                          disabled={archivedProposal}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            editor.materializeProposal(p.id).catch((err) => editor.setError(errMessage(err)));
-                          }}
-                        >
-                          ✓
-                        </button>
-                        <button
-                          type="button"
-                          className="pool-label-proposal-reject"
-                          title="Reject this proposal"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            editor.rejectProposal(p.id).catch((err) => editor.setError(errMessage(err)));
-                          }}
-                        >
-                          ✗
-                        </button>
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          )}
 
           <div
             className={`pool-label-class-panels${classificationClassesPortalId ? " pool-label-class-panels--single" : ""}`}

@@ -2,6 +2,7 @@ import type * as api from "../../api";
 import type { LabelClass } from "../../api";
 import {
   boxCenterPixel,
+  classBoxColor,
   drawBoxes,
   drawCenteredText,
   drawCrosshair,
@@ -81,10 +82,10 @@ export function renderMainCanvas(input: MainCanvasRenderInput): DisplayRect | nu
     drawCrosshair(ctx, display, crosshairPoint);
   }
   drawBoxes(ctx, display, boxes, selectedIndex, classes);
-  if (proposals?.length) drawProposals(ctx, display, proposals, selectedProposalId ?? null);
+  if (proposals?.length) drawProposals(ctx, display, proposals, selectedProposalId ?? null, classes);
 
   if (drag?.type === "draw") {
-    drawImageRect(ctx, display, normalizedImageRect(drag.start, drag.current), "#f59e0b", true);
+    drawImageRect(ctx, display, normalizedImageRect(drag.start, drag.current), classBoxColor(currentClassId, true), true);
   }
 
   if (zoomPoint && !pointerToolEnabled && !blackBoxEnabled) {

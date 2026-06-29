@@ -16,7 +16,7 @@ class MetadataJunkPersistenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             create_workspace(root)
-            (root / "image_pool" / "sample.jpg").write_bytes(b"fake")
+            (root / "media" / "sample.jpg").write_bytes(b"fake")
 
             result = upsert_metadata_rows(
                 root,
@@ -45,7 +45,7 @@ class MetadataJunkPersistenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             create_workspace(root)
-            (root / "image_pool" / "sample.jpg").write_bytes(b"fake")
+            (root / "media" / "sample.jpg").write_bytes(b"fake")
 
             result = upsert_metadata_rows(
                 root,
@@ -57,6 +57,27 @@ class MetadataJunkPersistenceTests(unittest.TestCase):
             row = next(item for item in payload["rows"] if item["filename"] == "sample.jpg")
             self.assertEqual(row["detect_junk"], "1")
             self.assertEqual(row["detect_enabled"], "0")
+
+    def test_upsert_accepts_single_metadata_object(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_workspace(root)
+
+            result = upsert_metadata_rows(root, {"filename": "sample.jpg", "clf_enabled": True, "clf_class": "chat"})
+            self.assertTrue(result["ok"])
+
+            payload = read_metadata_rows(root)
+            row = next(item for item in payload["rows"] if item["filename"] == "sample.jpg")
+            self.assertEqual(row["clf_enabled"], "1")
+            self.assertEqual(row["clf_class"], "chat")
+
+    def test_upsert_rejects_non_object_metadata_update(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_workspace(root)
+
+            with self.assertRaisesRegex(ValueError, "Each metadata update must be an object"):
+                upsert_metadata_rows(root, ["filename"])
 
 
 if __name__ == "__main__":

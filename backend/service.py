@@ -28,10 +28,12 @@ from .yolo_prep import (
     prepare_classification_validation_split,
     prepare_validation_split,
 )
-from .yolo_pt_classifier import classify_folder_with_pt
-from .yolo_pt_detector import detect_folder_with_pt
+from .yolo_pt_classifier import classify_folder_with_pt, classify_image_with_pt
+from .yolo_pt_detector import detect_folder_with_pt, detect_image_with_pt
+from .yolo_pt_model_info import pt_model_info
 from .image_preview import image_scaled_jpeg_base64
 from .image_pool import image_pool_thumbnail_base64, mark_image_pool_seen, scan_image_pool
+from .media_import import import_media_files, list_workspace_videos
 from .metadata_assign import (
     _workspace_clf_out,
     build_workspace_links,
@@ -91,6 +93,8 @@ class BackendService:
         app_settings_dir: Path | None = None,
         choose_directory: Callable[[str], str] | None = None,
         choose_image_file: Callable[[str], str] | None = None,
+        choose_image_files: Callable[[str], list[Path]] | None = None,
+        choose_media_files: Callable[[str], list[Path]] | None = None,
         choose_classifier_model: Callable[[str], str] | None = None,
         choose_train_model_file: Callable[[str], str] | None = None,
         choose_video_files: Callable[[str], list[Path]] | None = None,
@@ -102,6 +106,8 @@ class BackendService:
         self.app_settings_dir = app_settings_dir or session_dir
         self.choose_directory = choose_directory
         self.choose_image_file = choose_image_file
+        self.choose_image_files = choose_image_files
+        self.choose_media_files = choose_media_files
         self.choose_classifier_model = choose_classifier_model
         self.choose_train_model_file = choose_train_model_file
         self.choose_video_files = choose_video_files
@@ -112,6 +118,7 @@ class BackendService:
         self._pt_jobs_lock = threading.Lock()
         self._build_jobs: dict[str, dict[str, Any]] = {}
         self._build_jobs_lock = threading.Lock()
+        self._auto_label_model_lock = threading.Lock()
         self._handlers = self._build_handlers()
 
     def _build_handlers(self) -> dict[str, Callable[[list[Any]], object]]:
@@ -120,10 +127,13 @@ class BackendService:
             "torchRuntimeInfo": self._handle_torchRuntimeInfo,
             "chooseDirectory": self._handle_chooseDirectory,
             "chooseImageFile": self._handle_chooseImageFile,
+            "chooseImageFiles": self._handle_chooseImageFiles,
+            "chooseMediaFiles": self._handle_chooseMediaFiles,
             "chooseClassifierModel": self._handle_chooseClassifierModel,
             "chooseTrainModelFile": self._handle_chooseTrainModelFile,
             "chooseVideoFiles": self._handle_chooseVideoFiles,
             "chooseVideoFolder": self._handle_chooseVideoFolder,
+            "listWorkspaceVideos": self._handle_listWorkspaceVideos,
             "videosFromPaths": self._handle_videosFromPaths,
             "getVideoInfo": self._handle_getVideoInfo,
             "getVideoFrameBase64": self._handle_getVideoFrameBase64,
@@ -155,6 +165,7 @@ class BackendService:
             "getWorkspaceInfo": self._handle_getWorkspaceInfo,
             "listWorkspaceFiles": self._handle_listWorkspaceFiles,
             "scanImagePool": self._handle_scanImagePool,
+            "importMediaFiles": self._handle_importMediaFiles,
             "markImagePoolSeen": self._handle_markImagePoolSeen,
             "readMetadataRows": self._handle_readMetadataRows,
             "listClfDatasetClasses": self._handle_listClfDatasetClasses,
@@ -195,13 +206,18 @@ class BackendService:
             "inferDatasetTask": self._handle_inferDatasetTask,
             "moveImagesToClass": self._handle_moveImagesToClass,
             "classifierModelInfo": self._handle_classifierModelInfo,
+            "ptModelInfo": self._handle_ptModelInfo,
             "classifyDatasetImages": self._handle_classifyDatasetImages,
             "classifyFolderWithPt": self._handle_classifyFolderWithPt,
             "detectFolderWithPt": self._handle_detectFolderWithPt,
             "startClassifyFolderWithPt": self._handle_startClassifyFolderWithPt,
             "startDetectFolderWithPt": self._handle_startDetectFolderWithPt,
+            "classifyImageWithPt": self._handle_classifyImageWithPt,
+            "detectImageWithPt": self._handle_detectImageWithPt,
             "getPtJob": self._handle_getPtJob,
             "cancelPtJob": self._handle_cancelPtJob,
+            "readAutoLabelModelRegistry": self._handle_readAutoLabelModelRegistry,
+            "importAutoLabelModel": self._handle_importAutoLabelModel,
             "trackYoloForward": self._handle_trackYoloForward,
             "copyModelToWorkspace": self._handle_copyModelToWorkspace,
         }
@@ -227,6 +243,12 @@ class BackendService:
     def _handle_chooseImageFile(self, args: list[Any]) -> object:
             return self._choose_image_file(args[0] if args else "Choose Image")
 
+    def _handle_chooseImageFiles(self, args: list[Any]) -> object:
+            return self._choose_image_files(args[0] if args else "Choose Images")
+
+    def _handle_chooseMediaFiles(self, args: list[Any]) -> object:
+            return self._choose_media_files(args[0] if args else "Choose Media")
+
     def _handle_chooseClassifierModel(self, args: list[Any]) -> object:
             return self._choose_classifier_model(args[0] if args else "Choose ONNX Classifier")
 
@@ -239,6 +261,10 @@ class BackendService:
     def _handle_chooseVideoFolder(self, args: list[Any]) -> object:
             folder = self._choose_directory(args[0] if args else "Choose Video Folder")
             return videos_json(find_videos(self.path_access.require_path(folder))) if folder else "[]"
+
+    def _handle_listWorkspaceVideos(self, args: list[Any]) -> object:
+            root = self.path_access.require_path(args[0])
+            return json.dumps(list_workspace_videos(Path(root)), ensure_ascii=False)
 
     def _handle_videosFromPaths(self, args: list[Any]) -> object:
             paths = [self.path_access.remember_parent(path) for path in json.loads(args[0] or "[]")]
@@ -422,6 +448,7 @@ class BackendService:
 
     def _handle_openFolder(self, args: list[Any]) -> object:
             root = self._remember_workspace_paths(str(args[0]))
+            self._remember_active_snapshot_workspace(root)
             init_if_needed = bool(args[1]) if len(args) > 1 else True
             try:
                 payload = resolve_open_folder(root, init_if_needed=init_if_needed)
@@ -454,6 +481,15 @@ class BackendService:
                 rel = Path(str(entry.get("path") or entry.get("id") or ""))
                 version_path = rel if rel.is_absolute() else root / rel
                 self.path_access.remember_path(version_path)
+
+    def _remember_active_snapshot_workspace(self, root: Path) -> None:
+            try:
+                manifest = read_snapshot_versions(root)
+                self._remember_snapshot_manifest_paths(root, manifest)
+                active_path = resolve_active_version_path(root)
+                self._remember_workspace_paths(active_path)
+            except (FileNotFoundError, ValueError, OSError):
+                return
 
     def _handle_readSnapshotVersions(self, args: list[Any]) -> object:
             root = self._snapshot_root_arg(args)
@@ -506,6 +542,19 @@ class BackendService:
                 fast = str(args[1]).lower() in {"1", "true", "yes", "fast"}
             return json.dumps(scan_image_pool(Path(root), fast=fast), ensure_ascii=False)
 
+    def _handle_importMediaFiles(self, args: list[Any]) -> object:
+            root = self.path_access.require_path(args[0])
+            raw_sources = args[1] if len(args) > 1 else []
+            if isinstance(raw_sources, str):
+                sources = json.loads(raw_sources or "[]")
+            elif isinstance(raw_sources, list):
+                sources = raw_sources
+            else:
+                raise ValueError("Media source paths must be a list.")
+            mode = str(args[2]) if len(args) > 2 else "copy"
+            source_paths = [self.path_access.require_path(path) for path in sources]
+            return json.dumps(import_media_files(Path(root), source_paths, mode), ensure_ascii=False)
+
     def _handle_markImagePoolSeen(self, args: list[Any]) -> object:
             root = self.path_access.require_path(args[0])
             return json.dumps(mark_image_pool_seen(Path(root)), ensure_ascii=False)
@@ -541,9 +590,12 @@ class BackendService:
             )
 
     def _handle_upsertMetadataRows(self, args: list[Any]) -> object:
-            root = self.path_access.require_path(args[0])
-            updates = json.loads(args[1] or "[]")
-            return json.dumps(upsert_metadata_rows(Path(root), updates), ensure_ascii=False)
+            try:
+                root = self.path_access.require_path(args[0])
+                updates = json.loads(args[1] or "[]")
+                return json.dumps(upsert_metadata_rows(Path(root), updates), ensure_ascii=False)
+            except (PermissionError, FileNotFoundError, ValueError, OSError) as error:
+                return json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False)
 
     def _handle_getWorkspaceClasses(self, args: list[Any]) -> object:
             try:
@@ -838,6 +890,13 @@ class BackendService:
     def _handle_classifierModelInfo(self, args: list[Any]) -> object:
             return json.dumps(model_info(self.path_access.require_path(args[0])), ensure_ascii=False)
 
+    def _handle_ptModelInfo(self, args: list[Any]) -> object:
+            if len(args) > 1:
+                path = self.path_access.safe_child_path(args[0], str(args[1]))
+            else:
+                path = self.path_access.require_path(args[0])
+            return json.dumps(pt_model_info(path), ensure_ascii=False)
+
     def _handle_classifyDatasetImages(self, args: list[Any]) -> object:
             paths = json.loads(args[2] or "[]")
             top_k = int(args[3]) if len(args) > 3 else 5
@@ -878,6 +937,36 @@ class BackendService:
                     confidence,
                     device,
                     include_filenames,
+                ),
+                ensure_ascii=False,
+            )
+
+    def _handle_detectImageWithPt(self, args: list[Any]) -> object:
+            image_size = int(args[3]) if len(args) > 3 else 640
+            confidence = float(args[4]) if len(args) > 4 else 0.25
+            device = str(args[5]) if len(args) > 5 else "0"
+            return json.dumps(
+                detect_image_with_pt(
+                    self.path_access.safe_child_path(args[0], str(args[1])),
+                    self.path_access.safe_child_path(args[0], str(args[2])),
+                    image_size,
+                    confidence,
+                    device,
+                ),
+                ensure_ascii=False,
+            )
+
+    def _handle_classifyImageWithPt(self, args: list[Any]) -> object:
+            image_size = int(args[3]) if len(args) > 3 else 224
+            device = str(args[4]) if len(args) > 4 else "0"
+            top_k = int(args[5]) if len(args) > 5 else 5
+            return json.dumps(
+                classify_image_with_pt(
+                    self.path_access.safe_child_path(args[0], str(args[1])),
+                    self.path_access.safe_child_path(args[0], str(args[2])),
+                    image_size,
+                    device,
+                    top_k,
                 ),
                 ensure_ascii=False,
             )
@@ -1080,6 +1169,18 @@ class BackendService:
             self.path_access.remember_parent(path)
         return path
 
+    def _choose_image_files(self, title: str) -> str:
+        if not self.choose_image_files:
+            raise RuntimeError("Image picker is not available in this backend.")
+        paths = [self.path_access.remember_parent(path) for path in self.choose_image_files(title)]
+        return json.dumps([str(path) for path in paths], ensure_ascii=False)
+
+    def _choose_media_files(self, title: str) -> str:
+        if not self.choose_media_files:
+            raise RuntimeError("Media picker is not available in this backend.")
+        paths = [self.path_access.remember_parent(path) for path in self.choose_media_files(title)]
+        return json.dumps([str(path) for path in paths], ensure_ascii=False)
+
     def _choose_classifier_model(self, title: str) -> str:
         if not self.choose_classifier_model:
             raise RuntimeError("Classifier model picker is not available in this backend.")
@@ -1110,6 +1211,91 @@ class BackendService:
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, dest)
         return str(dest)
+
+    def _handle_readAutoLabelModelRegistry(self, args: list[Any]) -> object:
+        root = self.path_access.require_path(args[0])
+        return json.dumps(self._read_auto_label_model_registry(root), ensure_ascii=False)
+
+    def _handle_importAutoLabelModel(self, args: list[Any]) -> object:
+        source = self.path_access.require_path(args[0])
+        if source.suffix.lower() != ".pt":
+            raise ValueError("Only .pt model files are accepted.")
+        kind = str(args[2] if len(args) > 2 else "").strip().lower()
+        if kind not in {"detect", "classify"}:
+            raise ValueError("Auto label model kind must be detect or classify.")
+
+        rel_dest = f"models/autolabel/{kind}/{source.name}"
+        dest = self.path_access.safe_child_path(args[1], rel_dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, dest)
+
+        workspace_root = self.path_access.require_path(args[1])
+        registry_path = self._auto_label_model_registry_path(workspace_root)
+        with self._auto_label_model_lock:
+            registry = self._read_auto_label_model_registry_unlocked(workspace_root)
+
+            registry[kind] = {
+                "activeModel": rel_dest,
+                "updatedAt": str(args[3] if len(args) > 3 else ""),
+            }
+            registry_path.parent.mkdir(parents=True, exist_ok=True)
+            registry_path.write_text(json.dumps(registry, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return json.dumps(registry, ensure_ascii=False)
+
+    def _auto_label_model_registry_path(self, workspace_root: Path) -> Path:
+        return self.path_access.safe_child_path(workspace_root, "workspace/autolabel_models.json")
+
+    def _auto_label_model_rel_path(self, kind: str, path: Path) -> str:
+        return f"models/autolabel/{kind}/{path.name}"
+
+    def _discover_auto_label_model(self, workspace_root: Path, kind: str) -> str:
+        model_dir = self.path_access.safe_child_path(workspace_root, f"models/autolabel/{kind}")
+        if not model_dir.is_dir():
+            return ""
+        candidates = [path for path in model_dir.iterdir() if path.is_file() and path.suffix.lower() == ".pt"]
+        if not candidates:
+            return ""
+        latest = max(candidates, key=lambda path: (path.stat().st_mtime, path.name.lower()))
+        return self._auto_label_model_rel_path(kind, latest)
+
+    def _read_auto_label_model_registry_unlocked(self, workspace_root: Path) -> dict[str, Any]:
+        registry_path = self._auto_label_model_registry_path(workspace_root)
+        registry: dict[str, Any] = {}
+        if registry_path.is_file():
+            try:
+                existing = json.loads(registry_path.read_text(encoding="utf-8"))
+                if isinstance(existing, dict):
+                    registry = existing
+            except json.JSONDecodeError:
+                registry = {}
+
+        changed = False
+        for kind in ("detect", "classify"):
+            entry = registry.get(kind)
+            active = str(entry.get("activeModel") or "") if isinstance(entry, dict) else ""
+            active_path = self.path_access.safe_child_path(workspace_root, active) if active else None
+            if active_path is not None and active_path.is_file():
+                continue
+            discovered = self._discover_auto_label_model(workspace_root, kind)
+            if discovered:
+                registry[kind] = {
+                    "activeModel": discovered,
+                    "updatedAt": str(entry.get("updatedAt") or "") if isinstance(entry, dict) else "",
+                }
+            elif kind in registry:
+                registry.pop(kind, None)
+            else:
+                continue
+            changed = True
+
+        if changed:
+            registry_path.parent.mkdir(parents=True, exist_ok=True)
+            registry_path.write_text(json.dumps(registry, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return registry
+
+    def _read_auto_label_model_registry(self, workspace_root: Path) -> dict[str, Any]:
+        with self._auto_label_model_lock:
+            return self._read_auto_label_model_registry_unlocked(workspace_root)
 
     def _unique_path(self, path: Path) -> Path:
         if not path.exists():

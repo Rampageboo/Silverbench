@@ -38,6 +38,10 @@ export function chooseVideoFiles() {
   return rpc<VideoItem[]>("chooseVideoFiles", ["Choose Videos"]);
 }
 
+export function listWorkspaceVideos(workspaceRoot: string) {
+  return rpc<VideoItem[]>("listWorkspaceVideos", [workspaceRoot]);
+}
+
 export function chooseVideoOutputFolder() {
   return rpc<string>("chooseDirectory", ["Choose Screenshot Output Folder"]);
 }

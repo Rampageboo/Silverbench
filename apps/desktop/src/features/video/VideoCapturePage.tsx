@@ -12,6 +12,7 @@ import {
   chooseVideoOutputFolder,
   getCaptureJob,
   getVideoFrameBase64,
+  listWorkspaceVideos,
   loadVideoWorkspace,
   saveVideoFrame,
   startCaptureJobs,
@@ -19,6 +20,7 @@ import {
   type VideoItem,
   type VideoSegment as CaptureSegment
 } from "./videoCaptureApi";
+import { WORKSPACE_MEDIA_CHANGED_EVENT, isSameWorkspaceRoot, isWorkspaceMediaChangedEvent } from "../shared/mediaEvents";
 import {
   loadVideoSegmentManifest,
   saveVideoSegmentManifest,
@@ -83,6 +85,12 @@ function normalizeVideo(item: VideoItem): VideoItem {
     }))
     .filter((segment) => segment.end >= segment.start);
   return { ...item, duration, width: Number(item.width) || 0, height: Number(item.height) || 0, segments };
+}
+
+function mergeVideoItems(existing: VideoItem[], incoming: VideoItem[]) {
+  const known = new Set(existing.map((item) => item.path));
+  const added = incoming.filter((item) => item.path && !known.has(item.path));
+  return added.length ? [...existing, ...added] : existing;
 }
 
 function frameCount(segments: CaptureSegment[]) {
@@ -570,7 +578,7 @@ function ExportTab({
             detail={status}
           />
           <div className="hint">
-            Add or drop a video, then capture screenshots. With a workspace open, output defaults to image_pool.
+            Add or drop a video, then capture screenshots. With a workspace open, output defaults to media.
           </div>
           <LogPanel>{log}</LogPanel>
         </div>
@@ -622,6 +630,36 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
   const totalFrames = useMemo(() => videos.reduce((sum, v) => sum + frameCount(v.segments), 0), [videos]);
   const currentFrames = useMemo(() => frameCount(current?.segments ?? []), [current]);
 
+  const loadWorkspaceVideos = useCallback(
+    async (options: { replace?: boolean; silent?: boolean } = {}) => {
+      const root = workspaceRoot.trim();
+      if (!root) {
+        setVideos([]);
+        setCurrentIndex(-1);
+        return;
+      }
+      try {
+        const workspaceVideos = (await listWorkspaceVideos(root))
+          .filter((item) => item.ok !== false && item.path)
+          .map(normalizeVideo);
+        setVideos((items) => options.replace ? workspaceVideos : mergeVideoItems(items, workspaceVideos));
+        setCurrentIndex((index) => {
+          if (options.replace) {
+            if (!workspaceVideos.length) return -1;
+            return index >= 0 ? Math.min(index, workspaceVideos.length - 1) : 0;
+          }
+          return index >= 0 ? index : workspaceVideos.length ? 0 : -1;
+        });
+        if (!options.silent && workspaceVideos.length) {
+          setStatus(`Loaded ${workspaceVideos.length} workspace video(s) from media.`);
+        }
+      } catch (err) {
+        if (!options.silent) showError(err);
+      }
+    },
+    [showError, workspaceRoot]
+  );
+
   // Deactivate preview when tab is not active
   useEffect(() => {
     if (active) return;
@@ -642,6 +680,7 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
         if (cancelled) return;
         if (!outputRoot && info.imagePool) setOutputRoot(info.imagePool);
         setStatus(`Workspace: ${info.name || info.root}`);
+        await loadWorkspaceVideos({ replace: true, silent: true });
       } catch (err) {
         if (!cancelled) showError(err);
       } finally {
@@ -650,7 +689,18 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
     }
     void load();
     return () => { cancelled = true; };
-  }, [workspaceRoot, outputRoot, onReady, showError]);
+  }, [workspaceRoot, outputRoot, onReady, showError, loadWorkspaceVideos]);
+
+  useEffect(() => {
+    if (!workspaceRoot.trim()) return;
+    const onMediaChanged = (event: Event) => {
+      if (!isWorkspaceMediaChangedEvent(event)) return;
+      if (!isSameWorkspaceRoot(event.detail.workspaceRoot, workspaceRoot)) return;
+      void loadWorkspaceVideos({ silent: true });
+    };
+    window.addEventListener(WORKSPACE_MEDIA_CHANGED_EVENT, onMediaChanged);
+    return () => window.removeEventListener(WORKSPACE_MEDIA_CHANGED_EVENT, onMediaChanged);
+  }, [loadWorkspaceVideos, workspaceRoot]);
 
   // Load segment manifest when the selected video changes
   useEffect(() => {

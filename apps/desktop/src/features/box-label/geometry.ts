@@ -1,5 +1,6 @@
 import type React from "react";
 import type * as api from "../../api";
+import { classBoxColor } from "../shared/classColors";
 
 export type ToolMode = "select" | "draw" | "pan";
 export type BoxAdjustMode = "grow" | "shrink";
@@ -324,6 +325,8 @@ export function boxCenterPixel(box: api.LabelBox | undefined, imageWidth: number
   };
 }
 
+export { classBoxColor };
+
 export function drawBoxes(
   ctx: CanvasRenderingContext2D,
   display: DisplayRect,
@@ -332,8 +335,9 @@ export function drawBoxes(
   classes: api.LabelClass[] = []
 ) {
   boxes.forEach((box, index) => {
-    const color = selected === index ? "#2f81f7" : "#22c55e";
-    drawImageRect(ctx, display, boxToRect(box), color, false);
+    const isSelected = selected === index;
+    const color = classBoxColor(box.classId, isSelected);
+    drawImageRect(ctx, display, boxToRect(box), color, false, isSelected ? 3 : 2);
     const rect = boxToCanvasRect(boxToRect(box), display);
     const label = classNameFor(classes, box.classId);
     ctx.font = "12px Segoe UI";
@@ -376,14 +380,24 @@ export function drawPointerClassLabel(
   ctx.restore();
 }
 
-export type ProposalShape = { id: string; x: number; y: number; w: number; h: number; confidence: number };
+export type ProposalShape = {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  confidence: number;
+  classId?: number;
+  classKey?: string;
+};
 
 /** Draw dashed proposal boxes. Proposals are model suggestions not yet accepted by the user. */
 export function drawProposals(
   ctx: CanvasRenderingContext2D,
   display: DisplayRect,
   proposals: ProposalShape[],
-  selectedId: string | null = null
+  selectedId: string | null = null,
+  classes: api.LabelClass[] = []
 ) {
   if (!proposals.length) return;
   ctx.save();
@@ -403,9 +417,17 @@ export function drawProposals(
     ctx.strokeRect(cr.x1, cr.y1, cr.x2 - cr.x1, cr.y2 - cr.y1);
     ctx.setLineDash([]);
     ctx.font = "11px monospace";
-    const confText = `${Math.round(p.confidence * 100)}%`;
-    ctx.fillStyle = color;
-    ctx.fillText(confText, cr.x1 + 3, Math.max(11, cr.y1 - 3));
+    const name =
+      p.classId != null
+        ? classNameFor(classes, p.classId)
+        : (p.classKey || "proposal");
+    const label = `${name} ${Math.round(p.confidence * 100)}%`;
+    const labelWidth = Math.ceil(ctx.measureText(label).width) + 8;
+    const labelY = Math.max(0, cr.y1 - 17);
+    ctx.fillStyle = "rgba(2, 6, 23, 0.92)";
+    ctx.fillRect(cr.x1, labelY, Math.max(28, labelWidth), 16);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(label, cr.x1 + 4, labelY + 12);
   });
   ctx.restore();
 }
@@ -466,11 +488,18 @@ export function drawCrosshair(ctx: CanvasRenderingContext2D, display: DisplayRec
   ctx.restore();
 }
 
-export function drawImageRect(ctx: CanvasRenderingContext2D, display: DisplayRect, rect: ImageRect, color: string, dashed: boolean) {
+export function drawImageRect(
+  ctx: CanvasRenderingContext2D,
+  display: DisplayRect,
+  rect: ImageRect,
+  color: string,
+  dashed: boolean,
+  lineWidth = 2
+) {
   const canvasRect = boxToCanvasRect(rect, display);
   ctx.save();
   ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = lineWidth;
   ctx.setLineDash(dashed ? [6, 4] : []);
   ctx.strokeRect(canvasRect.x1, canvasRect.y1, canvasRect.x2 - canvasRect.x1, canvasRect.y2 - canvasRect.y1);
   ctx.restore();
@@ -508,9 +537,10 @@ export function drawZoomBoxes(
     const y1 = ((overlap.y1 - sourceRect.y1) / (sourceRect.y2 - sourceRect.y1)) * canvas.height;
     const x2 = ((overlap.x2 - sourceRect.x1) / (sourceRect.x2 - sourceRect.x1)) * canvas.width;
     const y2 = ((overlap.y2 - sourceRect.y1) / (sourceRect.y2 - sourceRect.y1)) * canvas.height;
+    const isSelected = selected === index;
     ctx.save();
-    ctx.strokeStyle = selected === index ? "#2f81f7" : "#22c55e";
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = classBoxColor(box.classId, isSelected);
+    ctx.lineWidth = isSelected ? 3 : 2;
     ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
     ctx.restore();
   });

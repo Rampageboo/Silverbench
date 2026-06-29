@@ -202,7 +202,24 @@ def read_metadata_rows(workspace_root: Path) -> dict[str, Any]:
     }
 
 
+def _metadata_updates_list(updates: object) -> list[dict[str, Any]]:
+    if isinstance(updates, str):
+        updates = json.loads(updates or "[]")
+    if isinstance(updates, dict):
+        updates = [updates]
+    if not isinstance(updates, list):
+        raise ValueError("Metadata updates must be a list of objects.")
+
+    items: list[dict[str, Any]] = []
+    for item in updates:
+        if not isinstance(item, dict):
+            raise ValueError("Each metadata update must be an object.")
+        items.append(item)
+    return items
+
+
 def upsert_metadata_rows(workspace_root: Path, updates: list[dict[str, Any]]) -> dict[str, Any]:
+    updates = _metadata_updates_list(updates)
     if not updates:
         raise ValueError("No metadata updates provided.")
 

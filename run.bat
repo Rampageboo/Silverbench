@@ -48,12 +48,18 @@ if errorlevel 1 (
     exit /b 1
 )
 
-python -c "import fastapi, uvicorn" >nul 2>nul
+python -c "import fastapi, uvicorn, ultralytics" >nul 2>nul
 if errorlevel 1 (
     echo Installing Python dependencies ^(first run or missing packages^)...
     python -m pip install -r "requirements.txt"
     if errorlevel 1 (
         echo Failed to install requirements.txt.
+        pause
+        exit /b 1
+    )
+    python -m pip install ultralytics --no-deps
+    if errorlevel 1 (
+        echo Failed to install ultralytics.
         pause
         exit /b 1
     )

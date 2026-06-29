@@ -94,7 +94,7 @@ describe("workspace manifest migration", () => {
     );
 
     expect(result.migrated).toBe(true);
-    expect(result.manifest.paths.image_pool).toBe("image_pool");
+    expect(result.manifest.paths.image_pool).toBe("media");
     expect(result.manifest.paths.logs).toBe("workspace/logs");
     expect(result.manifest.createdAt).toBe(NOW);
   });

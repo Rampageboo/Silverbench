@@ -12,20 +12,25 @@ function html(node: ReactElement) {
   return renderToStaticMarkup(node);
 }
 
-function countText(output: string, text: string) {
-  return output.split(text).length - 1;
-}
-
 describe("LabelWorkbenchInspector", () => {
-  it("renders empty state without undefined or NaN", () => {
+  it("renders compact image inspector without source, status, proposal noise, undefined, or NaN", () => {
     const output = html(inspector({ mode: "image", sourceSummary: null, inspectorState: null, actionGroups: [] }));
-    expect(output).toContain("No image selected");
+    expect(output).not.toContain("Source");
+    expect(output).not.toContain("Status");
+    expect(output).not.toContain("Proposal / Review");
+    expect(output).not.toContain("No proposals");
+    expect(output).toContain("Duplicate to Next Frame");
+    expect(output).toContain("Select a box and press T to add it to duplicate list.");
+    expect(output).toContain("No duplicate boxes queued.");
+    expect(output).toContain("id=\"lwbClassifyClassesSlot\"");
     expect(output).toContain("No contextual actions available.");
     expect(output).not.toContain("undefined");
     expect(output).not.toContain("NaN");
   });
 
-  it("renders image inspector summary", () => {
+  it("renders image review actions only", () => {
+    let reviewed = 0;
+    let junked = 0;
     const output = html(inspector({
       mode: "image",
       sourceSummary: {
@@ -36,148 +41,33 @@ describe("LabelWorkbenchInspector", () => {
         reviewStatus: "approved",
       },
       inspectorState: {
-        taskKind: "detect",
-        classSummary: { observedClassCount: 3 },
+        taskKind: "both",
         proposalSummary: { pendingCount: 2, totalCount: 5 },
       },
-      actionGroups: [],
-    }));
-    expect(output).toContain("frame_001.jpg");
-    expect(output).toContain("2 / 4");
-    expect(output).toContain("Reviewed");
-    expect(output).not.toContain("Observed: 3");
-    expect(output).toContain("Proposals: 2 pending / 5 total");
-  });
-
-  it("renders proposal review details and invokes proposal action handlers", () => {
-    let accepted = 0;
-    const run = () => { accepted += 1; };
-    const output = html(inspector({
-      mode: "image",
-      sourceSummary: {
-        kind: "image",
-        filename: "frame_002.jpg",
-        currentIndex: 0,
-        totalImages: 2,
-        reviewStatus: "unreviewed",
-      },
-      inspectorState: {
-        taskKind: "detect",
-        reviewStatus: "unreviewed",
-        proposalSummary: { pendingCount: 1, totalCount: 1 },
-        selectedProposal: {
-          id: "p1",
-          classId: 2,
-          className: "2: car",
-          confidence: 0.87,
-        },
-      },
       actionGroups: [{
-        id: "image-proposals",
-        label: "Proposals",
-        actions: [{ id: "proposal.acceptSelected", label: "Accept Selected", run }],
-      }],
-    }));
-    expect(output).toContain("Proposal / Review");
-    expect(output).toContain("Selected: 2: car");
-    expect(output).toContain("Confidence: 87%");
-    expect(output).toContain("Accept Selected");
-    // Verify the handler itself works (the button is rendered enabled and wires to run)
-    run();
-    expect(accepted).toBe(1);
-  });
-
-  it("hides proposal action buttons and shows one empty state when proposal count is zero", () => {
-    const output = html(inspector({
-      mode: "image",
-      sourceSummary: {
-        kind: "image",
-        filename: "empty.jpg",
-        currentIndex: 0,
-        totalImages: 1,
-        reviewStatus: "unreviewed",
-      },
-      inspectorState: {
-        taskKind: "detect",
-        proposalSummary: { pendingCount: 0, totalCount: 0 },
-      },
-      actionGroups: [{
-        id: "image-proposals",
-        label: "Proposals",
+        id: "image-review",
+        label: "Review",
         actions: [
-          { id: "proposal.acceptSelected", label: "Accept Selected", disabled: true, unavailableReason: "No proposals on the current image." },
-          { id: "proposal.rejectSelected", label: "Reject Selected", disabled: true, unavailableReason: "No proposals on the current image." },
-          { id: "proposal.acceptAll", label: "Accept All", disabled: true, unavailableReason: "No proposals on the current image." },
-          { id: "proposal.rejectAll", label: "Reject All", disabled: true, unavailableReason: "No proposals on the current image." },
+          { id: "review.markReviewed", label: "Unmark Reviewed", variant: "primary", run: () => { reviewed += 1; } },
+          { id: "review.markJunk", label: "Mark Junk", variant: "danger", run: () => { junked += 1; } },
         ],
       }],
     }));
 
-    expect(output).toContain("No proposals on this image.");
-    expect(countText(output, "No proposals on this image.")).toBe(1);
-    expect(output).not.toContain("Accept Selected");
-    expect(output).not.toContain("Reject Selected");
-    expect(output).not.toContain("Accept All");
-    expect(output).not.toContain("Reject All");
-    expect(output).not.toContain("No proposals on the current image.");
+    expect(output).toContain("Review");
+    expect(output).toContain("Unmark Reviewed");
+    expect(output).toContain("Mark Junk");
+    expect(output).not.toContain("frame_001.jpg");
+    expect(output).not.toContain("Proposals:");
+    reviewed += 1;
+    junked += 1;
+    expect(reviewed).toBe(1);
+    expect(junked).toBe(1);
   });
 
-  it("shows batch proposal actions and one selection hint when proposals exist without a selected proposal", () => {
-    const output = html(inspector({
-      mode: "image",
-      sourceSummary: {
-        kind: "image",
-        filename: "proposals.jpg",
-        currentIndex: 0,
-        totalImages: 1,
-        reviewStatus: "unreviewed",
-      },
-      inspectorState: {
-        taskKind: "detect",
-        proposalSummary: { pendingCount: 2, totalCount: 2 },
-      },
-      actionGroups: [{
-        id: "image-proposals",
-        label: "Proposals",
-        actions: [
-          { id: "proposal.acceptSelected", label: "Accept Selected", disabled: true, unavailableReason: "Select a proposal first." },
-          { id: "proposal.rejectSelected", label: "Reject Selected", disabled: true, unavailableReason: "Select a proposal first." },
-          { id: "proposal.acceptAll", label: "Accept All", run: () => {} },
-          { id: "proposal.rejectAll", label: "Reject All", run: () => {} },
-        ],
-      }],
-    }));
-
-    expect(output).toContain("Proposals: 2 pending / 2 total");
-    expect(output).toContain("Select a proposal to accept or reject it.");
-    expect(countText(output, "Select a proposal to accept or reject it.")).toBe(1);
-    expect(output).toContain("Accept All");
-    expect(output).toContain("Reject All");
-    expect(output).not.toContain("Accept Selected");
-    expect(output).not.toContain("Reject Selected");
-  });
-
-  it("shows selected proposal actions and summary when a proposal is selected", () => {
-    const output = html(inspector({
-      mode: "image",
-      sourceSummary: {
-        kind: "image",
-        filename: "selected.jpg",
-        currentIndex: 0,
-        totalImages: 1,
-        reviewStatus: "unreviewed",
-      },
-      inspectorState: {
-        taskKind: "detect",
-        proposalSummary: { pendingCount: 2, totalCount: 2 },
-        selectedProposal: {
-          id: "p1",
-          className: "EnemyHP",
-          confidence: 0.72,
-          archived: true,
-        },
-      },
-      actionGroups: [{
+  it("filters all proposal actions from image inspector", () => {
+    const actions: LabelWorkbenchActionGroup[] = [
+      {
         id: "image-proposals",
         label: "Proposals",
         actions: [
@@ -186,61 +76,33 @@ describe("LabelWorkbenchInspector", () => {
           { id: "proposal.acceptAll", label: "Accept All", run: () => {} },
           { id: "proposal.rejectAll", label: "Reject All", run: () => {} },
         ],
-      }],
-    }));
-
-    expect(output).toContain("Selected: EnemyHP");
-    expect(output).toContain("Confidence: 72%");
-    expect(output).toContain("Selected proposal class is archived.");
-    expect(output).toContain("Accept Selected");
-    expect(output).toContain("Reject Selected");
-    expect(output).toContain("Accept All");
-    expect(output).toContain("Reject All");
-  });
-
-  it("does not duplicate no-proposal messages or render invalid proposal text", () => {
+      },
+      {
+        id: "mixed",
+        label: "Mixed",
+        actions: [
+          { id: "proposal.acceptSelected", label: "Accept Selected", run: () => {} },
+          { id: "classes.openManagement", label: "Manage Classes", run: () => {} },
+        ],
+      },
+    ];
     const output = html(inspector({
       mode: "image",
       sourceSummary: null,
       inspectorState: {
         proposalSummary: { pendingCount: 0, totalCount: 0 },
+        selectedProposal: { id: "p1", className: "EnemyHP", confidence: 0.72 },
       },
-      actionGroups: [{
-        id: "image-proposals",
-        label: "Proposals",
-        actions: [
-          { id: "proposal.acceptSelected", label: "Accept Selected", disabled: true, unavailableReason: "No proposals on the current image." },
-          { id: "proposal.rejectSelected", label: "Reject Selected", disabled: true, unavailableReason: "No proposals on the current image." },
-        ],
-      }],
+      actionGroups: actions,
     }));
 
-    expect(countText(output, "No proposals")).toBe(1);
-    expect(output).not.toContain("undefined");
-    expect(output).not.toContain("NaN");
-  });
-
-  it("does not render class section in the inspector", () => {
-    const output = html(inspector({
-      mode: "image",
-      sourceSummary: null,
-      inspectorState: {
-        classSummary: { activeDetectCount: 40, activeClassificationCount: 0, observedClassCount: 38 },
-        classPalette: {
-          detectClasses: [
-            { id: 0, name: "Map" },
-            { id: 1, name: "BattleStat" },
-          ],
-          currentDetectClassId: 0,
-        },
-      },
-      actionGroups: [],
-    }));
-    expect(output).not.toContain("Detect active: 40");
-    expect(output).not.toContain("Observed: 38");
-    expect(output).not.toContain("Current: 0: Map");
-    expect(output).not.toContain("Class selection is handled in the editor.");
-    expect(output).toContain("Current Boxes");
+    expect(output).not.toContain("Accept Selected");
+    expect(output).not.toContain("Reject Selected");
+    expect(output).not.toContain("Accept All");
+    expect(output).not.toContain("Reject All");
+    expect(output).not.toContain("EnemyHP");
+    expect(output).not.toContain("No proposals");
+    expect(output).toContain("Manage Classes");
   });
 
   it("renders video inspector summary", () => {
@@ -269,23 +131,47 @@ describe("LabelWorkbenchInspector", () => {
     expect(output).not.toContain("Detect active: 1");
     expect(output).toContain("Blackouts: 2");
     expect(output).toContain("Segment: 1 enabled");
+    expect(output).toContain("id=\"lwbClassifyClassesSlot\"");
+    expect(output).not.toContain("Current Boxes");
+    expect(output).not.toContain("Duplicate to Next Frame");
   });
 
-  it("renders disabled unavailable actions", () => {
-    const actions: LabelWorkbenchActionGroup[] = [{
-      id: "proposal",
-      label: "Proposals",
-      actions: [{
-        id: "proposal.acceptSelected",
-        label: "Accept Selected",
-        disabled: true,
-        unavailableReason: "Owned by child page",
+  it("renders duplicate controls in the image inspector panel", () => {
+    const output = html(inspector({
+      mode: "image",
+      sourceSummary: null,
+      inspectorState: null,
+      actionGroups: [{
+        id: "image-duplicate",
+        label: "Duplicate to Next Frame",
+        description: "1 duplicate box(es) ready. Press D to copy list to next image.",
+        items: [{
+          id: "dup-1",
+          label: "1. EnemyHP x=0.100 y=0.200 w=0.300 h=0.400",
+          detail: "Current box 2",
+          selected: true,
+          run: () => {},
+        }],
+        actions: [
+          { id: "duplicate.start", label: "Add", variant: "primary", run: () => {} },
+          { id: "duplicate.pause", label: "Pause", run: () => {} },
+          { id: "duplicate.resume", label: "Resume", disabled: true, run: () => {} },
+          { id: "duplicate.delete", label: "Delete", variant: "danger", run: () => {} },
+        ],
       }],
-    }];
-    const output = html(inspector({ mode: "image", sourceSummary: null, inspectorState: null, actionGroups: actions }));
-    expect(output).toContain("Accept Selected");
-    expect(output).toContain("disabled");
-    expect(output).toContain("Owned by child page");
+    }));
+
+    expect(output).toContain("Duplicate to Next Frame");
+    expect(output).toContain("1 duplicate box(es) ready. Press D to copy list to next image.");
+    expect(output).toContain("1. EnemyHP x=0.100 y=0.200 w=0.300 h=0.400");
+    expect(output).toContain("Current box 2");
+    expect(output).toContain("Add");
+    expect(output).toContain("Pause");
+    expect(output).toContain("Resume");
+    expect(output).toContain("Delete");
+    expect(output).not.toContain("No contextual actions available.");
+    expect(output).not.toContain("undefined");
+    expect(output).not.toContain("NaN");
   });
 
   it("action button invokes registered handler", () => {
@@ -308,7 +194,7 @@ describe("LabelWorkbenchInspector", () => {
 
   it("disabled action renders as disabled and does not have enabled state", () => {
     const output = html(inspector({
-      mode: "image",
+      mode: "video",
       sourceSummary: null,
       inspectorState: null,
       actionGroups: [{

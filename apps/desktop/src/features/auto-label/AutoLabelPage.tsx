@@ -32,8 +32,10 @@ export function AutoLabelPage({ onReady }: Props) {
   const runWithConfirm = useRunWithConfirm();
   const [task, setTask] = useState<AutoLabelTask>("detect");
   const [inputRoot, setInputRoot] = useState("");
-  const [outputRoot, setOutputRoot] = useState("");
-  const [modelPath, setModelPath] = useState("");
+  const [detectOutputRoot, setDetectOutputRoot] = useState("");
+  const [classifyOutputRoot, setClassifyOutputRoot] = useState("");
+  const [detectModelPath, setDetectModelPath] = useState("");
+  const [classifyModelPath, setClassifyModelPath] = useState("");
   const [imageSize, setImageSize] = useState(640);
   const [confidence, setConfidence] = useState(0.25);
   const [highConfidence, setHighConfidence] = useState(0.80);
@@ -59,7 +61,8 @@ export function AutoLabelPage({ onReady }: Props) {
         const info = await loadAutoLabelWorkspace(workspaceRoot);
         if (cancelled) return;
         if (!inputRoot) setInputRoot(info.root || workspaceRoot);
-        if (!outputRoot) setOutputRoot(outputDefault(info.root || workspaceRoot, task));
+        if (!detectOutputRoot) setDetectOutputRoot(outputDefault(info.root || workspaceRoot, "detect"));
+        if (!classifyOutputRoot) setClassifyOutputRoot(outputDefault(info.root || workspaceRoot, "classify"));
         setStatus(`Workspace: ${info.name || info.root}`);
       } catch (err) {
         if (!cancelled) showError(err);
@@ -69,7 +72,7 @@ export function AutoLabelPage({ onReady }: Props) {
     }
     void load();
     return () => { cancelled = true; };
-  }, [workspaceRoot, inputRoot, outputRoot, task, onReady, showError]);
+  }, [workspaceRoot, inputRoot, detectOutputRoot, classifyOutputRoot, onReady, showError]);
 
   useEffect(() => {
     if (!job?.id || job.status !== "running") return;
@@ -87,24 +90,44 @@ export function AutoLabelPage({ onReady }: Props) {
   }, [job?.id, job?.status, showError, showToast]);
 
   const running = job?.status === "running";
-  const canRun = useMemo(() => Boolean(inputRoot && outputRoot && modelPath && imageSize > 0), [inputRoot, outputRoot, modelPath, imageSize]);
+  const canRunDetect = useMemo(
+    () => Boolean(inputRoot && detectOutputRoot && detectModelPath && imageSize > 0),
+    [detectModelPath, detectOutputRoot, imageSize, inputRoot]
+  );
+  const canRunClassify = useMemo(
+    () => Boolean(inputRoot && classifyOutputRoot && classifyModelPath && imageSize > 0),
+    [classifyModelPath, classifyOutputRoot, imageSize, inputRoot]
+  );
 
   async function chooseInput() {
     const path = await chooseAutoLabelDirectory("Choose auto-label input folder");
     if (path) setInputRoot(path);
   }
 
-  async function chooseOutput() {
+  async function chooseDetectOutput() {
     const path = await chooseAutoLabelDirectory("Choose auto-label output folder");
-    if (path) setOutputRoot(path);
+    if (path) setDetectOutputRoot(path);
   }
 
-  async function chooseModel() {
-    const path = await chooseAutoLabelModel("Choose YOLO PT model");
-    if (path) setModelPath(path);
+  async function chooseClassifyOutput() {
+    const path = await chooseAutoLabelDirectory("Choose classified output folder");
+    if (path) setClassifyOutputRoot(path);
+  }
+
+  async function chooseDetectModel() {
+    const path = await chooseAutoLabelModel("Choose detect best.pt");
+    if (path) setDetectModelPath(path);
+  }
+
+  async function chooseClassifyModel() {
+    const path = await chooseAutoLabelModel("Choose classify best.pt");
+    if (path) setClassifyModelPath(path);
   }
 
   async function runJob(nextTask: AutoLabelTask) {
+    const modelPath = nextTask === "detect" ? detectModelPath : classifyModelPath;
+    const outputRoot = nextTask === "detect" ? detectOutputRoot : classifyOutputRoot;
+    const canRun = nextTask === "detect" ? canRunDetect : canRunClassify;
     if (!canRun) {
       showToast("Choose input, output, and model first.", { variant: "error" });
       return;
@@ -167,9 +190,9 @@ export function AutoLabelPage({ onReady }: Props) {
             <button className="primary" type="button" onClick={() => chooseWorkspaceFolder().catch(showError)} disabled={pending || running}>Open Workspace</button>
           </div>
           <div className="train-grid">
-            <FolderPickerRow label="Model" value={modelPath} placeholder="detect best.pt" browseLabel="Choose detect best.pt" disabled={pending || running} onBrowse={() => chooseModel().catch(showError)} />
+            <FolderPickerRow label="Model" value={detectModelPath} placeholder="detect best.pt" browseLabel="Choose detect best.pt" disabled={pending || running} onBrowse={() => chooseDetectModel().catch(showError)} />
             <FolderPickerRow label="Source" value={inputRoot} placeholder="detect_dataset folder" browseLabel="Source Dataset" disabled={pending || running} onBrowse={() => chooseInput().catch(showError)} />
-            <FolderPickerRow label="Output" value={outputRoot} placeholder="auto-labeled dataset folder" browseLabel="Output Folder" disabled={pending || running} onBrowse={() => chooseOutput().catch(showError)} />
+            <FolderPickerRow label="Output" value={detectOutputRoot} placeholder="auto-labeled dataset folder" browseLabel="Output Folder" disabled={pending || running} onBrowse={() => chooseDetectOutput().catch(showError)} />
             <NumberField label="Image size" value={imageSize} onChange={(value) => setImageSize(Math.max(1, value || 1))} disabled={pending || running} />
             <NumberField label="Conf (min)" value={confidence} step={0.01} min={0} max={1} onChange={(value) => setConfidence(Math.max(0, Math.min(1, value || 0)))} disabled={pending || running} />
             <label>Device<input value={device} onChange={(event) => setDevice(event.target.value)} disabled={pending || running} placeholder="0 or cpu" /></label>
@@ -187,7 +210,7 @@ export function AutoLabelPage({ onReady }: Props) {
             </div>
           )}
           <div className="row">
-            <button className="primary" type="button" onClick={() => void runJob("detect")} disabled={pending || running || !canRun}>Auto Label Folder</button>
+            <button className="primary" type="button" onClick={() => void runJob("detect")} disabled={pending || running || !canRunDetect}>Auto Label Folder</button>
             <button className="danger" type="button" onClick={() => void cancelJob()} disabled={!running}>Stop</button>
           </div>
           <JobStatusPanel visible={running && task === "detect"} running={running} done={job?.done || 0} total={job?.total || 1} detail={status} />
@@ -202,15 +225,15 @@ export function AutoLabelPage({ onReady }: Props) {
         </div>
         <div className="panel-body train-prep-stack">
           <div className="train-grid">
-            <FolderPickerRow label="Model" value={modelPath} placeholder="best.pt" browseLabel="Choose best.pt" disabled={pending || running} onBrowse={() => chooseModel().catch(showError)} />
+            <FolderPickerRow label="Model" value={classifyModelPath} placeholder="best.pt" browseLabel="Choose best.pt" disabled={pending || running} onBrowse={() => chooseClassifyModel().catch(showError)} />
             <FolderPickerRow label="Source" value={inputRoot} placeholder="clf_dataset folder" browseLabel="Source Dataset" disabled={pending || running} onBrowse={() => chooseInput().catch(showError)} />
-            <FolderPickerRow label="Output" value={outputRoot} placeholder="classified output folder" browseLabel="Output Folder" disabled={pending || running} onBrowse={() => chooseOutput().catch(showError)} />
+            <FolderPickerRow label="Output" value={classifyOutputRoot} placeholder="classified output folder" browseLabel="Output Folder" disabled={pending || running} onBrowse={() => chooseClassifyOutput().catch(showError)} />
             <NumberField label="Image size" value={imageSize} onChange={(value) => setImageSize(Math.max(1, value || 1))} disabled={pending || running} />
             <label>Device<input value={device} onChange={(event) => setDevice(event.target.value)} disabled={pending || running} placeholder="0 or cpu" /></label>
             <label className="inline-check"><input type="checkbox" checked={confidencePrefix} onChange={(event) => setConfidencePrefix(event.target.checked)} disabled={pending || running} /> Confidence prefix</label>
           </div>
           <div className="row">
-            <button className="primary" type="button" onClick={() => void runJob("classify")} disabled={pending || running || !canRun}>Classify Folder</button>
+            <button className="primary" type="button" onClick={() => void runJob("classify")} disabled={pending || running || !canRunClassify}>Classify Folder</button>
             <button className="danger" type="button" onClick={() => void cancelJob()} disabled={!running}>Stop</button>
           </div>
           <JobStatusPanel visible={running && task === "classify"} running={running} done={job?.done || 0} total={job?.total || 1} detail={status} />

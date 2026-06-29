@@ -23,7 +23,7 @@ class WorkspaceSnapshotVersionsTests(unittest.TestCase):
                 "clf_dataset",
                 "detect_dataset",
                 "detect_labels",
-                "image_pool",
+                "media",
                 "image_pool_backup",
                 "runs",
                 "workspace",
@@ -31,14 +31,14 @@ class WorkspaceSnapshotVersionsTests(unittest.TestCase):
                 (root / dirname).mkdir()
             (root / "metadata.csv").write_text("filename,split\n", encoding="utf-8")
             (root / "WORKSPACE_README.txt").write_text("readme\n", encoding="utf-8")
-            (root / "image_pool" / "sample.png").write_bytes(b"image")
+            (root / "media" / "sample.png").write_bytes(b"image")
 
             manifest = initialize_snapshot_versioning(root)
 
             self.assertEqual(manifest["activeVersion"], "V1")
             self.assertEqual(resolve_active_version_path(root), root / "V1")
             self.assertTrue((root / "workspace_versions.json").is_file())
-            self.assertTrue((root / "V1" / "image_pool" / "sample.png").is_file())
+            self.assertTrue((root / "V1" / "media" / "sample.png").is_file())
             self.assertTrue((root / "V1" / "metadata.csv").is_file())
             self.assertTrue((root / "V1" / "WORKSPACE_README.txt").is_file())
             self.assertFalse((root / "V1" / "workspace_versions.json").exists())
@@ -47,7 +47,7 @@ class WorkspaceSnapshotVersionsTests(unittest.TestCase):
                 "clf_dataset",
                 "detect_dataset",
                 "detect_labels",
-                "image_pool",
+                "media",
                 "image_pool_backup",
                 "runs",
                 "workspace",
@@ -58,8 +58,8 @@ class WorkspaceSnapshotVersionsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "workspace").mkdir()
-            (root / "image_pool").mkdir()
-            (root / "image_pool" / "sample.png").write_bytes(b"image")
+            (root / "media").mkdir()
+            (root / "media" / "sample.png").write_bytes(b"image")
             (root / "V9").mkdir()
             (root / "V9" / "should_skip.txt").write_text("skip\n", encoding="utf-8")
 
@@ -71,11 +71,11 @@ class WorkspaceSnapshotVersionsTests(unittest.TestCase):
 
             self.assertEqual([entry["id"] for entry in manifest["versions"]], ["V1", "V2"])
             self.assertEqual(manifest["versions"][1]["source"], "copied-from:V1")
-            self.assertTrue((root / "V2" / "image_pool" / "sample.png").is_file())
+            self.assertTrue((root / "V2" / "media" / "sample.png").is_file())
             self.assertFalse((root / "V2" / "V8").exists())
             self.assertFalse((root / "V2" / "V1").exists())
             self.assertFalse((root / "V2" / "workspace_versions.json").exists())
-            self.assertTrue((root / "V1" / "image_pool" / "sample.png").is_file())
+            self.assertTrue((root / "V1" / "media" / "sample.png").is_file())
 
     def test_create_snapshot_version_cleans_partial_copy_on_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -128,6 +128,39 @@ class WorkspaceSnapshotVersionsTests(unittest.TestCase):
             self.assertEqual(payload["workspaceRootPath"], str(root.resolve()))
             self.assertEqual(payload["activeVersionId"], "V2")
             self.assertEqual(payload["root"], str((root / "V2").resolve()))
+
+    def test_open_snapshot_backfills_missing_active_workspace_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "V1").mkdir()
+            (root / "workspace_versions.json").write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "type": "yolo-workbench-snapshot-versions",
+                        "activeVersion": "V1",
+                        "createdAt": "2026-06-29T00:00:00.000Z",
+                        "updatedAt": "2026-06-29T00:00:00.000Z",
+                        "versions": [
+                            {
+                                "id": "V1",
+                                "path": "V1",
+                                "createdAt": "2026-06-29T00:00:00.000Z",
+                                "source": "test",
+                            }
+                        ],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            payload = resolve_open_folder(root)
+
+            self.assertTrue(payload["snapshotVersioned"])
+            self.assertEqual(payload["root"], str((root / "V1").resolve()))
+            self.assertTrue((root / "V1" / "workspace" / "workspace.json").is_file())
+            self.assertTrue((root / "V1" / "media").is_dir())
 
     def test_manifest_json_is_valid_after_initialization(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -15,7 +15,7 @@ class ListWorkspaceFilesTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             create_workspace(root)
-            (root / "image_pool" / "a.jpg").write_bytes(b"\xff\xd8\xff")
+            (root / "media" / "a.jpg").write_bytes(b"\xff\xd8\xff")
             (root / "detect_labels" / "a.txt").write_text("0 0.5 0.5 0.2 0.2\n", encoding="utf-8")
             (root / "detect_dataset" / "labels" / "train" / "b.txt").write_text(
                 "1 0.4 0.4 0.3 0.3\n", encoding="utf-8"
@@ -24,7 +24,7 @@ class ListWorkspaceFilesTests(unittest.TestCase):
 
             paths = list_workspace_files(root)
 
-            self.assertIn("image_pool/a.jpg", paths)
+            self.assertIn("media/a.jpg", paths)
             self.assertIn("detect_labels/a.txt", paths)
             self.assertIn("detect_dataset/labels/train/b.txt", paths)
             self.assertIn("detect_dataset/data.yaml", paths)

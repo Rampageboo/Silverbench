@@ -24,6 +24,7 @@ class YoloTrackerIoTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self.assertEqual(label_path_for(root, "image_pool/frame001.jpg"), root / "detect_labels" / "frame001.txt")
+            self.assertEqual(label_path_for(root, "media/frame001.jpg"), root / "detect_labels" / "frame001.txt")
             labels_train = root / "labels" / "train"
             labels_train.mkdir(parents=True)
             existing = labels_train / "frame002.txt"
@@ -33,7 +34,7 @@ class YoloTrackerIoTests(unittest.TestCase):
     def test_merge_replaces_nearest_same_class_and_appends_new_class(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            image_path = "image_pool/frame003.jpg"
+            image_path = "media/frame003.jpg"
             label = root / "detect_labels" / "frame003.txt"
             label.parent.mkdir()
             label.write_text(

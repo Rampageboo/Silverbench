@@ -71,7 +71,7 @@ function workspaceNameFromPath(workspaceRoot: string) {
 
 function defaultPaths(): WorkspaceManifestPaths {
   return {
-    image_pool: "image_pool",
+    image_pool: "media",
     detect_labels: "detect_labels",
     metadata: "metadata.csv",
     detect_dataset: "detect_dataset",

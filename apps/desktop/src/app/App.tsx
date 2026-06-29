@@ -13,7 +13,7 @@ import { WorkbenchBody } from "./WorkbenchBody";
 type StartupPhase = "active" | "done" | "hidden";
 
 export function App() {
-  const { connected } = useBackend();
+  const { connected, error: backendError } = useBackend();
   const [startupPhase, setStartupPhase] = useState<StartupPhase>("active");
   const [startupProgress, setStartupProgress] = useState(1);
   const [startupStage, setStartupStage] = useState("正在准备工作区...");
@@ -65,13 +65,13 @@ export function App() {
     if (!connected) {
       setStartupProgress((value) => Math.max(value, 12));
       setStartupStage("正在连接后端...");
-      setStartupDetail("等待 FastAPI 启动");
+      setStartupDetail(backendError || "等待 FastAPI 启动");
       return;
     }
     setStartupProgress((value) => Math.max(value, 28));
     setStartupStage("正在恢复工作区...");
     setStartupDetail("后端已连接，正在打开上次工作区");
-  }, [connected, startupActive]);
+  }, [backendError, connected, startupActive]);
 
   useEffect(() => {
     if (!startupActive) return;

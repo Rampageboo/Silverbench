@@ -117,8 +117,113 @@ def classify_folder_with_pt(
     }
 
 
+def classify_image_with_pt(
+    model_path: Path,
+    image_path: Path,
+    image_size: int = 224,
+    device: str = "0",
+    top_k: int = 5,
+) -> dict[str, Any]:
+    model_path = model_path.resolve()
+    image_path = image_path.resolve()
+    if not model_path.is_file():
+        raise FileNotFoundError(f"Model not found: {model_path}")
+    if model_path.suffix.lower() != ".pt":
+        raise ValueError("Classification model must be a .pt file.")
+    if not image_path.is_file():
+        raise FileNotFoundError(f"Image not found: {image_path}")
+    if image_path.suffix.lower() not in IMAGE_EXTENSIONS:
+        raise ValueError(f"Unsupported image file: {image_path.name}")
+    require_cuda_device(device)
+
+    try:
+        from ultralytics import YOLO
+    except ImportError as error:
+        raise RuntimeError("ultralytics is not installed. Install it with: pip install ultralytics") from error
+
+    model = YOLO(str(model_path))
+    results = model.predict(
+        source=str(image_path),
+        imgsz=int(image_size),
+        device=str(device or "0"),
+        verbose=False,
+    )
+    if not results:
+        raise RuntimeError("No prediction result.")
+
+    result = results[0]
+    if result.probs is None:
+        raise RuntimeError("Model did not return classification probabilities. Use a *-cls.pt model.")
+
+    names = result.names or getattr(model, "names", {}) or {}
+    predictions = _prob_predictions(result.probs, names, top_k)
+    return {
+        "ok": True,
+        "modelPath": str(model_path),
+        "imagePath": str(image_path),
+        "imageSize": int(image_size),
+        "topK": int(top_k),
+        "top": predictions[0] if predictions else None,
+        "predictions": predictions,
+    }
+
+
 def _safe_class_name(name: object) -> str:
     value = str(name or "unknown").strip() or "unknown"
     for char in '<>:"/\\|?*':
         value = value.replace(char, "_")
     return value[:120]
+
+
+def _prob_predictions(probs: Any, names: Any, top_k: int) -> list[dict[str, Any]]:
+    limit = max(1, int(top_k or 1))
+    top_indexes = _values(getattr(probs, "top5", None))
+    top_confidences = _values(getattr(probs, "top5conf", None))
+    if not top_indexes:
+        top_indexes = _values(getattr(probs, "top1", None))
+        top_confidences = _values(getattr(probs, "top1conf", None))
+
+    predictions: list[dict[str, Any]] = []
+    for offset, raw_class_id in enumerate(top_indexes[:limit]):
+        class_id = int(_scalar(raw_class_id))
+        confidence = _scalar(top_confidences[offset]) if offset < len(top_confidences) else 0.0
+        class_name = _class_name(names, class_id)
+        predictions.append(
+            {
+                "classId": class_id,
+                "className": class_name,
+                "name": class_name,
+                "confidence": float(max(0.0, min(1.0, confidence))),
+            }
+        )
+    return predictions
+
+
+def _values(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if hasattr(value, "detach"):
+        value = value.detach()
+    if hasattr(value, "cpu"):
+        value = value.cpu()
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return [value]
+
+
+def _class_name(names: Any, class_id: int) -> str:
+    if hasattr(names, "get"):
+        return str(names.get(class_id, str(class_id)))
+    if 0 <= class_id < len(names):
+        return str(names[class_id])
+    return str(class_id)
+
+
+def _scalar(value: Any) -> float:
+    if hasattr(value, "item"):
+        return float(value.item())
+    return float(value)

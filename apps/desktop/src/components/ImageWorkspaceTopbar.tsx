@@ -10,7 +10,7 @@ type ImageWorkspaceTopbarProps = {
 
 const MODES: Array<{ tab: ImageWorkspaceTab; label: string; showNewBadge?: boolean }> = [
   { tab: "image-pool", label: "Pool" },
-  { tab: "inbox", label: "Assign", showNewBadge: true },
+  { tab: "inbox", label: "Legacy Assign", showNewBadge: true },
   { tab: "yolo", label: "Review" }
 ];
 

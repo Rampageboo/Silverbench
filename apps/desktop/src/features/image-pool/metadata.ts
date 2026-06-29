@@ -113,18 +113,40 @@ export async function loadMetadataMap(workspaceRoot: string) {
 export async function markJunkFilenames(
   workspaceRoot: string,
   filenames: string[],
-  scope: JunkScope
+  scope: JunkScope | "both"
 ) {
-  const updates = filenames.map((filename) =>
-    scope === "detect"
+  const updates = filenames.map((filename) => {
+    if (scope === "both") {
+      return {
+        filename,
+        detect_junk: true,
+        detect_enabled: false,
+        clf_enabled: false,
+        clf_class: INBOX_JUNK_CLASS,
+      };
+    }
+    return scope === "detect"
       ? { filename, detect_junk: true, detect_enabled: false }
-      : { filename, clf_enabled: false, clf_class: INBOX_JUNK_CLASS }
-  );
+      : { filename, clf_enabled: false, clf_class: INBOX_JUNK_CLASS };
+  });
   await callJson("upsertMetadataRows", [workspaceRoot, JSON.stringify(updates)]);
   if (scope === "detect") {
     await callJson("removeDetectDatasetLinks", [workspaceRoot, JSON.stringify(filenames)]);
-  } else {
+    return;
+  }
+  if (scope === "clf") {
     await callJson("removeClfDatasetLinks", [workspaceRoot, JSON.stringify(filenames)]);
+    return;
+  }
+  const cleanupResults = await Promise.allSettled([
+    callJson("removeDetectDatasetLinks", [workspaceRoot, JSON.stringify(filenames)]),
+    callJson("removeClfDatasetLinks", [workspaceRoot, JSON.stringify(filenames)]),
+  ]);
+  const failedCleanup = cleanupResults.find((result): result is PromiseRejectedResult => result.status === "rejected");
+  if (failedCleanup) {
+    throw failedCleanup.reason instanceof Error
+      ? failedCleanup.reason
+      : new Error(String(failedCleanup.reason || "Failed to remove dataset links."));
   }
 }
 

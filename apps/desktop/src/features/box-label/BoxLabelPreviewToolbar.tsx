@@ -115,8 +115,8 @@ export function BoxLabelPreviewToolbar({
         id="poolLabelTrackBtn"
         type="button"
         className="pool-label-icon-tool primary"
-        title="Copy Next (T)"
-        aria-label="Copy Next"
+        title="Add Duplicate (T)"
+        aria-label="Add Duplicate"
         disabled={!canCopyNext || tracking}
         onClick={onCopyNext}
       >

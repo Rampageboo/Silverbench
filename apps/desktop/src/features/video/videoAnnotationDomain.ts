@@ -48,6 +48,68 @@ export function sortedVideoFrames(
     .sort((a, b) => a.timestampMs - b.timestampMs);
 }
 
+export type VideoTimelineMarkerKind = "detect" | "clf" | "mixed" | "empty" | "reviewed";
+
+export type VideoTimelineMarker = {
+  key: string;
+  timestampMs: number;
+  time: number;
+  kind: VideoTimelineMarkerKind;
+  label: string;
+  detectBoxCount: number;
+  hasDetect: boolean;
+  hasClf: boolean;
+};
+
+export function videoTimelineMarkers(manifest: VideoAnnotationManifest | null): VideoTimelineMarker[] {
+  return sortedVideoFrames(manifest)
+    .map((frame) => {
+      const detect = frame.tasks.detect;
+      const clf = frame.tasks.clf;
+      const detectBoxCount = detect?.boxes.length ?? 0;
+      const hasDetect = Boolean(detect && (detectBoxCount > 0 || detect.reviewed || detect.empty));
+      const hasClf = Boolean(clf && (clf.classKey || clf.reviewed));
+      if (!hasDetect && !hasClf) return null;
+
+      const timestampMs = Number.isFinite(frame.timestampMs)
+        ? Math.max(0, Math.round(frame.timestampMs))
+        : Math.max(0, Math.round((Number(frame.time) || 0) * 1000));
+      const time = timestampMs / 1000;
+      const kind: VideoTimelineMarkerKind = hasDetect && hasClf
+        ? "mixed"
+        : hasClf
+          ? "clf"
+          : detect?.empty
+            ? "empty"
+            : detectBoxCount > 0
+              ? "detect"
+              : "reviewed";
+      const details = [
+        formatVideoClock(time),
+        hasDetect
+          ? detectBoxCount > 0
+            ? `${detectBoxCount} box(es)`
+            : detect?.empty
+              ? "detect empty"
+              : "detect reviewed"
+          : "",
+        clf?.classKey ? `clf ${clf.classKey}` : hasClf ? "clf reviewed" : ""
+      ].filter(Boolean);
+
+      return {
+        key: String(timestampMs),
+        timestampMs,
+        time,
+        kind,
+        label: details.join(" | "),
+        detectBoxCount,
+        hasDetect,
+        hasClf
+      };
+    })
+    .filter((marker): marker is VideoTimelineMarker => marker !== null);
+}
+
 // ---------------------------------------------------------------------------
 // Task accessors
 // ---------------------------------------------------------------------------
@@ -211,6 +273,37 @@ export function clearVideoFrameRecord(
   const frames = { ...manifest.frames };
   delete frames[key];
   return { ...manifest, updatedAt: now, frames };
+}
+
+export function moveVideoFrameRecord(
+  manifest: VideoAnnotationManifest,
+  video: VideoSource,
+  fromSeconds: number,
+  toSeconds: number,
+  now = new Date().toISOString()
+): VideoAnnotationManifest {
+  const fromKey = timestampKey(fromSeconds);
+  const toTimestampMs = Number(timestampKey(toSeconds));
+  const toKey = String(toTimestampMs);
+  if (fromKey === toKey) return manifest;
+
+  const existing = manifest.frames[fromKey];
+  if (!existing) {
+    throw new Error("No annotation record exists at the source timestamp.");
+  }
+  if (manifest.frames[toKey]) {
+    throw new Error("Target timestamp already has an annotation record.");
+  }
+
+  const frames = { ...manifest.frames };
+  delete frames[fromKey];
+  frames[toKey] = {
+    ...existing,
+    timestampMs: toTimestampMs,
+    time: toTimestampMs / 1000,
+    updatedAt: now
+  };
+  return { ...manifest, video, updatedAt: now, frames };
 }
 
 // ---------------------------------------------------------------------------

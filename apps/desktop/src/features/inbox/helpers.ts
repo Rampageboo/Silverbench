@@ -72,7 +72,7 @@ export function filterInboxItems(
       }
       return true;
     })
-    .map((item) => ({ ...item, imagePath: `image_pool/${item.filename}` }));
+    .map((item) => ({ ...item, imagePath: item.imagePath || `media/${item.filename}` }));
 }
 
 export function detectClassChipLabel(item: { id: number; name: string }) {

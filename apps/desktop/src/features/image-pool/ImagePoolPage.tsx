@@ -105,11 +105,14 @@ export function ImagePoolPage({ onReady, onStatusText }: ImagePoolPageProps) {
               hideJunk={pool.hideJunk}
               pending={pool.pending}
               deleting={pool.deleting}
+              importing={pool.importing}
               selectedCount={pool.selected.size}
               canUndoJunk={pool.canUndoJunk}
               junkSelection={pool.junkSelection}
               onOpenWorkspace={() => chooseWorkspaceFolder().catch(showError)}
               onRefresh={() => pool.runScan({ force: true })}
+              onImportCopy={() => pool.importMedia("copy")}
+              onImportMove={() => pool.importMedia("move")}
               onMarkSeen={() => pool.markSeen()}
               onSelectAll={pool.selectAllVisible}
               onClearSelection={pool.clearSelection}

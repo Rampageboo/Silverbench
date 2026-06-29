@@ -14,10 +14,12 @@ import {
   getClfTask,
   markVideoDetectEmpty,
   markVideoClfReviewed,
+  moveVideoFrameRecord,
   setVideoClfClass,
   sortedVideoFrames,
   updateVideoDetectBoxes,
   updateVideoFrameAnnotation,
+  videoTimelineMarkers,
   detectBoxesToLabelBoxes,
   labelBoxToDetectBox
 } from "./videoAnnotationDomain";
@@ -227,6 +229,65 @@ describe("adjacent reviewed frame navigation", () => {
 
     expect(adjacentReviewedFrame(frames, 3000, -1)?.timestampMs).toBe(1000);
     expect(adjacentReviewedFrame(frames, 3000, 1)?.timestampMs).toBe(5000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Timeline markers
+// ---------------------------------------------------------------------------
+
+describe("video timeline markers", () => {
+  it("derives markers from detect and clf frame records", () => {
+    let manifest = createVideoAnnotationManifest(video);
+    manifest = markVideoDetectEmpty(manifest, video, 1);
+    manifest = setVideoClfClass(manifest, video, 2, "day");
+    manifest = updateVideoDetectBoxes(manifest, video, 3, [box], true);
+    manifest = setVideoClfClass(manifest, video, 3, "night");
+
+    const markers = videoTimelineMarkers(manifest);
+
+    expect(markers.map((marker) => marker.key)).toEqual(["1000", "2000", "3000"]);
+    expect(markers.map((marker) => marker.kind)).toEqual(["empty", "clf", "mixed"]);
+    expect(markers[2]).toMatchObject({
+      detectBoxCount: 1,
+      hasDetect: true,
+      hasClf: true
+    });
+  });
+
+  it("does not emit undefined or NaN marker labels", () => {
+    let manifest = createVideoAnnotationManifest(video);
+    manifest = markVideoClfReviewed(manifest, video, 4);
+
+    const labels = videoTimelineMarkers(manifest).map((marker) => marker.label).join(" ");
+
+    expect(labels).not.toMatch(/undefined|NaN/);
+  });
+});
+
+describe("moveVideoFrameRecord", () => {
+  it("moves a frame record while preserving detect and clf tasks", () => {
+    let manifest = createVideoAnnotationManifest(video);
+    manifest = updateVideoDetectBoxes(manifest, video, 1, [box], true);
+    manifest = setVideoClfClass(manifest, video, 1, "night");
+
+    const moved = moveVideoFrameRecord(manifest, video, 1, 2.5, "2026-01-01T00:00:00Z");
+
+    expect(frameAnnotationAt(moved, 1)).toBeNull();
+    const frame = frameAnnotationAt(moved, 2.5);
+    expect(frame?.timestampMs).toBe(2500);
+    expect(getDetectTask(frame)?.boxes).toHaveLength(1);
+    expect(getClfTask(frame)?.classKey).toBe("night");
+  });
+
+  it("refuses to overwrite another timestamp record", () => {
+    let manifest = createVideoAnnotationManifest(video);
+    manifest = updateVideoDetectBoxes(manifest, video, 1, [box], true);
+    manifest = setVideoClfClass(manifest, video, 2, "day");
+
+    expect(() => moveVideoFrameRecord(manifest, video, 1, 2)).toThrow(
+      "Target timestamp already has an annotation record."
+    );
   });
 });
 

@@ -9,11 +9,14 @@ type ImagePoolToolbarProps = {
   hideJunk: "detect" | "clf" | "both" | null;
   pending: boolean;
   deleting: boolean;
+  importing: "copy" | "move" | null;
   selectedCount: number;
   canUndoJunk: boolean;
   junkSelection: { scopeLabel: string; pendingMark: number; pendingClear: number };
   onOpenWorkspace: () => void;
   onRefresh: () => void;
+  onImportCopy: () => void;
+  onImportMove: () => void;
   onMarkSeen: () => void;
   onSelectAll: () => void;
   onClearSelection: () => void;
@@ -36,11 +39,14 @@ export function ImagePoolToolbar({
   hideJunk,
   pending,
   deleting,
+  importing,
   selectedCount,
   canUndoJunk,
   junkSelection,
   onOpenWorkspace,
   onRefresh,
+  onImportCopy,
+  onImportMove,
   onMarkSeen,
   onSelectAll,
   onClearSelection,
@@ -53,7 +59,8 @@ export function ImagePoolToolbar({
   onClearJunk,
   onUndoJunk
 }: ImagePoolToolbarProps) {
-  const busy = pending || deleting;
+  const busy = pending || deleting || Boolean(importing);
+  const scanning = pending && !importing;
   return (
     <>
       <div className="panel-header">
@@ -66,7 +73,13 @@ export function ImagePoolToolbar({
           Open Workspace
         </button>
         <button type="button" disabled={busy} onClick={onRefresh}>
-          {pending ? "Scanning..." : "Refresh Scan"}
+          {scanning ? "Scanning..." : "Refresh Scan"}
+        </button>
+        <button type="button" disabled={busy} onClick={onImportCopy}>
+          {importing === "copy" ? "Copying..." : "Import Copy"}
+        </button>
+        <button type="button" disabled={busy} onClick={onImportMove}>
+          {importing === "move" ? "Moving..." : "Import Move"}
         </button>
         <button type="button" disabled={busy} onClick={onMarkSeen}>
           Mark All Seen
@@ -85,7 +98,7 @@ export function ImagePoolToolbar({
         </button>
       </div>
       <div className="hint image-pool-select-hint">
-        Click to select; use Ctrl/Shift for multi-select. Double-click to preview. Delete removes image_pool
+        Click to select; use Ctrl/Shift for multi-select. Double-click to preview. Delete removes media
         files, hard links, labels, and metadata.
       </div>
       <div className="row image-pool-junk-toolbar">

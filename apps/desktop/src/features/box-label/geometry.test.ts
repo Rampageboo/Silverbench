@@ -3,6 +3,7 @@ import {
   arrowKeyDelta,
   boxIou,
   boxToRect,
+  classBoxColor,
   classNameFor,
   clamp,
   clamp01,
@@ -64,6 +65,15 @@ describe("geometry box rect conversion", () => {
     const rect = enforceMinRect({ x1: 0.49, y1: 0.49, x2: 0.51, y2: 0.51 }, 0.1, 0.1);
     expect(rect.x2 - rect.x1).toBeGreaterThanOrEqual(0.1);
     expect(rect.y2 - rect.y1).toBeGreaterThanOrEqual(0.1);
+  });
+});
+
+describe("geometry class colors", () => {
+  it("assigns stable non-pale colors per class", () => {
+    expect(classBoxColor(3)).toBe(classBoxColor(3));
+    expect(classBoxColor(3)).not.toBe(classBoxColor(4));
+    expect(classBoxColor(3)).toMatch(/^hsl\(\d+ 82% 48%\)$/);
+    expect(classBoxColor(3, true)).toMatch(/^hsl\(\d+ 82% 56%\)$/);
   });
 });
 

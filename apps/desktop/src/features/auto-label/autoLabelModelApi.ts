@@ -4,7 +4,6 @@ import {
   modelDestPath,
   modelFilename,
   parseModelRegistry,
-  updateRegistry,
   validatePtExtension,
   type AutoLabelModelKind,
   type AutoLabelModelRegistry,
@@ -14,10 +13,14 @@ export type { AutoLabelModelKind, AutoLabelModelRegistry };
 
 export async function readAutoLabelModelRegistry(workspaceRoot: string): Promise<AutoLabelModelRegistry> {
   try {
-    const text = await readTextFile(workspaceRoot, REGISTRY_REL_PATH);
-    return parseModelRegistry(text);
+    return await callJson<AutoLabelModelRegistry>("readAutoLabelModelRegistry", [workspaceRoot]);
   } catch {
-    return {};
+    try {
+      const text = await readTextFile(workspaceRoot, REGISTRY_REL_PATH);
+      return parseModelRegistry(text);
+    } catch {
+      return {};
+    }
   }
 }
 
@@ -34,6 +37,19 @@ async function copyModelToWorkspace(
   relDest: string
 ): Promise<void> {
   await callJson<string>("copyModelToWorkspace", [sourcePath, workspaceRoot, relDest]);
+}
+
+async function importModelViaBackend(
+  workspaceRoot: string,
+  sourcePath: string,
+  kind: AutoLabelModelKind
+): Promise<AutoLabelModelRegistry> {
+  return callJson<AutoLabelModelRegistry>("importAutoLabelModel", [
+    sourcePath,
+    workspaceRoot,
+    kind,
+    new Date().toISOString(),
+  ]);
 }
 
 export async function importAutoLabelDetectModel(
@@ -64,10 +80,5 @@ export async function pickAndImportAutoLabelModel(
   const sourcePath = await callJson<string>("chooseTrainModelFile", [title]);
   if (!sourcePath) return null;
   if (!validatePtExtension(sourcePath)) throw new Error("Only .pt model files are supported.");
-  const relDest = modelDestPath(kind, modelFilename(sourcePath));
-  await copyModelToWorkspace(sourcePath, workspaceRoot, relDest);
-  const existing = await readAutoLabelModelRegistry(workspaceRoot);
-  const registry = updateRegistry(existing, kind, relDest, new Date().toISOString());
-  await writeAutoLabelModelRegistry(workspaceRoot, registry);
-  return registry;
+  return importModelViaBackend(workspaceRoot, sourcePath, kind);
 }

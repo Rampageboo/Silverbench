@@ -8,10 +8,10 @@ import { isLabelWorkbenchEmbedded, useLabelWorkbench } from "../label/useLabelWo
 import type { LabelWorkbenchActionGroup } from "../label/labelWorkbenchTypes";
 import { useArchivedClassIds } from "../workspace/useArchivedClassIds";
 import { useWorkspaceClasses } from "../workspace/useWorkspaceClasses";
-import { classificationOptionsForNewAnnotations } from "../workspace/workspaceClassTaxonomy";
+import { chooseClassificationManifest, classificationOptionsForNewAnnotations } from "../workspace/workspaceClassTaxonomy";
 import { BoxLabelGallery } from "./BoxLabelGallery";
 import { BoxLabelView } from "./BoxLabelView";
-import type { BoxLabelWorkbenchBridge } from "./boxLabelTypes";
+import type { BoxLabelCanvasOverlay, BoxLabelWorkbenchBridge } from "./boxLabelTypes";
 import { useBoxLabel } from "./useBoxLabel";
 
 type BoxLabelPageProps = {
@@ -27,7 +27,7 @@ type BoxLabelSurfaceProps = {
   showSideStack?: boolean;
   onImageNavigate?: (index: number) => void;
   onNavigateBoundary?: (delta: -1 | 1) => void;
-  canvasOverlay?: React.ReactNode;
+  canvasOverlay?: BoxLabelCanvasOverlay;
 };
 
 export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
@@ -69,6 +69,8 @@ export function BoxLabelSurface({
   const workbench = useLabelWorkbench();
   const embedded = isLabelWorkbenchEmbedded(workbench);
   const currentMeta = pool.currentEntry ? pool.metadata.get(pool.currentEntry.basename) : undefined;
+  const currentClassificationKey =
+    currentMeta?.clf_enabled && currentMeta.clf_class ? currentMeta.clf_class : null;
   const currentReviewStatus = isFlaggedFile(currentMeta)
     ? "flagged" as const
     : isReviewedFile(currentMeta)
@@ -76,52 +78,7 @@ export function BoxLabelSurface({
       : "unreviewed" as const;
 
   const imageActionGroups = useMemo<LabelWorkbenchActionGroup[]>(() => {
-    const proposalCount = workbenchBridge?.proposalCount ?? 0;
-    const activeProposalCount = workbenchBridge?.activeProposalCount ?? 0;
-    const hasSelectedProposal = Boolean(workbenchBridge?.selectedProposalId);
-    const selectedArchivedReason = "Restore this class in Library before materializing the selected proposal.";
-    const acceptAllReason = "All proposals reference archived classes. Restore those classes before materializing.";
-    const proposalActions: LabelWorkbenchActionGroup["actions"] = [];
-
-    if (workbenchBridge && proposalCount > 0) {
-      if (hasSelectedProposal) {
-        proposalActions.push(
-          {
-            id: "proposal.acceptSelected",
-            label: "Accept Selected",
-            variant: "primary",
-            disabled: workbenchBridge.selectedProposalArchived,
-            unavailableReason: workbenchBridge.selectedProposalArchived ? selectedArchivedReason : undefined,
-            run: workbenchBridge.acceptSelectedProposal ?? undefined,
-          },
-          {
-            id: "proposal.rejectSelected",
-            label: "Reject Selected",
-            run: workbenchBridge.rejectSelectedProposal ?? undefined,
-          }
-        );
-      }
-
-      if (!hasSelectedProposal || proposalCount > 1) {
-        proposalActions.push(
-          {
-            id: "proposal.acceptAll",
-            label: "Accept All",
-            variant: "primary",
-            disabled: activeProposalCount <= 0,
-            unavailableReason: activeProposalCount > 0 ? undefined : acceptAllReason,
-            run: workbenchBridge.acceptAllProposals,
-          },
-          {
-            id: "proposal.rejectAll",
-            label: "Reject All",
-            variant: "danger",
-            run: workbenchBridge.rejectAllProposals,
-          }
-        );
-      }
-    }
-
+    const duplicateFlow = workbenchBridge?.duplicateFlow ?? null;
     return [
       {
         id: "image-review",
@@ -150,10 +107,54 @@ export function BoxLabelSurface({
         ],
       },
       {
-        id: "image-proposals",
-        label: "Proposals",
-        actions: proposalActions,
-      },
+        id: "image-duplicate",
+        label: "Duplicate to Next Frame",
+        description: duplicateFlow?.message ?? "Select a box and press T to add it to duplicate list.",
+        items: duplicateFlow?.items.map((item, index) => ({
+          id: item.id,
+          label: `${index + 1}. ${item.className} x=${item.x.toFixed(3)} y=${item.y.toFixed(3)} w=${item.w.toFixed(3)} h=${item.h.toFixed(3)}`,
+          detail: item.paused ? "Paused" : item.currentBoxIndex === null ? "Queued" : `Current box ${item.currentBoxIndex + 1}`,
+          selected: item.selected,
+          tone: item.paused ? "muted" : "default",
+          run: workbenchBridge?.selectDuplicateItem ? () => workbenchBridge.selectDuplicateItem?.(item.id) : undefined,
+        })) ?? [],
+        actions: [
+          {
+            id: "duplicate.start",
+            label: "Add",
+            title: "Add selected box to duplicate list (T)",
+            variant: "primary",
+            disabled: !duplicateFlow?.canStart || !workbenchBridge?.startDuplicateToNext,
+            unavailableReason: duplicateFlow?.canStart ? undefined : "Select a box to add.",
+            run: workbenchBridge?.startDuplicateToNext ?? undefined,
+          },
+          {
+            id: "duplicate.pause",
+            label: "Pause",
+            title: "Pause the selected duplicate box; remove it from this frame if present.",
+            disabled: !duplicateFlow?.canPause || !workbenchBridge?.pauseDuplicateFlow,
+            unavailableReason: duplicateFlow?.canPause ? undefined : "Select an active duplicate box.",
+            run: workbenchBridge?.pauseDuplicateFlow ?? undefined,
+          },
+          {
+            id: "duplicate.resume",
+            label: "Resume",
+            title: "Resume the paused duplicate on this frame.",
+            disabled: !duplicateFlow?.canResume || !workbenchBridge?.resumeDuplicateFlow,
+            unavailableReason: duplicateFlow?.canResume ? undefined : "Duplicate is not paused.",
+            run: workbenchBridge?.resumeDuplicateFlow ?? undefined,
+          },
+          {
+            id: "duplicate.delete",
+            label: "Delete",
+            title: "Delete the selected duplicate box.",
+            variant: "danger",
+            disabled: !duplicateFlow?.canDelete || !workbenchBridge?.deleteDuplicateFlow,
+            unavailableReason: duplicateFlow?.canDelete ? undefined : "No duplicate box selected.",
+            run: workbenchBridge?.deleteDuplicateFlow ?? undefined,
+          },
+        ],
+      }
     ];
   }, [
     currentReviewStatus,
@@ -166,21 +167,39 @@ export function BoxLabelSurface({
     workspaceRoot,
   ]);
 
+  const classificationManifest = useMemo(
+    () => chooseClassificationManifest(workspaceClassManifest, classManifest),
+    [classManifest, workspaceClassManifest]
+  );
+
   const imageClassificationClasses = useMemo(
-    () => (workspaceClassManifest ?? classManifest)
-      ? classificationOptionsForNewAnnotations((workspaceClassManifest ?? classManifest)!).map((def) => ({
+    () => classificationManifest
+      ? classificationOptionsForNewAnnotations(classificationManifest).map((def) => ({
           key: def.key,
           name: def.name,
           archived: def.archived,
         }))
       : [],
-    [classManifest, workspaceClassManifest]
+    [classificationManifest]
+  );
+  const workspaceClfClassCount = useMemo(
+    () => workspaceClassManifest ? classificationOptionsForNewAnnotations(workspaceClassManifest).length : null,
+    [workspaceClassManifest]
+  );
+  const archivedClfClassCount = useMemo(
+    () => classManifest ? classificationOptionsForNewAnnotations(classManifest).length : null,
+    [classManifest]
   );
 
   const classificationClassStatus =
     workspaceClassesLoading
       ? "Loading classification classes..."
-      : workspaceClassesLoadError || workspaceClassesSaveError || "";
+      : workspaceClassesLoadError || workspaceClassesSaveError ||
+        (imageClassificationClasses.length === 0
+          ? classificationManifest
+            ? `Class manifest loaded, but it has 0 active clf classes. workspace=${workspaceClfClassCount ?? "not loaded"}, archive=${archivedClfClassCount ?? "not loaded"}`
+            : "Class manifest is not loaded."
+          : "");
 
   const handleAddClassificationClass = useCallback(
     async (name: string) => {
@@ -226,23 +245,12 @@ export function BoxLabelSurface({
             detectClasses: workbenchBridge.activeDetectClasses,
             classificationClasses: imageClassificationClasses,
             currentDetectClassId: workbenchBridge.currentClassId,
-            currentClassificationKey: null,
-            readOnlyReason: "Class selection remains owned by the Box Label task panels in v1.",
+            currentClassificationKey,
+            readOnlyReason: null,
           }
         : null,
-      proposalSummary: workbenchBridge
-        ? { pendingCount: workbenchBridge.proposalCount, totalCount: workbenchBridge.proposalCount }
-        : null,
-      selectedProposal: workbenchBridge?.selectedProposalId
-        ? {
-            id: workbenchBridge.selectedProposalId,
-            classId: workbenchBridge.selectedProposalClassId,
-            classKey: workbenchBridge.selectedProposalClassKey,
-            className: workbenchBridge.selectedProposalClassName,
-            confidence: workbenchBridge.selectedProposalConfidence,
-            archived: workbenchBridge.selectedProposalArchived,
-          }
-        : null,
+      proposalSummary: null,
+      selectedProposal: null,
       warnings: [
         ...(/archived/i.test(pool.statusText)
           ? [{
@@ -251,14 +259,6 @@ export function BoxLabelSurface({
             detail: pool.statusText,
             tone: "warning",
           } as const]
-          : []),
-        ...(workbenchBridge?.selectedProposalArchived
-          ? [{
-              id: "archived-selected-proposal",
-              label: "Selected proposal uses an archived class",
-              detail: "Restore the class in Library before materializing this proposal.",
-              tone: "warning" as const,
-            }]
           : []),
       ],
     });
@@ -275,6 +275,7 @@ export function BoxLabelSurface({
     pool.currentIndex,
     pool.metadata,
     pool.classImageCounts.size,
+    currentClassificationKey,
     currentReviewStatus,
     pool.statusText,
     workbenchBridge,
@@ -286,9 +287,17 @@ export function BoxLabelSurface({
     pool.statusText ||
     (workspaceRoot.trim()
       ? pool.entries.length
-        ? `${pool.entries.length} image(s) in detect_dataset`
+        ? `${pool.entries.length} media image(s)`
         : "detect_dataset is empty — send images to Detect first."
-      : "Open a workspace with detect_dataset to label detection boxes.");
+      : "Open a workspace to label media.");
+
+  const mediaTopbarStatus =
+    pool.statusText ||
+    (workspaceRoot.trim()
+      ? pool.entries.length
+        ? `${pool.entries.length} media image(s)`
+        : "No media images found. Import images to start labeling."
+      : "Open a workspace to label media.");
 
   const reviewNames =
     pool.selectedBasenames.size > 0
@@ -321,7 +330,7 @@ export function BoxLabelSurface({
         <div className="page-loading" role="status" aria-live="polite">
           <span className="page-loading-spinner" aria-hidden="true" />
           <span className="page-loading-title">正在加载 Box Label</span>
-          <span className="page-loading-detail">读取 detect_dataset 中的图片…</span>
+          <span className="page-loading-detail">Loading media images...</span>
         </div>
       </div>
     );
@@ -333,7 +342,7 @@ export function BoxLabelSurface({
         {!embedded ? (
           <BoxLabelTopbar
             title="Box Label"
-            statusText={pool.error || topbarStatus}
+            statusText={pool.error || mediaTopbarStatus}
             canMarkJunk={Boolean(workspaceRoot.trim())}
             junkLabel={pool.junkButtonLabel}
             canUndoJunk={pool.canUndoJunk}
@@ -343,7 +352,7 @@ export function BoxLabelSurface({
             {...topbarCommon}
           />
         ) : null}
-        <div className="empty">{pool.error || "No images in detect_dataset."}</div>
+        <div className="empty">{pool.error || "No media images found."}</div>
       </div>
     );
   }
@@ -353,7 +362,7 @@ export function BoxLabelSurface({
       {!embedded ? (
         <BoxLabelTopbar
           title="Box Label"
-          statusText={topbarStatus}
+          statusText={mediaTopbarStatus}
           canMarkJunk={Boolean(workspaceRoot.trim())}
           junkLabel={pool.junkButtonLabel}
           canUndoJunk={pool.canUndoJunk}
@@ -383,6 +392,7 @@ export function BoxLabelSurface({
         <BoxLabelView
           workspaceRoot={workspaceRoot}
           datasetRoot={pool.datasetRoot}
+          mediaDir={pool.mediaDir}
           entry={pool.currentEntry}
           entries={pool.entries}
           currentIndex={pool.currentIndex}
@@ -421,7 +431,10 @@ export function BoxLabelSurface({
           classificationClassesBusy={workspaceClassesLoading || workspaceClassesSaving}
           classificationClassesStatus={classificationClassStatus}
           classificationClassesPortalId={embedded ? "lwbClassifyClassesSlot" : undefined}
+          currentClassificationKey={currentClassificationKey}
+          onAssignClassificationClass={pool.assignClassificationClass}
           onAddClassificationClass={handleAddClassificationClass}
+          onWorkspaceClassesChanged={loadWorkspaceClasses}
           canvasOverlay={canvasOverlay}
         />
       </main>

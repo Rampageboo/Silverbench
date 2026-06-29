@@ -3,6 +3,8 @@ import * as api from "../../api";
 import { errMessage } from "../../lib/errors";
 import { readWorkspaceSessionLite } from "../image-pool/session";
 import {
+  INBOX_JUNK_CLASS,
+  isClfJunk,
   isDetectJunk,
   isFlaggedFile,
   isReviewedFile,
@@ -14,10 +16,11 @@ import type { MetadataRow } from "../image-pool/types";
 import { hasJunkUndo, popJunkUndo, pushJunkUndo } from "../shared/junkUndo";
 import { restoreJunkUndoWithLinks } from "../shared/junkMetadata";
 import { useWorkspaceCache } from "../shared/useWorkspaceCache";
+import { isWorkspaceMediaChangedEvent, WORKSPACE_MEDIA_CHANGED_EVENT } from "../shared/mediaEvents";
 import { BOX_LABEL_CACHE_MS } from "../shared/workspaceCache";
 import {
   loadDetectDatasetClassIndex,
-  loadDetectDatasetEntries,
+  loadMediaBoxLabelEntries,
   type BoxLabelEntry
 } from "./boxLabelCore";
 import {
@@ -32,6 +35,10 @@ import {
 
 function naturalCompare(a: string, b: string) {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}
+
+function comparablePath(path: string) {
+  return path.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }
 
 /**
@@ -64,6 +71,7 @@ export function useBoxLabel({
   const { getBoxLabelCache, patchBoxLabelCacheLabelIndex, setBoxLabelCache } = useWorkspaceCache();
   const root = workspaceRoot.trim();
   const [datasetRoot, setDatasetRoot] = useState("");
+  const [mediaDir, setMediaDir] = useState("media");
   const [allEntries, setAllEntries] = useState<BoxLabelEntry[]>([]);
   const [labelIndex, setLabelIndex] = useState<Map<string, Set<number>>>(new Map());
   const [metadata, setMetadata] = useState<Map<string, MetadataRow>>(new Map());
@@ -146,23 +154,31 @@ export function useBoxLabel({
     if (!imagePath) return 0;
     const index = list.findIndex((entry) => entry.imagePath === imagePath);
     if (index >= 0) return index;
-    const basename = imagePath.replace(/^image_pool\//, "");
+    const basename = imagePath.split("/").pop() || imagePath;
     return resolveIndex(list, basename);
   }, [resolveIndex]);
 
-  const load = useCallback(async (options: { background?: boolean } = {}) => {
+  const load = useCallback(async (options: { background?: boolean; force?: boolean } = {}) => {
     if (!root) {
       setAllEntries([]);
       setDatasetRoot("");
+      setMediaDir("media");
       setError("Open a workspace first.");
       notifyReady();
       return;
     }
 
     const cached = getBoxLabelCache(root);
-    const cacheFresh = cached && Date.now() - cached.cachedAt < BOX_LABEL_CACHE_MS ? cached : null;
+    const cacheFresh =
+      cached &&
+      !options.force &&
+      Date.now() - cached.cachedAt < BOX_LABEL_CACHE_MS &&
+      comparablePath(cached.datasetRoot) === comparablePath(root)
+        ? cached
+        : null;
     if (cacheFresh && !options.background) {
       setDatasetRoot(cacheFresh.datasetRoot);
+      setMediaDir(cacheFresh.mediaDir || "media");
       setAllEntries(cacheFresh.entries);
       if (cacheFresh.labelIndex) setLabelIndex(cacheFresh.labelIndex);
       setError("");
@@ -201,11 +217,12 @@ export function useBoxLabel({
     try {
       const [, dataset, session, meta] = await Promise.all([
         api.openWorkspace(root).catch(() => {}),
-        loadDetectDatasetEntries(root),
+        loadMediaBoxLabelEntries(root),
         readWorkspaceSessionLite(root),
         loadMetadataMap(root).catch(() => new Map<string, MetadataRow>())
       ]);
       setDatasetRoot(dataset.datasetRoot);
+      setMediaDir(dataset.mediaDir || "media");
       const list = [...dataset.entries].sort((a, b) => naturalCompare(a.basename, b.basename));
       setAllEntries(list);
       setMetadata(meta);
@@ -236,6 +253,7 @@ export function useBoxLabel({
       }
       setBoxLabelCache(root, {
         datasetRoot: dataset.datasetRoot,
+        mediaDir: dataset.mediaDir || "media",
         entries: list,
         labelIndex: cacheFresh?.labelIndex ?? null
       });
@@ -251,6 +269,11 @@ export function useBoxLabel({
       } else {
         setStatusText(`${list.length} image(s) in detect_dataset`);
       }
+      setStatusText(
+        list.length
+          ? `${list.length} media image(s) ready for detect + clf labeling.`
+          : "No media images found. Import images into media to start labeling."
+      );
     } catch (err) {
       if (!options.background) {
         setAllEntries([]);
@@ -274,6 +297,17 @@ export function useBoxLabel({
   }, [notifyReady, root, load]);
 
   useEffect(() => {
+    if (!root) return;
+    const handleMediaChanged = (event: Event) => {
+      if (!isWorkspaceMediaChangedEvent(event)) return;
+      if (comparablePath(event.detail.workspaceRoot) !== comparablePath(root)) return;
+      void load({ background: true, force: true });
+    };
+    window.addEventListener(WORKSPACE_MEDIA_CHANGED_EVENT, handleMediaChanged);
+    return () => window.removeEventListener(WORKSPACE_MEDIA_CHANGED_EVENT, handleMediaChanged);
+  }, [load, root]);
+
+  useEffect(() => {
     if (currentIndex >= entries.length && entries.length) setCurrentIndex(entries.length - 1);
     if (!entries.length && currentIndex !== 0) setCurrentIndex(0);
   }, [currentIndex, entries.length]);
@@ -285,6 +319,7 @@ export function useBoxLabel({
     const index = resolveIndex(entries, focus);
     if (index < 0 || !entries[index]) {
       setStatusText(`「${focus}」不在 detect_dataset 中。请先从 Image Assign 发送到 Detect。`);
+      setStatusText(`"${focus}" is not in workspace media. Import it before labeling.`);
       pendingFocusFilename.current = null;
       onFocusConsumed?.();
       return;
@@ -446,6 +481,42 @@ export function useBoxLabel({
     setMetadata(await loadMetadataMap(root));
   }, [root]);
 
+  const assignClassificationClass = useCallback(async (classKey: string | null, basename?: string) => {
+    if (!root) return;
+    const trimmedKey = classKey?.trim() ?? "";
+    const filename = (basename || currentEntry?.basename || "").trim();
+    if (!filename) return;
+    const existing = metadata.get(filename);
+    const update: Record<string, unknown> = {
+      filename,
+      clf_enabled: Boolean(trimmedKey),
+      clf_class: trimmedKey
+    };
+
+    setMetadata((current) => {
+      const next = new Map(current);
+      const currentRow = current.get(filename) || existing;
+      next.set(filename, {
+        ...(currentRow || { filename }),
+        filename,
+        clf_enabled: Boolean(trimmedKey),
+        clf_class: trimmedKey,
+        detect_enabled: currentRow?.detect_enabled ?? false
+      });
+      return next;
+    });
+    setStatusText(trimmedKey ? `Assigned ${filename} -> ${trimmedKey}.` : `Removed classification from ${filename}.`);
+    try {
+      const result = await api.upsertMetadataRows(root, [update]);
+      if (result.ok === false) throw new Error(result.error || "Failed to assign classification class.");
+      await reloadMetadata();
+    } catch (err) {
+      await reloadMetadata().catch(() => {});
+      setStatusText(`Failed to assign classification class: ${errMessage(err)}`);
+      throw err;
+    }
+  }, [currentEntry, metadata, reloadMetadata, root]);
+
   const markJunk = useCallback(async () => {
     if (!root) return;
     const targets = (
@@ -454,9 +525,12 @@ export function useBoxLabel({
         : currentEntry
           ? [currentEntry.basename]
           : []
-    ).filter((name) => !isDetectJunk(metadata.get(name)));
+    ).filter((name) => {
+      const row = metadata.get(name);
+      return !isDetectJunk(row) || !isClfJunk(row);
+    });
     if (!targets.length) {
-      setStatusText("Selected images are already Detect junk.");
+      setStatusText("Selected images are already junk.");
       return;
     }
     const targetSet = new Set(targets);
@@ -470,15 +544,22 @@ export function useBoxLabel({
       const next = new Map(current);
       for (const filename of targets) {
         const row = next.get(filename);
-        next.set(filename, { ...(row || { filename }), filename, detect_junk: true, detect_enabled: false });
+        next.set(filename, {
+          ...(row || { filename }),
+          filename,
+          detect_junk: true,
+          detect_enabled: false,
+          clf_enabled: false,
+          clf_class: INBOX_JUNK_CLASS
+        });
       }
       return next;
     });
     setAllEntries((current) => current.filter((entry) => !targetSet.has(entry.basename)));
     setCurrentIndex((index) => computePostRemovalIndex(index, entries, targetSet));
-    setStatusText(`Marked ${targets.length} image(s) as Detect junk.`);
+    setStatusText(`Marked ${targets.length} image(s) as junk.`);
     try {
-      await markJunkFilenames(root, targets, "detect");
+      await markJunkFilenames(root, targets, "both");
       await reloadMetadata();
     } catch (err) {
       // Restore optimistic state on backend failure so the gallery and
@@ -511,7 +592,10 @@ export function useBoxLabel({
         : currentEntry
           ? [currentEntry.basename]
           : [];
-    const pendingCount = names.filter((name) => !isDetectJunk(metadata.get(name))).length;
+    const pendingCount = names.filter((name) => {
+      const row = metadata.get(name);
+      return !isDetectJunk(row) || !isClfJunk(row);
+    }).length;
     if (names.length > 1) {
       return pendingCount ? `Mark Junk (${pendingCount})` : "Already junk";
     }
@@ -532,6 +616,7 @@ export function useBoxLabel({
 
   return {
     datasetRoot,
+    mediaDir,
     entries: sortedEntries,
     currentIndex,
     currentEntry,
@@ -565,6 +650,7 @@ export function useBoxLabel({
     toggleFlagged,
     updateLabelIndexForFile,
     reloadMetadata,
+    assignClassificationClass,
     markJunk,
     undoJunk,
     canUndoJunk,

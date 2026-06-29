@@ -2,11 +2,7 @@ import { useEffect, useState } from "react";
 import * as api from "../api";
 import { errMessage } from "../lib/errors";
 
-export type BackendHealth = {
-  ok: boolean;
-  app: string;
-  backend: string;
-};
+export type BackendHealth = api.BackendHealth;
 
 export function useBackend(pollMs = 1500) {
   const [health, setHealth] = useState<BackendHealth | null>(null);
@@ -20,7 +16,12 @@ export function useBackend(pollMs = 1500) {
         const data = (await api.health()) as BackendHealth;
         if (!cancelled) {
           setHealth(data);
-          setError("");
+          const schema = Number(data.apiSchemaVersion || 0);
+          setError(
+            schema >= api.REQUIRED_API_SCHEMA_VERSION
+              ? ""
+              : `Backend is out of date (API schema ${schema || "unknown"}; need ${api.REQUIRED_API_SCHEMA_VERSION}). Restart YoloWorkBench.`
+          );
         }
       } catch (err) {
         if (!cancelled) {
@@ -39,7 +40,9 @@ export function useBackend(pollMs = 1500) {
   }, [pollMs]);
 
   return {
-    connected: Boolean(health?.ok),
+    connected: Boolean(
+      health?.ok && Number(health.apiSchemaVersion || 0) >= api.REQUIRED_API_SCHEMA_VERSION
+    ),
     health,
     error
   };

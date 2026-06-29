@@ -28,6 +28,8 @@ class BackendBridge(QtCore.QObject):
             app_settings_dir=APP_DIR,
             choose_directory=self._choose_directory_dialog,
             choose_image_file=self._choose_image_file_dialog,
+            choose_image_files=self._choose_image_files_dialog,
+            choose_media_files=self._choose_media_files_dialog,
             choose_classifier_model=self._choose_classifier_model_dialog,
             choose_train_model_file=self._choose_train_model_file_dialog,
             choose_video_files=self._choose_video_files_dialog,
@@ -80,6 +82,29 @@ class BackendBridge(QtCore.QObject):
             "Image Files (*.png *.jpg *.jpeg *.bmp *.webp);;All Files (*)",
         )
         return path
+
+    def _choose_image_files_dialog(self, title: str) -> list[Path]:
+        paths, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            None,
+            title,
+            "",
+            "Image Files (*.png *.jpg *.jpeg *.bmp *.webp);;All Files (*)",
+        )
+        return [Path(path) for path in paths]
+
+    def _choose_media_files_dialog(self, title: str) -> list[Path]:
+        paths, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            None,
+            title,
+            "",
+            (
+                "Media Files (*.png *.jpg *.jpeg *.bmp *.webp *.mp4 *.mov *.m4v *.avi *.mkv *.webm *.wmv *.mpeg *.mpg);;"
+                "Image Files (*.png *.jpg *.jpeg *.bmp *.webp);;"
+                "Video Files (*.mp4 *.mov *.m4v *.avi *.mkv *.webm *.wmv *.mpeg *.mpg);;"
+                "All Files (*)"
+            ),
+        )
+        return [Path(path) for path in paths]
 
     def _choose_classifier_model_dialog(self, title: str) -> str:
         path, _ = QtWidgets.QFileDialog.getOpenFileName(

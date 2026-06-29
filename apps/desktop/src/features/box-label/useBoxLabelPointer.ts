@@ -104,7 +104,7 @@ export function useBoxLabelPointer({
   proposalsRef,
   selectedProposalIdRef,
   setSelectedProposalId,
-  onMaterializeProposal: _onMaterializeProposal
+  onMaterializeProposal
 }: UseBoxLabelPointerOptions) {
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -144,6 +144,20 @@ export function useBoxLabelPointer({
       const pixelPoint = pointerImagePointFromCanvas(canvasPoint, display, imageW, imageH);
       if (!pixelPoint) return;
       const imagePoint = imagePixelPointToNormalized(pixelPoint, imageW, imageH);
+
+      if (proposalsRef && setSelectedProposalId) {
+        const proposals = proposalsRef.current;
+        const proposalIdx = hitTestProposals(canvasPoint, display, proposals, imageW, imageH);
+        if (proposalIdx >= 0) {
+          const hitId = proposals[proposalIdx].id;
+          setSelectedProposalId(hitId);
+          if (onMaterializeProposal) {
+            void onMaterializeProposal(hitId).catch((error) => setError(errMessage(error)));
+          }
+          scheduleDraw();
+          return;
+        }
+      }
 
       if (!pointerToolEnabled && (modeRef.current === "draw" || blackBoxEnabled || autoFitEnabled)) {
         setSelectedBoxId(null);
@@ -194,6 +208,7 @@ export function useBoxLabelPointer({
       imageRef,
       lastZoomCenterRef,
       modeRef,
+      onMaterializeProposal,
       pointerToolEnabled,
       proposalsRef,
       pushUndo,

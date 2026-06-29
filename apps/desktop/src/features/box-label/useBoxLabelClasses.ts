@@ -1,13 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import * as api from "../../api";
-import { useArchivedClassIds } from "../workspace/useArchivedClassIds";
 import {
-  classMapToLabelClasses,
-  loadDatasetClassNames,
-  saveDatasetClassNames
-} from "./boxLabelCore";
+  dispatchWorkspaceClassesChanged,
+  isWorkspaceClassesChangedEvent,
+  WORKSPACE_CLASSES_CHANGED_EVENT,
+} from "../shared/workspaceClassEvents";
+import { useArchivedClassIds } from "../workspace/useArchivedClassIds";
+import { normalizeClassesManifest, type ClassesManifest } from "../video/classDomain";
+import {
+  addDetectClassToManifest,
+  allDetectClassDefs,
+  manifestToLegacyClasses,
+  upgradeLegacyToManifest
+} from "../workspace/workspaceClassTaxonomy";
+import {
+  dispatchWorkspaceClassesChangedForRoots,
+  resolveActiveWorkspaceRoot,
+  sameWorkspacePath,
+} from "../workspace/activeWorkspaceRoot";
 import { classNameFor, loadShortcutSlots, saveShortcutSlots, type DragState, type ToolMode } from "./geometry";
 import type { BoxLabelShortcutSlot, FixedBoxSlot } from "./session";
+
+const CLASSES_JSON_PATH = "workspace/classes.json";
 
 type ShortcutOption = {
   value: string;
@@ -36,8 +50,31 @@ type UseBoxLabelClassesOptions = {
   setStatus: (status: string) => void;
 };
 
+function detectClassesFromManifest(manifest: ClassesManifest): api.LabelClass[] {
+  return allDetectClassDefs(manifest).map((item) => ({ id: item.yoloId, name: item.name }));
+}
+
+async function loadWorkspaceDetectClasses(workspaceRoot: string) {
+  const classRoot = await resolveActiveWorkspaceRoot(workspaceRoot);
+  try {
+    const text = await api.readTextFile(classRoot, CLASSES_JSON_PATH);
+    const manifest = normalizeClassesManifest(JSON.parse(text));
+    return { manifest, classes: detectClassesFromManifest(manifest), workspaceRoot: classRoot };
+  } catch {
+    const legacy = await api.loadLabelClasses(classRoot).catch(() => []);
+    const fallback = legacy.length ? legacy : [{ id: 0, name: "object" }];
+    return { manifest: upgradeLegacyToManifest(fallback), classes: fallback, workspaceRoot: classRoot };
+  }
+}
+
+async function saveWorkspaceDetectManifest(workspaceRoot: string, manifest: ClassesManifest) {
+  const classRoot = await resolveActiveWorkspaceRoot(workspaceRoot);
+  await api.writeTextFile(classRoot, CLASSES_JSON_PATH, `${JSON.stringify(manifest, null, 2)}\n`);
+  await api.saveLabelClasses(classRoot, manifestToLegacyClasses(manifest));
+  dispatchWorkspaceClassesChangedForRoots(dispatchWorkspaceClassesChanged, workspaceRoot, classRoot);
+}
+
 export function useBoxLabelClasses({
-  datasetRoot,
   workspaceRoot,
   initialShortcutSlots,
   initialFixedBoxSlots,
@@ -60,6 +97,8 @@ export function useBoxLabelClasses({
   const [classes, setClasses] = useState<api.LabelClass[]>([]);
   const classesRef = useRef(classes);
   classesRef.current = classes;
+  const classManifestRef = useRef<ClassesManifest | null>(null);
+  const activeWorkspaceRootRef = useRef("");
 
   const [currentClass, setCurrentClass] = useState(0);
   const [mode, setMode] = useState<ToolMode>("draw");
@@ -124,20 +163,34 @@ export function useBoxLabelClasses({
     [archivedClassKeysRef]
   );
 
+  const reloadDetectClasses = useCallback(async () => {
+    if (!workspaceRoot.trim()) return;
+    const { manifest, classes: nextClasses, workspaceRoot: activeWorkspaceRoot } =
+      await loadWorkspaceDetectClasses(workspaceRoot);
+    activeWorkspaceRootRef.current = activeWorkspaceRoot;
+    classManifestRef.current = manifest;
+    setClasses(nextClasses);
+  }, [workspaceRoot]);
+
   useEffect(() => {
-    if (!datasetRoot) return;
-    let cancelled = false;
-    api
-      .listDatasetFiles(datasetRoot)
-      .then(async (paths) => {
-        const names = await loadDatasetClassNames(datasetRoot, new Set(paths));
-        if (!cancelled) setClasses(classMapToLabelClasses(names));
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
+    reloadDetectClasses().catch(() => {});
+  }, [reloadDetectClasses]);
+
+  useEffect(() => {
+    if (!workspaceRoot.trim()) return;
+    const handleClassesChanged = (event: Event) => {
+      if (!isWorkspaceClassesChangedEvent(event)) return;
+      if (
+        !sameWorkspacePath(event.detail.workspaceRoot, workspaceRoot) &&
+        !sameWorkspacePath(event.detail.workspaceRoot, activeWorkspaceRootRef.current)
+      ) {
+        return;
+      }
+      void reloadDetectClasses();
     };
-  }, [datasetRoot]);
+    window.addEventListener(WORKSPACE_CLASSES_CHANGED_EVENT, handleClassesChanged);
+    return () => window.removeEventListener(WORKSPACE_CLASSES_CHANGED_EVENT, handleClassesChanged);
+  }, [reloadDetectClasses, workspaceRoot]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -391,13 +444,16 @@ export function useBoxLabelClasses({
       setStatus(`Selected existing class ${classNameFor(classes, existing.id)}.`);
       return;
     }
-    const nextId = classes.length ? Math.max(...classes.map((item) => item.id)) + 1 : 0;
-    const next = [...classes, { id: nextId, name }];
-    const saved = await saveDatasetClassNames(datasetRoot, new Map(next.map((item) => [item.id, item.name])));
+    const baseManifest = classManifestRef.current ?? upgradeLegacyToManifest(classes.length ? classes : [{ id: 0, name: "object" }]);
+    const { manifest: next } = addDetectClassToManifest(baseManifest, name);
+    await saveWorkspaceDetectManifest(workspaceRoot, next);
+    classManifestRef.current = next;
+    const saved = detectClassesFromManifest(next);
+    const nextId = saved.length - 1;
     setClasses(saved);
     applyCurrentClass(nextId);
     setStatus(`Created class ${nextId}: ${name}.`);
-  }, [applyCurrentClass, assignClass, classNameInput, classes, datasetRoot, isArchivedClassId, setStatus]);
+  }, [applyCurrentClass, assignClass, classNameInput, classes, isArchivedClassId, setStatus, workspaceRoot]);
 
   const sortedClasses = useMemo(
     () => [...classes].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }) || a.id - b.id),

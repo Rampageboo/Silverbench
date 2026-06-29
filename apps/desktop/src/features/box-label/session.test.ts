@@ -14,8 +14,8 @@ describe("box-label session", () => {
 
   it("parsePoolLabelSession reads known fields", () => {
     const parsed = parsePoolLabelSession({
-      currentImagePath: "image_pool/a.jpg",
-      poolLabelCurrentImagePath: "image_pool/b.jpg",
+      currentImagePath: "media/a.jpg",
+      poolLabelCurrentImagePath: "media/b.jpg",
       galleryScrollTop: 12.7,
       poolLabelPointerToolEnabled: true,
       poolLabelAutoFitEnabled: false
@@ -133,11 +133,11 @@ describe("box-label session", () => {
   it("resolveResumeImagePath prefers pool label path", () => {
     expect(
       resolveResumeImagePath({
-        poolLabelCurrentImagePath: "image_pool/b.jpg",
-        currentImagePath: "image_pool/a.jpg"
+        poolLabelCurrentImagePath: "media/b.jpg",
+        currentImagePath: "media/a.jpg"
       })
-    ).toBe("image_pool/b.jpg");
-    expect(resolveResumeImagePath({ currentImagePath: "image_pool/a.jpg" })).toBe("image_pool/a.jpg");
+    ).toBe("media/b.jpg");
+    expect(resolveResumeImagePath({ currentImagePath: "media/a.jpg" })).toBe("media/a.jpg");
   });
 
   it("resolveResumeImagePath returns empty string when both are absent", () => {

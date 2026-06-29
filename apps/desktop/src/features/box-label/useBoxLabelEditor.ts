@@ -4,21 +4,35 @@ import { errMessage } from "../../lib/errors";
 import { datasetImageUrl, invalidateDatasetImageUrl } from "../dataset-review/datasetAssets";
 import { loadMetadataMap } from "../image-pool/metadata";
 import type { MetadataRow } from "../image-pool/types";
-import { materializeProposal as materializeProposalFn, nextNeedsReviewIndex, prevNeedsReviewIndex, proposalUsesArchivedDetectClass } from "../auto-label/proposalDomain";
+import {
+  DEFAULT_DEDUP_IOU_THRESHOLD,
+  materializeProposal as materializeProposalFn,
+  nextNeedsReviewIndex,
+  predictionIou,
+  prevNeedsReviewIndex,
+  proposalUsesArchivedDetectClass
+} from "../auto-label/proposalDomain";
 import type { ReviewQueueEntry } from "../auto-label/proposalDomain";
 import { imageProposalKey, loadImageProposals, saveImageProposals, type ImageProposalManifest } from "../auto-label/proposalApi";
 import type { DetectProposal } from "../video/videoAnnotationApi";
+import { buildClassIdByName, resolveAutoLabelClassId } from "./autoLabelClassMapping";
 import { loadEntryLabels, saveEntryLabels, type BoxLabelEntry } from "./boxLabelCore";
-import type { BoxLabelViewProps } from "./boxLabelTypes";
+import type { BoxLabelAutoLabelOptions, BoxLabelAutoLabelResult, BoxLabelViewProps } from "./boxLabelTypes";
 import { findNearestBoxIndex, loadCanvasImage, type BoxAdjustMode, type DragState, type ProposalShape } from "./geometry";
 import { useBoxLabelClasses } from "./useBoxLabelClasses";
 import { useBoxLabelInteraction } from "./useBoxLabelInteraction";
 import { useBoxTracking } from "./useBoxTracking";
 import { useBoxUndo } from "./useBoxUndo";
 
+function clamp01(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
+
 export function useBoxLabelEditor({
   workspaceRoot,
   datasetRoot,
+  mediaDir = "media",
   entry,
   entries,
   currentIndex,
@@ -61,8 +75,10 @@ export function useBoxLabelEditor({
   const classesSetCurrentClassRef = useRef<(classId: number) => void>(() => {});
   const archivedDetectIdsRef = useRef<Set<number>>(new Set());
   const archivedClassKeysRef = useRef<Set<string>>(new Set());
+  const classIdByNameRef = useRef<Map<string, number>>(new Map());
   const proposalsRef = useRef<ProposalShape[]>([]);
   const selectedProposalIdRef = useRef<string | null>(null);
+  const ephemeralProposalIdsRef = useRef<Set<string>>(new Set());
 
   const [boxes, setBoxes] = useState<api.LabelBox[]>([]);
   const [proposals, setProposals] = useState<DetectProposal[]>([]);
@@ -75,6 +91,7 @@ export function useBoxLabelEditor({
   const [imageVersion, setImageVersion] = useState(0);
   const metadataRef = useRef<Map<string, MetadataRow>>(new Map());
   const filename = entry?.basename || "";
+  const mediaImagePath = filename ? `${mediaDir.replace(/^\/+|\/+$/g, "") || "media"}/${filename}` : "";
   const entryImagePath = entry?.imagePath ?? "";
 
   const scheduleDraw = useCallback(() => scheduleDrawRef.current(), []);
@@ -91,10 +108,15 @@ export function useBoxLabelEditor({
   const persistEntryLabels = useCallback(
     async (target: BoxLabelEntry, nextBoxes: api.LabelBox[]) => {
       await saveEntryLabels(datasetRoot, target, nextBoxes);
+      if (workspaceRoot && nextBoxes.length > 0) {
+        await api.upsertMetadataRows(workspaceRoot, [
+          { filename: target.basename, detect_enabled: true }
+        ]);
+      }
       onLabelsChanged(target.basename, nextBoxes);
       return nextBoxes;
     },
-    [datasetRoot, onLabelsChanged]
+    [datasetRoot, onLabelsChanged, workspaceRoot]
   );
 
   const persistProposals = useCallback(
@@ -110,6 +132,21 @@ export function useBoxLabelEditor({
       await saveImageProposals(workspaceRoot, manifest);
     },
     [entry, workspaceRoot]
+  );
+
+  const persistProposalListForEntry = useCallback(
+    async (target: BoxLabelEntry, proposalsList: ProposalShape[]) => {
+      if (!workspaceRoot) return;
+      const imageKey = imageProposalKey(target.imagePath);
+      const manifest: ImageProposalManifest = {
+        version: 1,
+        imageKey,
+        proposals: proposalsList as DetectProposal[],
+        updatedAt: new Date().toISOString()
+      };
+      await saveImageProposals(workspaceRoot, manifest);
+    },
+    [workspaceRoot]
   );
 
   const { pushUndo, pushImageUndo, pushBatchUndo, undoLast, redoLast } = useBoxUndo({
@@ -130,6 +167,193 @@ export function useBoxLabelEditor({
     setStatus,
     scheduleDraw
   });
+
+  const addProposals = useCallback(
+    async (
+      incoming: DetectProposal[],
+      options: { replace?: boolean; statusMessage?: string } = {}
+    ): Promise<{ added: number; skipped: number }> => {
+      if (!entry) return { added: 0, skipped: incoming.length };
+      const validIncoming = incoming.filter(
+        (proposal) =>
+          proposal.id &&
+          Number.isFinite(proposal.x) &&
+          Number.isFinite(proposal.y) &&
+          Number.isFinite(proposal.w) &&
+          Number.isFinite(proposal.h) &&
+          proposal.w > 0 &&
+          proposal.h > 0
+      );
+      let skipped = incoming.length - validIncoming.length;
+      const existingProposals = options.replace ? [] : (proposalsRef.current as DetectProposal[]);
+      const occupied: Array<{ x: number; y: number; w: number; h: number }> = [
+        ...boxesRef.current,
+        ...existingProposals,
+      ];
+      const kept: DetectProposal[] = [];
+      const usedIds = new Set(existingProposals.map((proposal) => proposal.id));
+
+      for (const proposal of validIncoming) {
+        if (usedIds.has(proposal.id)) {
+          skipped += 1;
+          continue;
+        }
+        const duplicate = occupied.some(
+          (existing) => predictionIou(proposal, existing) >= DEFAULT_DEDUP_IOU_THRESHOLD
+        );
+        if (duplicate) {
+          skipped += 1;
+          continue;
+        }
+        kept.push(proposal);
+        occupied.push(proposal);
+        usedIds.add(proposal.id);
+      }
+
+      if (!kept.length && !options.replace) {
+        setStatus(skipped ? "Auto label found no new proposals." : "No proposals to add.");
+        return { added: 0, skipped };
+      }
+
+      const nextProposals = options.replace ? kept : [...existingProposals, ...kept];
+      await persistProposals(nextProposals as ProposalShape[]);
+      pushUndo("add proposals");
+      proposalsRef.current = nextProposals as ProposalShape[];
+      for (const proposal of nextProposals) ephemeralProposalIdsRef.current.delete(proposal.id);
+      setProposals(nextProposals);
+      setSelectedProposalId(kept[0]?.id ?? null);
+      setStatus(options.statusMessage ?? `Added ${kept.length} proposal(s).`);
+      return { added: kept.length, skipped };
+    },
+    [entry, persistProposals, pushUndo, setStatus]
+  );
+
+  const applyAutoLabelPredictions = useCallback(
+    async (
+      target: BoxLabelEntry,
+      predictions: api.PtDetectPrediction[],
+      options: BoxLabelAutoLabelOptions = {}
+    ): Promise<BoxLabelAutoLabelResult> => {
+      const highConfidence = options.highConfidence ?? 0.8;
+      const proposalConfidence = options.proposalConfidence ?? 0.25;
+      const isCurrent = entry?.imagePath === target.imagePath;
+      const existingBoxes = isCurrent ? boxesRef.current : await loadEntryLabels(datasetRoot, target);
+      const existingProposalManifest = workspaceRoot
+        ? await loadImageProposals(workspaceRoot, imageProposalKey(target.imagePath))
+        : null;
+      const existingProposals = isCurrent
+        ? (proposalsRef.current as DetectProposal[])
+        : (existingProposalManifest?.proposals ?? []);
+      const occupied: Array<{ x: number; y: number; w: number; h: number }> = [
+        ...existingBoxes,
+        ...existingProposals,
+      ];
+      const nextBoxes = [...existingBoxes];
+      const nextProposals = [...existingProposals];
+      const now = new Date().toISOString();
+      const newEphemeralIds = new Set<string>();
+      let boxesAdded = 0;
+      let proposalsAdded = 0;
+      let skipped = 0;
+      let ignored = 0;
+
+      predictions.forEach((prediction, index) => {
+        const confidence = clamp01(prediction.confidence);
+        const classId = resolveAutoLabelClassId(prediction, classIdByNameRef.current);
+        const candidate = {
+          classId,
+          x: clamp01(prediction.x),
+          y: clamp01(prediction.y),
+          w: clamp01(prediction.w),
+          h: clamp01(prediction.h),
+        };
+        if (candidate.w <= 0 || candidate.h <= 0 || archivedDetectIdsRef.current.has(classId)) {
+          skipped += 1;
+          return;
+        }
+        if (predictionIou(candidate, candidate) <= 0) {
+          skipped += 1;
+          return;
+        }
+        if (occupied.some((existing) => predictionIou(candidate, existing) >= DEFAULT_DEDUP_IOU_THRESHOLD)) {
+          skipped += 1;
+          return;
+        }
+
+        if (confidence >= highConfidence) {
+          nextBoxes.push(candidate);
+          occupied.push(candidate);
+          boxesAdded += 1;
+          return;
+        }
+
+        if (confidence >= proposalConfidence && (options.persistProposals || isCurrent)) {
+          const proposal: DetectProposal = {
+            id: `pt_${Date.now().toString(36)}_${index}_${Math.random().toString(36).slice(2, 7)}`,
+            classId,
+            x: candidate.x,
+            y: candidate.y,
+            w: candidate.w,
+            h: candidate.h,
+            confidence,
+            createdAt: now,
+          };
+          if (options.modelId) proposal.modelId = options.modelId;
+          nextProposals.push(proposal);
+          occupied.push(proposal);
+          proposalsAdded += 1;
+          if (!options.persistProposals) newEphemeralIds.add(proposal.id);
+          return;
+        }
+
+        ignored += 1;
+      });
+
+      if (!boxesAdded && !proposalsAdded) {
+        if (isCurrent) setStatus("Auto label found no new boxes or proposals.");
+        return { total: predictions.length, boxesAdded, proposalsAdded, skipped, ignored };
+      }
+
+      if (isCurrent) pushUndo("auto label");
+      if (boxesAdded) await persistEntryLabels(target, nextBoxes);
+      if (options.persistProposals) {
+        await persistProposalListForEntry(target, nextProposals as ProposalShape[]);
+      } else if (isCurrent) {
+        const persistentProposals = nextProposals.filter(
+          (proposal) => !newEphemeralIds.has(proposal.id) && !ephemeralProposalIdsRef.current.has(proposal.id)
+        );
+        await persistProposalListForEntry(target, persistentProposals as ProposalShape[]);
+      }
+
+      if (isCurrent) {
+        boxesRef.current = nextBoxes;
+        proposalsRef.current = nextProposals as ProposalShape[];
+        for (const id of newEphemeralIds) ephemeralProposalIdsRef.current.add(id);
+        setBoxes(nextBoxes);
+        setProposals(nextProposals);
+        setSelectedProposalId(null);
+        setSelectedBoxId(boxesAdded ? nextBoxes.length - 1 : null);
+        selectedRef.current = boxesAdded ? nextBoxes.length - 1 : null;
+        setStatus(`Auto label: ${boxesAdded} box(es), ${proposalsAdded} proposal(s).`);
+      }
+
+      return { total: predictions.length, boxesAdded, proposalsAdded, skipped, ignored };
+    },
+    [
+      archivedDetectIdsRef,
+      boxesRef,
+      datasetRoot,
+      entry,
+      persistEntryLabels,
+      persistProposalListForEntry,
+      proposalsRef,
+      pushUndo,
+      selectedRef,
+      setBoxes,
+      setStatus,
+      workspaceRoot,
+    ]
+  );
 
   const materializeProposal = useCallback(
     async (proposalId: string) => {
@@ -161,9 +385,13 @@ export function useBoxLabelEditor({
       setSelectedProposalId(null);
       setSelectedBoxId(nextBoxes.length - 1);
       selectedRef.current = nextBoxes.length - 1;
+      ephemeralProposalIdsRef.current.delete(proposalId);
+      const persistentNextProposals = nextProposals.filter(
+        (proposal) => !ephemeralProposalIdsRef.current.has(proposal.id)
+      );
       await Promise.all([
         persistEntryLabels(entry, nextBoxes),
-        persistProposals(nextProposals)
+        persistProposals(persistentNextProposals)
       ]);
       setStatus(`Proposal accepted (${nextBoxes.length} box(es) total).`);
     },
@@ -176,9 +404,10 @@ export function useBoxLabelEditor({
       pushUndo("reject proposal");
       const nextProposals = proposalsRef.current.filter((p) => p.id !== proposalId);
       proposalsRef.current = nextProposals;
+      ephemeralProposalIdsRef.current.delete(proposalId);
       setProposals(nextProposals as DetectProposal[]);
       setSelectedProposalId(null);
-      await persistProposals(nextProposals);
+      await persistProposals(nextProposals.filter((proposal) => !ephemeralProposalIdsRef.current.has(proposal.id)));
       setStatus(`Proposal rejected (${nextProposals.length} remaining).`);
     },
     [entry, persistProposals, proposalsRef, pushUndo, setStatus]
@@ -230,6 +459,7 @@ export function useBoxLabelEditor({
       if (!entry || !proposalsRef.current.length) return;
       pushUndo("reject all proposals");
       proposalsRef.current = [];
+      ephemeralProposalIdsRef.current.clear();
       setProposals([]);
       setSelectedProposalId(null);
       await persistProposals([]);
@@ -294,8 +524,25 @@ export function useBoxLabelEditor({
   archivedDetectIdsRef.current = labelClasses.archivedDetectIdsRef.current;
   archivedClassKeysRef.current = labelClasses.archivedClassKeysRef.current;
 
-  const { pendingBoxSelectionRef, pendingNearestBoxRef, syncBoxToSelected, copySelectedBoxToNext, trackCsrtForward } =
-    useBoxTracking({
+  useEffect(() => {
+    classIdByNameRef.current = buildClassIdByName(
+      labelClasses.classes.filter((item) => !labelClasses.archivedDetectIds.has(item.id))
+    );
+  }, [labelClasses.archivedDetectIds, labelClasses.classes]);
+
+  const {
+    pendingBoxSelectionRef,
+    pendingNearestBoxRef,
+    syncBoxToSelected,
+    copySelectedBoxToNext,
+    advanceDuplicateToNext,
+    trackCsrtForward,
+    duplicateFlow,
+    selectDuplicateItem,
+    pauseDuplicateFlow,
+    resumeDuplicateFlow,
+    deleteDuplicateFlow
+  } = useBoxTracking({
       datasetRoot,
       entry,
       filename,
@@ -304,9 +551,11 @@ export function useBoxLabelEditor({
       classes: labelClasses.classes,
       boxesRef,
       selectedRef,
+      selectedBoxId,
       shiftSelectedFilenamesRef,
       persistEntryLabels,
       onNavigate,
+      setBoxes,
       setSelectedBoxId,
       setCurrentClass: labelClasses.setCurrentClass,
       setTracking,
@@ -317,6 +566,7 @@ export function useBoxLabelEditor({
   const interaction = useBoxLabelInteraction({
     workspaceRoot,
     datasetRoot,
+    mediaImagePath,
     entry,
     entries,
     currentIndex,
@@ -356,7 +606,9 @@ export function useBoxLabelEditor({
     redoLast,
     syncBoxToSelected,
     copySelectedBoxToNext,
+    advanceDuplicateToNext,
     trackCsrtForward,
+    duplicateFlow,
     setBoxes,
     setSelectedBoxId,
     setStatus,
@@ -450,6 +702,7 @@ export function useBoxLabelEditor({
         boxesRef.current = labelBoxes;
         setBoxes(labelBoxes);
         const loadedProposals = proposalManifest?.proposals ?? [];
+        ephemeralProposalIdsRef.current.clear();
         proposalsRef.current = loadedProposals as ProposalShape[];
         setProposals(loadedProposals);
         setSelectedProposalId(null);
@@ -478,6 +731,7 @@ export function useBoxLabelEditor({
         if (cancelled) return;
         setBoxes([]);
         proposalsRef.current = [];
+        ephemeralProposalIdsRef.current.clear();
         setProposals([]);
         setError(errMessage(err));
         setStatus("Load failed.");
@@ -541,7 +795,13 @@ export function useBoxLabelEditor({
     setBoxAdjustMode: labelClasses.setBoxAdjustMode,
     restoreBackup: interaction.restoreBackup,
     copySelectedBoxToNext,
+    advanceDuplicateToNext,
     trackCsrtForward,
+    duplicateFlow,
+    selectDuplicateItem,
+    pauseDuplicateFlow,
+    resumeDuplicateFlow,
+    deleteDuplicateFlow,
     selectClassShortcut: labelClasses.selectClassShortcut,
     startFixedBoxRecording: labelClasses.startFixedBoxRecording,
     setShortcutSlots: labelClasses.setShortcutSlots,
@@ -562,6 +822,8 @@ export function useBoxLabelEditor({
     proposals,
     selectedProposalId,
     setSelectedProposalId,
+    addProposals,
+    applyAutoLabelPredictions,
     materializeProposal,
     rejectProposal,
     acceptAllProposals,

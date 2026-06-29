@@ -102,6 +102,69 @@ def detect_folder_with_pt(
     return _result(model_path, source_dir, output_dir, len(images), copied, labels, class_counts, errors)
 
 
+def detect_image_with_pt(
+    model_path: Path,
+    image_path: Path,
+    image_size: int = 640,
+    confidence: float = 0.25,
+    device: str = "0",
+) -> dict[str, Any]:
+    model_path = model_path.resolve()
+    image_path = image_path.resolve()
+    if not model_path.is_file():
+        raise FileNotFoundError(f"Model not found: {model_path}")
+    if model_path.suffix.lower() != ".pt":
+        raise ValueError("Detection model must be a .pt file.")
+    if not image_path.is_file():
+        raise FileNotFoundError(f"Image not found: {image_path}")
+    if image_path.suffix.lower() not in IMAGE_EXTENSIONS:
+        raise ValueError(f"Unsupported image file: {image_path.name}")
+    require_cuda_device(device)
+
+    try:
+        from ultralytics import YOLO
+    except ImportError as error:
+        raise RuntimeError("ultralytics is not installed. Install it with: pip install ultralytics") from error
+
+    model = YOLO(str(model_path))
+    results = model.predict(
+        source=str(image_path),
+        imgsz=int(image_size),
+        conf=float(confidence),
+        device=str(device or "0"),
+        verbose=False,
+    )
+    if not results:
+        raise RuntimeError("No prediction result.")
+
+    result = results[0]
+    names = result.names or getattr(model, "names", {}) or {}
+    predictions: list[dict[str, Any]] = []
+    if result.boxes is not None:
+        for box in result.boxes:
+            class_id = int(box.cls.item())
+            x, y, w, h = [float(value) for value in box.xywhn[0].tolist()]
+            predictions.append(
+                {
+                    "classId": class_id,
+                    "className": _class_name(names, class_id),
+                    "confidence": float(box.conf.item()),
+                    "x": _clamp01(x),
+                    "y": _clamp01(y),
+                    "w": _clamp01(w),
+                    "h": _clamp01(h),
+                }
+            )
+    return {
+        "ok": True,
+        "modelPath": str(model_path),
+        "imagePath": str(image_path),
+        "imageSize": int(image_size),
+        "confidence": float(confidence),
+        "predictions": predictions,
+    }
+
+
 def _result(
     model_path: Path,
     source_dir: Path,
@@ -150,3 +213,7 @@ def _class_name(names: Any, class_id: int) -> str:
 
 def _fmt(value: float) -> str:
     return f"{max(0.0, min(1.0, value)):.6f}".rstrip("0").rstrip(".")
+
+
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))

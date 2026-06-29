@@ -7,7 +7,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from backend.image_pool import read_snapshot, snapshot_path, write_snapshot
+from backend.image_pool import read_snapshot, scan_image_pool, snapshot_path, write_snapshot
+from backend.yolo_workspace import create_workspace
 
 
 class ImagePoolSnapshotTests(unittest.TestCase):
@@ -41,6 +42,18 @@ class ImagePoolSnapshotTests(unittest.TestCase):
 
             self.assertEqual(snapshot["knownFiles"], ["a.jpg", "b.jpg"])
             self.assertEqual(snapshot["scanCache"]["fingerprint"], "1:2")
+
+    def test_scan_new_workspace_reports_media_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_workspace(root)
+            (root / "media" / "a.jpg").write_bytes(b"fake")
+
+            result = scan_image_pool(root, fast=True)
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["mediaDir"], "media")
+            self.assertEqual(result["files"], ["a.jpg"])
 
 
 if __name__ == "__main__":

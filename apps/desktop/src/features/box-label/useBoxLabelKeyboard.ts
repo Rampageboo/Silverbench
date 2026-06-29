@@ -1,5 +1,6 @@
 import { useEffect, type MutableRefObject } from "react";
 import { errMessage } from "../../lib/errors";
+import type { BoxLabelDuplicateFlow } from "./boxLabelTypes";
 import { arrowKeyDelta, type BoxAdjustMode, type DragState } from "./geometry";
 
 type UseBoxLabelKeyboardOptions = {
@@ -20,7 +21,9 @@ type UseBoxLabelKeyboardOptions = {
   undoLast: () => Promise<void>;
   redoLast: () => Promise<void>;
   copySelectedBoxToNext: () => Promise<void>;
+  advanceDuplicateToNext: () => Promise<void>;
   trackCsrtForward: () => Promise<void>;
+  duplicateFlow: BoxLabelDuplicateFlow;
   scheduleDraw: () => void;
   save: () => Promise<void>;
   deleteSelectedBox: () => void;
@@ -48,7 +51,9 @@ export function useBoxLabelKeyboard({
   undoLast,
   redoLast,
   copySelectedBoxToNext,
+  advanceDuplicateToNext,
   trackCsrtForward,
+  duplicateFlow,
   scheduleDraw,
   save,
   deleteSelectedBox,
@@ -113,6 +118,10 @@ export function useBoxLabelKeyboard({
       }
       if (event.key.toLowerCase() === "d" && !event.ctrlKey && !event.altKey && !event.metaKey) {
         event.preventDefault();
+        if (duplicateFlow.active && !duplicateFlow.paused) {
+          advanceDuplicateToNext().catch((err) => setError(errMessage(err)));
+          return;
+        }
         navigateRelative(1);
         return;
       }

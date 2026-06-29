@@ -46,6 +46,12 @@ if exist "requirements.txt" (
         pause
         exit /b 1
     )
+    python -m pip install ultralytics --no-deps
+    if errorlevel 1 (
+        echo Failed to install ultralytics.
+        pause
+        exit /b 1
+    )
 )
 
 python "%ENTRY_FILE%"

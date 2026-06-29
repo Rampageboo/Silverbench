@@ -69,6 +69,15 @@ export type LabelWorkbenchAction = {
 export type LabelWorkbenchActionGroup = {
   id: string;
   label: string;
+  description?: string;
+  items?: Array<{
+    id: string;
+    label: string;
+    detail?: string;
+    selected?: boolean;
+    tone?: "default" | "muted" | "warning";
+    run?: () => void | Promise<void>;
+  }>;
   actions: LabelWorkbenchAction[];
 };
 

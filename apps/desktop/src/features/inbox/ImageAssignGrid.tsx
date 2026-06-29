@@ -103,7 +103,7 @@ export function ImageAssignGrid({
     return (
       <div className="inbox-grid-wrap" id="inboxGridWrap">
         <div className="gallery" id="inboxGrid">
-          <div className="empty">Open a workspace containing image_pool, then start assigning NEW images.</div>
+          <div className="empty">Open a workspace containing media, then start assigning NEW images.</div>
         </div>
       </div>
     );

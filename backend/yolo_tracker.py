@@ -42,7 +42,7 @@ def label_path_for(root: Path, image_path: str) -> Path:
     stem = image_rel.stem
     parts = image_rel.parts
     candidates: list[Path] = []
-    if parts and parts[0] == "image_pool":
+    if parts and parts[0] in {"image_pool", "media"}:
         candidates.append(Path("detect_labels") / f"{stem}.txt")
     if parts and parts[0] == "images":
         candidates.append(Path("labels").joinpath(*parts[1:]).with_suffix(".txt"))

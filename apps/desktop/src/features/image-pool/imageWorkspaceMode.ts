@@ -13,7 +13,7 @@ export function imageWorkspaceUsesNativeReact(tab: ImageWorkspaceTab): boolean {
 }
 
 export function imageWorkspaceTitle(tab: ImageWorkspaceTab): string {
-  if (tab === "inbox") return "Image Assign";
+  if (tab === "inbox") return "Legacy Assign";
   if (tab === "yolo") return "Dataset Review";
   return "Image Pool";
 }
@@ -22,8 +22,8 @@ export function imageWorkspaceStatusFallback(tab: ImageWorkspaceTab, workspaceRo
   const hasRoot = Boolean(workspaceRoot.trim());
   if (tab === "inbox") {
     return hasRoot
-      ? "Image Assign: select NEW images and assign them to Detect or Clf targets."
-      : "Open a workspace, then assign NEW images to dataset targets.";
+      ? "Legacy Assign: optional hard-link builder for old dataset workflows."
+      : "Open a workspace to use the legacy assignment tool.";
   }
   if (tab === "yolo") {
     return hasRoot
@@ -31,6 +31,6 @@ export function imageWorkspaceStatusFallback(tab: ImageWorkspaceTab, workspaceRo
       : "Open a workspace folder to review datasets.";
   }
   return hasRoot
-    ? "Workspace bound. Refresh the scan to update the image_pool list."
-    : "Open a workspace folder to manage image_pool.";
+    ? "Workspace bound. Refresh the scan to update the media list."
+    : "Open a workspace folder to manage media.";
 }
