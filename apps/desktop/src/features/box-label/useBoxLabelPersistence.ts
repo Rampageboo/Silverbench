@@ -90,30 +90,59 @@ export function useBoxLabelPersistence({
 }: UseBoxLabelPersistenceOptions) {
   const { confirm } = useConfirm();
   const keyboardAdjustingRef = useRef(false);
+  const persistQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const latestPersistRequestRef = useRef(0);
+  const currentEntryKeyRef = useRef("");
+  currentEntryKeyRef.current = entry?.basename || "";
 
   const save = useCallback(async () => {
     if (!entry) return;
+    const target = entry;
+    const targetKey = target.basename;
+    const snapshot = boxesRef.current.map((box) => ({ ...box }));
+    const requestId = ++latestPersistRequestRef.current;
+    const run = async () => {
+      const next = await persistEntryLabels(target, snapshot);
+      if (latestPersistRequestRef.current === requestId && currentEntryKeyRef.current === targetKey) {
+        boxesRef.current = next;
+        setBoxes(next);
+        setStatus(`Saved ${snapshot.length} box(es) to ${target.labelPath}.`);
+      }
+    };
     try {
       setError("");
-      await persistEntryLabels(entry, boxesRef.current);
-      setStatus(`Saved ${boxesRef.current.length} box(es) to ${entry.labelPath}.`);
+      const queued = persistQueueRef.current.catch(() => {}).then(run);
+      persistQueueRef.current = queued;
+      await queued;
     } catch (err) {
       setError(errMessage(err));
       setStatus("Save failed.");
     }
-  }, [boxesRef, entry, persistEntryLabels, setError, setStatus]);
+  }, [boxesRef, entry, persistEntryLabels, setBoxes, setError, setStatus]);
 
   const persistLabels = useCallback(
     async (statusMessage?: string) => {
       if (!entry) return;
-      try {
-        const next = await persistEntryLabels(entry, boxesRef.current);
+      const target = entry;
+      const targetKey = target.basename;
+      const snapshot = boxesRef.current.map((box) => ({ ...box }));
+      const requestId = ++latestPersistRequestRef.current;
+      const run = async () => {
+        const next = await persistEntryLabels(target, snapshot);
+        if (latestPersistRequestRef.current !== requestId || currentEntryKeyRef.current !== targetKey) return;
         boxesRef.current = next;
         setBoxes(next);
         if (statusMessage) setStatus(statusMessage);
+      };
+      const queued = persistQueueRef.current.catch(() => {}).then(run);
+      persistQueueRef.current = queued;
+      try {
+        await queued;
       } catch (err) {
-        setError(errMessage(err));
-        setStatus("Save failed.");
+        if (latestPersistRequestRef.current === requestId && currentEntryKeyRef.current === targetKey) {
+          setError(errMessage(err));
+          setStatus("Save failed.");
+        }
       }
     },
     [boxesRef, entry, persistEntryLabels, setBoxes, setError, setStatus]

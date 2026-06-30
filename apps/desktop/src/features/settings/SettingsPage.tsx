@@ -6,6 +6,7 @@ import {
   writeStartupOverlayMode,
   type StartupOverlayMode
 } from "../../app/startupOverlayMode";
+import { APP_THEME_OPTIONS, readAppTheme, writeAppTheme, type AppTheme } from "../../app/appTheme";
 import { useWorkspaceArchitecture } from "../../workspace/WorkspaceArchitectureProvider";
 
 type Props = {
@@ -20,11 +21,13 @@ const STARTUP_OPTIONS = [
 
 export function SettingsPage({ onReady }: Props) {
   const [mode, setMode] = useState<StartupOverlayMode>(readStartupOverlayMode);
+  const [theme, setTheme] = useState<AppTheme>(readAppTheme);
   const { workspaceRoot, manifest, phase, error, migrated, refresh } = useWorkspaceArchitecture();
 
   useEffect(() => {
     onReady?.();
     setMode(readStartupOverlayMode());
+    setTheme(readAppTheme());
     let cancelled = false;
     appSettings()
       .then((settings) => {
@@ -41,12 +44,39 @@ export function SettingsPage({ onReady }: Props) {
     void writeAppSettings({ startupOverlayMode: next }).catch(() => {});
   }
 
+  function selectTheme(next: AppTheme) {
+    setTheme(next);
+    writeAppTheme(next);
+  }
+
   return (
     <div className="settings-page">
       <div className="settings-header">
         <h2 className="settings-title">Settings</h2>
       </div>
       <div className="settings-body">
+        <section className="settings-section glass-card">
+          <h3 className="settings-section-title">Theme</h3>
+          <p className="settings-hint">Choose the workbench color system.</p>
+          <div className="settings-options">
+            {APP_THEME_OPTIONS.map((opt) => (
+              <label key={opt.value} className={`settings-option${theme === opt.value ? " selected" : ""}`}>
+                <input
+                  type="radio"
+                  name="appTheme"
+                  value={opt.value}
+                  checked={theme === opt.value}
+                  onChange={() => selectTheme(opt.value)}
+                />
+                <span className="settings-option-copy">
+                  <strong>{opt.title}</strong>
+                  <span>{opt.desc}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </section>
+
         <section className="settings-section glass-card">
           <h3 className="settings-section-title">Startup Screen</h3>
           <p className="settings-hint">Choose the loading overlay style on startup.</p>

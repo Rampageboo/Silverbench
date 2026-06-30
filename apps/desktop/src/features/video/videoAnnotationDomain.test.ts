@@ -14,6 +14,7 @@ import {
   getClfTask,
   markVideoDetectEmpty,
   markVideoClfReviewed,
+  markVideoTimestamp,
   moveVideoFrameRecord,
   setVideoClfClass,
   sortedVideoFrames,
@@ -262,6 +263,20 @@ describe("video timeline markers", () => {
     const labels = videoTimelineMarkers(manifest).map((marker) => marker.label).join(" ");
 
     expect(labels).not.toMatch(/undefined|NaN/);
+  });
+
+  it("includes source-only markers without marking detect reviewed or empty", () => {
+    let manifest = createVideoAnnotationManifest(video);
+    manifest = markVideoTimestamp(manifest, video, 5, { kind: "random", samplingMode: "segments-preferred" });
+
+    const markers = videoTimelineMarkers(manifest);
+    const frame = frameAnnotationAt(manifest, 5);
+
+    expect(markers.map((marker) => marker.key)).toEqual(["5000"]);
+    expect(markers[0].kind).toBe("marker");
+    expect(markers[0].label).toContain("random marker");
+    expect(getDetectTask(frame)).toMatchObject({ reviewed: false, boxes: [] });
+    expect(getDetectTask(frame)?.empty).toBeUndefined();
   });
 });
 

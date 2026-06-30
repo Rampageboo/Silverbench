@@ -32,6 +32,7 @@ type Props = {
   blackouts?: BlackoutRectShape[];
   /** Whether to render blackout overlays. Default true. */
   showBlackouts?: boolean;
+  showToolbar?: boolean;
   /** Called when the user draws a new blackout rect in "blackout" tool mode. */
   onBlackoutDraw?: (rect: BlackoutRectShape) => void;
   onChange: (boxes: LabelBox[]) => void;
@@ -157,6 +158,7 @@ export function VideoAnnotationCanvas({
   remotePointer = null,
   blackouts = [],
   showBlackouts = true,
+  showToolbar = true,
   onBlackoutDraw,
   onChange,
   onSelectedIndexChange
@@ -514,7 +516,8 @@ export function VideoAnnotationCanvas({
   }, [boxes, setWorkingBoxes]);
 
   return (
-    <div className="video-annotation-editor">
+    <div className={`video-annotation-editor${showToolbar ? "" : " video-annotation-editor--no-toolbar"}`}>
+      {showToolbar ? (
       <div className="row video-annotation-toolbar">
         <button type="button" className={tool === "draw" ? "primary" : ""} onClick={() => setTool("draw")} disabled={disabled}>
           Draw
@@ -538,6 +541,7 @@ export function VideoAnnotationCanvas({
         </button>
         <span className="status">{workingBoxes.length} box(es)</span>
       </div>
+      ) : null}
       <div className="video-annotation-canvas-wrap">
         <canvas
           ref={canvasRef}

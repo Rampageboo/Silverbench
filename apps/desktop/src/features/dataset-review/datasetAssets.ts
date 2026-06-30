@@ -31,11 +31,33 @@ export async function datasetImageUrl(datasetRoot: string, relativePath: string)
   return url;
 }
 
+export async function datasetPreviewImageUrl(datasetRoot: string, relativePath: string, maxEdge = 1280, quality = 60) {
+  const key = `${datasetRoot}::${relativePath}::preview:${maxEdge}:${quality}`;
+  const cached = cache.get(key);
+  if (cached) return cached;
+  const params = new URLSearchParams({
+    workspaceRoot: datasetRoot,
+    relativePath,
+    maxEdge: String(maxEdge),
+    quality: String(quality)
+  });
+  const response = await fetch(`${api.API_BASE_URL}/api/files/preview?${params.toString()}`, {
+    cache: "force-cache"
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const url = URL.createObjectURL(await response.blob());
+  cache.set(key, url);
+  return url;
+}
+
 export function invalidateDatasetImageUrl(datasetRoot: string, relativePath: string) {
-  const key = `${datasetRoot}::${relativePath}`;
-  const url = cache.get(key);
-  if (url) URL.revokeObjectURL(url);
-  cache.delete(key);
+  const prefix = `${datasetRoot}::${relativePath}`;
+  for (const [key, url] of cache) {
+    if (key === prefix || key.startsWith(`${prefix}::preview:`)) {
+      URL.revokeObjectURL(url);
+      cache.delete(key);
+    }
+  }
 }
 
 export function revokeDatasetImageUrls() {

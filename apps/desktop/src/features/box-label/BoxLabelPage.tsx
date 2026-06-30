@@ -8,7 +8,7 @@ import { isLabelWorkbenchEmbedded, useLabelWorkbench } from "../label/useLabelWo
 import type { LabelWorkbenchActionGroup } from "../label/labelWorkbenchTypes";
 import { useArchivedClassIds } from "../workspace/useArchivedClassIds";
 import { useWorkspaceClasses } from "../workspace/useWorkspaceClasses";
-import { chooseClassificationManifest, classificationOptionsForNewAnnotations } from "../workspace/workspaceClassTaxonomy";
+import { activeDetectClassDefs, chooseClassificationManifest, classificationOptionsForNewAnnotations } from "../workspace/workspaceClassTaxonomy";
 import { BoxLabelGallery } from "./BoxLabelGallery";
 import { BoxLabelView } from "./BoxLabelView";
 import type { BoxLabelCanvasOverlay, BoxLabelWorkbenchBridge } from "./boxLabelTypes";
@@ -64,6 +64,7 @@ export function BoxLabelSurface({
     saveError: workspaceClassesSaveError,
     load: loadWorkspaceClasses,
     addClf,
+    rename: renameWorkspaceClass,
   } = useWorkspaceClasses(workspaceRoot);
 
   const workbench = useLabelWorkbench();
@@ -117,43 +118,17 @@ export function BoxLabelSurface({
           selected: item.selected,
           tone: item.paused ? "muted" : "default",
           run: workbenchBridge?.selectDuplicateItem ? () => workbenchBridge.selectDuplicateItem?.(item.id) : undefined,
+          onPause: !item.paused && workbenchBridge?.pauseDuplicateFlow
+            ? () => workbenchBridge.pauseDuplicateFlow?.(item.id)
+            : undefined,
+          onResume: item.paused && workbenchBridge?.resumeDuplicateFlow
+            ? () => workbenchBridge.resumeDuplicateFlow?.(item.id)
+            : undefined,
+          onDelete: workbenchBridge?.deleteDuplicateFlow
+            ? () => workbenchBridge.deleteDuplicateFlow?.(item.id)
+            : undefined,
         })) ?? [],
-        actions: [
-          {
-            id: "duplicate.start",
-            label: "Add",
-            title: "Add selected box to duplicate list (T)",
-            variant: "primary",
-            disabled: !duplicateFlow?.canStart || !workbenchBridge?.startDuplicateToNext,
-            unavailableReason: duplicateFlow?.canStart ? undefined : "Select a box to add.",
-            run: workbenchBridge?.startDuplicateToNext ?? undefined,
-          },
-          {
-            id: "duplicate.pause",
-            label: "Pause",
-            title: "Pause the selected duplicate box; remove it from this frame if present.",
-            disabled: !duplicateFlow?.canPause || !workbenchBridge?.pauseDuplicateFlow,
-            unavailableReason: duplicateFlow?.canPause ? undefined : "Select an active duplicate box.",
-            run: workbenchBridge?.pauseDuplicateFlow ?? undefined,
-          },
-          {
-            id: "duplicate.resume",
-            label: "Resume",
-            title: "Resume the paused duplicate on this frame.",
-            disabled: !duplicateFlow?.canResume || !workbenchBridge?.resumeDuplicateFlow,
-            unavailableReason: duplicateFlow?.canResume ? undefined : "Duplicate is not paused.",
-            run: workbenchBridge?.resumeDuplicateFlow ?? undefined,
-          },
-          {
-            id: "duplicate.delete",
-            label: "Delete",
-            title: "Delete the selected duplicate box.",
-            variant: "danger",
-            disabled: !duplicateFlow?.canDelete || !workbenchBridge?.deleteDuplicateFlow,
-            unavailableReason: duplicateFlow?.canDelete ? undefined : "No duplicate box selected.",
-            run: workbenchBridge?.deleteDuplicateFlow ?? undefined,
-          },
-        ],
+        actions: [],
       }
     ];
   }, [
@@ -177,11 +152,20 @@ export function BoxLabelSurface({
       ? classificationOptionsForNewAnnotations(classificationManifest).map((def) => ({
           key: def.key,
           name: def.name,
+          aliases: def.aliases,
           archived: def.archived,
         }))
       : [],
     [classificationManifest]
   );
+  const detectClassKeysById = useMemo(() => {
+    const manifest = workspaceClassManifest ?? classManifest;
+    if (!manifest) return {};
+    return activeDetectClassDefs(manifest).reduce<Record<number, string>>((acc, def) => {
+      acc[def.yoloId] = def.key;
+      return acc;
+    }, {});
+  }, [classManifest, workspaceClassManifest]);
   const workspaceClfClassCount = useMemo(
     () => workspaceClassManifest ? classificationOptionsForNewAnnotations(workspaceClassManifest).length : null,
     [workspaceClassManifest]
@@ -421,6 +405,10 @@ export function BoxLabelSurface({
           onImageViewModeChange={pool.setImageViewMode}
           onToggleReviewed={pool.toggleReviewed}
           onToggleFlagged={pool.toggleFlagged}
+          detectTaskEnabled={pool.currentDetectExportEnabled}
+          clfTaskEnabled={pool.currentClfExportEnabled}
+          onToggleDetectTaskEnabled={pool.toggleDetectExportEnabled}
+          onToggleClfTaskEnabled={pool.toggleClfExportEnabled}
           onLabelsChanged={pool.updateLabelIndexForFile}
           onMetadataChanged={pool.reloadMetadata}
           onStatusText={pool.setStatusText}
@@ -431,9 +419,11 @@ export function BoxLabelSurface({
           classificationClassesBusy={workspaceClassesLoading || workspaceClassesSaving}
           classificationClassesStatus={classificationClassStatus}
           classificationClassesPortalId={embedded ? "lwbClassifyClassesSlot" : undefined}
+          detectClassKeysById={detectClassKeysById}
           currentClassificationKey={currentClassificationKey}
           onAssignClassificationClass={pool.assignClassificationClass}
           onAddClassificationClass={handleAddClassificationClass}
+          onRenameClass={renameWorkspaceClass}
           onWorkspaceClassesChanged={loadWorkspaceClasses}
           canvasOverlay={canvasOverlay}
         />

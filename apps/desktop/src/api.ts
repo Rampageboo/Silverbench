@@ -3,7 +3,7 @@ import { backendBaseUrl } from "./lib/backendConfig";
 import type { WorkspaceVersionId, WorkspaceVersionsManifest } from "./features/workspace-versioning/workspaceSnapshotVersions";
 
 export const API_BASE_URL = backendBaseUrl();
-export const REQUIRED_API_SCHEMA_VERSION = 17;
+export const REQUIRED_API_SCHEMA_VERSION = 20;
 
 export type BackendMethod =
   | "markImagePoolSeen"
@@ -29,6 +29,7 @@ export type BackendMethod =
   | "removeDetectDatasetLinks"
   | "removeClfDatasetLinks"
   | "readFileBase64"
+  | "readFilePreviewBase64"
   | "readTextFile"
   | "writeTextFile"
   | "readLabelTextsBatch"
@@ -63,6 +64,8 @@ export type BackendMethod =
   | "startClassifyFolderWithPt"
   | "classifyImageWithPt"
   | "detectImageWithPt"
+  | "classifyImageBase64WithPt"
+  | "detectImageBase64WithPt"
   | "getPtJob"
   | "cancelPtJob"
   | "readAutoLabelModelRegistry"
@@ -273,6 +276,8 @@ export type MediaImportResult = {
 export type LabelClass = {
   id: number;
   name: string;
+  key?: string;
+  aliases?: string[];
 };
 
 export type LabelBox = {
@@ -474,7 +479,7 @@ export async function classifyImageWithPt(
   workspaceRoot: string,
   modelRelativePath: string,
   imageRelativePath: string,
-  imageSize = 224,
+  imageSize = 0,
   device = "0",
   topK = 5
 ) {
@@ -482,6 +487,24 @@ export async function classifyImageWithPt(
     workspaceRoot,
     modelRelativePath,
     imageRelativePath,
+    imageSize,
+    device,
+    topK,
+  ]);
+}
+
+export async function classifyImageBase64WithPt(
+  workspaceRoot: string,
+  modelRelativePath: string,
+  imageBase64: string,
+  imageSize = 0,
+  device = "0",
+  topK = 5
+) {
+  return callJson<PtClassifyImageResult>("classifyImageBase64WithPt", [
+    workspaceRoot,
+    modelRelativePath,
+    imageBase64,
     imageSize,
     device,
     topK,
@@ -500,6 +523,24 @@ export async function detectImageWithPt(
     workspaceRoot,
     modelRelativePath,
     imageRelativePath,
+    imageSize,
+    confidence,
+    device,
+  ]);
+}
+
+export async function detectImageBase64WithPt(
+  workspaceRoot: string,
+  modelRelativePath: string,
+  imageBase64: string,
+  imageSize = 640,
+  confidence = 0.25,
+  device = "0"
+) {
+  return callJson<PtDetectImageResult>("detectImageBase64WithPt", [
+    workspaceRoot,
+    modelRelativePath,
+    imageBase64,
     imageSize,
     confidence,
     device,
@@ -708,6 +749,10 @@ export async function upsertMetadataRows(workspaceRoot: string, updates: unknown
 
 export async function readFileBase64(root: string, relativePath: string) {
   return callJson<string>("readFileBase64", [root, relativePath]);
+}
+
+export async function readFilePreviewBase64(root: string, relativePath: string, maxEdge = 1280, quality = 60) {
+  return callJson<string>("readFilePreviewBase64", [root, relativePath, maxEdge, quality]);
 }
 
 export async function readTextFile(root: string, relativePath: string) {

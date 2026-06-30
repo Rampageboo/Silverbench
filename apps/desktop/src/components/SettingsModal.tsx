@@ -6,6 +6,7 @@ import {
   writeStartupOverlayMode,
   type StartupOverlayMode
 } from "../app/startupOverlayMode";
+import { APP_THEME_OPTIONS, readAppTheme, writeAppTheme, type AppTheme } from "../app/appTheme";
 import { useWorkspaceArchitecture } from "../workspace/WorkspaceArchitectureProvider";
 
 type SettingsModalProps = {
@@ -26,6 +27,7 @@ const STARTUP_OPTIONS: StartupOption[] = [
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [mode, setMode] = useState<StartupOverlayMode>(readStartupOverlayMode);
+  const [theme, setTheme] = useState<AppTheme>(readAppTheme);
   const [render, setRender] = useState(open);
   const [visible, setVisible] = useState(false);
   const { workspaceRoot, manifest, phase, error, migrated, refresh } = useWorkspaceArchitecture();
@@ -44,6 +46,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   useEffect(() => {
     if (!open) return;
     setMode(readStartupOverlayMode());
+    setTheme(readAppTheme());
     let cancelled = false;
     appSettings()
       .then((settings) => {
@@ -73,6 +76,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     void writeAppSettings({ startupOverlayMode: next }).catch(() => {});
   }
 
+  function selectTheme(next: AppTheme) {
+    setTheme(next);
+    writeAppTheme(next);
+  }
+
   if (!render) return null;
 
   return (
@@ -95,6 +103,31 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           </button>
         </header>
         <div className="app-settings-body">
+          <div className="app-settings-section">
+            <h3>Theme</h3>
+            <p className="app-settings-hint">Choose the workbench color system.</p>
+            <div className="app-settings-options">
+              {APP_THEME_OPTIONS.map((option) => (
+                <label
+                  key={option.value}
+                  className={`app-settings-option${theme === option.value ? " selected" : ""}`}
+                >
+                  <input
+                    type="radio"
+                    name="appTheme"
+                    value={option.value}
+                    checked={theme === option.value}
+                    onChange={() => selectTheme(option.value)}
+                  />
+                  <span className="app-settings-option-copy">
+                    <strong>{option.title}</strong>
+                    <span>{option.desc}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
           <div className="app-settings-section">
             <h3>启动加载样式</h3>
             <p className="app-settings-hint">选择应用启动时加载遮罩的样式。</p>

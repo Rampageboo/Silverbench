@@ -8,8 +8,10 @@ import {
   isDetectJunk,
   isFlaggedFile,
   isReviewedFile,
+  isTaskExportEnabled,
   loadMetadataMap,
   markJunkFilenames,
+  setTaskExportEnabled,
   setMetadataFlags
 } from "../image-pool/metadata";
 import type { MetadataRow } from "../image-pool/types";
@@ -481,6 +483,47 @@ export function useBoxLabel({
     setMetadata(await loadMetadataMap(root));
   }, [root]);
 
+  const currentDetectExportEnabled = currentEntry
+    ? isTaskExportEnabled(metadata.get(currentEntry.basename), "detect")
+    : true;
+  const currentClfExportEnabled = currentEntry
+    ? isTaskExportEnabled(metadata.get(currentEntry.basename), "clf")
+    : true;
+
+  const toggleTaskExportEnabled = useCallback(async (task: "detect" | "clf") => {
+    if (!root || !currentEntry) return;
+    const filename = currentEntry.basename;
+    const nextEnabled = !isTaskExportEnabled(metadata.get(filename), task);
+    setMetadata((current) => {
+      const next = new Map(current);
+      const row = next.get(filename);
+      next.set(filename, {
+        ...(row || { filename }),
+        filename,
+        [task === "detect" ? "detect_export_enabled" : "clf_export_enabled"]: nextEnabled
+      });
+      return next;
+    });
+    setStatusText(`${task === "detect" ? "Detect" : "Clf"} export ${nextEnabled ? "enabled" : "disabled"} for ${filename}.`);
+    try {
+      await setTaskExportEnabled(root, filename, task, nextEnabled);
+      await reloadMetadata();
+    } catch (err) {
+      await reloadMetadata().catch(() => {});
+      setStatusText(`Failed to update ${task} export flag: ${errMessage(err)}`);
+      throw err;
+    }
+  }, [currentEntry, metadata, reloadMetadata, root]);
+
+  const toggleDetectExportEnabled = useCallback(
+    () => toggleTaskExportEnabled("detect"),
+    [toggleTaskExportEnabled]
+  );
+  const toggleClfExportEnabled = useCallback(
+    () => toggleTaskExportEnabled("clf"),
+    [toggleTaskExportEnabled]
+  );
+
   const assignClassificationClass = useCallback(async (classKey: string | null, basename?: string) => {
     if (!root) return;
     const trimmedKey = classKey?.trim() ?? "";
@@ -651,6 +694,10 @@ export function useBoxLabel({
     updateLabelIndexForFile,
     reloadMetadata,
     assignClassificationClass,
+    currentDetectExportEnabled,
+    currentClfExportEnabled,
+    toggleDetectExportEnabled,
+    toggleClfExportEnabled,
     markJunk,
     undoJunk,
     canUndoJunk,

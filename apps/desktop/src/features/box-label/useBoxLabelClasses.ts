@@ -51,7 +51,12 @@ type UseBoxLabelClassesOptions = {
 };
 
 function detectClassesFromManifest(manifest: ClassesManifest): api.LabelClass[] {
-  return allDetectClassDefs(manifest).map((item) => ({ id: item.yoloId, name: item.name }));
+  return allDetectClassDefs(manifest).map((item) => ({
+    id: item.yoloId,
+    key: item.key,
+    name: item.name,
+    aliases: item.aliases,
+  }));
 }
 
 async function loadWorkspaceDetectClasses(workspaceRoot: string) {

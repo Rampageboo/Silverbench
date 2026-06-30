@@ -55,6 +55,7 @@ describe("LabelWorkbenchInspector", () => {
     }));
 
     expect(output).toContain("Review");
+    expect((output.match(/>Review</g) ?? [])).toHaveLength(1);
     expect(output).toContain("Unmark Reviewed");
     expect(output).toContain("Mark Junk");
     expect(output).not.toContain("frame_001.jpg");
@@ -121,6 +122,18 @@ describe("LabelWorkbenchInspector", () => {
         classSummary: { activeDetectCount: 1, activeClassificationCount: 1 },
         overlaySummary: { activeCount: 2 },
         segmentSummary: { label: "1 enabled", startMs: null, endMs: null },
+        samplingControl: {
+          sourceLabel: "Manual",
+          segmentCount: 1,
+          mode: "segments-preferred",
+          modeOptions: [{ value: "segments-preferred", label: "Segments preferred" }],
+          minSpacingMs: 2000,
+        },
+        classPalette: {
+          detectClasses: [{ id: 0, name: "background" }, { id: 4, name: "Map" }],
+          currentDetectClassId: 4,
+          onSelectDetectClass: () => {},
+        },
       },
       actionGroups: [],
     }));
@@ -131,6 +144,11 @@ describe("LabelWorkbenchInspector", () => {
     expect(output).not.toContain("Detect active: 1");
     expect(output).toContain("Blackouts: 2");
     expect(output).toContain("Segment: 1 enabled");
+    expect(output).toContain("Random Sampling");
+    expect(output).toContain("Source: Manual");
+    expect(output).toContain("Segments preferred");
+    expect(output).toContain("Detect Classes");
+    expect(output).toContain("4: Map");
     expect(output).toContain("id=\"lwbClassifyClassesSlot\"");
     expect(output).not.toContain("Current Boxes");
     expect(output).not.toContain("Duplicate to Next Frame");
@@ -151,13 +169,10 @@ describe("LabelWorkbenchInspector", () => {
           detail: "Current box 2",
           selected: true,
           run: () => {},
+          onPause: () => {},
+          onDelete: () => {},
         }],
-        actions: [
-          { id: "duplicate.start", label: "Add", variant: "primary", run: () => {} },
-          { id: "duplicate.pause", label: "Pause", run: () => {} },
-          { id: "duplicate.resume", label: "Resume", disabled: true, run: () => {} },
-          { id: "duplicate.delete", label: "Delete", variant: "danger", run: () => {} },
-        ],
+        actions: [],
       }],
     }));
 
@@ -165,10 +180,13 @@ describe("LabelWorkbenchInspector", () => {
     expect(output).toContain("1 duplicate box(es) ready. Press D to copy list to next image.");
     expect(output).toContain("1. EnemyHP x=0.100 y=0.200 w=0.300 h=0.400");
     expect(output).toContain("Current box 2");
-    expect(output).toContain("Add");
-    expect(output).toContain("Pause");
-    expect(output).toContain("Resume");
-    expect(output).toContain("Delete");
+    expect(output).toContain("aria-label=\"Pause duplicate box\"");
+    expect(output).toContain("aria-label=\"Delete duplicate box\"");
+    expect(output).not.toContain(">Add<");
+    expect(output).not.toContain(">Next<");
+    expect(output).not.toContain(">Pause<");
+    expect(output).not.toContain(">Resume<");
+    expect(output).not.toContain(">Delete<");
     expect(output).not.toContain("No contextual actions available.");
     expect(output).not.toContain("undefined");
     expect(output).not.toContain("NaN");

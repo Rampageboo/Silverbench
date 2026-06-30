@@ -1,7 +1,17 @@
 import { readTextFile, writeTextFile } from "../../api";
-import { chooseVideoFiles, getVideoFrameBase64, type VideoItem } from "./videoCaptureApi";
+import {
+  chooseVideoFiles,
+  getVideoFrameBase64,
+  prefetchVideoFrame,
+  videoFrameUrl,
+  type VideoItem
+} from "./videoCaptureApi";
 
 export const DEFAULT_VIDEO_ANNOTATIONS_ROOT = "workspace/video_annotations";
+export const LABEL_VIDEO_PREVIEW_MAX_EDGE = 1280;
+export const LABEL_VIDEO_PREVIEW_QUALITY = 60;
+export const LABEL_VIDEO_PREVIEW_FAST_EDGE = 720;
+export const LABEL_VIDEO_PREVIEW_FAST_QUALITY = 45;
 
 // ---------------------------------------------------------------------------
 // Shared source types
@@ -332,7 +342,29 @@ export async function chooseAnnotationVideos() {
 }
 
 export function getAnnotationFrameBase64(videoPath: string, seconds: number) {
-  return getVideoFrameBase64(videoPath, seconds, "jpg");
+  return getVideoFrameBase64(videoPath, seconds, "jpg", LABEL_VIDEO_PREVIEW_MAX_EDGE, LABEL_VIDEO_PREVIEW_QUALITY);
+}
+
+export function getAnnotationFrameUrl(
+  workspaceRoot: string,
+  videoPath: string,
+  seconds: number,
+  options: { fast?: boolean } = {}
+) {
+  return videoFrameUrl(
+    workspaceRoot,
+    videoPath,
+    seconds,
+    options.fast ? LABEL_VIDEO_PREVIEW_FAST_EDGE : LABEL_VIDEO_PREVIEW_MAX_EDGE,
+    options.fast ? LABEL_VIDEO_PREVIEW_FAST_QUALITY : LABEL_VIDEO_PREVIEW_QUALITY
+  );
+}
+
+export async function prefetchAnnotationFrame(workspaceRoot: string, videoPath: string, seconds: number) {
+  await Promise.allSettled([
+    prefetchVideoFrame(workspaceRoot, videoPath, seconds, LABEL_VIDEO_PREVIEW_FAST_EDGE, LABEL_VIDEO_PREVIEW_FAST_QUALITY),
+    prefetchVideoFrame(workspaceRoot, videoPath, seconds, LABEL_VIDEO_PREVIEW_MAX_EDGE, LABEL_VIDEO_PREVIEW_QUALITY)
+  ]);
 }
 
 export async function loadVideoAnnotationManifest(

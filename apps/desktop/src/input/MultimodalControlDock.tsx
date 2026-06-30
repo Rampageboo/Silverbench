@@ -9,6 +9,18 @@ import { computeHomography, homographyFromAprilTags, type Point2 } from "./homog
 import { useMultimodalControls } from "./MultimodalControlProvider";
 import "./multimodal-controls.css";
 
+const DOCK_HIDDEN_KEY = "ywb.multimodal.dockHidden";
+
+function readDockHidden() {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(DOCK_HIDDEN_KEY) === "true";
+}
+
+function writeDockHidden(value: boolean) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(DOCK_HIDDEN_KEY, String(value));
+}
+
 const TARGET_CORNERS = [
   { x: 0, y: 0 },
   { x: 1, y: 0 },
@@ -41,6 +53,7 @@ export function MultimodalControlDock() {
   const [calibrationError, setCalibrationError] = useState("");
   const [showSheet, setShowSheet] = useState(false);
   const [calibrationStatus, setCalibrationStatus] = useState("");
+  const [hidden, setHidden] = useState(readDockHidden);
 
   const sourceStatus = useMemo(() => {
     const voice = controls.voiceEnabled ? `语音 ${controls.voiceStatus}` : "语音关闭";
@@ -119,9 +132,29 @@ export function MultimodalControlDock() {
     setShowSheet(true);
   }
 
+  function setDockHidden(value: boolean) {
+    writeDockHidden(value);
+    setHidden(value);
+    if (value) setExpanded(false);
+  }
+
+  if (hidden) {
+    return (
+      <button
+        type="button"
+        className="multimodal-control-reopen"
+        onClick={() => setDockHidden(false)}
+        title="Show multimodal controls"
+      >
+        Controls
+      </button>
+    );
+  }
+
   return (
     <>
     <aside className={`multimodal-control-dock${expanded ? " is-expanded" : ""}`}>
+      <div className="multimodal-control-summary-row">
       <button
         type="button"
         className={`multimodal-control-summary${controls.armed ? " is-armed" : ""}`}
@@ -131,6 +164,15 @@ export function MultimodalControlDock() {
         <span>{controls.armed ? "控制已解锁" : "控制已锁定"}</span>
         <small>{sourceStatus}</small>
       </button>
+        <button
+          type="button"
+          className="multimodal-control-hide"
+          onClick={() => setDockHidden(true)}
+          title="Hide multimodal controls"
+        >
+          Hide
+        </button>
+      </div>
 
       {expanded ? (
         <div className="multimodal-control-body">

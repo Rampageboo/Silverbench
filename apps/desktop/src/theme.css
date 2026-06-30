@@ -57,6 +57,33 @@
   --overlay-backdrop: rgba(0, 0, 0, 0.62);
 }
 
+[data-theme="obsidian"] {
+  color-scheme: dark;
+  --bg: #060908;
+  --panel: #10181a;
+  --panel-2: #172225;
+  --ink: #e7f1ee;
+  --muted: #92a6a3;
+  --line: #263a3d;
+  --green: #34d399;
+  --amber: #f6c453;
+  --red: #fb7185;
+  --blue: #5eead4;
+  --blue-strong: #14b8a6;
+  --focus-ring: rgba(20, 184, 166, 0.34);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.36), 0 16px 38px rgba(0, 0, 0, 0.34);
+  --surface-muted: #0c1213;
+  --surface-subtle: #131d20;
+  --surface-hover: #1b2a2d;
+  --surface-active: rgba(20, 184, 166, 0.16);
+  --surface-stripe: #142024;
+  --topbar-bg: rgba(13, 20, 22, 0.92);
+  --tabbar-bg: #060908;
+  --button-hover-border: #486065;
+  --button-hover-bg: #1b2a2d;
+  --overlay-backdrop: rgba(0, 0, 0, 0.66);
+}
+
 html {
   background: var(--bg);
 }

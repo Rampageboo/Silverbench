@@ -24,6 +24,18 @@ def _csv_to_bool(value: str) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _value_to_bool(value: Any) -> bool:
+    if isinstance(value, str):
+        return _csv_to_bool(value)
+    return bool(value)
+
+
+def _csv_to_bool_default(value: str | None, default: bool) -> bool:
+    if value is None or str(value).strip() == "":
+        return default
+    return _csv_to_bool(value)
+
+
 INBOX_JUNK_CLASS = "__junk__"
 
 
@@ -183,6 +195,12 @@ def read_metadata_rows(workspace_root: Path) -> dict[str, Any]:
                         "clf_enabled": _bool_to_csv(_csv_to_bool(raw.get("clf_enabled") or "")),
                         "clf_class": (raw.get("clf_class") or "").strip(),
                         "detect_junk": _bool_to_csv(_csv_to_bool(raw.get("detect_junk") or "")),
+                        "detect_export_enabled": _bool_to_csv(
+                            _csv_to_bool_default(raw.get("detect_export_enabled"), True)
+                        ),
+                        "clf_export_enabled": _bool_to_csv(
+                            _csv_to_bool_default(raw.get("clf_export_enabled"), True)
+                        ),
                         "reviewed": _bool_to_csv(_csv_to_bool(raw.get("reviewed") or "")),
                         "flagged": _bool_to_csv(_csv_to_bool(raw.get("flagged") or "")),
                     }
@@ -244,6 +262,8 @@ def upsert_metadata_rows(workspace_root: Path, updates: list[dict[str, Any]]) ->
                 "clf_enabled": "1",
                 "clf_class": "",
                 "detect_junk": "0",
+                "detect_export_enabled": "1",
+                "clf_export_enabled": "1",
                 "reviewed": "0",
                 "flagged": "0",
             }
@@ -252,13 +272,13 @@ def upsert_metadata_rows(workspace_root: Path, updates: list[dict[str, Any]]) ->
             if split in {"train", "val"}:
                 row["split"] = split
         if "detect_enabled" in item:
-            row["detect_enabled"] = _bool_to_csv(bool(item["detect_enabled"]))
+            row["detect_enabled"] = _bool_to_csv(_value_to_bool(item["detect_enabled"]))
         if "detect_junk" in item:
-            row["detect_junk"] = _bool_to_csv(bool(item["detect_junk"]))
-            if item["detect_junk"]:
+            row["detect_junk"] = _bool_to_csv(_value_to_bool(item["detect_junk"]))
+            if _value_to_bool(item["detect_junk"]):
                 row["detect_enabled"] = "0"
         if "clf_enabled" in item:
-            row["clf_enabled"] = _bool_to_csv(bool(item["clf_enabled"]))
+            row["clf_enabled"] = _bool_to_csv(_value_to_bool(item["clf_enabled"]))
         if "clf_class" in item:
             class_name = str(item["clf_class"] or "").strip()
             if class_name == INBOX_JUNK_CLASS:
@@ -266,10 +286,14 @@ def upsert_metadata_rows(workspace_root: Path, updates: list[dict[str, Any]]) ->
                 row["clf_enabled"] = "0"
             else:
                 row["clf_class"] = sanitize_class_name(class_name) if class_name else ""
+        if "detect_export_enabled" in item:
+            row["detect_export_enabled"] = _bool_to_csv(_value_to_bool(item["detect_export_enabled"]))
+        if "clf_export_enabled" in item:
+            row["clf_export_enabled"] = _bool_to_csv(_value_to_bool(item["clf_export_enabled"]))
         if "reviewed" in item:
-            row["reviewed"] = _bool_to_csv(bool(item["reviewed"]))
+            row["reviewed"] = _bool_to_csv(_value_to_bool(item["reviewed"]))
         if "flagged" in item:
-            row["flagged"] = _bool_to_csv(bool(item["flagged"]))
+            row["flagged"] = _bool_to_csv(_value_to_bool(item["flagged"]))
         by_filename[filename] = row
         if is_new:
             created += 1
@@ -288,6 +312,8 @@ def upsert_metadata_rows(workspace_root: Path, updates: list[dict[str, Any]]) ->
                 "clf_enabled",
                 "clf_class",
                 "detect_junk",
+                "detect_export_enabled",
+                "clf_export_enabled",
                 "reviewed",
                 "flagged",
             ],

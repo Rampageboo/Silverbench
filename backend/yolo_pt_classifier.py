@@ -120,7 +120,7 @@ def classify_folder_with_pt(
 def classify_image_with_pt(
     model_path: Path,
     image_path: Path,
-    image_size: int = 224,
+    image_size: int = 0,
     device: str = "0",
     top_k: int = 5,
 ) -> dict[str, Any]:
@@ -142,9 +142,10 @@ def classify_image_with_pt(
         raise RuntimeError("ultralytics is not installed. Install it with: pip install ultralytics") from error
 
     model = YOLO(str(model_path))
+    effective_image_size = _effective_image_size(model, image_size, fallback=224)
     results = model.predict(
         source=str(image_path),
-        imgsz=int(image_size),
+        imgsz=effective_image_size,
         device=str(device or "0"),
         verbose=False,
     )
@@ -161,7 +162,7 @@ def classify_image_with_pt(
         "ok": True,
         "modelPath": str(model_path),
         "imagePath": str(image_path),
-        "imageSize": int(image_size),
+        "imageSize": effective_image_size,
         "topK": int(top_k),
         "top": predictions[0] if predictions else None,
         "predictions": predictions,
@@ -227,3 +228,30 @@ def _scalar(value: Any) -> float:
     if hasattr(value, "item"):
         return float(value.item())
     return float(value)
+
+
+def _effective_image_size(model: Any, requested: int, fallback: int) -> int:
+    try:
+        value = int(requested)
+    except (TypeError, ValueError):
+        value = 0
+    if value > 0:
+        return value
+
+    for source in (getattr(model, "overrides", None), getattr(getattr(model, "model", None), "args", None)):
+        size = _image_size_from_source(source)
+        if size > 0:
+            return size
+    return int(fallback)
+
+
+def _image_size_from_source(source: Any) -> int:
+    if not source:
+        return 0
+    raw = source.get("imgsz") if hasattr(source, "get") else getattr(source, "imgsz", 0)
+    if isinstance(raw, (list, tuple)):
+        raw = raw[0] if raw else 0
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 0

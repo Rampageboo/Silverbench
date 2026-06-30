@@ -16,12 +16,15 @@ import {
   chooseAnnotationVideos,
   DEFAULT_VIDEO_ANNOTATIONS_ROOT,
   getAnnotationFrameBase64,
+  getAnnotationFrameUrl,
   loadVideoAnnotationManifest,
+  prefetchAnnotationFrame,
   saveVideoAnnotationManifest,
   timestampKey,
   type VideoAnnotationManifest,
   type VideoClfTask,
-  type VideoSource
+  type VideoSource,
+  type VideoTimestampSource
 } from "./videoAnnotationApi";
 import { listWorkspaceVideos } from "./videoCaptureApi";
 import {
@@ -36,6 +39,7 @@ import {
   getDetectTask,
   labelBoxToDetectBox,
   markVideoDetectEmpty,
+  markVideoTimestamp,
   markVideoClfReviewed,
   moveVideoFrameRecord,
   clearVideoClfLabel,
@@ -60,11 +64,13 @@ function mergeVideoSources(existing: VideoSource[], incoming: VideoSource[]) {
 export function useVideoAnnotationSession({
   workspaceRoot,
   active,
-  onReady
+  onReady,
+  previewMode = "base64"
 }: {
   workspaceRoot: string;
   active: boolean;
   onReady?: () => void;
+  previewMode?: "base64" | "url";
 }) {
   const { showToast } = useToast();
   const { manifest: workspaceManifest } = useWorkspaceArchitecture();
@@ -81,6 +87,7 @@ export function useVideoAnnotationSession({
   const [time, setTime] = useState(0);
   const [stepSeconds, setStepSeconds] = useState(0.1);
   const [previewBase64, setPreviewBase64] = useState("");
+  const [previewUrl, setPreviewUrl] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
   const [manifestLoading, setManifestLoading] = useState(false);
   const [manifest, setManifest] = useState<VideoAnnotationManifest | null>(null);
@@ -90,6 +97,7 @@ export function useVideoAnnotationSession({
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [status, setStatus] = useState("Open a workspace, then add a video.");
   const previewRequestRef = useRef(0);
+  const autoLabelFrameRequestRef = useRef(0);
   const manifestRequestRef = useRef(0);
   const manifestRef = useRef<VideoAnnotationManifest | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -155,7 +163,9 @@ export function useVideoAnnotationSession({
   useEffect(() => {
     if (active) return;
     previewRequestRef.current += 1;
+    autoLabelFrameRequestRef.current += 1;
     setPreviewBase64("");
+    setPreviewUrl("");
     setPreviewLoading(false);
   }, [active]);
 
@@ -289,11 +299,33 @@ export function useVideoAnnotationSession({
   useEffect(() => {
     if (!active || !current) {
       setPreviewBase64("");
+      setPreviewUrl("");
       setPreviewLoading(false);
       return;
     }
     const requestId = ++previewRequestRef.current;
     setPreviewLoading(true);
+    if (previewMode === "url" && workspaceRoot.trim()) {
+      const fastUrl = getAnnotationFrameUrl(workspaceRoot, current.path, debouncedPreviewTime, { fast: true });
+      const fullUrl = getAnnotationFrameUrl(workspaceRoot, current.path, debouncedPreviewTime);
+      setPreviewUrl(fastUrl);
+      setPreviewBase64("");
+      const image = new Image();
+      image.onload = () => {
+        if (requestId !== previewRequestRef.current) return;
+        setPreviewUrl(fullUrl);
+        setPreviewLoading(false);
+      };
+      image.onerror = () => {
+        if (requestId === previewRequestRef.current) setPreviewLoading(false);
+      };
+      image.src = fullUrl;
+      return () => {
+        image.onload = null;
+        image.onerror = null;
+      };
+    }
+    setPreviewUrl("");
     // Preview decode: frame is decoded in memory only; no file is written.
     getAnnotationFrameBase64(current.path, debouncedPreviewTime)
       .then((data) => {
@@ -305,7 +337,24 @@ export function useVideoAnnotationSession({
       .finally(() => {
         if (requestId === previewRequestRef.current) setPreviewLoading(false);
       });
-  }, [active, current, debouncedPreviewTime, showError]);
+  }, [active, current, debouncedPreviewTime, previewMode, showError, workspaceRoot]);
+
+  useEffect(() => {
+    if (previewMode !== "url") return;
+    if (!active || !current || !currentFrame) {
+      autoLabelFrameRequestRef.current += 1;
+      setPreviewBase64("");
+      return;
+    }
+    const requestId = ++autoLabelFrameRequestRef.current;
+    getAnnotationFrameBase64(current.path, currentFrame.time)
+      .then((data) => {
+        if (requestId === autoLabelFrameRequestRef.current) setPreviewBase64(data || "");
+      })
+      .catch((reason) => {
+        if (requestId === autoLabelFrameRequestRef.current) showError(reason, "preview.marker.load");
+      });
+  }, [active, current, currentFrame, previewMode, showError]);
 
   const enqueueSave = useCallback(
     (next: VideoAnnotationManifest) => {
@@ -339,6 +388,25 @@ export function useVideoAnnotationSession({
       enqueueSave(next);
     },
     [current, enqueueSave, time]
+  );
+
+  const loadBoxesAtTime = useCallback((seconds: number): LabelBox[] => {
+    const frame = frameAnnotationAt(manifestRef.current, seconds);
+    return detectBoxesToLabelBoxes(getDetectTask(frame)?.boxes ?? []);
+  }, []);
+
+  const updateFrameAtTime = useCallback(
+    (seconds: number, nextBoxes: LabelBox[], nextReviewed = true): LabelBox[] => {
+      const source = manifestRef.current;
+      if (!source || !current) return nextBoxes;
+      const detectBoxes = nextBoxes.map(labelBoxToDetectBox);
+      const next = updateVideoDetectBoxes(source, current, seconds, detectBoxes, nextReviewed);
+      manifestRef.current = next;
+      setManifest(next);
+      enqueueSave(next);
+      return nextBoxes.map((box) => ({ ...box }));
+    },
+    [current, enqueueSave]
   );
 
   const gotoTime = useCallback(
@@ -381,6 +449,26 @@ export function useVideoAnnotationSession({
     () => videoTimelineMarkers(manifest),
     [manifest]
   );
+
+  useEffect(() => {
+    if (previewMode !== "url" || !active || !current || !workspaceRoot.trim() || !timelineMarkers.length) return;
+    const currentMs = Number(currentKey);
+    const sorted = timelineMarkers
+      .map((marker) => ({ ms: Number(marker.key), time: marker.time }))
+      .filter((marker) => Number.isFinite(marker.ms) && Number.isFinite(marker.time))
+      .sort((a, b) => a.ms - b.ms);
+    const nextIndex = sorted.findIndex((marker) => marker.ms >= currentMs);
+    const candidateIndexes = new Set<number>([
+      Math.max(0, nextIndex < 0 ? sorted.length - 1 : nextIndex - 1),
+      Math.max(0, nextIndex < 0 ? sorted.length - 1 : nextIndex),
+      Math.min(sorted.length - 1, nextIndex < 0 ? sorted.length - 1 : nextIndex + 1)
+    ]);
+    for (const index of candidateIndexes) {
+      const marker = sorted[index];
+      if (!marker) continue;
+      void prefetchAnnotationFrame(workspaceRoot, current.path, marker.time).catch(() => {});
+    }
+  }, [active, current, currentKey, previewMode, timelineMarkers, workspaceRoot]);
 
   const addVideos = useCallback(async () => {
     if (!workspaceRoot.trim()) {
@@ -490,6 +578,20 @@ export function useVideoAnnotationSession({
       summary: { boxCount: 0 }
     }).catch(() => {});
   }, [current, currentKey, enqueueSave, time, workspaceRoot]);
+
+  const markTimestamp = useCallback((seconds = time, source: VideoTimestampSource = { kind: "manual" }) => {
+    const manifestSource = manifestRef.current;
+    if (!manifestSource || !current) return;
+    const next = markVideoTimestamp(manifestSource, current, seconds, source);
+    manifestRef.current = next;
+    setManifest(next);
+    enqueueSave(next);
+  }, [current, enqueueSave, time]);
+
+  const markCurrentTimestamp = useCallback(
+    (source: VideoTimestampSource = { kind: "manual" }) => markTimestamp(time, source),
+    [markTimestamp, time]
+  );
 
   // Clear the whole frame record (both detect and clf).
   const clearFrameRecord = useCallback(() => {
@@ -614,6 +716,7 @@ export function useVideoAnnotationSession({
     stepSeconds,
     setStepSeconds,
     previewBase64,
+    previewUrl,
     previewLoading,
     manifestLoading,
     manifest,
@@ -643,9 +746,13 @@ export function useVideoAnnotationSession({
     timelineMarkers,
     // Detect actions
     updateCurrentFrame,
+    updateFrameAtTime,
+    loadBoxesAtTime,
     copyPreviousBoxes,
     gotoReviewed,
     markEmptyReviewed,
+    markTimestamp,
+    markCurrentTimestamp,
     clearFrameRecord,
     moveFrameRecord,
     // Clf actions

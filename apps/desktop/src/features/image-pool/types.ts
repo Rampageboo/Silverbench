@@ -18,6 +18,8 @@ export type MetadataRow = {
   clf_class?: string;
   detect_enabled?: boolean;
   clf_enabled?: boolean;
+  detect_export_enabled?: boolean;
+  clf_export_enabled?: boolean;
   reviewed?: boolean;
   flagged?: boolean;
 };

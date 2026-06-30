@@ -17,6 +17,8 @@ export type ClassDef = {
   key: string;
   /** Human-readable display name. */
   name: string;
+  /** Previous model/workspace names that should still map to this class. */
+  aliases?: string[];
   /** Optional hex color for UI rendering. */
   color?: string;
   /**
@@ -134,7 +136,18 @@ export function normalizeClassesManifest(value: unknown): ClassesManifest {
   const classDefs: ClassDef[] = Array.isArray(data.classDefs)
     ? data.classDefs
         .filter((d): d is ClassDef => Boolean(d?.key && d?.name))
-        .map((d) => ({ ...d, ...(d.archived ? { archived: true } : {}) }))
+        .map((d) => {
+          const aliases = Array.isArray(d.aliases)
+            ? d.aliases
+                .map((alias) => String(alias ?? "").trim())
+                .filter(Boolean)
+            : [];
+          return {
+            ...d,
+            ...(aliases.length ? { aliases } : {}),
+            ...(d.archived ? { archived: true } : {})
+          };
+        })
     : [];
   const detectKeys: string[] = Array.isArray(data.tasks?.detect?.classKeys)
     ? (data.tasks.detect.classKeys as string[]).filter((k) => typeof k === "string")

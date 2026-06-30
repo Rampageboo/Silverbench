@@ -214,9 +214,11 @@ export function useBoxTracking({
     updateDuplicateState
   ]);
 
-  const pauseDuplicateFlow = useCallback(async () => {
+  const pauseDuplicateFlow = useCallback(async (itemId?: string) => {
     const state = duplicateStateRef.current;
-    const item = state.items.find((candidate) => candidate.id === state.selectedItemId) ?? state.items[0];
+    const item = state.items.find((candidate) => candidate.id === itemId)
+      ?? state.items.find((candidate) => candidate.id === state.selectedItemId)
+      ?? state.items[0];
     if (!item) {
       setStatus("Add a duplicate box before pausing.");
       return;
@@ -266,9 +268,11 @@ export function useBoxTracking({
     updateDuplicateState
   ]);
 
-  const resumeDuplicateFlow = useCallback(async () => {
+  const resumeDuplicateFlow = useCallback(async (itemId?: string) => {
     const state = duplicateStateRef.current;
-    const item = state.items.find((candidate) => candidate.id === state.selectedItemId) ?? state.items.find((candidate) => candidate.paused);
+    const item = state.items.find((candidate) => candidate.id === itemId)
+      ?? state.items.find((candidate) => candidate.id === state.selectedItemId)
+      ?? state.items.find((candidate) => candidate.paused);
     if (!item || !item.paused) {
       setStatus("No paused duplicate box to resume.");
       return;
@@ -310,9 +314,11 @@ export function useBoxTracking({
     updateDuplicateState
   ]);
 
-  const deleteDuplicateFlow = useCallback(async () => {
+  const deleteDuplicateFlow = useCallback(async (itemId?: string) => {
     const state = duplicateStateRef.current;
-    const item = state.items.find((candidate) => candidate.id === state.selectedItemId) ?? state.items[0];
+    const item = state.items.find((candidate) => candidate.id === itemId)
+      ?? state.items.find((candidate) => candidate.id === state.selectedItemId)
+      ?? state.items[0];
     if (!item) {
       setStatus("No duplicate box to delete.");
       return;
@@ -457,6 +463,7 @@ export function useBoxTracking({
       currentIndex >= 0 &&
       selectedIndex !== null &&
       Boolean(boxesRef.current[selectedIndex]),
+    canAdvance: activeDuplicateItems.length > 0 && currentIndex >= 0 && currentIndex + 1 < entries.length,
     canPause: Boolean(selectedDuplicateItem && !selectedDuplicateItem.paused),
     canResume: Boolean(selectedDuplicateItem && selectedDuplicateItem.paused && entry),
     canDelete: Boolean(selectedDuplicateItem),
@@ -474,6 +481,7 @@ export function useBoxTracking({
     currentIndex,
     duplicateClassId,
     duplicateState.items,
+    entries.length,
     entry,
     selectedDuplicateItem,
     selectedIndex

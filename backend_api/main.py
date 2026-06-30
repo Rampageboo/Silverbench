@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from backend.image_pool import scan_image_pool
 from backend.metadata_assign import get_workspace_classes, upsert_metadata_rows
+from backend.video_screenshot import frame_bytes
 from backend.yolo_workspace import IMAGE_EXTENSIONS, load_workspace_config, workspace_meta_dir
 from backend_api.dialogs import create_desktop_backend_service
 
@@ -29,7 +30,7 @@ SESSION_DIR = APP_DIR / "Sessions"
 SESSION_FILE = SESSION_DIR / "yolo_label_viewer_session.json"
 HEARTBEAT_METHOD = "__heartbeat"
 # Bump when /health or /api/call routing changes so dev startup can restart stale backends.
-API_SCHEMA_VERSION = 17
+API_SCHEMA_VERSION = 20
 
 # Localhost-only desktop backend: allow any registered service method except heartbeat/private.
 BLOCKED_API_METHODS = frozenset({HEARTBEAT_METHOD})
@@ -301,6 +302,48 @@ def image_preview(
 ) -> StreamingResponse:
     path = _image_pool_file(workspaceRoot, filename)
     return _jpeg_response(path, max_edge=maxEdge, quality=86)
+
+
+@app.get("/api/files/preview")
+def file_preview(
+    workspaceRoot: str = Query(min_length=1),
+    relativePath: str = Query(min_length=1),
+    maxEdge: int = Query(default=1280, ge=128, le=4096),
+    quality: int = Query(default=60, ge=35, le=95),
+) -> StreamingResponse:
+    paths = _workspace_paths_for_http(workspaceRoot)
+    path = (paths.root / relativePath).resolve()
+    _ensure_workspace_child(paths.root, path)
+    if not path.is_file() or path.suffix.lower() not in IMAGE_EXTENSIONS:
+        raise HTTPException(status_code=404, detail=f"Image not found: {relativePath}")
+    return _jpeg_response(path, max_edge=maxEdge, quality=quality)
+
+
+@app.get("/api/video/frame")
+def video_frame_preview(
+    workspaceRoot: str = Query(min_length=1),
+    path: str = Query(min_length=1),
+    seconds: float = Query(default=0, ge=0),
+    maxEdge: int = Query(default=1280, ge=128, le=4096),
+    quality: int = Query(default=60, ge=35, le=95),
+) -> StreamingResponse:
+    paths = _workspace_paths_for_http(workspaceRoot)
+    video_path = Path(path).expanduser().resolve()
+    try:
+        _ensure_workspace_child(paths.root, video_path)
+    except HTTPException:
+        media_root = paths.image_pool.resolve()
+        if video_path != media_root and media_root not in video_path.parents:
+            raise
+    try:
+        payload = frame_bytes(video_path, seconds, "jpg", max_edge=maxEdge, quality=quality)
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"Failed to render video frame: {error}") from error
+    return StreamingResponse(
+        BytesIO(payload),
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/api/labels/classes")

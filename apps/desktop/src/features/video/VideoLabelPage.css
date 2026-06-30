@@ -19,6 +19,10 @@
   padding: 8px;
 }
 
+.video-label-workspace--inspector-owned {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .video-label-workspace--embedded .video-label-main-panel {
   box-shadow: none;
 }
@@ -29,6 +33,10 @@
 
 .video-label-workspace--unified-media .video-label-main-body {
   grid-template-rows: minmax(320px, 1fr) auto;
+}
+
+.video-label-workspace--inspector-owned .video-label-main-body {
+  grid-template-rows: auto auto minmax(320px, 1fr) auto;
 }
 
 .video-label-main-panel,
@@ -75,6 +83,10 @@
   grid-template-rows: auto minmax(0, 1fr);
   width: 100%;
   height: 100%;
+}
+
+.video-annotation-editor--no-toolbar {
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .video-annotation-toolbar {
@@ -173,6 +185,10 @@
   background: #38bdf8;
 }
 
+.video-label-marker--marker {
+  background: #a78bfa;
+}
+
 .video-label-marker.dragging {
   border-color: #ffffff;
   transform: translate(-50%, -50%) scale(1.25);
@@ -197,6 +213,55 @@
 .video-label-time-row {
   align-items: end;
   flex-wrap: wrap;
+}
+
+.video-label-shortcuts-panel {
+  min-height: 62px;
+  padding: 8px;
+  border: 1px solid var(--border, #2b303b);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.84);
+}
+
+.video-label-shortcuts-panel .pool-label-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.video-label-shortcuts-panel .pool-label-shortcut-slot {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.video-label-shortcuts-panel .pool-label-shortcut-number {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.video-label-shortcuts-panel .pool-label-shortcut-button {
+  min-height: 30px;
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #0f172a;
+  color: #dbeafe;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.video-label-shortcuts-panel .pool-label-shortcut-dropdown.active .pool-label-shortcut-button {
+  border-color: #60a5fa;
+  background: rgba(37, 99, 235, 0.18);
+}
+
+.video-label-preview-header {
+  flex: 0 0 auto;
+  padding: 0 2px;
 }
 
 .video-label-time-row label {

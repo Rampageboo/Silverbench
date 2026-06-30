@@ -78,6 +78,7 @@ export function useBoxLabelCanvas({
         boxes: boxesRef.current,
         selectedIndex: selectedRef.current,
         drag: dragRef.current,
+        currentClassId: classRef.current,
         zoomPoint: zoomPointRef.current,
         lastZoomCenter: lastZoomCenterRef.current
       });

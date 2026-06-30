@@ -60,7 +60,9 @@ export function metadataRowToUpdate(filename: string, row: MetadataRow | null) {
       clf_class: "",
       clf_enabled: false,
       detect_enabled: false,
-      detect_junk: false
+      detect_junk: false,
+      detect_export_enabled: true,
+      clf_export_enabled: true
     };
   }
   return {
@@ -68,6 +70,8 @@ export function metadataRowToUpdate(filename: string, row: MetadataRow | null) {
     clf_class: row.clf_class || "",
     clf_enabled: row.clf_enabled,
     detect_enabled: row.detect_enabled,
-    detect_junk: row.detect_junk
+    detect_junk: row.detect_junk,
+    detect_export_enabled: row.detect_export_enabled,
+    clf_export_enabled: row.clf_export_enabled
   };
 }

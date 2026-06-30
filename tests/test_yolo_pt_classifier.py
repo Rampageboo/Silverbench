@@ -111,6 +111,50 @@ class YoloPtClassifierTests(unittest.TestCase):
             else:
                 sys.modules["ultralytics"] = previous
 
+    def test_classify_image_with_pt_uses_model_imgsz_when_not_requested(self) -> None:
+        captured: dict[str, object] = {}
+
+        class FakeInnerModel:
+            args = {"imgsz": 640}
+
+        class FakeYOLO:
+            names = {0: "background", 1: "Banner_L"}
+            model = FakeInnerModel()
+
+            def __init__(self, model_path: str) -> None:
+                self.model_path = model_path
+
+            def predict(self, **kwargs: object) -> list[object]:
+                captured["predict"] = kwargs
+                probs = types.SimpleNamespace(
+                    top1=1,
+                    top1conf=0.99,
+                    top5=[1, 0],
+                    top5conf=[0.99, 0.01],
+                )
+                return [types.SimpleNamespace(probs=probs, names=self.names)]
+
+        previous = sys.modules.get("ultralytics")
+        sys.modules["ultralytics"] = types.SimpleNamespace(YOLO=FakeYOLO)
+        try:
+            with TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                model = root / "best.pt"
+                image = root / "screen.png"
+                model.write_bytes(b"fake model")
+                image.write_bytes(b"fake image")
+
+                result = classify_image_with_pt(model, image, image_size=0, device="cpu", top_k=2)
+
+            self.assertEqual(captured["predict"]["imgsz"], 640)
+            self.assertEqual(result["imageSize"], 640)
+            self.assertEqual(result["top"]["className"], "Banner_L")
+        finally:
+            if previous is None:
+                sys.modules.pop("ultralytics", None)
+            else:
+                sys.modules["ultralytics"] = previous
+
 
 if __name__ == "__main__":
     unittest.main()

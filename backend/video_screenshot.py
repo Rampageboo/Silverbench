@@ -1,13 +1,25 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
+import tempfile
+import threading
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Callable
 
 import cv2
 
 from .dataset_merge import VIDEO_EXTENSIONS, unique_path
+
+
+_CAPTURE_LOCK = threading.RLock()
+_CAPTURE_CACHE: OrderedDict[str, cv2.VideoCapture] = OrderedDict()
+_FRAME_BYTES_CACHE: OrderedDict[str, bytes] = OrderedDict()
+_MAX_CAPTURE_CACHE = 4
+_MAX_FRAME_MEMORY_CACHE = 128
+_FRAME_DISK_CACHE_DIR = Path(tempfile.gettempdir()) / "yoloworkbench_video_frames"
 
 
 def find_videos(folder: Path) -> list[Path]:
@@ -86,33 +98,114 @@ def _try_read_frame_at(cap: cv2.VideoCapture, seconds: float, fps: float):
     return None
 
 
-def read_video_frame(path: Path, seconds: float):
-    cap = cv2.VideoCapture(str(path))
+def _source_token(path: Path) -> tuple[str, int, int]:
+    resolved = path.expanduser().resolve()
+    stat = resolved.stat()
+    return str(resolved), int(stat.st_mtime_ns), int(stat.st_size)
+
+
+def _frame_cache_key(path: Path, seconds: float, image_format: str, max_edge: int, quality: int) -> str:
+    source, mtime_ns, size = _source_token(path)
+    timestamp_ms = round(max(0.0, float(seconds)) * 1000)
+    fmt = "png" if image_format == "png" else "jpg"
+    raw = f"{source}|{mtime_ns}|{size}|{timestamp_ms}|{fmt}|{int(max_edge or 0)}|{int(quality or 0)}"
+    return hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()
+
+
+def _frame_cache_path(key: str) -> Path:
+    return _FRAME_DISK_CACHE_DIR / key[:2] / f"{key}.bin"
+
+
+def _cached_capture(path: Path) -> cv2.VideoCapture:
+    source, mtime_ns, size = _source_token(path)
+    key = f"{source}|{mtime_ns}|{size}"
+    cap = _CAPTURE_CACHE.get(key)
+    if cap is not None and cap.isOpened():
+        _CAPTURE_CACHE.move_to_end(key)
+        return cap
+    if cap is not None:
+        cap.release()
+        _CAPTURE_CACHE.pop(key, None)
+    cap = cv2.VideoCapture(source)
     if not cap.isOpened():
         raise ValueError(f"Cannot open video: {path}")
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30
-    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-    target_seconds = max(0.0, float(seconds))
-    if frame_count > 0 and fps > 0:
-        target_seconds = min(target_seconds, max(0.0, (frame_count - 1) / fps))
-    try:
+    _CAPTURE_CACHE[key] = cap
+    while len(_CAPTURE_CACHE) > _MAX_CAPTURE_CACHE:
+        _, old_cap = _CAPTURE_CACHE.popitem(last=False)
+        old_cap.release()
+    return cap
+
+
+def read_video_frame(path: Path, seconds: float):
+    with _CAPTURE_LOCK:
+        cap = _cached_capture(path)
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        target_seconds = max(0.0, float(seconds))
+        if frame_count > 0 and fps > 0:
+            target_seconds = min(target_seconds, max(0.0, (frame_count - 1) / fps))
         for delta in (0.0, -0.05, 0.05, -0.2, 0.2, -0.5, 0.5, -1.0, 1.0):
             seek_seconds = max(0.0, target_seconds + delta)
             frame = _try_read_frame_at(cap, seek_seconds, fps)
             if frame is not None:
-                return frame
-    finally:
-        cap.release()
+                return frame.copy()
     raise ValueError(f"Cannot read frame at {seconds}s from {path}")
 
 
-def frame_base64(path: Path, seconds: float, image_format: str = "jpg") -> str:
+def _resize_frame_for_preview(frame, max_edge: int):
+    edge = max(0, int(max_edge or 0))
+    if edge <= 0:
+        return frame
+    height, width = frame.shape[:2]
+    current_edge = max(width, height)
+    if current_edge <= edge:
+        return frame
+    scale = edge / current_edge
+    next_size = (max(1, round(width * scale)), max(1, round(height * scale)))
+    return cv2.resize(frame, next_size, interpolation=cv2.INTER_AREA)
+
+
+def frame_bytes(path: Path, seconds: float, image_format: str = "jpg", max_edge: int = 0, quality: int = 72) -> bytes:
+    key = _frame_cache_key(path, seconds, image_format, max_edge, quality)
+    cached = _FRAME_BYTES_CACHE.get(key)
+    if cached is not None:
+        _FRAME_BYTES_CACHE.move_to_end(key)
+        return cached
+
+    cache_path = _frame_cache_path(key)
+    try:
+        if cache_path.is_file():
+            payload = cache_path.read_bytes()
+            _FRAME_BYTES_CACHE[key] = payload
+            while len(_FRAME_BYTES_CACHE) > _MAX_FRAME_MEMORY_CACHE:
+                _FRAME_BYTES_CACHE.popitem(last=False)
+            return payload
+    except OSError:
+        pass
+
     frame = read_video_frame(path, seconds)
+    frame = _resize_frame_for_preview(frame, max_edge)
     suffix = ".png" if image_format == "png" else ".jpg"
-    ok, encoded = cv2.imencode(suffix, frame)
+    params: list[int] = []
+    if suffix == ".jpg":
+        params = [int(cv2.IMWRITE_JPEG_QUALITY), max(35, min(int(quality), 95))]
+    ok, encoded = cv2.imencode(suffix, frame, params)
     if not ok:
         raise ValueError("Cannot encode frame")
-    return base64.b64encode(encoded.tobytes()).decode("ascii")
+    payload = encoded.tobytes()
+    _FRAME_BYTES_CACHE[key] = payload
+    while len(_FRAME_BYTES_CACHE) > _MAX_FRAME_MEMORY_CACHE:
+        _FRAME_BYTES_CACHE.popitem(last=False)
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_bytes(payload)
+    except OSError:
+        pass
+    return payload
+
+
+def frame_base64(path: Path, seconds: float, image_format: str = "jpg", max_edge: int = 0, quality: int = 72) -> str:
+    return base64.b64encode(frame_bytes(path, seconds, image_format, max_edge, quality)).decode("ascii")
 
 
 def save_video_frame(path: Path, output_dir: Path, seconds: float, prefix: str, image_format: str = "jpg") -> str:

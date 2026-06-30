@@ -25,6 +25,7 @@ export type BoxLabelDuplicateFlow = {
     selected: boolean;
   }>;
   canStart: boolean;
+  canAdvance: boolean;
   canPause: boolean;
   canResume: boolean;
   canDelete: boolean;
@@ -48,10 +49,11 @@ export type BoxLabelWorkbenchBridge = {
   rejectAllProposals: () => void;
   duplicateFlow: BoxLabelDuplicateFlow | null;
   startDuplicateToNext: (() => void) | null;
+  advanceDuplicateToNext: (() => void) | null;
   selectDuplicateItem: ((id: string) => void) | null;
-  pauseDuplicateFlow: (() => void) | null;
-  resumeDuplicateFlow: (() => void) | null;
-  deleteDuplicateFlow: (() => void) | null;
+  pauseDuplicateFlow: ((id?: string) => void) | null;
+  resumeDuplicateFlow: ((id?: string) => void) | null;
+  deleteDuplicateFlow: ((id?: string) => void) | null;
 };
 
 export type BoxLabelAutoLabelResult = {
@@ -124,6 +126,10 @@ export type BoxLabelViewProps = {
   onImageViewModeChange: (mode: "all" | "hideReviewed" | "flagged") => void;
   onToggleReviewed: () => Promise<void>;
   onToggleFlagged: () => Promise<void>;
+  detectTaskEnabled?: boolean;
+  clfTaskEnabled?: boolean;
+  onToggleDetectTaskEnabled?: () => Promise<void>;
+  onToggleClfTaskEnabled?: () => Promise<void>;
   onLabelsChanged: (filename: string, boxes: api.LabelBox[]) => void;
   onMetadataChanged?: () => Promise<void>;
   onStatusText?: (text: string) => void;
@@ -134,9 +140,15 @@ export type BoxLabelViewProps = {
   classificationClassesBusy?: boolean;
   classificationClassesStatus?: string;
   classificationClassesPortalId?: string;
+  detectClassKeysById?: Record<number, string>;
   currentClassificationKey?: string | null;
   onAssignClassificationClass?: (classKey: string | null, basename?: string) => Promise<void>;
   onAddClassificationClass?: (name: string) => Promise<string | null>;
+  onRenameClass?: (classKey: string, newName: string) => Promise<void>;
   onWorkspaceClassesChanged?: () => Promise<void>;
   canvasOverlay?: BoxLabelCanvasOverlay;
+  imageUrlOverride?: string | null;
+  loadLabelsOverride?: (entry: BoxLabelEntry) => Promise<api.LabelBox[]>;
+  saveLabelsOverride?: (entry: BoxLabelEntry, boxes: api.LabelBox[]) => Promise<api.LabelBox[]>;
+  disableProposals?: boolean;
 };

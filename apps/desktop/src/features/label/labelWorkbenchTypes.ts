@@ -77,6 +77,9 @@ export type LabelWorkbenchActionGroup = {
     selected?: boolean;
     tone?: "default" | "muted" | "warning";
     run?: () => void | Promise<void>;
+    onPause?: () => void | Promise<void>;
+    onResume?: () => void | Promise<void>;
+    onDelete?: () => void | Promise<void>;
   }>;
   actions: LabelWorkbenchAction[];
 };
@@ -161,6 +164,22 @@ export type LabelWorkbenchClassPalette = {
   currentDetectClassId?: number | null;
   currentClassificationKey?: string | null;
   readOnlyReason?: string | null;
+  onSelectDetectClass?: (classId: number) => void | Promise<void>;
+};
+
+export type LabelWorkbenchOption = {
+  value: string;
+  label: string;
+};
+
+export type LabelWorkbenchSamplingControl = {
+  sourceLabel: string;
+  segmentCount: number;
+  mode: string;
+  modeOptions: LabelWorkbenchOption[];
+  minSpacingMs: number;
+  onModeChange?: (value: string) => void | Promise<void>;
+  onMinSpacingMsChange?: (value: number) => void | Promise<void>;
 };
 
 export type LabelSelectedProposalSummary = {
@@ -188,6 +207,7 @@ export type LabelWorkbenchInspectorState = {
   selectedProposal?: LabelSelectedProposalSummary | null;
   overlaySummary?: LabelOverlaySummary | null;
   segmentSummary?: LabelSegmentSummary | null;
+  samplingControl?: LabelWorkbenchSamplingControl | null;
   timestampLabel?: string | null;
   sourceDetail?: string | null;
   warnings?: LabelWorkbenchWarning[];

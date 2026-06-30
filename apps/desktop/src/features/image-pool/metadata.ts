@@ -7,6 +7,11 @@ export function truthyFlag(value: unknown) {
   return value === true || value === "1" || value === 1;
 }
 
+function optionalTruthyFlag(value: unknown) {
+  if (value == null || value === "") return undefined;
+  return truthyFlag(value);
+}
+
 function normalizeMetadataRow(row: Record<string, unknown>): MetadataRow {
   return {
     filename: String(row.filename || ""),
@@ -14,6 +19,8 @@ function normalizeMetadataRow(row: Record<string, unknown>): MetadataRow {
     clf_class: row.clf_class != null ? String(row.clf_class) : undefined,
     detect_enabled: truthyFlag(row.detect_enabled),
     clf_enabled: truthyFlag(row.clf_enabled),
+    detect_export_enabled: optionalTruthyFlag(row.detect_export_enabled),
+    clf_export_enabled: optionalTruthyFlag(row.clf_export_enabled),
     reviewed: truthyFlag(row.reviewed),
     flagged: truthyFlag(row.flagged)
   };
@@ -44,6 +51,15 @@ export function isReviewedFile(row: MetadataRow | undefined) {
 
 export function isFlaggedFile(row: MetadataRow | undefined) {
   return Boolean(row?.flagged);
+}
+
+export function isTaskExportEnabled(row: MetadataRow | undefined, task: "detect" | "clf") {
+  if (task === "detect") {
+    if (isDetectJunk(row)) return false;
+    return row?.detect_export_enabled !== false;
+  }
+  if (isClfJunk(row)) return false;
+  return row?.clf_export_enabled !== false;
 }
 
 export function junkLabelForFile(row: MetadataRow | undefined) {
@@ -121,13 +137,15 @@ export async function markJunkFilenames(
         filename,
         detect_junk: true,
         detect_enabled: false,
+        detect_export_enabled: false,
         clf_enabled: false,
         clf_class: INBOX_JUNK_CLASS,
+        clf_export_enabled: false,
       };
     }
     return scope === "detect"
-      ? { filename, detect_junk: true, detect_enabled: false }
-      : { filename, clf_enabled: false, clf_class: INBOX_JUNK_CLASS };
+      ? { filename, detect_junk: true, detect_enabled: false, detect_export_enabled: false }
+      : { filename, clf_enabled: false, clf_class: INBOX_JUNK_CLASS, clf_export_enabled: false };
   });
   await callJson("upsertMetadataRows", [workspaceRoot, JSON.stringify(updates)]);
   if (scope === "detect") {
@@ -163,6 +181,23 @@ export async function clearJunkFilenames(
   await callJson("upsertMetadataRows", [workspaceRoot, JSON.stringify(updates)]);
 }
 
+export async function setTaskExportEnabled(
+  workspaceRoot: string,
+  filename: string,
+  task: "detect" | "clf",
+  enabled: boolean
+) {
+  const cleanName = filename.trim();
+  if (!cleanName) return;
+  const field = task === "detect" ? "detect_export_enabled" : "clf_export_enabled";
+  await callJson("upsertMetadataRows", [workspaceRoot, JSON.stringify([{ filename: cleanName, [field]: enabled }])]);
+  if (enabled) return;
+  await callJson(task === "detect" ? "removeDetectDatasetLinks" : "removeClfDatasetLinks", [
+    workspaceRoot,
+    JSON.stringify([cleanName]),
+  ]);
+}
+
 export async function restoreMetadataSnapshots(
   workspaceRoot: string,
   snapshots: Array<{ filename: string; row: MetadataRow | null }>
@@ -174,7 +209,9 @@ export async function restoreMetadataSnapshots(
         clf_class: "",
         clf_enabled: false,
         detect_enabled: false,
-        detect_junk: false
+        detect_junk: false,
+        detect_export_enabled: true,
+        clf_export_enabled: true
       };
     }
     return {
@@ -183,6 +220,8 @@ export async function restoreMetadataSnapshots(
       clf_enabled: row.clf_enabled,
       detect_enabled: row.detect_enabled,
       detect_junk: row.detect_junk,
+      detect_export_enabled: row.detect_export_enabled,
+      clf_export_enabled: row.clf_export_enabled,
       reviewed: row.reviewed,
       flagged: row.flagged
     };

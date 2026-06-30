@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import shutil
+import tempfile
 import threading
 import uuid
 from collections.abc import Callable
@@ -214,6 +215,8 @@ class BackendService:
             "startDetectFolderWithPt": self._handle_startDetectFolderWithPt,
             "classifyImageWithPt": self._handle_classifyImageWithPt,
             "detectImageWithPt": self._handle_detectImageWithPt,
+            "classifyImageBase64WithPt": self._handle_classifyImageBase64WithPt,
+            "detectImageBase64WithPt": self._handle_detectImageBase64WithPt,
             "getPtJob": self._handle_getPtJob,
             "cancelPtJob": self._handle_cancelPtJob,
             "readAutoLabelModelRegistry": self._handle_readAutoLabelModelRegistry,
@@ -279,6 +282,8 @@ class BackendService:
                     self.path_access.require_path(args[0]),
                     float(args[1]),
                     args[2] if len(args) > 2 else "jpg",
+                    int(args[3]) if len(args) > 3 else 0,
+                    int(args[4]) if len(args) > 4 else 72,
                 )
             except ValueError:
                 return ""
@@ -956,8 +961,41 @@ class BackendService:
                 ensure_ascii=False,
             )
 
+    def _temporary_base64_image(self, image_base64: str) -> Path:
+            raw = str(image_base64 or "")
+            if "," in raw and raw.strip().lower().startswith("data:"):
+                raw = raw.split(",", 1)[1]
+            payload = base64.b64decode(raw, validate=True)
+            if not payload:
+                raise ValueError("Image payload is empty.")
+            handle = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+            try:
+                handle.write(payload)
+                return Path(handle.name)
+            finally:
+                handle.close()
+
+    def _handle_detectImageBase64WithPt(self, args: list[Any]) -> object:
+            image_size = int(args[3]) if len(args) > 3 else 640
+            confidence = float(args[4]) if len(args) > 4 else 0.25
+            device = str(args[5]) if len(args) > 5 else "0"
+            temp_path = self._temporary_base64_image(str(args[2]))
+            try:
+                return json.dumps(
+                    detect_image_with_pt(
+                        self.path_access.safe_child_path(args[0], str(args[1])),
+                        temp_path,
+                        image_size,
+                        confidence,
+                        device,
+                    ),
+                    ensure_ascii=False,
+                )
+            finally:
+                temp_path.unlink(missing_ok=True)
+
     def _handle_classifyImageWithPt(self, args: list[Any]) -> object:
-            image_size = int(args[3]) if len(args) > 3 else 224
+            image_size = int(args[3]) if len(args) > 3 else 0
             device = str(args[4]) if len(args) > 4 else "0"
             top_k = int(args[5]) if len(args) > 5 else 5
             return json.dumps(
@@ -970,6 +1008,25 @@ class BackendService:
                 ),
                 ensure_ascii=False,
             )
+
+    def _handle_classifyImageBase64WithPt(self, args: list[Any]) -> object:
+            image_size = int(args[3]) if len(args) > 3 else 0
+            device = str(args[4]) if len(args) > 4 else "0"
+            top_k = int(args[5]) if len(args) > 5 else 5
+            temp_path = self._temporary_base64_image(str(args[2]))
+            try:
+                return json.dumps(
+                    classify_image_with_pt(
+                        self.path_access.safe_child_path(args[0], str(args[1])),
+                        temp_path,
+                        image_size,
+                        device,
+                        top_k,
+                    ),
+                    ensure_ascii=False,
+                )
+            finally:
+                temp_path.unlink(missing_ok=True)
 
     def _handle_startClassifyFolderWithPt(self, args: list[Any]) -> object:
             return json.dumps(self._start_pt_job("classify", args), ensure_ascii=False)

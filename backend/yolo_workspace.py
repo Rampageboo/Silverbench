@@ -34,12 +34,15 @@ DEFAULT_APP_SETTINGS = {
 MAX_INBOX_ASSIGN_BATCHES = 2000
 MAX_INBOX_BUILD_RUNS = 500
 DEFAULT_CLF_CLASSES = ("class_A", "class_B", "unknown", "background")
-METADATA_HEADER = "filename,split,detect_enabled,clf_enabled,clf_class,detect_junk,reviewed,flagged\n"
-METADATA_EXAMPLE_ROWS = """img001.png,train,1,1,class_A
-img002.png,train,1,1,class_B
-img003.png,val,1,1,background
-img004.png,val,1,0,
-img005.png,train,0,1,unknown
+METADATA_HEADER = (
+    "filename,split,detect_enabled,clf_enabled,clf_class,detect_junk,"
+    "detect_export_enabled,clf_export_enabled,reviewed,flagged\n"
+)
+METADATA_EXAMPLE_ROWS = """img001.png,train,1,1,class_A,0,1,1,0,0
+img002.png,train,1,1,class_B,0,1,1,0,0
+img003.png,val,1,1,background,0,1,1,0,0
+img004.png,val,1,0,,0,1,1,0,0
+img005.png,train,0,1,unknown,0,1,1,0,0
 """
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 DATASET_META_EXTENSIONS = frozenset({".txt", ".yaml", ".yml", ".csv"})

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { datasetImageUrl } from "../dataset-review/datasetAssets";
+import { datasetPreviewImageUrl } from "../dataset-review/datasetAssets";
 import { isFlaggedFile, isReviewedFile } from "../image-pool/metadata";
-import { getAnnotationFrameBase64 } from "../video/videoAnnotationApi";
+import { getAnnotationFrameUrl } from "../video/videoAnnotationApi";
 import type { BoxLabelPageModel } from "../box-label/BoxLabelPage";
 import type { VideoLabelSession } from "../video/VideoLabelPage";
 
@@ -39,7 +39,7 @@ function LazyImageThumb({ datasetRoot, imagePath }: { datasetRoot: string; image
     const observer = new IntersectionObserver(
       (entries) => {
         if (!entries.some((entry) => entry.isIntersecting)) return;
-        datasetImageUrl(datasetRoot, imagePath)
+        datasetPreviewImageUrl(datasetRoot, imagePath, 360, 60)
           .then((url) => {
             if (!cancelled) setSrc(url);
           })
@@ -58,22 +58,18 @@ function LazyImageThumb({ datasetRoot, imagePath }: { datasetRoot: string; image
   return <img ref={imgRef} src={src || undefined} alt={imagePath} loading="lazy" />;
 }
 
-function LazyVideoThumb({ path, name }: { path: string; name: string }) {
+function LazyVideoThumb({ workspaceRoot, path, name }: { workspaceRoot: string; path: string; name: string }) {
   const imgRef = useRef<HTMLImageElement>(null);
   const [src, setSrc] = useState("");
 
   useEffect(() => {
     const img = imgRef.current;
-    if (!img || !path) return;
+    if (!img || !workspaceRoot || !path) return;
     let cancelled = false;
     const observer = new IntersectionObserver(
       (entries) => {
         if (!entries.some((entry) => entry.isIntersecting)) return;
-        getAnnotationFrameBase64(path, 0)
-          .then((base64) => {
-            if (!cancelled) setSrc(base64 ? `data:image/jpeg;base64,${base64}` : "");
-          })
-          .catch(() => {});
+        if (!cancelled) setSrc(getAnnotationFrameUrl(workspaceRoot, path, 0, { fast: true }));
         observer.disconnect();
       },
       { rootMargin: "240px" }
@@ -83,7 +79,7 @@ function LazyVideoThumb({ path, name }: { path: string; name: string }) {
       cancelled = true;
       observer.disconnect();
     };
-  }, [path]);
+  }, [path, workspaceRoot]);
 
   return src ? <img ref={imgRef} src={src} alt={name} loading="lazy" /> : <div ref={imgRef} className="lwb-media-video-placeholder">VIDEO</div>;
 }
@@ -155,21 +151,31 @@ export function LabelMediaGrid({ pool, videoSession, selection, onSelectionChang
         {mediaItems.length ? (
           <div className="lwb-media-grid">
             {mediaItems.map((item) => {
-              const selected = `${item.kind}:${item.index}` === activeKey;
+              const active = `${item.kind}:${item.index}` === activeKey;
+              const shiftSelected = item.kind === "image" && pool.shiftSelectedBasenames.has(item.name);
               return (
                 <button
                   type="button"
                   key={item.key}
-                  className={`lwb-media-tile${selected ? " active" : ""}${item.kind === "image" && item.reviewed ? " reviewed" : ""}${item.kind === "image" && item.flagged ? " flagged" : ""}`}
+                  className={`lwb-media-tile${active ? " active" : ""}${shiftSelected ? " shift-selected" : ""}${item.kind === "image" && item.reviewed ? " reviewed" : ""}${item.kind === "image" && item.flagged ? " flagged" : ""}`}
                   title={item.name}
                   onClick={(event) => {
                     if (item.kind === "image") {
+                      const modifierSelect = event.shiftKey || event.ctrlKey || event.metaKey;
+                      if (modifierSelect && selection.kind !== "image") {
+                        pool.selectGalleryImage(item.index);
+                        onSelectionChange({ kind: "image", index: item.index });
+                        return;
+                      }
                       pool.selectGalleryImage(item.index, {
                         shiftKey: event.shiftKey,
                         ctrlKey: event.ctrlKey,
                         metaKey: event.metaKey
                       });
-                      if (event.shiftKey || event.ctrlKey || event.metaKey) return;
+                      if (modifierSelect) {
+                        onSelectionChange({ kind: "image", index: selection.kind === "image" ? selection.index : item.index });
+                        return;
+                      }
                     } else {
                       videoSession.setCurrentIndex(item.index);
                     }
@@ -181,7 +187,7 @@ export function LabelMediaGrid({ pool, videoSession, selection, onSelectionChang
                     {item.kind === "image" ? (
                       <LazyImageThumb datasetRoot={pool.datasetRoot} imagePath={item.imagePath} />
                     ) : (
-                      <LazyVideoThumb path={videoSession.videos[item.index]?.path || ""} name={item.name} />
+                      <LazyVideoThumb workspaceRoot={pool.datasetRoot} path={videoSession.videos[item.index]?.path || ""} name={item.name} />
                     )}
                   </span>
                 </button>

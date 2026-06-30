@@ -141,7 +141,9 @@ def validate_rows(
         split = row.get("split", "").strip().lower()
         detect_raw = row.get("detect_enabled", "")
         detect_junk_raw = row.get("detect_junk", "")
+        detect_export_raw = row.get("detect_export_enabled") or "1"
         clf_raw = row.get("clf_enabled", "")
+        clf_export_raw = row.get("clf_export_enabled") or "1"
         clf_class = row.get("clf_class", "").strip()
 
         if not filename:
@@ -186,6 +188,15 @@ def validate_rows(
         if detect_junk:
             detect_enabled = False
 
+        detect_export_enabled = _parse_bool(detect_export_raw, "detect_export_enabled", line)
+        if detect_export_enabled is None:
+            stats.skipped_rows += 1
+            stats.warnings.append(
+                f"Line {line}: invalid detect_export_enabled '{detect_export_raw}', skipped."
+            )
+            continue
+        detect_enabled = detect_enabled and detect_export_enabled
+
         clf_enabled = _parse_bool(clf_raw, "clf_enabled", line)
         if clf_enabled is None:
             stats.skipped_rows += 1
@@ -193,6 +204,15 @@ def validate_rows(
                 f"Line {line}: invalid clf_enabled '{clf_raw}', skipped."
             )
             continue
+
+        clf_export_enabled = _parse_bool(clf_export_raw, "clf_export_enabled", line)
+        if clf_export_enabled is None:
+            stats.skipped_rows += 1
+            stats.warnings.append(
+                f"Line {line}: invalid clf_export_enabled '{clf_export_raw}', skipped."
+            )
+            continue
+        clf_enabled = clf_enabled and clf_export_enabled
 
         if clf_class == "__junk__":
             clf_enabled = False

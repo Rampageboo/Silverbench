@@ -87,6 +87,27 @@ function uniqueSlug(base: string, used: Set<string>): string {
   return `${base}_${i}`;
 }
 
+function normalizedAliasKey(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function addClassAlias(def: ClassDef, alias: string): ClassDef {
+  const cleanAlias = alias.trim();
+  if (!cleanAlias || cleanAlias.toLowerCase() === def.name.trim().toLowerCase()) return def;
+  const newNameKey = normalizedAliasKey(def.name);
+  const seen = new Set<string>();
+  const aliases = [...(def.aliases ?? []), cleanAlias]
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((item) => {
+      const key = normalizedAliasKey(item);
+      if (!key || key === newNameKey || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  return aliases.length ? { ...def, aliases } : { ...def, aliases: undefined };
+}
+
 // ---------------------------------------------------------------------------
 // Conversion: WorkspaceClassSetup → ClassesManifest
 // ---------------------------------------------------------------------------
@@ -344,11 +365,13 @@ export function renameClassInManifest(
   classKey: string,
   newName: string
 ): ClassesManifest {
+  const cleanName = newName.trim();
   return {
     ...manifest,
-    classDefs: manifest.classDefs.map((d) =>
-      d.key === classKey ? { ...d, name: newName.trim() } : d
-    ),
+    classDefs: manifest.classDefs.map((d) => {
+      if (d.key !== classKey) return d;
+      return addClassAlias({ ...d, name: cleanName }, d.name);
+    }),
   };
 }
 

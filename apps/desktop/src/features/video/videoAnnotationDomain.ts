@@ -48,7 +48,7 @@ export function sortedVideoFrames(
     .sort((a, b) => a.timestampMs - b.timestampMs);
 }
 
-export type VideoTimelineMarkerKind = "detect" | "clf" | "mixed" | "empty" | "reviewed";
+export type VideoTimelineMarkerKind = "detect" | "clf" | "mixed" | "empty" | "reviewed" | "marker";
 
 export type VideoTimelineMarker = {
   key: string;
@@ -69,7 +69,8 @@ export function videoTimelineMarkers(manifest: VideoAnnotationManifest | null): 
       const detectBoxCount = detect?.boxes.length ?? 0;
       const hasDetect = Boolean(detect && (detectBoxCount > 0 || detect.reviewed || detect.empty));
       const hasClf = Boolean(clf && (clf.classKey || clf.reviewed));
-      if (!hasDetect && !hasClf) return null;
+      const hasMarker = Boolean(frame.source);
+      if (!hasDetect && !hasClf && !hasMarker) return null;
 
       const timestampMs = Number.isFinite(frame.timestampMs)
         ? Math.max(0, Math.round(frame.timestampMs))
@@ -83,7 +84,9 @@ export function videoTimelineMarkers(manifest: VideoAnnotationManifest | null): 
             ? "empty"
             : detectBoxCount > 0
               ? "detect"
-              : "reviewed";
+              : hasMarker
+                ? "marker"
+                : "reviewed";
       const details = [
         formatVideoClock(time),
         hasDetect
@@ -92,6 +95,8 @@ export function videoTimelineMarkers(manifest: VideoAnnotationManifest | null): 
             : detect?.empty
               ? "detect empty"
               : "detect reviewed"
+          : hasMarker
+            ? frame.source?.kind === "random" ? "random marker" : "manual marker"
           : "",
         clf?.classKey ? `clf ${clf.classKey}` : hasClf ? "clf reviewed" : ""
       ].filter(Boolean);
@@ -166,6 +171,32 @@ export function adjacentReviewedFrame(
 // ---------------------------------------------------------------------------
 // Detect task mutations — pure functions that return new manifests
 // ---------------------------------------------------------------------------
+
+export function markVideoTimestamp(
+  manifest: VideoAnnotationManifest,
+  video: VideoSource,
+  seconds: number,
+  source: VideoTimestampSource = { kind: "manual" },
+  now = new Date().toISOString()
+): VideoAnnotationManifest {
+  const timestampMs = Number(timestampKey(seconds));
+  const key = String(timestampMs);
+  const frames = { ...manifest.frames };
+  const existing = frames[key];
+  const currentDetect = existing?.tasks.detect ?? { boxes: [], reviewed: false };
+  frames[key] = {
+    ...(existing ?? {}),
+    timestampMs,
+    time: timestampMs / 1000,
+    source,
+    tasks: {
+      ...(existing?.tasks ?? {}),
+      detect: currentDetect
+    },
+    updatedAt: now
+  };
+  return { ...manifest, video, updatedAt: now, frames };
+}
 
 export function updateVideoDetectBoxes(
   manifest: VideoAnnotationManifest,

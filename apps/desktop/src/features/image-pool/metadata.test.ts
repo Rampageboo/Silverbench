@@ -7,6 +7,7 @@ import {
   isFlaggedFile,
   isJunkFile,
   isReviewedFile,
+  isTaskExportEnabled,
   junkLabelForFile,
   loadMetadataMap,
   markJunkFilenames,
@@ -74,6 +75,13 @@ describe("metadata flags", () => {
     expect(visual.currentInUse).toBe(true);
     expect(visual.overlay).toBe("active");
   });
+
+  it("task export flags default to enabled and can be disabled per side", () => {
+    expect(isTaskExportEnabled(undefined, "detect")).toBe(true);
+    expect(isTaskExportEnabled({ filename: "i.jpg" }, "clf")).toBe(true);
+    expect(isTaskExportEnabled({ filename: "j.jpg", detect_export_enabled: false }, "detect")).toBe(false);
+    expect(isTaskExportEnabled({ filename: "k.jpg", clf_export_enabled: false }, "clf")).toBe(false);
+  });
 });
 
 describe("loadMetadataMap", () => {
@@ -87,7 +95,9 @@ describe("loadMetadataMap", () => {
           flagged: 1,
           detect_junk: "1",
           detect_enabled: true,
+          detect_export_enabled: "0",
           clf_enabled: 0,
+          clf_export_enabled: "1",
           clf_class: "cat"
         }
       ]
@@ -101,6 +111,8 @@ describe("loadMetadataMap", () => {
       clf_class: "cat",
       detect_enabled: true,
       clf_enabled: false,
+      detect_export_enabled: false,
+      clf_export_enabled: true,
       reviewed: true,
       flagged: true
     });
@@ -120,8 +132,10 @@ describe("markJunkFilenames", () => {
           filename: "img.jpg",
           detect_junk: true,
           detect_enabled: false,
+          detect_export_enabled: false,
           clf_enabled: false,
           clf_class: INBOX_JUNK_CLASS,
+          clf_export_enabled: false,
         },
       ]),
     ]);

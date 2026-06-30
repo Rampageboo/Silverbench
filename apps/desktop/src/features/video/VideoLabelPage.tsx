@@ -9,6 +9,8 @@ import {
 import { createPortal } from "react-dom";
 import { useWorkspace } from "../../app/useWorkspace";
 import { useWorkbenchCommands } from "../../input/MultimodalControlProvider";
+import { BoxLabelShortcutDropdown } from "../box-label/BoxLabelShortcutDropdown";
+import { classNameFor, SLOT_ORDER } from "../box-label/geometry";
 import { isLabelWorkbenchEmbedded, useLabelWorkbench } from "../label/useLabelWorkbench";
 import { VideoAnnotationCanvas, type RemotePointerState } from "./VideoAnnotationCanvas";
 import { formatVideoClock, type VideoTimelineMarker } from "./videoAnnotationDomain";
@@ -58,6 +60,19 @@ const SAMPLING_MODE_LABELS: Record<SamplingMode, string> = {
 
 const SAMPLING_MODES: SamplingMode[] = ["whole-video", "segments-preferred", "segments-only"];
 
+const DRAW_MODE_ICON = (
+  <svg
+    viewBox="0 0 24 24"
+    width="11"
+    height="11"
+    fill="currentColor"
+    stroke="none"
+    aria-hidden="true"
+  >
+    <path d="M6 3l10 10-5 1.5L8.5 20 6 3z" />
+  </svg>
+);
+
 type MarkerDragState = {
   key: string;
   sourceTime: number;
@@ -66,6 +81,58 @@ type MarkerDragState = {
   moved: boolean;
   rect: DOMRect;
 };
+
+function VideoClassShortcutStrip({
+  classes,
+  currentClass,
+  onAssignClass
+}: {
+  classes: Array<{ id: number; name: string }>;
+  currentClass: number;
+  onAssignClass: (classId: number) => void | Promise<void>;
+}) {
+  const options = classes.map((item) => ({
+    value: String(item.id),
+    label: `${item.id}: ${item.name}`,
+    searchText: `${item.id} ${item.name}`,
+    selected: item.id === currentClass,
+  }));
+
+  return (
+    <section className="pool-label-shortcuts-panel class-mode video-label-shortcuts-panel">
+      <div className="pool-label-shortcuts">
+        {SLOT_ORDER.map((slot) => {
+          const bound = classes.find((item) => item.id === slot) ?? null;
+          return (
+            <div className="pool-label-shortcut-slot" key={slot}>
+              <div className="pool-label-shortcut-number">{slot}</div>
+              <div className="pool-label-shortcut-class-row-wrap">
+                <BoxLabelShortcutDropdown
+                  className="class-slot"
+                  title={`Video class shortcut ${slot}`}
+                  label={bound ? `${bound.id}: ${bound.name}` : "empty"}
+                  active={bound?.id === currentClass}
+                  options={options}
+                  onSelect={(value) => {
+                    if (value !== "") void onAssignClass(Number(value));
+                  }}
+                />
+                <button
+                  type="button"
+                  className="pool-label-shortcut-mode-btn mode-draw"
+                  title="Video frame draw mode"
+                  disabled
+                >
+                  {DRAW_MODE_ICON}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
 
 export function VideoLabelPage({ onReady, active = true }: Props) {
   const { workspaceRoot, chooseWorkspaceFolder } = useWorkspace();
@@ -100,6 +167,7 @@ export function VideoLabelSurface({
 
   const workbench = useLabelWorkbench();
   const embedded = isLabelWorkbenchEmbedded(workbench);
+  const inspectorOwnsSidePanels = embedded && unifiedMedia;
 
   useEffect(() => {
     if (!classificationClassesPortalId || typeof document === "undefined") {
@@ -358,12 +426,22 @@ export function VideoLabelSurface({
         classificationClasses: session.clfClassOptions.map((item) => ({ key: item.key, name: item.name })),
         currentDetectClassId: session.currentClass,
         currentClassificationKey: session.clfTask?.classKey ?? null,
-        readOnlyReason: "Class selection remains owned by the Video Label task panels in v1.",
+        readOnlyReason: null,
+        onSelectDetectClass: session.assignClass,
       },
       overlaySummary: { activeCount: currentBlackouts.length },
       segmentSummary: sampling.segmentCount > 0
         ? { label: `${sampling.segmentCount} enabled`, startMs: null, endMs: null }
         : null,
+      samplingControl: {
+        sourceLabel,
+        segmentCount: sampling.segmentCount,
+        mode: sampling.samplingMode,
+        modeOptions: SAMPLING_MODES.map((mode) => ({ value: mode, label: SAMPLING_MODE_LABELS[mode] })),
+        minSpacingMs: sampling.minSpacingMs,
+        onModeChange: (value) => sampling.setMode(value as SamplingMode),
+        onMinSpacingMsChange: sampling.setMinSpacingMs,
+      },
       warnings,
     });
     workbench.registerWorkbenchActions?.([
@@ -436,8 +514,13 @@ export function VideoLabelSurface({
     currentBlackouts.length,
     handleRandomNext,
     sampling.segmentCount,
+    sampling.samplingMode,
+    sampling.minSpacingMs,
+    sampling.setMinSpacingMs,
+    sampling.setMode,
     session.activeDetectClasses,
     session.activeDetectClasses.length,
+    session.assignClass,
     session.annotatedFrames.length,
     session.boxes,
     session.classes.length,
@@ -523,6 +606,8 @@ export function VideoLabelSurface({
         : session.saveState === "error"
           ? "Save failed"
           : "Not edited";
+  const previewSourceName = session.current?.name ?? "No media selected";
+  const previewReviewLabel = session.reviewed ? "Reviewed" : "Unreviewed";
   const videoMeta = session.current
     ? `${session.current.width}×${session.current.height} · ${formatVideoClock(session.current.duration)}`
     : "No video loaded";
@@ -591,7 +676,7 @@ export function VideoLabelSurface({
       : null;
 
   return (
-    <main className={`video-label-workspace${embedded ? " video-label-workspace--embedded" : ""}${unifiedMedia ? " video-label-workspace--unified-media" : ""}`}>
+    <main className={`react-box-label-page${embedded ? " react-box-label-page--embedded" : ""}${unifiedMedia ? " react-box-label-page--unified-media" : ""} video-label-workspace${embedded ? " video-label-workspace--embedded" : ""}${unifiedMedia ? " video-label-workspace--unified-media" : ""}${inspectorOwnsSidePanels ? " video-label-workspace--inspector-owned" : ""}`}>
       {classificationPanelPortal}
     <section className="panel video-label-main-panel">
         {!embedded ? (
@@ -624,6 +709,35 @@ export function VideoLabelSurface({
           </div>
           ) : null}
 
+          {inspectorOwnsSidePanels ? (
+            <VideoClassShortcutStrip
+              classes={session.activeDetectClasses}
+              currentClass={session.currentClass}
+              onAssignClass={session.assignClass}
+            />
+          ) : null}
+
+          {inspectorOwnsSidePanels ? (
+            <div className="pool-label-preview-header video-label-preview-header">
+              <div className="pool-label-preview-heading">
+                <span className="pool-label-preview-title">Preview</span>
+                <span className="pool-label-preview-source" title={previewSourceName}>
+                  {previewSourceName}
+                </span>
+              </div>
+              <div className="pool-label-preview-status-row">
+                <span className="pool-label-preview-index">{formatVideoClock(session.time)}</span>
+                <span className="pool-label-preview-chip">Detect</span>
+                <span className="pool-label-preview-chip">Classify</span>
+                <span className="pool-label-preview-chip">{previewReviewLabel}</span>
+                <span className="status pool-label-preview-box-count">{session.boxes.length} box(es)</span>
+                <span className="status pool-label-preview-box-count">
+                  {classNameFor(session.classes, session.currentClass)}
+                </span>
+              </div>
+            </div>
+          ) : null}
+
           <div className="video-label-stage">
             {session.current && session.previewBase64 ? (
               <VideoAnnotationCanvas
@@ -637,6 +751,7 @@ export function VideoLabelSurface({
                 remotePointer={remotePointer}
                 blackouts={visibleBlackoutRects}
                 showBlackouts={showBlackouts}
+                showToolbar={!inspectorOwnsSidePanels}
                 onBlackoutDraw={handleBlackoutDraw}
                 onChange={(next) => session.updateCurrentFrame(next, true)}
                 onSelectedIndexChange={session.setSelectedIndex}
@@ -660,6 +775,7 @@ export function VideoLabelSurface({
                 step="0.001"
                 value={Math.min(session.time, session.maxTime)}
                 disabled={!session.current}
+                onInput={(event) => handleGotoTime(Number(event.currentTarget.value))}
                 onChange={(event) => handleGotoTime(Number(event.target.value))}
                 aria-label="Video timestamp"
               />
@@ -746,6 +862,7 @@ export function VideoLabelSurface({
         </div>
       </section>
 
+      {inspectorOwnsSidePanels ? null : (
       <aside className="side-stack video-label-side-stack">
         {showVideoList ? (
         <section className="panel">
@@ -971,6 +1088,7 @@ export function VideoLabelSurface({
           </div>
         </section>
       </aside>
+      )}
     </main>
   );
 }

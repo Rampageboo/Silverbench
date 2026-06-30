@@ -461,6 +461,13 @@ describe("renameClassInManifest", () => {
     expect(def?.key).toBe("person"); // key unchanged
   });
 
+  it("keeps the old name as an alias after rename", () => {
+    const m = twoClassDetectManifest();
+    const next = renameClassInManifest(m, "person", "Human");
+    const def = next.classDefs.find((d) => d.key === "person");
+    expect(def?.aliases).toEqual(["Person"]);
+  });
+
   it("YOLO id order is preserved after rename", () => {
     const m = twoClassDetectManifest();
     const next = renameClassInManifest(m, "person", "Human");

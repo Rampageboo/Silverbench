@@ -15,6 +15,7 @@ import {
   imageDisplayRect,
   imagePixelPointToNormalized,
   imagePixelToZoomCanvas,
+  intersectRect,
   normalizedImageRect,
   zoomSourceRect,
   type DisplayRect,
@@ -110,12 +111,38 @@ export type ZoomCanvasRenderInput = {
   boxes: api.LabelBox[];
   selectedIndex: number | null;
   drag: DragState;
+  currentClassId: number;
   zoomPoint: ImagePixelPoint | null;
   lastZoomCenter: ImagePixelPoint | null;
 };
 
+function drawZoomImageRect(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  sourceRect: { x1: number; y1: number; x2: number; y2: number },
+  rect: { x1: number; y1: number; x2: number; y2: number },
+  color: string,
+  dashed: boolean,
+  lineWidth = 2
+) {
+  const overlap = intersectRect(rect, sourceRect);
+  if (!overlap) return;
+  const sourceW = sourceRect.x2 - sourceRect.x1;
+  const sourceH = sourceRect.y2 - sourceRect.y1;
+  const x1 = ((overlap.x1 - sourceRect.x1) / sourceW) * canvas.width;
+  const y1 = ((overlap.y1 - sourceRect.y1) / sourceH) * canvas.height;
+  const x2 = ((overlap.x2 - sourceRect.x1) / sourceW) * canvas.width;
+  const y2 = ((overlap.y2 - sourceRect.y1) / sourceH) * canvas.height;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.setLineDash(dashed ? [6, 4] : []);
+  ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+  ctx.restore();
+}
+
 export function renderZoomCanvas(input: ZoomCanvasRenderInput) {
-  const { canvas, image, display, boxes, selectedIndex, drag, zoomPoint, lastZoomCenter } = input;
+  const { canvas, image, display, boxes, selectedIndex, drag, currentClassId, zoomPoint, lastZoomCenter } = input;
   if (drag?.type === "pan") return;
 
   const ctx = canvas.getContext("2d");
@@ -127,7 +154,12 @@ export function renderZoomCanvas(input: ZoomCanvasRenderInput) {
 
   const imageW = image.naturalWidth;
   const imageH = image.naturalHeight;
+  const dragCurrentPoint =
+    drag?.type === "draw"
+      ? { x: drag.current.x * imageW, y: drag.current.y * imageH }
+      : null;
   const center =
+    dragCurrentPoint ??
     zoomPoint ??
     lastZoomCenter ??
     (selectedIndex !== null ? boxCenterPixel(boxes[selectedIndex], imageW, imageH) : { x: imageW / 2, y: imageH / 2 });
@@ -145,6 +177,16 @@ export function renderZoomCanvas(input: ZoomCanvasRenderInput) {
   ctx.drawImage(image, sourceRectPx.x1, sourceRectPx.y1, srcW, srcH, 0, 0, canvas.width, canvas.height);
   drawZoomGrid(ctx, canvas);
   drawZoomBoxes(ctx, canvas, sourceRect, boxes, selectedIndex);
+  if (drag?.type === "draw") {
+    drawZoomImageRect(
+      ctx,
+      canvas,
+      sourceRect,
+      normalizedImageRect(drag.start, drag.current),
+      classBoxColor(currentClassId, true),
+      true
+    );
+  }
   const cross = imagePixelToZoomCanvas(center, sourceRectPx, canvas.width, canvas.height);
   ctx.strokeStyle = "#ef4444";
   ctx.lineWidth = 1;

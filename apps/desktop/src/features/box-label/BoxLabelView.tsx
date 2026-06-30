@@ -14,6 +14,7 @@ function fixedBoxReady(slot: FixedBoxSlot | null) {
 }
 
 type ClassToolMode = "none" | "add" | "search";
+type CanvasClassSearchMenu = { x: number; y: number; query: string };
 
 function AddIcon() {
   return (
@@ -40,20 +41,28 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     classificationClassesBusy = false,
     classificationClassesStatus,
     classificationClassesPortalId,
+    detectClassKeysById,
     currentClassificationKey,
     onAssignClassificationClass,
     onAddClassificationClass,
+    onRenameClass,
     onWorkspaceClassesChanged,
     onWorkbenchBridgeChange,
     showSideStack = true,
     canvasOverlay,
+    detectTaskEnabled = true,
+    clfTaskEnabled = true,
+    onToggleDetectTaskEnabled,
+    onToggleClfTaskEnabled,
   } = props;
   const auraRef = useRef<HTMLDivElement | null>(null);
+  const canvasClassSearchInputRef = useRef<HTMLInputElement | null>(null);
   const [classificationClassNameInput, setClassificationClassNameInput] = useState("");
   const [classificationClassSearch, setClassificationClassSearch] = useState("");
   const [detectClassToolMode, setDetectClassToolMode] = useState<ClassToolMode>("none");
   const [classificationClassToolMode, setClassificationClassToolMode] = useState<ClassToolMode>("none");
   const [classificationPortalTarget, setClassificationPortalTarget] = useState<HTMLElement | null>(null);
+  const [canvasClassSearchMenu, setCanvasClassSearchMenu] = useState<CanvasClassSearchMenu | null>(null);
   const selectedProposal = editor.selectedProposalId
     ? editor.proposals.find((p) => p.id === editor.selectedProposalId)
     : null;
@@ -87,6 +96,20 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
   const showDetectSearchTool = detectClassToolMode === "search" || editor.classSearch.trim().length > 0;
   const showClassificationSearchTool =
     classificationClassToolMode === "search" || classificationClassSearch.trim().length > 0;
+  const canvasClassSearchResults = useMemo(() => {
+    if (!canvasClassSearchMenu) return [];
+    const activeClasses = editor.classes
+      .filter((item) => !editor.isArchivedDetectClass(item.id))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }) || a.id - b.id);
+    const terms = canvasClassSearchMenu.query.trim().toLowerCase().split(" ").filter(Boolean);
+    if (!terms.length) return activeClasses.slice(0, 24);
+    return activeClasses
+      .filter((item) => {
+        const text = `${item.id} ${item.name}`.toLowerCase();
+        return terms.every((term) => text.includes(term));
+      })
+      .slice(0, 24);
+  }, [canvasClassSearchMenu, editor.classes, editor.isArchivedDetectClass]);
 
   const handleAddClassificationClass = useCallback(() => {
     const name = classificationClassNameInput.trim();
@@ -127,6 +150,68 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     },
     [currentClassificationKey, editor, onAssignClassificationClass]
   );
+
+  const handleRenameClass = useCallback(
+    (classKey: string | undefined, currentName: string) => {
+      if (!classKey) {
+        editor.setStatus("This class cannot be renamed because no workspace class key was found.");
+        return;
+      }
+      if (!onRenameClass) {
+        editor.setStatus("Class rename is unavailable for this workspace.");
+        return;
+      }
+      const nextName = window.prompt("Rename class", currentName);
+      if (nextName === null) return;
+      const trimmed = nextName.trim();
+      if (!trimmed || trimmed === currentName) return;
+      onRenameClass(classKey, trimmed)
+        .then(() => onWorkspaceClassesChanged?.())
+        .then(() => editor.setStatus(`Renamed class ${currentName} to ${trimmed}.`))
+        .catch((err) => editor.setError(errMessage(err)));
+    },
+    [editor, onRenameClass, onWorkspaceClassesChanged]
+  );
+
+  const handleCanvasContextMenu = useCallback(
+    (event: React.MouseEvent<HTMLCanvasElement>) => {
+      event.preventDefault();
+      const viewer = event.currentTarget.closest("#previewViewer") as HTMLElement | null;
+      const rect = viewer?.getBoundingClientRect();
+      const rawX = rect ? event.clientX - rect.left : event.clientX;
+      const rawY = rect ? event.clientY - rect.top : event.clientY;
+      const maxX = Math.max(8, (rect?.width ?? window.innerWidth) - 280);
+      const maxY = Math.max(8, (rect?.height ?? window.innerHeight) - 340);
+      setCanvasClassSearchMenu({
+        x: Math.max(8, Math.min(rawX, maxX)),
+        y: Math.max(8, Math.min(rawY, maxY)),
+        query: "",
+      });
+      window.requestAnimationFrame(() => canvasClassSearchInputRef.current?.focus());
+      editor.setStatus("Search detect classes.");
+    },
+    [editor]
+  );
+
+  const handleCanvasPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLCanvasElement>) => {
+      setCanvasClassSearchMenu(null);
+      editor.onPointerDown(event);
+    },
+    [editor]
+  );
+
+  const handleCanvasClassSearchSelect = useCallback(
+    (classId: number) => {
+      setCanvasClassSearchMenu(null);
+      editor.assignClass(classId).catch((err) => editor.setError(errMessage(err)));
+    },
+    [editor]
+  );
+
+  useEffect(() => {
+    setCanvasClassSearchMenu(null);
+  }, [props.entry?.basename]);
 
   useEffect(() => {
     if (!classificationClassesPortalId || typeof document === "undefined") {
@@ -229,8 +314,12 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
                       : `Assign classify class: ${item.name}`
                   }
                   aria-pressed={item.key === currentClassificationKey}
-                  disabled={classificationClassesBusy || !onAssignClassificationClass}
+                  disabled={classificationClassesBusy || (!onAssignClassificationClass && !onRenameClass)}
                   onClick={() => handleAssignClassificationClass(item.key, item.name)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    handleRenameClass(item.key, item.name);
+                  }}
                 >
                   {item.name}
                 </button>
@@ -273,20 +362,24 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     editor.copySelectedBoxToNext().catch((err) => editor.setError(errMessage(err)));
   }, [editor.copySelectedBoxToNext, editor.setError]);
 
+  const handleWorkbenchAdvanceDuplicate = useCallback(() => {
+    editor.advanceDuplicateToNext().catch((err) => editor.setError(errMessage(err)));
+  }, [editor.advanceDuplicateToNext, editor.setError]);
+
   const handleWorkbenchSelectDuplicate = useCallback((id: string) => {
     editor.selectDuplicateItem(id);
   }, [editor.selectDuplicateItem]);
 
-  const handleWorkbenchPauseDuplicate = useCallback(() => {
-    editor.pauseDuplicateFlow().catch((err) => editor.setError(errMessage(err)));
+  const handleWorkbenchPauseDuplicate = useCallback((id?: string) => {
+    editor.pauseDuplicateFlow(id).catch((err) => editor.setError(errMessage(err)));
   }, [editor.pauseDuplicateFlow, editor.setError]);
 
-  const handleWorkbenchResumeDuplicate = useCallback(() => {
-    editor.resumeDuplicateFlow().catch((err) => editor.setError(errMessage(err)));
+  const handleWorkbenchResumeDuplicate = useCallback((id?: string) => {
+    editor.resumeDuplicateFlow(id).catch((err) => editor.setError(errMessage(err)));
   }, [editor.resumeDuplicateFlow, editor.setError]);
 
-  const handleWorkbenchDeleteDuplicate = useCallback(() => {
-    editor.deleteDuplicateFlow().catch((err) => editor.setError(errMessage(err)));
+  const handleWorkbenchDeleteDuplicate = useCallback((id?: string) => {
+    editor.deleteDuplicateFlow(id).catch((err) => editor.setError(errMessage(err)));
   }, [editor.deleteDuplicateFlow, editor.setError]);
 
   useEffect(() => {
@@ -310,6 +403,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
       rejectAllProposals: handleWorkbenchRejectAllProposals,
       duplicateFlow: editor.duplicateFlow,
       startDuplicateToNext: handleWorkbenchStartDuplicate,
+      advanceDuplicateToNext: handleWorkbenchAdvanceDuplicate,
       selectDuplicateItem: handleWorkbenchSelectDuplicate,
       pauseDuplicateFlow: handleWorkbenchPauseDuplicate,
       resumeDuplicateFlow: handleWorkbenchResumeDuplicate,
@@ -323,6 +417,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     editor.currentClass,
     handleWorkbenchAcceptAllProposals,
     handleWorkbenchAcceptSelectedProposal,
+    handleWorkbenchAdvanceDuplicate,
     handleWorkbenchDeleteDuplicate,
     handleWorkbenchPauseDuplicate,
     handleWorkbenchResumeDuplicate,
@@ -380,6 +475,31 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     : isReviewedFile(currentMetadata)
       ? "Reviewed"
       : "Unreviewed";
+  const renderTaskChip = (
+    task: "detect" | "clf",
+    label: string,
+    enabled: boolean,
+    onToggle?: () => Promise<void>
+  ) => {
+    if (!onToggle) return <span className="pool-label-preview-chip">{label}</span>;
+    const title = `${label} dataset ${enabled ? "included" : "excluded"}`;
+    return (
+      <button
+        type="button"
+        className={`pool-label-task-toggle${enabled ? " is-on" : " is-off"}`}
+        title={title}
+        aria-label={title}
+        aria-pressed={enabled}
+        disabled={!props.entry}
+        onClick={() => {
+          onToggle().catch((err) => editor.setError(errMessage(err)));
+        }}
+      >
+        <span className="pool-label-task-light" aria-hidden="true" />
+        <span>{task === "detect" ? "Detect" : "Clf"}</span>
+      </button>
+    );
+  };
 
   return (
     <>
@@ -499,8 +619,8 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
           </div>
           <div className="pool-label-preview-status-row">
             <span className="pool-label-preview-index">{previewIndexText}</span>
-            <span className="pool-label-preview-chip">Detect</span>
-            <span className="pool-label-preview-chip">Classify</span>
+            {renderTaskChip("detect", "Detect", detectTaskEnabled, onToggleDetectTaskEnabled)}
+            {renderTaskChip("clf", "Classify", clfTaskEnabled, onToggleClfTaskEnabled)}
             <span className="pool-label-preview-chip">{previewReviewLabel}</span>
             <span id="boxCount" className="status pool-label-preview-box-count">
               {editor.boxes.length} box(es)
@@ -519,11 +639,11 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
             <canvas
               id="previewCanvas"
               ref={editor.canvasRef}
-              onPointerDown={editor.onPointerDown}
+              onPointerDown={handleCanvasPointerDown}
               onPointerMove={editor.onPointerMove}
               onPointerUp={editor.onPointerUp}
               onPointerCancel={editor.onPointerUp}
-              onContextMenu={(event) => event.preventDefault()}
+              onContextMenu={handleCanvasContextMenu}
               onWheel={editor.onWheel}
             />
             <div
@@ -562,6 +682,54 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
             onCsrtTrack={() => editor.trackCsrtForward().catch((err) => editor.setError(errMessage(err)))}
           />
           {renderedCanvasOverlay ?? null}
+          {canvasClassSearchMenu ? (
+            <div
+              className="pool-label-canvas-class-menu"
+              style={{ left: canvasClassSearchMenu.x, top: canvasClassSearchMenu.y }}
+              onPointerDown={(event) => event.stopPropagation()}
+              onContextMenu={(event) => event.preventDefault()}
+            >
+              <input
+                ref={canvasClassSearchInputRef}
+                className="pool-label-canvas-class-search"
+                type="search"
+                placeholder="Search detect class"
+                value={canvasClassSearchMenu.query}
+                onChange={(event) =>
+                  setCanvasClassSearchMenu((menu) =>
+                    menu ? { ...menu, query: event.target.value } : menu
+                  )
+                }
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    setCanvasClassSearchMenu(null);
+                    return;
+                  }
+                  if (event.key === "Enter") {
+                    const first = canvasClassSearchResults[0];
+                    if (first) handleCanvasClassSearchSelect(first.id);
+                  }
+                }}
+              />
+              <div className="pool-label-canvas-class-results" role="listbox">
+                {canvasClassSearchResults.length ? (
+                  canvasClassSearchResults.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`pool-label-canvas-class-option${item.id === editor.currentClass ? " selected" : ""}`}
+                      onClick={() => handleCanvasClassSearchSelect(item.id)}
+                    >
+                      <span>{item.id}: {item.name}</span>
+                      <span className="pool-label-canvas-class-count">{classImageCounts.get(item.id) || 0}</span>
+                    </button>
+                  ))
+                ) : (
+                  <div className="pool-label-canvas-class-empty">No matching classes.</div>
+                )}
+              </div>
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -701,10 +869,17 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
                         onDoubleClick={() => void editor.applyClassToSelectedBox(item.id)}
                         onContextMenu={(event) => {
                           event.preventDefault();
-                          if (event.shiftKey) editor.onAddExcludeClass(item.id);
-                          else editor.onAddIncludeClass(item.id);
+                          if (event.shiftKey) {
+                            editor.onAddExcludeClass(item.id);
+                            return;
+                          }
+                          if (event.ctrlKey || event.altKey || event.metaKey) {
+                            editor.onAddIncludeClass(item.id);
+                            return;
+                          }
+                          handleRenameClass(detectClassKeysById?.[item.id], item.name);
                         }}
-                        title="Single-click: select class · Double-click: relabel selected box · Right-click: include/exclude filter"
+                        title="Single-click: select class · Double-click: relabel selected box · Right-click: rename · Shift/right-click: exclude filter · Ctrl/right-click: include filter"
                       >
                         {item.id}: {item.name}
                         {editor.includeClasses.has(item.id) ? " [inc]" : ""}

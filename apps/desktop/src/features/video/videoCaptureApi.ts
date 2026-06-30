@@ -1,4 +1,4 @@
-import { callJson, getWorkspaceInfo, type BackendMethod, type WorkspaceInfo } from "../../api";
+import { API_BASE_URL, callJson, getWorkspaceInfo, type BackendMethod, type WorkspaceInfo } from "../../api";
 
 export type VideoSegment = {
   start: number;
@@ -46,8 +46,39 @@ export function chooseVideoOutputFolder() {
   return rpc<string>("chooseDirectory", ["Choose Screenshot Output Folder"]);
 }
 
-export function getVideoFrameBase64(path: string, seconds: number, format: "jpg" | "png") {
-  return rpc<string>("getVideoFrameBase64", [path, seconds, format]);
+export function getVideoFrameBase64(path: string, seconds: number, format: "jpg" | "png", maxEdge = 0, quality = 72) {
+  return rpc<string>("getVideoFrameBase64", [path, seconds, format, maxEdge, quality]);
+}
+
+export function videoFrameUrl(
+  workspaceRoot: string,
+  path: string,
+  seconds: number,
+  maxEdge = 1280,
+  quality = 60
+) {
+  const params = new URLSearchParams({
+    workspaceRoot,
+    path,
+    seconds: String(Math.max(0, Number(seconds) || 0)),
+    maxEdge: String(maxEdge),
+    quality: String(quality)
+  });
+  return `${API_BASE_URL}/api/video/frame?${params.toString()}`;
+}
+
+export async function prefetchVideoFrame(
+  workspaceRoot: string,
+  path: string,
+  seconds: number,
+  maxEdge = 1280,
+  quality = 60
+) {
+  const response = await fetch(videoFrameUrl(workspaceRoot, path, seconds, maxEdge, quality), {
+    cache: "force-cache"
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  await response.blob();
 }
 
 export function saveVideoFrame(path: string, outputRoot: string, seconds: number, prefix: string, format: "jpg" | "png") {

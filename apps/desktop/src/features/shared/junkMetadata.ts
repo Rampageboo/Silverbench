@@ -8,6 +8,8 @@ export type MetadataUpdate = {
   detect_junk?: boolean;
   clf_enabled?: boolean;
   clf_class?: string;
+  detect_export_enabled?: boolean;
+  clf_export_enabled?: boolean;
 };
 
 export function metadataRowToUpdate(filename: string, row: MetadataRow | null): MetadataUpdate {
@@ -17,7 +19,9 @@ export function metadataRowToUpdate(filename: string, row: MetadataRow | null): 
       clf_class: "",
       clf_enabled: false,
       detect_enabled: false,
-      detect_junk: false
+      detect_junk: false,
+      detect_export_enabled: true,
+      clf_export_enabled: true
     };
   }
   return {
@@ -25,7 +29,9 @@ export function metadataRowToUpdate(filename: string, row: MetadataRow | null): 
     clf_class: row.clf_class || "",
     clf_enabled: row.clf_enabled,
     detect_enabled: row.detect_enabled,
-    detect_junk: row.detect_junk
+    detect_junk: row.detect_junk,
+    detect_export_enabled: row.detect_export_enabled,
+    clf_export_enabled: row.clf_export_enabled
   };
 }
 
@@ -35,9 +41,11 @@ export function filenamesNeedingDatasetRebuild(updates: MetadataUpdate[]) {
   for (const item of updates) {
     const filename = String(item.filename || "").trim();
     if (!filename) continue;
-    if (item.detect_enabled && !item.detect_junk) detect.push(filename);
+    if (item.detect_enabled && !item.detect_junk && item.detect_export_enabled !== false) detect.push(filename);
     const clfClass = String(item.clf_class || "").trim();
-    if (item.clf_enabled && clfClass && clfClass !== INBOX_JUNK_CLASS) clf.push(filename);
+    if (item.clf_enabled && item.clf_export_enabled !== false && clfClass && clfClass !== INBOX_JUNK_CLASS) {
+      clf.push(filename);
+    }
   }
   return { detect, clf };
 }

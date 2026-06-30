@@ -2,8 +2,10 @@ import type {
   LabelSourceSummary,
   LabelWorkbenchAction,
   LabelWorkbenchActionGroup,
+  LabelWorkbenchClassPalette,
   LabelWorkbenchInspectorState,
   LabelWorkbenchMode,
+  LabelWorkbenchSamplingControl,
 } from "./labelWorkbenchTypes";
 
 type Props = {
@@ -101,13 +103,37 @@ function InspectorActionButton({ action }: { action: LabelWorkbenchAction }) {
   );
 }
 
-function ActionGroupsView({ groups }: { groups: LabelWorkbenchActionGroup[] }) {
+function PauseIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+      <path fill="currentColor" d="M4 3h3v10H4V3Zm5 0h3v10H9V3Z" />
+    </svg>
+  );
+}
+
+function ResumeIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+      <path fill="currentColor" d="M5 3.3v9.4L12.5 8 5 3.3Z" />
+    </svg>
+  );
+}
+
+function DeleteIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+      <path fill="currentColor" d="M6 2h4l.6 1.2H14v1.4H2V3.2h3.4L6 2Zm-2.8 4h9.6l-.5 8H3.7l-.5-8Zm2.2 1.2.3 5.6h1.2l-.3-5.6H5.4Zm4 0-.3 5.6h1.2l.3-5.6H9.4Z" />
+    </svg>
+  );
+}
+
+function ActionGroupsView({ groups, hideGroupTitles = false }: { groups: LabelWorkbenchActionGroup[]; hideGroupTitles?: boolean }) {
   return (
     <div className="lwb-inspector-actions">
       {groups.map((group) =>
         group.actions.length ? (
           <div key={group.id} className="lwb-inspector-action-group" data-group-id={group.id}>
-            <div className="lwb-inspector-action-group-title">{group.label}</div>
+            {hideGroupTitles ? null : <div className="lwb-inspector-action-group-title">{group.label}</div>}
             {group.actions.map((action) => (
               <InspectorActionButton key={action.id} action={action} />
             ))}
@@ -119,7 +145,6 @@ function ActionGroupsView({ groups }: { groups: LabelWorkbenchActionGroup[] }) {
 }
 
 function DuplicateActionsView({ group }: { group: LabelWorkbenchActionGroup | null }) {
-  const actions = group?.actions ?? [];
   const items = group?.items ?? [];
   return (
     <section className="panel pool-label-box-panel lwb-inspector-duplicate-panel">
@@ -132,49 +157,154 @@ function DuplicateActionsView({ group }: { group: LabelWorkbenchActionGroup | nu
         </div>
         <div className="lwb-inspector-duplicate-list">
           {items.length ? (
-            items.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={`pool-label-box-row lwb-inspector-duplicate-row${item.selected ? " selected" : ""}${item.tone === "muted" ? " muted" : ""}`}
-                onClick={() => {
-                  void item.run?.();
-                }}
-              >
-                <span>{item.label}</span>
-                {item.detail ? <span className="lwb-inspector-duplicate-row-detail">{item.detail}</span> : null}
-              </button>
-            ))
+            items.map((item) => {
+              const handleSelect = () => {
+                void item.run?.();
+              };
+              return (
+                <div
+                  key={item.id}
+                  role="button"
+                  tabIndex={0}
+                  className={`pool-label-box-row lwb-inspector-duplicate-row${item.selected ? " selected" : ""}${item.tone === "muted" ? " muted" : ""}`}
+                  onClick={handleSelect}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      handleSelect();
+                    }
+                  }}
+                >
+                  <span className="lwb-inspector-duplicate-row-main">
+                    <span>{item.label}</span>
+                    {item.detail ? <span className="lwb-inspector-duplicate-row-detail">{item.detail}</span> : null}
+                  </span>
+                  <span className="lwb-inspector-duplicate-row-icons" aria-label="Duplicate box actions">
+                    {item.onPause ? (
+                      <button
+                        type="button"
+                        className="lwb-inspector-duplicate-icon"
+                        title="Pause duplicate box"
+                        aria-label="Pause duplicate box"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void item.onPause?.();
+                        }}
+                      >
+                        <PauseIcon />
+                      </button>
+                    ) : null}
+                    {item.onResume ? (
+                      <button
+                        type="button"
+                        className="lwb-inspector-duplicate-icon"
+                        title="Resume duplicate box"
+                        aria-label="Resume duplicate box"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void item.onResume?.();
+                        }}
+                      >
+                        <ResumeIcon />
+                      </button>
+                    ) : null}
+                    {item.onDelete ? (
+                      <button
+                        type="button"
+                        className="lwb-inspector-duplicate-icon lwb-inspector-duplicate-icon--danger"
+                        title="Delete duplicate box"
+                        aria-label="Delete duplicate box"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void item.onDelete?.();
+                        }}
+                      >
+                        <DeleteIcon />
+                      </button>
+                    ) : null}
+                  </span>
+                </div>
+              );
+            })
           ) : (
             <div className="empty">No duplicate boxes queued.</div>
           )}
         </div>
-        {actions.length ? (
-          <div className="lwb-inspector-duplicate-actions">
-            {actions.map((action) => {
-              const disabled = actionDisabled(action);
-              const state = actionState(action);
-              const statusText = actionStatusText(action);
-              return (
-                <button
-                  key={action.id}
-                  type="button"
-                  className={`lwb-inspector-action lwb-inspector-action--${action.variant ?? "default"} lwb-inspector-action--${state}`}
-                  disabled={disabled}
-                  aria-busy={action.busy || undefined}
-                  data-state={state}
-                  title={statusText || action.title || action.label}
-                  onClick={() => {
-                    if (disabled) return;
-                    void action.run?.();
-                  }}
-                >
-                  {action.busy ? `${action.label}...` : action.label}
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function SamplingControlsView({ control }: { control: LabelWorkbenchSamplingControl }) {
+  return (
+    <section className="lwb-inspector-section lwb-inspector-sampling-panel">
+      <div className="lwb-inspector-row-title">
+        <div className="lwb-inspector-kicker">Random Sampling</div>
+        <span className="status">{control.segmentCount} segment(s)</span>
+      </div>
+      <div className="lwb-inspector-form">
+        <div className="lwb-inspector-static-field">Source: {control.sourceLabel}</div>
+        <label>
+          <span>Sampling mode</span>
+          <select
+            value={control.mode}
+            onChange={(event) => {
+              void control.onModeChange?.(event.target.value);
+            }}
+          >
+            {control.modeOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Min spacing (ms)</span>
+          <input
+            type="number"
+            min="0"
+            step="100"
+            value={control.minSpacingMs}
+            onChange={(event) => {
+              void control.onMinSpacingMsChange?.(Math.max(0, Number(event.target.value) || 0));
+            }}
+          />
+        </label>
+      </div>
+    </section>
+  );
+}
+
+function DetectClassPaletteView({ palette }: { palette: LabelWorkbenchClassPalette }) {
+  const classes = palette.detectClasses ?? [];
+  if (!classes.length || !palette.onSelectDetectClass) return null;
+  return (
+    <section className="panel lwb-inspector-detect-class-panel">
+      <div className="panel-header">
+        <span>Detect Classes</span>
+        <span className="status">{palette.currentDetectClassId ?? "none"}</span>
+      </div>
+      <div className="panel-body">
+        <div className="lwb-inspector-detect-class-list">
+          {classes.map((item) => {
+            const classId = safeNumber(item.id);
+            const selected = classId !== null && classId === palette.currentDetectClassId;
+            return (
+              <button
+                key={`${item.id ?? "class"}-${item.name}`}
+                type="button"
+                className={selected ? "selected" : ""}
+                disabled={classId === null}
+                onClick={() => {
+                  if (classId !== null) void palette.onSelectDetectClass?.(classId);
+                }}
+              >
+                {classId !== null ? `${classId}: ` : null}{item.name}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </section>
   );
@@ -189,6 +319,8 @@ export function LabelWorkbenchInspector({
   const taskKind = inspectorState?.taskKind ?? "both";
   const overlayCount = safeNumber(inspectorState?.overlaySummary?.activeCount);
   const segment = inspectorState?.segmentSummary;
+  const samplingControl = inspectorState?.samplingControl ?? null;
+  const classPalette = inspectorState?.classPalette ?? null;
   const warnings = inspectorState?.warnings ?? [];
 
   const duplicateActionGroup = mode === "image"
@@ -208,6 +340,16 @@ export function LabelWorkbenchInspector({
   const hasReviewActions = reviewActionGroups.some((group) => group.actions.length > 0);
   const hasActions = remainingActionGroups.some((group) => group.actions.length > 0);
   const hasDuplicatePanel = Boolean(duplicateActionGroup);
+  const actionsSection = (
+    <section className="lwb-inspector-section">
+      <div className="lwb-inspector-kicker">Actions</div>
+      {hasActions ? (
+        <ActionGroupsView groups={remainingActionGroups} hideGroupTitles={mode === "video"} />
+      ) : (
+        <div className="lwb-inspector-muted">No contextual actions available.</div>
+      )}
+    </section>
+  );
 
   return (
     <aside className="lwb-inspector" aria-label="Label workbench inspector">
@@ -238,7 +380,9 @@ export function LabelWorkbenchInspector({
       {mode === "image" ? (
         <section className="lwb-inspector-section lwb-inspector-proposal-review">
           <div className="lwb-inspector-kicker">Review</div>
-          {reviewActionGroups.some((group) => group.actions.length > 0) ? <ActionGroupsView groups={reviewActionGroups} /> : null}
+          {reviewActionGroups.some((group) => group.actions.length > 0) ? (
+            <ActionGroupsView groups={reviewActionGroups} hideGroupTitles />
+          ) : null}
         </section>
       ) : null}
 
@@ -248,6 +392,12 @@ export function LabelWorkbenchInspector({
           <div id="lwbClassifyClassesSlot" className="lwb-inspector-classify-slot" />
         </>
       ) : null}
+
+      {mode === "video" && samplingControl ? <SamplingControlsView control={samplingControl} /> : null}
+
+      {mode === "video" && (hasActions || (!hasReviewActions && !hasDuplicatePanel)) ? actionsSection : null}
+
+      {mode === "video" && classPalette ? <DetectClassPaletteView palette={classPalette} /> : null}
 
       {mode === "video" ? <div id="lwbClassifyClassesSlot" className="lwb-inspector-classify-slot" /> : null}
 
@@ -280,16 +430,7 @@ export function LabelWorkbenchInspector({
         </section>
       ) : null}
 
-      {hasActions || (!hasReviewActions && !hasDuplicatePanel) ? (
-        <section className="lwb-inspector-section">
-          <div className="lwb-inspector-kicker">Actions</div>
-          {hasActions ? (
-            <ActionGroupsView groups={remainingActionGroups} />
-          ) : (
-            <div className="lwb-inspector-muted">No contextual actions available.</div>
-          )}
-        </section>
-      ) : null}
+      {mode !== "video" && (hasActions || (!hasReviewActions && !hasDuplicatePanel)) ? actionsSection : null}
     </aside>
   );
 }

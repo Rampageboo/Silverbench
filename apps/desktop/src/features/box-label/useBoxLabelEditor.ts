@@ -1,7 +1,7 @@
 ﻿import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "../../api";
 import { errMessage } from "../../lib/errors";
-import { datasetImageUrl, invalidateDatasetImageUrl } from "../dataset-review/datasetAssets";
+import { datasetPreviewImageUrl, invalidateDatasetImageUrl } from "../dataset-review/datasetAssets";
 import { loadMetadataMap } from "../image-pool/metadata";
 import type { MetadataRow } from "../image-pool/types";
 import {
@@ -60,7 +60,11 @@ export function useBoxLabelEditor({
   onMetadataChanged: _onMetadataChanged,
   onStatusText,
   onMarkJunk,
-  onUndoJunk
+  onUndoJunk,
+  imageUrlOverride = null,
+  loadLabelsOverride,
+  saveLabelsOverride,
+  disableProposals = false
 }: BoxLabelViewProps) {
   const boxesRef = useRef<api.LabelBox[]>([]);
   const selectedRef = useRef<number | null>(null);
@@ -76,6 +80,7 @@ export function useBoxLabelEditor({
   const archivedDetectIdsRef = useRef<Set<number>>(new Set());
   const archivedClassKeysRef = useRef<Set<string>>(new Set());
   const classIdByNameRef = useRef<Map<string, number>>(new Map());
+  const entryRef = useRef<BoxLabelEntry | null>(null);
   const proposalsRef = useRef<ProposalShape[]>([]);
   const selectedProposalIdRef = useRef<string | null>(null);
   const ephemeralProposalIdsRef = useRef<Set<string>>(new Set());
@@ -93,6 +98,7 @@ export function useBoxLabelEditor({
   const filename = entry?.basename || "";
   const mediaImagePath = filename ? `${mediaDir.replace(/^\/+|\/+$/g, "") || "media"}/${filename}` : "";
   const entryImagePath = entry?.imagePath ?? "";
+  entryRef.current = entry;
 
   const scheduleDraw = useCallback(() => scheduleDrawRef.current(), []);
   const persistLabelsProxy = useCallback(
@@ -107,20 +113,23 @@ export function useBoxLabelEditor({
 
   const persistEntryLabels = useCallback(
     async (target: BoxLabelEntry, nextBoxes: api.LabelBox[]) => {
-      await saveEntryLabels(datasetRoot, target, nextBoxes);
-      if (workspaceRoot && nextBoxes.length > 0) {
+      const savedBoxes = saveLabelsOverride
+        ? await saveLabelsOverride(target, nextBoxes)
+        : await saveEntryLabels(datasetRoot, target, nextBoxes);
+      if (!saveLabelsOverride && workspaceRoot && nextBoxes.length > 0) {
         await api.upsertMetadataRows(workspaceRoot, [
           { filename: target.basename, detect_enabled: true }
         ]);
       }
-      onLabelsChanged(target.basename, nextBoxes);
-      return nextBoxes;
+      onLabelsChanged(target.basename, savedBoxes);
+      return savedBoxes;
     },
-    [datasetRoot, onLabelsChanged, workspaceRoot]
+    [datasetRoot, onLabelsChanged, saveLabelsOverride, workspaceRoot]
   );
 
   const persistProposals = useCallback(
     async (proposalsList: ProposalShape[]) => {
+      if (disableProposals) return;
       if (!workspaceRoot || !entry) return;
       const imageKey = imageProposalKey(entry.imagePath);
       const manifest: ImageProposalManifest = {
@@ -131,11 +140,12 @@ export function useBoxLabelEditor({
       };
       await saveImageProposals(workspaceRoot, manifest);
     },
-    [entry, workspaceRoot]
+    [disableProposals, entry, workspaceRoot]
   );
 
   const persistProposalListForEntry = useCallback(
     async (target: BoxLabelEntry, proposalsList: ProposalShape[]) => {
+      if (disableProposals) return;
       if (!workspaceRoot) return;
       const imageKey = imageProposalKey(target.imagePath);
       const manifest: ImageProposalManifest = {
@@ -146,7 +156,7 @@ export function useBoxLabelEditor({
       };
       await saveImageProposals(workspaceRoot, manifest);
     },
-    [workspaceRoot]
+    [disableProposals, workspaceRoot]
   );
 
   const { pushUndo, pushImageUndo, pushBatchUndo, undoLast, redoLast } = useBoxUndo({
@@ -236,12 +246,17 @@ export function useBoxLabelEditor({
     ): Promise<BoxLabelAutoLabelResult> => {
       const highConfidence = options.highConfidence ?? 0.8;
       const proposalConfidence = options.proposalConfidence ?? 0.25;
-      const isCurrent = entry?.imagePath === target.imagePath;
-      const existingBoxes = isCurrent ? boxesRef.current : await loadEntryLabels(datasetRoot, target);
-      const existingProposalManifest = workspaceRoot
+      const targetIsCurrent = () => entryRef.current?.imagePath === target.imagePath;
+      const wasCurrentAtStart = targetIsCurrent();
+      const existingBoxes = wasCurrentAtStart
+        ? boxesRef.current
+        : loadLabelsOverride
+          ? await loadLabelsOverride(target)
+          : await loadEntryLabels(datasetRoot, target);
+      const existingProposalManifest = workspaceRoot && !disableProposals
         ? await loadImageProposals(workspaceRoot, imageProposalKey(target.imagePath))
         : null;
-      const existingProposals = isCurrent
+      const existingProposals = wasCurrentAtStart
         ? (proposalsRef.current as DetectProposal[])
         : (existingProposalManifest?.proposals ?? []);
       const occupied: Array<{ x: number; y: number; w: number; h: number }> = [
@@ -287,7 +302,7 @@ export function useBoxLabelEditor({
           return;
         }
 
-        if (confidence >= proposalConfidence && (options.persistProposals || isCurrent)) {
+        if (confidence >= proposalConfidence && (options.persistProposals || wasCurrentAtStart)) {
           const proposal: DetectProposal = {
             id: `pt_${Date.now().toString(36)}_${index}_${Math.random().toString(36).slice(2, 7)}`,
             classId,
@@ -310,22 +325,23 @@ export function useBoxLabelEditor({
       });
 
       if (!boxesAdded && !proposalsAdded) {
-        if (isCurrent) setStatus("Auto label found no new boxes or proposals.");
+        if (targetIsCurrent()) setStatus("Auto label found no new boxes or proposals.");
         return { total: predictions.length, boxesAdded, proposalsAdded, skipped, ignored };
       }
 
-      if (isCurrent) pushUndo("auto label");
+      const isStillCurrent = targetIsCurrent();
+      if (isStillCurrent) pushUndo("auto label");
       if (boxesAdded) await persistEntryLabels(target, nextBoxes);
       if (options.persistProposals) {
         await persistProposalListForEntry(target, nextProposals as ProposalShape[]);
-      } else if (isCurrent) {
+      } else if (isStillCurrent) {
         const persistentProposals = nextProposals.filter(
           (proposal) => !newEphemeralIds.has(proposal.id) && !ephemeralProposalIdsRef.current.has(proposal.id)
         );
         await persistProposalListForEntry(target, persistentProposals as ProposalShape[]);
       }
 
-      if (isCurrent) {
+      if (targetIsCurrent()) {
         boxesRef.current = nextBoxes;
         proposalsRef.current = nextProposals as ProposalShape[];
         for (const id of newEphemeralIds) ephemeralProposalIdsRef.current.add(id);
@@ -343,7 +359,8 @@ export function useBoxLabelEditor({
       archivedDetectIdsRef,
       boxesRef,
       datasetRoot,
-      entry,
+      disableProposals,
+      loadLabelsOverride,
       persistEntryLabels,
       persistProposalListForEntry,
       proposalsRef,
@@ -692,9 +709,9 @@ export function useBoxLabelEditor({
         if (imageVersion > 0) invalidateDatasetImageUrl(datasetRoot, entry.imagePath);
         const imageKey = imageProposalKey(entry.imagePath);
         const [labelBoxes, imageUrl, proposalManifest] = await Promise.all([
-          loadEntryLabels(datasetRoot, entry),
-          datasetImageUrl(datasetRoot, entry.imagePath),
-          workspaceRoot ? loadImageProposals(workspaceRoot, imageKey) : Promise.resolve(null)
+          loadLabelsOverride ? loadLabelsOverride(entry) : loadEntryLabels(datasetRoot, entry),
+          imageUrlOverride ? Promise.resolve(imageUrlOverride) : datasetPreviewImageUrl(datasetRoot, entry.imagePath),
+          disableProposals || !workspaceRoot ? Promise.resolve(null) : loadImageProposals(workspaceRoot, imageKey)
         ]);
         const image = await loadCanvasImage(imageUrl);
         if (cancelled) return;
@@ -742,7 +759,7 @@ export function useBoxLabelEditor({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when image path or backup restore version changes
-  }, [datasetRoot, entryImagePath, imageVersion]);
+  }, [datasetRoot, disableProposals, entryImagePath, imageUrlOverride, imageVersion, loadLabelsOverride, workspaceRoot]);
 
   const selectedBox = selectedBoxId !== null ? boxes[selectedBoxId] : null;
   const filterText = [
