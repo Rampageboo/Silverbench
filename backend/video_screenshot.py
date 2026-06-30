@@ -19,6 +19,8 @@ _CAPTURE_CACHE: OrderedDict[str, cv2.VideoCapture] = OrderedDict()
 _FRAME_BYTES_CACHE: OrderedDict[str, bytes] = OrderedDict()
 _MAX_CAPTURE_CACHE = 4
 _MAX_FRAME_MEMORY_CACHE = 128
+_MAX_FRAME_DISK_CACHE_FILES = 512
+_MAX_FRAME_DISK_CACHE_BYTES = 512 * 1024 * 1024
 _FRAME_DISK_CACHE_DIR = Path(tempfile.gettempdir()) / "yoloworkbench_video_frames"
 
 
@@ -116,6 +118,34 @@ def _frame_cache_path(key: str) -> Path:
     return _FRAME_DISK_CACHE_DIR / key[:2] / f"{key}.bin"
 
 
+def _trim_frame_disk_cache() -> None:
+    try:
+        if not _FRAME_DISK_CACHE_DIR.is_dir():
+            return
+        files: list[tuple[int, Path, int]] = []
+        total_bytes = 0
+        for path in _FRAME_DISK_CACHE_DIR.rglob("*.bin"):
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            size = int(stat.st_size)
+            files.append((int(stat.st_mtime_ns), path, size))
+            total_bytes += size
+        if len(files) <= _MAX_FRAME_DISK_CACHE_FILES and total_bytes <= _MAX_FRAME_DISK_CACHE_BYTES:
+            return
+        files.sort(key=lambda item: item[0])
+        while files and (len(files) > _MAX_FRAME_DISK_CACHE_FILES or total_bytes > _MAX_FRAME_DISK_CACHE_BYTES):
+            _, path, size = files.pop(0)
+            try:
+                path.unlink()
+            except OSError:
+                continue
+            total_bytes -= size
+    except OSError:
+        return
+
+
 def _cached_capture(path: Path) -> cv2.VideoCapture:
     source, mtime_ns, size = _source_token(path)
     key = f"{source}|{mtime_ns}|{size}"
@@ -199,6 +229,7 @@ def frame_bytes(path: Path, seconds: float, image_format: str = "jpg", max_edge:
     try:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         cache_path.write_bytes(payload)
+        _trim_frame_disk_cache()
     except OSError:
         pass
     return payload
