@@ -6829,3 +6829,151 @@ a.glass-card:focus-visible {
   height: 18px;
   accent-color: var(--lwb-accent);
 }
+
+/* Stronger visible state pass requested after review:
+   Detect/Clf dataset inclusion is shown as explicit traffic-light controls. */
+.react-box-label-page .pool-label-preview-status-row {
+  gap: 8px;
+}
+
+.react-box-label-page .pool-label-task-toggle {
+  min-height: 24px;
+  padding: 3px 9px 3px 7px;
+  border-radius: 999px;
+  border-width: 1px;
+  font-size: 11px;
+  font-weight: 800;
+  gap: 6px;
+}
+
+.react-box-label-page .pool-label-task-toggle.is-on {
+  border-color: rgba(34, 197, 94, 0.58);
+  background: linear-gradient(180deg, rgba(22, 101, 52, 0.36), rgba(5, 46, 22, 0.26));
+  color: #bbf7d0;
+}
+
+.react-box-label-page .pool-label-task-toggle.is-off {
+  border-color: rgba(248, 113, 113, 0.62);
+  background: linear-gradient(180deg, rgba(127, 29, 29, 0.38), rgba(69, 10, 10, 0.30));
+  color: #fecaca;
+}
+
+.react-box-label-page .pool-label-task-light,
+.alm-task-light > span {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 2px rgba(2, 6, 14, 0.70), 0 0 12px currentColor;
+}
+
+.react-box-label-page .pool-label-task-toggle.is-on .pool-label-task-light,
+.alm-task-light.is-on > span {
+  color: #22c55e;
+}
+
+.react-box-label-page .pool-label-task-toggle.is-off .pool-label-task-light,
+.alm-task-light.is-off > span {
+  color: #ef4444;
+}
+
+.alm-panel {
+  border-color: rgba(90, 149, 255, 0.26);
+  background:
+    linear-gradient(180deg, rgba(17, 27, 43, 0.96), rgba(6, 11, 19, 0.94));
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.alm-panel-head {
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.alm-panel-title {
+  color: #f8fbff;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.alm-panel-head-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.alm-task-light {
+  appearance: none;
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px 2px 6px;
+  border: 1px solid rgba(129, 149, 176, 0.20);
+  border-radius: 999px;
+  background: rgba(6, 12, 22, 0.66);
+  color: var(--lwb-text-muted, #93a5bc);
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: default;
+}
+
+button.alm-task-light {
+  cursor: pointer;
+}
+
+button.alm-task-light:hover {
+  border-color: rgba(147, 197, 253, 0.46);
+  background: rgba(22, 34, 54, 0.78);
+}
+
+.alm-task-light.is-on {
+  border-color: rgba(34, 197, 94, 0.52);
+  color: #bbf7d0;
+}
+
+.alm-task-light.is-off {
+  border-color: rgba(248, 113, 113, 0.58);
+  color: #fecaca;
+}
+
+.alm-panel-auto-badge {
+  min-height: 22px;
+  padding: 3px 8px;
+}
+
+.alm-model-row {
+  border-color: rgba(129, 149, 176, 0.16);
+  background: rgba(4, 9, 17, 0.42);
+}
+
+.video-frame-box-label-page .video-frame-timeline-overlay {
+  border-color: rgba(90, 149, 255, 0.30);
+}
+
+.video-frame-box-label-page .video-frame-timeline-marker-row::before {
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.22), rgba(90, 149, 255, 0.58), rgba(59, 130, 246, 0.22));
+}
+
+.video-frame-box-label-page .video-frame-timeline-marker {
+  width: 13px;
+  height: 13px;
+  border-color: #06101d;
+  box-shadow: 0 0 0 1px rgba(226, 232, 240, 0.60), 0 0 15px rgba(34, 197, 94, 0.52);
+}
+
+.video-frame-box-label-page .video-frame-timeline-overlay input::-webkit-slider-runnable-track {
+  height: 5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(96, 165, 250, 0.95), rgba(37, 99, 235, 0.65));
+}
+
+.video-frame-box-label-page .video-frame-timeline-overlay input::-webkit-slider-thumb {
+  margin-top: -5px;
+}
