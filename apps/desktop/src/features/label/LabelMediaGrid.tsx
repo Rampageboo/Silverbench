@@ -17,8 +17,18 @@ type Props = {
 };
 
 type MediaItem =
-  | { kind: "video"; index: number; key: string; name: string; previewSeconds: number; taskDetail: string }
+  | { kind: "video"; index: number; key: string; name: string; detail: string; previewSeconds: number; taskDetail: string }
   | { kind: "image"; index: number; key: string; name: string; imagePath: string; reviewed: boolean; flagged: boolean };
+
+function formatDuration(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "";
+  const total = Math.floor(seconds);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = String(total % 60).padStart(2, "0");
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, "0")}:${secs}`;
+  return `${String(minutes).padStart(2, "0")}:${secs}`;
+}
 
 function thumbnailPreviewSeconds(duration: number) {
   if (!Number.isFinite(duration) || duration <= 0) return 0;
@@ -103,6 +113,7 @@ export function LabelMediaGrid({ pool, videoSession, selection, onSelectionChang
       index,
       key: `video:${video.path}`,
       name: video.name || video.path.split(/[/\\]/).at(-1) || "Video",
+      detail: formatDuration(video.duration),
       previewSeconds: thumbnailPreviewSeconds(video.duration),
       taskDetail: "detect + classify"
     }));
@@ -202,6 +213,7 @@ export function LabelMediaGrid({ pool, videoSession, selection, onSelectionChang
                         seconds={item.previewSeconds}
                       />
                     )}
+                    {item.kind === "video" && item.detail ? <span className="lwb-media-duration">{item.detail}</span> : null}
                   </span>
                 </button>
               );
