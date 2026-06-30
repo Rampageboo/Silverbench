@@ -392,6 +392,43 @@ export function markVideoClfReviewed(
   return { ...manifest, video, updatedAt: now, frames };
 }
 
+export function setVideoClfReviewed(
+  manifest: VideoAnnotationManifest,
+  video: VideoSource,
+  seconds: number,
+  reviewed: boolean,
+  now = new Date().toISOString()
+): VideoAnnotationManifest {
+  const timestampMs = Number(timestampKey(seconds));
+  const key = String(timestampMs);
+  const frames = { ...manifest.frames };
+  const existing = frames[key];
+  const currentClf = existing?.tasks.clf ?? { reviewed: false };
+
+  if (!reviewed && !currentClf.classKey) {
+    if (!existing) return manifest;
+    const { clf: _clf, ...otherTasks } = existing.tasks;
+    if (!otherTasks.detect) {
+      delete frames[key];
+    } else {
+      frames[key] = { ...existing, tasks: { ...otherTasks }, updatedAt: now };
+    }
+    return { ...manifest, video, updatedAt: now, frames };
+  }
+
+  frames[key] = {
+    ...(existing ?? {}),
+    timestampMs,
+    time: timestampMs / 1000,
+    tasks: {
+      ...(existing?.tasks ?? {}),
+      clf: { ...currentClf, reviewed }
+    },
+    updatedAt: now
+  };
+  return { ...manifest, video, updatedAt: now, frames };
+}
+
 export function clearVideoClfLabel(
   manifest: VideoAnnotationManifest,
   video: VideoSource,

@@ -16,6 +16,7 @@ import {
   markVideoClfReviewed,
   markVideoTimestamp,
   moveVideoFrameRecord,
+  setVideoClfReviewed,
   setVideoClfClass,
   sortedVideoFrames,
   updateVideoDetectBoxes,
@@ -135,6 +136,33 @@ describe("clf task helpers", () => {
     manifest = markVideoClfReviewed(manifest, video, 1.0);
     expect(getClfTask(frameAnnotationAt(manifest, 1.0))?.reviewed).toBe(true);
     expect(getDetectTask(frameAnnotationAt(manifest, 1.0))?.reviewed).toBe(false);
+  });
+
+  it("setVideoClfReviewed toggles reviewed without changing the clf class", () => {
+    let manifest = createVideoAnnotationManifest(video);
+    manifest = setVideoClfClass(manifest, video, 1.0, "cat");
+    manifest = setVideoClfReviewed(manifest, video, 1.0, true);
+    manifest = setVideoClfReviewed(manifest, video, 1.0, false);
+    const clf = getClfTask(frameAnnotationAt(manifest, 1.0));
+    expect(clf?.classKey).toBe("cat");
+    expect(clf?.reviewed).toBe(false);
+  });
+
+  it("setVideoClfReviewed removes an empty disabled clf-only marker", () => {
+    let manifest = createVideoAnnotationManifest(video);
+    manifest = setVideoClfReviewed(manifest, video, 1.0, true);
+    manifest = setVideoClfReviewed(manifest, video, 1.0, false);
+    expect(frameAnnotationAt(manifest, 1.0)).toBeNull();
+  });
+
+  it("setVideoClfReviewed preserves detect when removing an empty disabled clf task", () => {
+    let manifest = createVideoAnnotationManifest(video);
+    manifest = updateVideoDetectBoxes(manifest, video, 1.0, [box], true);
+    manifest = setVideoClfReviewed(manifest, video, 1.0, true);
+    manifest = setVideoClfReviewed(manifest, video, 1.0, false);
+    const frame = frameAnnotationAt(manifest, 1.0);
+    expect(getClfTask(frame)).toBeUndefined();
+    expect(getDetectTask(frame)?.boxes).toHaveLength(1);
   });
 
   it("clearVideoClfLabel removes only clf task — preserves detect", () => {

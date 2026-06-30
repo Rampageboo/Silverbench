@@ -44,6 +44,7 @@ import {
   moveVideoFrameRecord,
   clearVideoClfLabel,
   setVideoClfClass,
+  setVideoClfReviewed,
   sortedVideoFrames,
   updateVideoDetectBoxes,
   videoTimelineMarkers
@@ -693,6 +694,15 @@ export function useVideoAnnotationSession({
     enqueueSave(next);
   }, [current, enqueueSave, time]);
 
+  const toggleClfReviewed = useCallback(() => {
+    const source = manifestRef.current;
+    if (!source || !current) return;
+    const next = setVideoClfReviewed(source, current, time, !Boolean(clfTask?.reviewed));
+    manifestRef.current = next;
+    setManifest(next);
+    enqueueSave(next);
+  }, [clfTask?.reviewed, current, enqueueSave, time]);
+
   const clearClfLabel = useCallback(() => {
     const source = manifestRef.current;
     if (!source || !current) return;
@@ -758,6 +768,7 @@ export function useVideoAnnotationSession({
     // Clf actions
     setClfClass,
     markClfReviewed,
+    toggleClfReviewed,
     clearClfLabel,
     showError
   };

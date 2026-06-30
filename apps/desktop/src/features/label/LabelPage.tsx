@@ -271,6 +271,14 @@ function VideoBoxLabelSurface({
             if (videoSession.current) videoSession.updateCurrentFrame(videoSession.boxes, !videoSession.reviewed);
           }}
           onToggleFlagged={async () => {}}
+          detectTaskEnabled={videoSession.reviewed}
+          clfTaskEnabled={Boolean(videoSession.clfTask?.reviewed)}
+          onToggleDetectTaskEnabled={async () => {
+            if (videoSession.current) videoSession.updateCurrentFrame(videoSession.boxes, !videoSession.reviewed);
+          }}
+          onToggleClfTaskEnabled={async () => {
+            videoSession.toggleClfReviewed();
+          }}
           onLabelsChanged={() => {}}
           onStatusText={() => {}}
           classificationClasses={videoSession.clfClassOptions}
