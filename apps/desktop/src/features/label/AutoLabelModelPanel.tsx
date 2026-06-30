@@ -30,10 +30,6 @@ type Props = {
   sourceImageBase64?: string | null;
   sourceUnavailableMessage?: string;
   autoRunAllowed?: boolean;
-  detectTaskEnabled?: boolean;
-  clfTaskEnabled?: boolean;
-  onToggleDetectTaskEnabled?: () => Promise<void>;
-  onToggleClfTaskEnabled?: () => Promise<void>;
   onApplyDetectPredictions?: (
     target: BoxLabelEntry,
     predictions: api.PtDetectPrediction[],
@@ -111,41 +107,6 @@ function modelClassMap(classes: ClassificationClass[]) {
   return map;
 }
 
-function TaskTrafficLight({
-  label,
-  enabled,
-  onToggle,
-}: {
-  label: string;
-  enabled: boolean;
-  onToggle?: () => Promise<void>;
-}) {
-  const title = `${label} dataset ${enabled ? "included" : "excluded"}`;
-  if (!onToggle) {
-    return (
-      <span className={`alm-task-light${enabled ? " is-on" : " is-off"}`} title={title}>
-        <span aria-hidden="true" />
-        {label}
-      </span>
-    );
-  }
-  return (
-    <button
-      type="button"
-      className={`alm-task-light${enabled ? " is-on" : " is-off"}`}
-      title={title}
-      aria-label={title}
-      aria-pressed={enabled}
-      onClick={() => {
-        void onToggle();
-      }}
-    >
-      <span aria-hidden="true" />
-      {label}
-    </button>
-  );
-}
-
 export function AutoLabelModelPanel({
   workspaceRoot,
   currentImage = null,
@@ -158,10 +119,6 @@ export function AutoLabelModelPanel({
   sourceImageBase64,
   sourceUnavailableMessage,
   autoRunAllowed = true,
-  detectTaskEnabled,
-  clfTaskEnabled,
-  onToggleDetectTaskEnabled,
-  onToggleClfTaskEnabled,
   onApplyDetectPredictions,
   onAssignClassificationClass,
   onClassesChanged,
@@ -488,17 +445,9 @@ export function AutoLabelModelPanel({
           <div className="alm-panel-label alm-panel-title">Auto Label Models</div>
           <div className="alm-panel-subtitle">{autoSubtitle}</div>
         </div>
-        <div className="alm-panel-head-actions">
-          {typeof detectTaskEnabled === "boolean" ? (
-            <TaskTrafficLight label="Detect" enabled={detectTaskEnabled} onToggle={onToggleDetectTaskEnabled} />
-          ) : null}
-          {typeof clfTaskEnabled === "boolean" ? (
-            <TaskTrafficLight label="Clf" enabled={clfTaskEnabled} onToggle={onToggleClfTaskEnabled} />
-          ) : null}
-          <span className={`alm-panel-auto-badge${autoRunning.detect || autoRunning.classify ? " active" : ""}`}>
-            {autoLabel}
-          </span>
-        </div>
+        <span className={`alm-panel-auto-badge${autoRunning.detect || autoRunning.classify ? " active" : ""}`}>
+          {autoLabel}
+        </span>
       </div>
 
       <div className="alm-model-list">

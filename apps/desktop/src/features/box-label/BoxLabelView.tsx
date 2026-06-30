@@ -226,6 +226,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
       <div className="panel-header pool-label-class-panel-header">
         <span>Classify Classes{classificationClasses.length ? ` (${classificationClasses.length})` : ""}</span>
         <div className="pool-label-class-header-actions">
+          {renderTaskLight("clf", "Classify", clfTaskEnabled, onToggleClfTaskEnabled)}
           <button
             type="button"
             className={`pool-label-class-icon-btn${classificationClassToolMode === "add" ? " active" : ""}`}
@@ -475,18 +476,18 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     : isReviewedFile(currentMetadata)
       ? "Reviewed"
       : "Unreviewed";
-  const renderTaskChip = (
+  function renderTaskLight(
     task: "detect" | "clf",
     label: string,
     enabled: boolean,
     onToggle?: () => Promise<void>
-  ) => {
-    if (!onToggle) return <span className="pool-label-preview-chip">{label}</span>;
+  ) {
     const title = `${label} dataset ${enabled ? "included" : "excluded"}`;
+    if (!onToggle) return null;
     return (
       <button
         type="button"
-        className={`pool-label-task-toggle${enabled ? " is-on" : " is-off"}`}
+        className={`pool-label-task-light-btn${enabled ? " is-on" : " is-off"}`}
         title={title}
         aria-label={title}
         aria-pressed={enabled}
@@ -499,7 +500,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
         <span>{task === "detect" ? "Detect" : "Clf"}</span>
       </button>
     );
-  };
+  }
 
   return (
     <>
@@ -619,8 +620,6 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
           </div>
           <div className="pool-label-preview-status-row">
             <span className="pool-label-preview-index">{previewIndexText}</span>
-            {renderTaskChip("detect", "Detect", detectTaskEnabled, onToggleDetectTaskEnabled)}
-            {renderTaskChip("clf", "Classify", clfTaskEnabled, onToggleClfTaskEnabled)}
             <span className="pool-label-preview-chip">{previewReviewLabel}</span>
             <span id="boxCount" className="status pool-label-preview-box-count">
               {editor.boxes.length} box(es)
@@ -781,6 +780,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
               <div className="panel-header pool-label-class-panel-header">
                 <span>Detect Classes</span>
                 <div className="pool-label-class-header-actions">
+                  {renderTaskLight("detect", "Detect", detectTaskEnabled, onToggleDetectTaskEnabled)}
                   <button
                     type="button"
                     className={`pool-label-class-icon-btn${detectClassToolMode === "add" ? " active" : ""}`}

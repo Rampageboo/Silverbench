@@ -6836,7 +6836,8 @@ a.glass-card:focus-visible {
   gap: 8px;
 }
 
-.react-box-label-page .pool-label-task-toggle {
+.react-box-label-page .pool-label-task-toggle,
+.react-box-label-page .pool-label-task-light-btn {
   min-height: 24px;
   padding: 3px 9px 3px 7px;
   border-radius: 999px;
@@ -6846,20 +6847,22 @@ a.glass-card:focus-visible {
   gap: 6px;
 }
 
-.react-box-label-page .pool-label-task-toggle.is-on {
+.react-box-label-page .pool-label-task-toggle.is-on,
+.react-box-label-page .pool-label-task-light-btn.is-on {
   border-color: rgba(34, 197, 94, 0.58);
   background: linear-gradient(180deg, rgba(22, 101, 52, 0.36), rgba(5, 46, 22, 0.26));
   color: #bbf7d0;
 }
 
-.react-box-label-page .pool-label-task-toggle.is-off {
+.react-box-label-page .pool-label-task-toggle.is-off,
+.react-box-label-page .pool-label-task-light-btn.is-off {
   border-color: rgba(248, 113, 113, 0.62);
   background: linear-gradient(180deg, rgba(127, 29, 29, 0.38), rgba(69, 10, 10, 0.30));
   color: #fecaca;
 }
 
 .react-box-label-page .pool-label-task-light,
-.alm-task-light > span {
+.react-box-label-page .pool-label-task-light-btn > .pool-label-task-light {
   width: 10px;
   height: 10px;
   border-radius: 999px;
@@ -6868,13 +6871,37 @@ a.glass-card:focus-visible {
 }
 
 .react-box-label-page .pool-label-task-toggle.is-on .pool-label-task-light,
-.alm-task-light.is-on > span {
+.react-box-label-page .pool-label-task-light-btn.is-on > .pool-label-task-light {
   color: #22c55e;
 }
 
 .react-box-label-page .pool-label-task-toggle.is-off .pool-label-task-light,
-.alm-task-light.is-off > span {
+.react-box-label-page .pool-label-task-light-btn.is-off > .pool-label-task-light {
   color: #ef4444;
+}
+
+.react-box-label-page .pool-label-task-light-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(129, 149, 176, 0.20);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+button.pool-label-task-light-btn {
+  cursor: pointer;
+}
+
+button.pool-label-task-light-btn:hover:not(:disabled) {
+  border-color: rgba(147, 197, 253, 0.44);
+  background: rgba(22, 34, 54, 0.78);
+}
+
+.react-box-label-page .pool-label-task-light-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .alm-panel {
@@ -6894,51 +6921,6 @@ a.glass-card:focus-visible {
   font-size: 12px;
   font-weight: 850;
   letter-spacing: 0;
-}
-
-.alm-panel-head-actions {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  min-width: 0;
-}
-
-.alm-task-light {
-  appearance: none;
-  min-height: 22px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 7px 2px 6px;
-  border: 1px solid rgba(129, 149, 176, 0.20);
-  border-radius: 999px;
-  background: rgba(6, 12, 22, 0.66);
-  color: var(--lwb-text-muted, #93a5bc);
-  font-size: 10.5px;
-  font-weight: 800;
-  line-height: 1;
-  cursor: default;
-}
-
-button.alm-task-light {
-  cursor: pointer;
-}
-
-button.alm-task-light:hover {
-  border-color: rgba(147, 197, 253, 0.46);
-  background: rgba(22, 34, 54, 0.78);
-}
-
-.alm-task-light.is-on {
-  border-color: rgba(34, 197, 94, 0.52);
-  color: #bbf7d0;
-}
-
-.alm-task-light.is-off {
-  border-color: rgba(248, 113, 113, 0.58);
-  color: #fecaca;
 }
 
 .alm-panel-auto-badge {
