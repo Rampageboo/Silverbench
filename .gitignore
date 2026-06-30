@@ -190,6 +190,28 @@ session/
 cache/
 Cache/
 *.tmp
+yolo_app_settings.json
+
+# Local workspace/data artifacts. Workspaces may contain large models, media,
+# generated datasets, runs, exports, and snapshot version folders.
+*.pt
+*.onnx
+models/
+media/
+image_pool/
+detect_labels/
+detect_dataset/
+clf_dataset/
+image_pool_backup/
+runs/
+exports/
+video_segments/
+[vV][0-9]*/
+workspace_versions.json
+metadata.csv
+workspace/autolabel_models.json
+workspace/auto_label_runs.json
+*evidence*.json
 
 # Node / Vite / Tauri
 node_modules/

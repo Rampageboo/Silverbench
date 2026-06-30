@@ -139,9 +139,7 @@ def choose_model_file(title: str) -> str:
             title=title,
             parent=root,
             filetypes=[
-                ("YOLO Models", "*.pt *.onnx"),
-                ("PyTorch Weights", "*.pt"),
-                ("ONNX Models", "*.onnx"),
+                ("YOLO PyTorch Weights", "*.pt"),
                 ("All Files", "*.*"),
             ],
         )

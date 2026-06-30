@@ -120,7 +120,7 @@ class BackendBridge(QtCore.QObject):
             None,
             title,
             "",
-            "YOLO Models (*.pt *.onnx);;PyTorch Weights (*.pt);;ONNX Models (*.onnx);;All Files (*)",
+            "YOLO PyTorch Weights (*.pt);;All Files (*)",
         )
         return path
 

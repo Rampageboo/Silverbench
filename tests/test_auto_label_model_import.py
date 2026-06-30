@@ -14,6 +14,18 @@ from backend.yolo_workspace import create_workspace
 
 
 class AutoLabelModelImportTests(unittest.TestCase):
+    def test_missing_registry_without_models_returns_empty_registry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_root = Path(tmp)
+            workspace = temp_root / "workspace"
+            create_workspace(workspace)
+
+            service = BackendService(PathAccess([workspace]), temp_root, temp_root / "session.json")
+            registry = json.loads(service.call("readAutoLabelModelRegistry", [str(workspace)]))
+
+            self.assertEqual(registry, {})
+            self.assertFalse((workspace / "workspace" / "autolabel_models.json").exists())
+
     def test_detect_and_classify_best_models_do_not_overwrite_registry_entries(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             temp_root = Path(tmp)
@@ -109,6 +121,23 @@ class AutoLabelModelImportTests(unittest.TestCase):
 
             self.assertEqual(registry["detect"]["activeModel"], "models/autolabel/detect/selected.pt")
             self.assertNotIn("classify", registry)
+
+    def test_import_rejects_non_pt_model_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_root = Path(tmp)
+            workspace = temp_root / "workspace"
+            source_dir = temp_root / "source"
+            source_dir.mkdir()
+            create_workspace(workspace)
+            model = source_dir / "model.onnx"
+            model.write_bytes(b"onnx")
+
+            service = BackendService(PathAccess([workspace, source_dir]), temp_root, temp_root / "session.json")
+
+            with self.assertRaisesRegex(ValueError, "Only .pt model files are accepted"):
+                service.call("importAutoLabelModel", [str(model), str(workspace), "detect", "2026-01-01T00:00:00.000Z"])
+
+            self.assertFalse((workspace / "models" / "autolabel" / "detect" / "model.onnx").exists())
 
 
 if __name__ == "__main__":

@@ -7,6 +7,32 @@ from backend.yolo_workspace import create_workspace, load_workspace_config
 
 
 class MediaImportTests(unittest.TestCase):
+    def test_empty_import_returns_clean_zero_counts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "workspace"
+            create_workspace(root)
+
+            result = import_media_files(root, [], "copy")
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["importedCount"], 0)
+            self.assertEqual(result["skippedCount"], 0)
+            self.assertEqual(result["failedCount"], 0)
+            self.assertEqual(result["imported"], [])
+
+    def test_invalid_source_path_is_skipped_without_corrupting_media(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "workspace"
+            create_workspace(root)
+            paths = load_workspace_config(root)
+
+            result = import_media_files(root, [Path(tmp) / "missing.png"], "copy")
+
+            self.assertEqual(result["importedCount"], 0)
+            self.assertEqual(result["skippedCount"], 1)
+            self.assertEqual(result["skipped"][0]["reason"], "not a file")
+            self.assertEqual(list(paths.image_pool.iterdir()), [])
+
     def test_copy_imports_images_and_keeps_sources(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "workspace"

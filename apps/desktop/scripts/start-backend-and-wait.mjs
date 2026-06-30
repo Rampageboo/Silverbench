@@ -95,6 +95,7 @@ async function ensurePythonDeps(python) {
         [...python.prefixArgs, "-m", "pip", "install", "-r", "requirements.txt"],
         { stdio: "inherit" }
       );
+      // requirements.txt owns heavy runtime deps; keep this from replacing torch/cv2.
       await runCommand(
         python.command,
         [...python.prefixArgs, "-m", "pip", "install", "ultralytics", "--no-deps"],

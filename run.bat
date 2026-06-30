@@ -57,6 +57,7 @@ if errorlevel 1 (
         pause
         exit /b 1
     )
+    rem requirements.txt owns heavy runtime deps; keep this from replacing torch/cv2.
     python -m pip install ultralytics --no-deps
     if errorlevel 1 (
         echo Failed to install ultralytics.
