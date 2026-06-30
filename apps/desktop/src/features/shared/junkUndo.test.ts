@@ -89,7 +89,9 @@ describe("metadataRowToUpdate", () => {
       filename: "x.jpg",
       clf_class: "",
       clf_enabled: false,
+      clf_export_enabled: true,
       detect_enabled: false,
+      detect_export_enabled: true,
       detect_junk: false
     });
   });

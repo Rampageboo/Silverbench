@@ -674,7 +674,7 @@ export function LabelPage({ active = true, onReady }: Props) {
     <LabelWorkbenchContext.Provider value={ctxValue}>
       <div className="label-page label-page--workbench">
         <LabelWorkbenchHeader
-          mode={shellMode}
+          mode={mode}
           workspaceName={wsName}
           workspacePath={workspaceRoot}
           sourceSummary={sourceSummary}

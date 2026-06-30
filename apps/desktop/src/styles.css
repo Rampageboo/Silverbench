@@ -6490,3 +6490,342 @@ a.glass-card:focus-visible {
   color: #dbeafe;
   font-size: 11px;
 }
+
+/* ============================================================
+   Label Workbench visual refresh pass
+   Presentation-only overrides: no canvas geometry, storage, export,
+   proposal, undo/redo, or class-id behavior changes.
+   ============================================================ */
+
+.label-page--workbench {
+  --lwb-page-bg: #070b12;
+  --lwb-panel-bg: rgba(12, 19, 31, 0.90);
+  --lwb-panel-bg-strong: rgba(15, 24, 39, 0.94);
+  --lwb-panel-border: rgba(129, 149, 176, 0.18);
+  --lwb-panel-border-soft: rgba(129, 149, 176, 0.12);
+  --lwb-control-bg-hover: rgba(22, 34, 54, 0.76);
+  --lwb-accent: #5a95ff;
+  --lwb-accent-soft: rgba(90, 149, 255, 0.16);
+  --lwb-text-strong: #f3f7ff;
+  --lwb-text: #dbe6f5;
+  --lwb-text-muted: #93a5bc;
+  --lwb-shadow-soft: 0 14px 32px rgba(0, 0, 0, 0.28);
+  background: var(--lwb-page-bg);
+}
+
+.label-page--workbench .lwb-header {
+  height: 42px;
+  padding: 0 12px;
+  background: rgba(7, 12, 21, 0.92);
+  border-bottom: 1px solid var(--lwb-panel-border-soft);
+  box-shadow: none;
+}
+
+.label-page--workbench .lwb-section--source {
+  gap: 7px;
+  min-width: 0;
+}
+
+.label-page--workbench .lwb-summary-bar {
+  min-width: 0;
+}
+
+.label-page--workbench .lwb-source-badge,
+.label-page--workbench .lwb-task-chip,
+.label-page--workbench .lwb-summary-item,
+.label-page--workbench .lwb-review-chip,
+.react-box-label-page .pool-label-preview-index,
+.react-box-label-page .pool-label-preview-chip,
+.react-box-label-page .pool-label-task-toggle {
+  min-height: 20px;
+  border-color: var(--lwb-panel-border);
+  background: rgba(9, 15, 26, 0.64);
+  color: var(--lwb-text-muted);
+  box-shadow: none;
+}
+
+.label-page--workbench .lwb-task-chip--active,
+.react-box-label-page .pool-label-preview-chip,
+.react-box-label-page .pool-label-task-toggle.is-on {
+  border-color: rgba(90, 149, 255, 0.34);
+  background: var(--lwb-accent-soft);
+  color: #d7e8ff;
+}
+
+.label-page--workbench .label-workbench-body--unified-media {
+  gap: 12px;
+  padding: 10px;
+  background: linear-gradient(180deg, rgba(9, 14, 23, 0.98), rgba(5, 8, 14, 0.98));
+}
+
+.label-page--workbench .label-workbench-body--unified-media > .lwb-media-panel,
+.label-page--workbench .label-workbench-body--unified-media > .lwb-inspector > .lwb-inspector-section,
+.label-page--workbench .label-workbench-body--unified-media > .lwb-inspector > .panel,
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-classify-slot > .panel {
+  border: 1px solid var(--lwb-panel-border);
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--lwb-panel-bg-strong), var(--lwb-panel-bg));
+  box-shadow: var(--lwb-shadow-soft), inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.label-page--workbench .label-workbench-body--unified-media > .lwb-inspector {
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.label-page--workbench .lwb-media-header,
+.label-page--workbench .lwb-media-filter-row,
+.react-box-label-page .pool-label-preview-header,
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-duplicate-panel .panel-header,
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-detect-class-panel .panel-header,
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-classify-slot .panel-header,
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-classify-slot .pool-label-class-panel-header {
+  background: rgba(6, 11, 19, 0.34);
+  border-bottom-color: var(--lwb-panel-border-soft);
+}
+
+.label-page--workbench .lwb-media-header {
+  min-height: 42px;
+  padding: 8px 10px;
+}
+
+.label-page--workbench .lwb-media-filter-row {
+  padding: 6px 8px;
+}
+
+.label-page--workbench .lwb-media-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px;
+}
+
+.label-page--workbench .lwb-media-tile {
+  padding: 3px;
+  border-radius: 7px;
+  border-color: rgba(129, 149, 176, 0.15);
+  background: rgba(10, 17, 29, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.label-page--workbench .lwb-media-tile:hover {
+  border-color: rgba(147, 197, 253, 0.34);
+  background: rgba(18, 29, 47, 0.86);
+  box-shadow: none;
+}
+
+.label-page--workbench .lwb-media-tile.active {
+  border-color: rgba(96, 165, 250, 0.82);
+  background: rgba(20, 44, 80, 0.70);
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.26);
+}
+
+.label-page--workbench .lwb-media-thumb {
+  border-radius: 5px;
+  border-color: rgba(129, 149, 176, 0.12);
+  background: #030712;
+}
+
+.react-box-label-page--unified-media .pool-label-workspace {
+  gap: 10px;
+  padding: 0;
+}
+
+.react-box-label-page--unified-media #previewPanel {
+  border: 1px solid var(--lwb-panel-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(8, 13, 22, 0.88);
+  box-shadow: var(--lwb-shadow-soft), inset 0 1px 0 rgba(255, 255, 255, 0.032);
+}
+
+.react-box-label-page .pool-label-preview-header {
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+.react-box-label-page .pool-label-preview-title,
+.label-page--workbench .lwb-inspector-title,
+.label-page--workbench .lwb-media-header > span:first-child,
+.react-box-label-page .pool-label-class-panel-header h3,
+.lwb-inspector-classify-slot .pool-label-class-panel-header h3 {
+  color: var(--lwb-text-strong);
+  text-shadow: none;
+}
+
+.react-box-label-page .pool-label-preview-source {
+  color: var(--lwb-text-muted);
+}
+
+.react-box-label-page #previewViewer {
+  gap: 10px;
+  padding: 10px;
+}
+
+.react-box-label-page.react-box-label-page--unified-media #previewViewer .canvas-wrap {
+  border: 1px solid rgba(129, 149, 176, 0.14);
+  border-radius: 9px;
+  background: #050910;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.react-box-label-page #previewViewer .pool-label-zoom-side,
+.react-box-label-page #previewViewer .pool-label-preview-toolbar,
+.react-box-label-page .pool-label-box-panel,
+.lwb-inspector-duplicate-panel,
+.lwb-inspector-detect-class-panel,
+.lwb-inspector-classify-slot .pool-label-classes-panel,
+.lwb-inspector-classify-slot .video-label-classify-panel,
+.video-frame-box-label-page .video-frame-controls-panel,
+.video-frame-box-label-page .video-frame-overlay-stack .alm-panel,
+.alm-panel {
+  border-color: var(--lwb-panel-border);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(14, 23, 38, 0.92), rgba(7, 12, 21, 0.88));
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.react-box-label-page #previewViewer .pool-label-preview-toolbar {
+  padding: 6px;
+  gap: 6px;
+}
+
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-proposal-review {
+  border-color: rgba(90, 149, 255, 0.24);
+  background: linear-gradient(180deg, rgba(26, 55, 105, 0.26), rgba(9, 15, 26, 0.82));
+}
+
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-proposal-review .lwb-inspector-kicker {
+  color: var(--lwb-text-strong);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.label-page--workbench .lwb-inspector-kicker,
+.label-page--workbench .lwb-inspector-action-group-title,
+.video-frame-box-label-page .video-frame-controls-head {
+  color: var(--lwb-text-muted);
+  letter-spacing: 0.01em;
+}
+
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-duplicate-panel,
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-detect-class-panel,
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-classify-slot .pool-label-classes-panel,
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-classify-slot .video-label-classify-panel {
+  border-color: var(--lwb-panel-border);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(14, 23, 38, 0.86), rgba(7, 12, 21, 0.86));
+  box-shadow: var(--lwb-shadow-soft), inset 0 1px 0 rgba(255, 255, 255, 0.032);
+}
+
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-classify-slot .filter-panel-body,
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-detect-class-panel .panel-body {
+  padding: 10px;
+}
+
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-classify-slot .pool-label-class-list,
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-classify-slot .video-label-class-list,
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-detect-class-list {
+  display: flex;
+  align-content: flex-start;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-classify-slot .pool-label-class-row--static,
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-detect-class-list button {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 100%;
+  min-height: 25px;
+  border-radius: 6px;
+  background: rgba(5, 10, 18, 0.48);
+}
+
+.label-page--workbench .lwb-media-actions button,
+.label-page--workbench .lwb-media-filter-row button,
+.label-page--workbench .lwb-inspector-action,
+.video-frame-box-label-page .video-frame-controls-actions button,
+.react-box-label-page .pool-label-class-icon-btn,
+.lwb-inspector-classify-slot .pool-label-class-icon-btn,
+.react-box-label-page .pool-label-icon-tool {
+  border-color: var(--lwb-panel-border);
+  background: linear-gradient(180deg, rgba(18, 29, 48, 0.92), rgba(8, 14, 24, 0.92));
+  color: var(--lwb-text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.label-page--workbench .lwb-media-actions button:hover:not(:disabled),
+.label-page--workbench .lwb-media-filter-row button:hover:not(:disabled),
+.label-page--workbench .lwb-inspector-action:hover:not(:disabled),
+.video-frame-box-label-page .video-frame-controls-actions button:hover:not(:disabled),
+.react-box-label-page .pool-label-class-icon-btn:hover:not(:disabled),
+.lwb-inspector-classify-slot .pool-label-class-icon-btn:hover:not(:disabled),
+.react-box-label-page .pool-label-icon-tool:hover:not(:disabled) {
+  border-color: rgba(147, 197, 253, 0.40);
+  background: var(--lwb-control-bg-hover);
+  box-shadow: none;
+}
+
+.label-page--workbench .lwb-media-filter-row button.active,
+.label-page--workbench .lwb-inspector-action--primary:not(:disabled),
+.video-frame-box-label-page .video-frame-controls-actions button.primary,
+.react-box-label-page .pool-label-icon-tool.primary {
+  border-color: rgba(90, 149, 255, 0.58);
+  background: linear-gradient(180deg, rgba(48, 101, 190, 0.48), rgba(25, 58, 119, 0.42));
+  color: #e0ecff;
+}
+
+.video-frame-box-label-page .video-frame-overlay-stack {
+  bottom: 76px;
+  right: 18px;
+  width: min(460px, calc(100% - 36px));
+  gap: 10px;
+}
+
+.video-frame-box-label-page .video-frame-controls-panel {
+  padding: 10px;
+}
+
+.video-frame-box-label-page .video-frame-controls-form {
+  gap: 8px 10px;
+}
+
+.video-frame-box-label-page .video-frame-timeline-overlay {
+  margin: 0 18px 14px;
+  padding: 7px 12px 9px;
+  row-gap: 5px;
+  border-color: rgba(129, 149, 176, 0.20);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(11, 18, 31, 0.92), rgba(5, 9, 16, 0.92));
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  backdrop-filter: blur(10px);
+}
+
+.video-frame-box-label-page .video-frame-timeline-marker-row {
+  height: 16px;
+  margin: 0 7px;
+}
+
+.video-frame-box-label-page .video-frame-timeline-marker-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: rgba(129, 149, 176, 0.20);
+}
+
+.video-frame-box-label-page .video-frame-timeline-marker {
+  width: 12px;
+  height: 12px;
+  border-width: 2px;
+}
+
+.video-frame-box-label-page .video-frame-timeline-overlay input {
+  height: 18px;
+  accent-color: var(--lwb-accent);
+}
