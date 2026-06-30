@@ -17,15 +17,13 @@ type Props = {
 };
 
 type MediaItem =
-  | { kind: "video"; index: number; key: string; name: string; detail: string; taskDetail: string }
+  | { kind: "video"; index: number; key: string; name: string; previewSeconds: number; taskDetail: string }
   | { kind: "image"; index: number; key: string; name: string; imagePath: string; reviewed: boolean; flagged: boolean };
 
-function formatDuration(seconds: number) {
-  if (!Number.isFinite(seconds) || seconds <= 0) return "video";
-  const total = Math.floor(seconds);
-  const minutes = Math.floor(total / 60);
-  const secs = String(total % 60).padStart(2, "0");
-  return `${minutes}:${secs}`;
+function thumbnailPreviewSeconds(duration: number) {
+  if (!Number.isFinite(duration) || duration <= 0) return 0;
+  const latest = Math.max(0, duration - 0.001);
+  return Math.min(latest, Math.max(1, duration * 0.1));
 }
 
 function LazyImageThumb({ datasetRoot, imagePath }: { datasetRoot: string; imagePath: string }) {
@@ -58,7 +56,17 @@ function LazyImageThumb({ datasetRoot, imagePath }: { datasetRoot: string; image
   return <img ref={imgRef} src={src || undefined} alt={imagePath} loading="lazy" />;
 }
 
-function LazyVideoThumb({ workspaceRoot, path, name }: { workspaceRoot: string; path: string; name: string }) {
+function LazyVideoThumb({
+  workspaceRoot,
+  path,
+  name,
+  seconds
+}: {
+  workspaceRoot: string;
+  path: string;
+  name: string;
+  seconds: number;
+}) {
   const imgRef = useRef<HTMLImageElement>(null);
   const [src, setSrc] = useState("");
 
@@ -69,7 +77,7 @@ function LazyVideoThumb({ workspaceRoot, path, name }: { workspaceRoot: string; 
     const observer = new IntersectionObserver(
       (entries) => {
         if (!entries.some((entry) => entry.isIntersecting)) return;
-        if (!cancelled) setSrc(getAnnotationFrameUrl(workspaceRoot, path, 0, { fast: true }));
+        if (!cancelled) setSrc(getAnnotationFrameUrl(workspaceRoot, path, seconds, { fast: true }));
         observer.disconnect();
       },
       { rootMargin: "240px" }
@@ -79,7 +87,7 @@ function LazyVideoThumb({ workspaceRoot, path, name }: { workspaceRoot: string; 
       cancelled = true;
       observer.disconnect();
     };
-  }, [path, workspaceRoot]);
+  }, [path, seconds, workspaceRoot]);
 
   return src ? <img ref={imgRef} src={src} alt={name} loading="lazy" /> : <div ref={imgRef} className="lwb-media-video-placeholder">VIDEO</div>;
 }
@@ -95,7 +103,7 @@ export function LabelMediaGrid({ pool, videoSession, selection, onSelectionChang
       index,
       key: `video:${video.path}`,
       name: video.name || video.path.split(/[/\\]/).at(-1) || "Video",
-      detail: formatDuration(video.duration),
+      previewSeconds: thumbnailPreviewSeconds(video.duration),
       taskDetail: "detect + classify"
     }));
     const images: MediaItem[] = pool.entries.map((entry, index) => {
@@ -187,7 +195,12 @@ export function LabelMediaGrid({ pool, videoSession, selection, onSelectionChang
                     {item.kind === "image" ? (
                       <LazyImageThumb datasetRoot={pool.datasetRoot} imagePath={item.imagePath} />
                     ) : (
-                      <LazyVideoThumb workspaceRoot={pool.datasetRoot} path={videoSession.videos[item.index]?.path || ""} name={item.name} />
+                      <LazyVideoThumb
+                        workspaceRoot={pool.datasetRoot}
+                        path={videoSession.videos[item.index]?.path || ""}
+                        name={item.name}
+                        seconds={item.previewSeconds}
+                      />
                     )}
                   </span>
                 </button>
