@@ -6645,7 +6645,7 @@ a.glass-card:focus-visible {
 
 .react-box-label-page .lwb-workbench-dock {
   display: grid;
-  grid-template-columns: minmax(425px, 490px) minmax(320px, 390px) minmax(340px, 420px);
+  grid-template-columns: minmax(425px, 490px) minmax(320px, 390px) minmax(720px, 1fr);
   gap: 8px;
   align-items: stretch;
   justify-content: start;
@@ -6814,6 +6814,9 @@ a.glass-card:focus-visible {
 }
 
 .react-box-label-page .pool-label-preview-dock .lwb-analysis-panel {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.8fr) minmax(170px, 0.8fr) minmax(320px, 1.4fr);
+  align-items: stretch;
   color: var(--lwb-text);
   border: 0;
   padding: 0;
@@ -6834,6 +6837,7 @@ a.glass-card:focus-visible {
 .react-box-label-page .lwb-analysis-heatmap {
   display: grid;
   gap: 7px;
+  align-content: start;
   min-width: 0;
   border: 1px solid rgba(129, 149, 176, 0.15);
   border-radius: 7px;
@@ -6920,34 +6924,34 @@ a.glass-card:focus-visible {
 
 .react-box-label-page .lwb-analysis-heatmap-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 5px;
   min-width: 0;
 }
 
 .react-box-label-page .lwb-analysis-heatmap-cell {
   min-width: 0;
-  min-height: 38px;
+  min-height: 30px;
   display: grid;
   align-content: center;
   gap: 3px;
   border: 1px solid rgba(96, 165, 250, calc(0.16 + var(--heat) * 0.44));
   border-radius: 6px;
-  padding: 6px;
+  padding: 5px 6px;
   background:
     linear-gradient(180deg, rgba(37, 99, 235, calc(0.08 + var(--heat) * 0.34)), rgba(8, 13, 22, 0.62));
 }
 
 .react-box-label-page .lwb-analysis-heatmap-cell strong {
   color: #dbeafe;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1;
 }
 
 .react-box-label-page .lwb-analysis-heatmap-cell span,
 .react-box-label-page .lwb-analysis-empty {
   color: var(--lwb-text-muted);
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;

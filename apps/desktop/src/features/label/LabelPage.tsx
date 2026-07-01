@@ -305,7 +305,7 @@ function AnalysisPanel({
     { label: "Junk", value: stats.junk },
   ];
   const heatmapBuckets = heatmapClassKey === "all"
-    ? stats.detectClasses.slice(0, 18)
+    ? stats.detectClasses.slice(0, 12)
     : stats.detectClasses.filter((bucket) => bucket.key === heatmapClassKey);
   const heatmapMax = Math.max(1, ...heatmapBuckets.map((bucket) => bucket.count));
   const maxBar = Math.max(1, ...detectBars.map((item) => item.value), ...clfBars.map((item) => item.value));
