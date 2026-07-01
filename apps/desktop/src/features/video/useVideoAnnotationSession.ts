@@ -94,7 +94,6 @@ export function useVideoAnnotationSession({
   const [previewBase64, setPreviewBase64] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
-  const [videosLoading, setVideosLoading] = useState(false);
   const [videosLoaded, setVideosLoaded] = useState(false);
   const [manifestLoading, setManifestLoading] = useState(false);
   const [manifest, setManifest] = useState<VideoAnnotationManifest | null>(null);
@@ -171,7 +170,6 @@ export function useVideoAnnotationSession({
 
   useEffect(() => {
     setVideosLoaded(false);
-    setVideosLoading(Boolean(workspaceRoot.trim()));
   }, [workspaceRoot]);
 
   useEffect(() => {
@@ -189,12 +187,10 @@ export function useVideoAnnotationSession({
       if (!root) {
         setVideos([]);
         setCurrentIndex(-1);
-        setVideosLoading(false);
         setVideosLoaded(true);
         return;
       }
       if (options.replace) {
-        setVideosLoading(true);
         setVideosLoaded(false);
       }
       try {
@@ -224,7 +220,6 @@ export function useVideoAnnotationSession({
         if (!options.silent) showError(reason, "videos.workspace.load");
       } finally {
         if (options.replace) {
-          setVideosLoading(false);
           setVideosLoaded(true);
         }
       }
@@ -774,7 +769,6 @@ export function useVideoAnnotationSession({
     previewBase64,
     previewUrl,
     previewLoading,
-    videosLoading,
     videosLoaded,
     manifestLoading,
     manifest,
@@ -825,3 +819,5 @@ export function useVideoAnnotationSession({
     showError
   };
 }
+
+export type VideoAnnotationSession = ReturnType<typeof useVideoAnnotationSession>;

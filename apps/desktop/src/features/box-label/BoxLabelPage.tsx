@@ -12,13 +12,13 @@ import { activeDetectClassDefs, chooseClassificationManifest, classificationOpti
 import { BoxLabelGallery } from "./BoxLabelGallery";
 import { BoxLabelView } from "./BoxLabelView";
 import type { BoxLabelCanvasOverlay, BoxLabelViewProps, BoxLabelWorkbenchBridge } from "./boxLabelTypes";
-import { useBoxLabel } from "./useBoxLabel";
+import { useBoxLabel, type BoxLabelModel } from "./useBoxLabel";
 
 type BoxLabelPageProps = {
   onReady?: () => void;
 };
 
-export type BoxLabelPageModel = ReturnType<typeof useBoxLabel>;
+export type BoxLabelPageModel = BoxLabelModel;
 
 type BoxLabelSurfaceProps = {
   pool: BoxLabelPageModel;

@@ -814,3 +814,5 @@ export function useBoxLabel({
     reload: load
   };
 }
+
+export type BoxLabelModel = ReturnType<typeof useBoxLabel>;

@@ -2,16 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { datasetPreviewImageUrl } from "../dataset-review/datasetAssets";
 import { isFlaggedFile, isReviewedFile } from "../image-pool/metadata";
 import { getAnnotationFrameUrl } from "../video/videoAnnotationApi";
-import type { BoxLabelPageModel } from "../box-label/BoxLabelPage";
-import type { VideoLabelSession } from "../video/VideoLabelPage";
+import type { BoxLabelModel } from "../box-label/useBoxLabel";
+import type { VideoAnnotationSession } from "../video/useVideoAnnotationSession";
 
 export type LabelMediaSelection =
   | { kind: "video"; index: number }
   | { kind: "image"; index: number };
 
 type Props = {
-  pool: BoxLabelPageModel;
-  videoSession: VideoLabelSession;
+  pool: BoxLabelModel;
+  videoSession: VideoAnnotationSession;
   selection: LabelMediaSelection;
   loading?: boolean;
   activeRevealToken?: number;

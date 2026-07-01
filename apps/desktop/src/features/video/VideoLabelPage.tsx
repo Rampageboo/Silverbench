@@ -14,7 +14,7 @@ import { classNameFor, SLOT_ORDER } from "../box-label/geometry";
 import { isLabelWorkbenchEmbedded, useLabelWorkbench } from "../label/useLabelWorkbench";
 import { VideoAnnotationCanvas, type RemotePointerState } from "./VideoAnnotationCanvas";
 import { formatVideoClock, type VideoTimelineMarker } from "./videoAnnotationDomain";
-import { useVideoAnnotationSession } from "./useVideoAnnotationSession";
+import { useVideoAnnotationSession, type VideoAnnotationSession } from "./useVideoAnnotationSession";
 import { useVideoSampling, type SamplingMode } from "./useVideoSampling";
 import {
   addBlackoutOverlay,
@@ -39,7 +39,7 @@ type Props = {
   active?: boolean;
 };
 
-export type VideoLabelSession = ReturnType<typeof useVideoAnnotationSession>;
+export type VideoLabelSession = VideoAnnotationSession;
 
 type VideoLabelSurfaceProps = {
   session: VideoLabelSession;

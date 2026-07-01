@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { useWorkspace } from "../../app/useWorkspace";
-import { useVideoAnnotationSession } from "../video/useVideoAnnotationSession";
+import { useVideoAnnotationSession, type VideoAnnotationSession } from "../video/useVideoAnnotationSession";
 import { saveVideoFrame } from "../video/videoCaptureApi";
 import { BoxLabelSurface } from "../box-label/BoxLabelPage";
-import { useBoxLabel } from "../box-label/useBoxLabel";
+import { useBoxLabel, type BoxLabelModel } from "../box-label/useBoxLabel";
 import { BoxLabelView } from "../box-label/BoxLabelView";
 import type { BoxLabelEntry } from "../box-label/boxLabelCore";
 import { useVideoSampling, type SamplingMode } from "../video/useVideoSampling";
@@ -111,7 +111,7 @@ function clampUnit(value: number) {
   return Math.max(0, Math.min(1, value));
 }
 
-function videoAnalysisStats(videoSession: ReturnType<typeof useVideoAnnotationSession>): AnalysisStats {
+function videoAnalysisStats(videoSession: VideoAnnotationSession): AnalysisStats {
   const frames = Object.values(videoSession.manifest?.frames ?? {});
   const detectNames = new Map(videoSession.classes.map((item) => [String(item.id), item.name]));
   const clfNames = new Map(videoSession.clfClassOptions.map((item) => [item.key, item.name]));
@@ -495,8 +495,8 @@ function VideoBoxLabelSurface({
   onNavigateBoundary,
 }: {
   workspaceRoot: string;
-  videoSession: ReturnType<typeof useVideoAnnotationSession>;
-  imagePool: ReturnType<typeof useBoxLabel>;
+  videoSession: VideoAnnotationSession;
+  imagePool: BoxLabelModel;
   activeMediaPosition: number;
   mediaCount: number;
   analysisStats: AnalysisStats;
@@ -536,6 +536,10 @@ function VideoBoxLabelSurface({
   const autoLabelVideoPath = videoSession.current?.path ?? "";
   const autoLabelFramePathCacheRef = useRef<Map<string, Promise<string | null>>>(new Map());
   const classPanelSummaries = useMemo(() => analysisClassPanelSummaries(analysisStats), [analysisStats]);
+
+  useEffect(() => {
+    autoLabelFramePathCacheRef.current.clear();
+  }, [autoLabelVideoPath, workspaceRoot]);
 
   const prepareAutoLabelFramePath = useCallback(async (target: BoxLabelEntry) => {
     if (!hasFrameRecord || !autoLabelVideoPath || !workspaceRoot.trim()) return null;
