@@ -28,6 +28,7 @@ type Props = {
   classificationClasses?: ClassificationClass[];
   currentClassificationKey?: string | null;
   sourceImageBase64?: string | null;
+  sourceImagePath?: string | null;
   sourceUnavailableMessage?: string;
   autoRunAllowed?: boolean;
   onApplyDetectPredictions?: (
@@ -117,6 +118,7 @@ export function AutoLabelModelPanel({
   classificationClasses = [],
   currentClassificationKey = null,
   sourceImageBase64,
+  sourceImagePath,
   sourceUnavailableMessage,
   autoRunAllowed = true,
   onApplyDetectPredictions,
@@ -180,7 +182,8 @@ export function AutoLabelModelPanel({
     return classificationClasses.find((item) => item.key === currentClassificationKey)?.name ?? currentClassificationKey;
   }, [classificationClasses, currentClassificationKey]);
   const sourceBase64 = typeof sourceImageBase64 === "string" ? sourceImageBase64.trim() : "";
-  const sourceReady = sourceImageBase64 === undefined || sourceBase64.length > 0;
+  const sourcePath = typeof sourceImagePath === "string" ? sourceImagePath.trim() : "";
+  const sourceReady = sourceImageBase64 === undefined || sourceBase64.length > 0 || sourcePath.length > 0;
 
   async function handleImport(kind: AutoLabelModelKind) {
     if (!workspaceRoot.trim()) return;
@@ -250,7 +253,7 @@ export function AutoLabelModelPanel({
         const modelRoot = activeWorkspaceRootRef.current || workspaceRoot;
         const result = sourceBase64
           ? await api.detectImageBase64WithPt(modelRoot, detectModel, sourceBase64, 640, 0.25, "cpu")
-          : await api.detectImageWithPt(modelRoot, detectModel, target.imagePath, 640, 0.25, "cpu");
+          : await api.detectImageWithPt(modelRoot, detectModel, sourcePath || target.imagePath, 640, 0.25, "cpu");
         const applied = await onApplyDetectPredictions(target, result.predictions, {
           highConfidence: 0.8,
           proposalConfidence: 0.25,
@@ -271,7 +274,7 @@ export function AutoLabelModelPanel({
         setAutoBusy("detect", false);
       }
     },
-    [detectModel, onApplyDetectPredictions, setAutoBusy, sourceBase64, workspaceRoot]
+    [detectModel, onApplyDetectPredictions, setAutoBusy, sourceBase64, sourcePath, workspaceRoot]
   );
 
   const runClassifyAuto = useCallback(
@@ -283,7 +286,7 @@ export function AutoLabelModelPanel({
         const modelRoot = activeWorkspaceRootRef.current || workspaceRoot;
         const result = sourceBase64
           ? await api.classifyImageBase64WithPt(modelRoot, classifyModel, sourceBase64, 0, "cpu", 5)
-          : await api.classifyImageWithPt(modelRoot, classifyModel, target.imagePath, 0, "cpu", 5);
+          : await api.classifyImageWithPt(modelRoot, classifyModel, sourcePath || target.imagePath, 0, "cpu", 5);
         const top = result.top ?? result.predictions?.[0] ?? null;
         const name = predictionName(top);
         const match = name ? classByName.get(name.toLowerCase()) : null;
@@ -320,7 +323,7 @@ export function AutoLabelModelPanel({
         setAutoBusy("classify", false);
       }
     },
-    [classByName, classifyModel, onAssignClassificationClass, setAutoBusy, sourceBase64, workspaceRoot]
+    [classByName, classifyModel, onAssignClassificationClass, setAutoBusy, sourceBase64, sourcePath, workspaceRoot]
   );
 
   const handleRunDetectNow = useCallback(async () => {
