@@ -6632,6 +6632,209 @@ a.glass-card:focus-visible {
   padding: 10px;
 }
 
+.react-box-label-page--unified-media #previewViewer {
+  height: auto;
+}
+
+.react-box-label-page .pool-label-preview-dock {
+  flex: 0 0 auto;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--lwb-panel-border-soft);
+  background:
+    linear-gradient(180deg, rgba(6, 11, 19, 0.58), rgba(4, 8, 14, 0.76));
+}
+
+.react-box-label-page .lwb-workbench-dock {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(380px, 1.35fr) minmax(180px, 0.5fr);
+  gap: 8px;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.react-box-label-page .pool-label-preview-dock .video-frame-controls-panel,
+.react-box-label-page .pool-label-preview-dock .alm-panel,
+.react-box-label-page .pool-label-preview-dock .lwb-analysis-panel {
+  position: static;
+  z-index: auto;
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--lwb-panel-border);
+  border-bottom: 1px solid var(--lwb-panel-border);
+  border-radius: 9px;
+  background: linear-gradient(180deg, rgba(14, 23, 38, 0.78), rgba(7, 12, 21, 0.74));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.028);
+  backdrop-filter: none;
+}
+
+.react-box-label-page .pool-label-preview-dock .video-frame-controls-panel.is-disabled {
+  opacity: 0.58;
+}
+
+.react-box-label-page .pool-label-preview-dock .video-frame-controls-head,
+.react-box-label-page .pool-label-preview-dock .lwb-analysis-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--lwb-text-strong);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.react-box-label-page .pool-label-preview-dock .video-frame-controls-head span:last-child {
+  color: #93c5fd;
+  font-size: 11px;
+}
+
+.react-box-label-page .pool-label-preview-dock .video-frame-controls-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(140px, auto);
+  gap: 6px 8px;
+  align-items: center;
+}
+
+.react-box-label-page .pool-label-preview-dock .video-frame-control-source {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid rgba(129, 149, 176, 0.16);
+  border-radius: 6px;
+  padding: 5px 7px;
+  background: rgba(5, 10, 18, 0.46);
+  color: var(--lwb-text-muted);
+  font-size: 11px;
+}
+
+.react-box-label-page .pool-label-preview-dock .video-frame-controls-form label {
+  display: contents;
+}
+
+.react-box-label-page .pool-label-preview-dock .video-frame-controls-form label span {
+  color: var(--lwb-text-muted);
+  font-size: 11px;
+}
+
+.react-box-label-page .pool-label-preview-dock .video-frame-controls-form select,
+.react-box-label-page .pool-label-preview-dock .video-frame-controls-form input {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid rgba(129, 149, 176, 0.18);
+  border-radius: 6px;
+  background: rgba(5, 10, 18, 0.58);
+  color: var(--lwb-text);
+  font-size: 11px;
+  padding: 5px 7px;
+}
+
+.react-box-label-page .pool-label-preview-dock .video-frame-controls-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.react-box-label-page .pool-label-preview-dock .video-frame-controls-actions button {
+  min-width: 0;
+  min-height: 28px;
+  padding: 5px 7px;
+  border: 1px solid var(--lwb-panel-border);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(18, 29, 48, 0.86), rgba(8, 14, 24, 0.86));
+  color: var(--lwb-text);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.react-box-label-page .pool-label-preview-dock .video-frame-controls-actions button.primary {
+  border-color: rgba(90, 149, 255, 0.58);
+  background: linear-gradient(180deg, rgba(48, 101, 190, 0.42), rgba(25, 58, 119, 0.36));
+  color: #e0ecff;
+}
+
+.react-box-label-page .pool-label-preview-dock .video-frame-controls-actions button.danger {
+  border-color: rgba(248, 113, 113, 0.42);
+  color: #fecaca;
+  background: rgba(69, 10, 10, 0.24);
+}
+
+.react-box-label-page .pool-label-preview-dock .video-frame-controls-actions button:disabled,
+.react-box-label-page .pool-label-preview-dock .video-frame-controls-form select:disabled,
+.react-box-label-page .pool-label-preview-dock .video-frame-controls-form input:disabled {
+  opacity: 0.54;
+  cursor: default;
+}
+
+.react-box-label-page .pool-label-preview-dock .alm-model-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.react-box-label-page .pool-label-preview-dock .alm-panel-summary {
+  margin-top: auto;
+}
+
+.react-box-label-page .lwb-analysis-panel {
+  color: var(--lwb-text);
+}
+
+.react-box-label-page .lwb-analysis-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.react-box-label-page .lwb-analysis-grid span {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid rgba(129, 149, 176, 0.15);
+  border-radius: 7px;
+  padding: 7px 8px;
+  background: rgba(5, 10, 18, 0.44);
+}
+
+.react-box-label-page .lwb-analysis-grid strong {
+  color: #dbeafe;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.react-box-label-page .lwb-analysis-grid small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--lwb-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+@media (max-width: 1600px) {
+  .react-box-label-page .lwb-workbench-dock {
+    grid-template-columns: minmax(260px, 1fr) minmax(360px, 1.2fr);
+  }
+
+  .react-box-label-page .pool-label-preview-dock .lwb-analysis-panel {
+    grid-column: 1 / -1;
+  }
+
+  .react-box-label-page .lwb-analysis-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 .react-box-label-page.react-box-label-page--unified-media #previewViewer .canvas-wrap {
   border: 1px solid rgba(129, 149, 176, 0.14);
   border-radius: 9px;

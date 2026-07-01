@@ -467,6 +467,23 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
           reloadWorkspaceClasses: onWorkspaceClassesChanged,
         })
       : canvasOverlay;
+  const renderedPreviewDock =
+    typeof props.previewDock === "function"
+      ? props.previewDock({
+          entry: props.entry,
+          entries: props.entries,
+          currentIndex: props.currentIndex,
+          boxes: editor.boxes,
+          proposals: editor.proposals,
+          activeDetectClasses: editor.classes.map((item) => ({ id: item.id, name: item.name })),
+          classificationClasses,
+          currentClassificationKey: currentClassificationKey ?? null,
+          addProposals: editor.addProposals,
+          applyAutoLabelPredictions: editor.applyAutoLabelPredictions,
+          assignClassificationClass: onAssignClassificationClass,
+          reloadWorkspaceClasses: onWorkspaceClassesChanged,
+        })
+      : props.previewDock;
   const currentMetadata = props.entry ? props.metadata.get(props.entry.basename) : undefined;
   const previewSourceName = props.entry?.basename ?? "No media selected";
   const previewIndexText =
@@ -730,6 +747,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
             </div>
           ) : null}
         </div>
+        {renderedPreviewDock ? <div className="pool-label-preview-dock">{renderedPreviewDock}</div> : null}
       </section>
 
       {classificationClassesPortal}

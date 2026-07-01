@@ -57,6 +57,7 @@ function VideoFrameControlsPanel({
   samplingMode,
   minSpacingMs,
   current,
+  disabled = false,
   annotatedFrameCount,
   hasFrameRecord,
   reviewed,
@@ -75,6 +76,7 @@ function VideoFrameControlsPanel({
   samplingMode: SamplingMode;
   minSpacingMs: number;
   current: boolean;
+  disabled?: boolean;
   annotatedFrameCount: number;
   hasFrameRecord: boolean;
   reviewed: boolean;
@@ -88,8 +90,9 @@ function VideoFrameControlsPanel({
   onMarkEmpty: () => void;
   onClearRecord: () => void;
 }) {
+  const controlsDisabled = disabled || !current;
   return (
-    <section className="video-frame-controls-panel">
+    <section className={`video-frame-controls-panel${controlsDisabled ? " is-disabled" : ""}`}>
       <div className="video-frame-controls-head">
         <span>Video Controls</span>
         <span>{segmentCount} segment(s)</span>
@@ -98,7 +101,11 @@ function VideoFrameControlsPanel({
         <div className="video-frame-control-source" title={sourceLabel}>Source: {sourceLabel}</div>
         <label>
           <span>Sampling mode</span>
-          <select value={samplingMode} onChange={(event) => onSamplingModeChange(event.target.value as SamplingMode)}>
+          <select
+            value={samplingMode}
+            disabled={controlsDisabled}
+            onChange={(event) => onSamplingModeChange(event.target.value as SamplingMode)}
+          >
             {SAMPLING_MODES.map((mode) => (
               <option key={mode} value={mode}>{SAMPLING_MODE_LABELS[mode]}</option>
             ))}
@@ -111,29 +118,60 @@ function VideoFrameControlsPanel({
             min="0"
             step="100"
             value={minSpacingMs}
+            disabled={controlsDisabled}
             onChange={(event) => onMinSpacingMsChange(Math.max(0, Number(event.target.value) || 0))}
           />
         </label>
       </div>
       <div className="video-frame-controls-actions">
-        <button type="button" className="primary" onClick={onRandomNext} disabled={!current || videoDurationMs <= 0}>
+        <button type="button" className="primary" onClick={onRandomNext} disabled={controlsDisabled || videoDurationMs <= 0}>
           Random Next
         </button>
-        <button type="button" onClick={onAddMarker} disabled={!current}>
+        <button type="button" onClick={onAddMarker} disabled={controlsDisabled}>
           Add Marker
         </button>
-        <button type="button" onClick={onCopyPreviousBoxes} disabled={!current || annotatedFrameCount <= 0}>
+        <button type="button" onClick={onCopyPreviousBoxes} disabled={controlsDisabled || annotatedFrameCount <= 0}>
           Copy Previous Boxes
         </button>
-        <button type="button" onClick={onMarkReviewed} disabled={!current}>
+        <button type="button" onClick={onMarkReviewed} disabled={controlsDisabled}>
           {reviewed ? "Unmark Reviewed" : "Mark Reviewed"}
         </button>
-        <button type="button" onClick={onMarkEmpty} disabled={!current}>
+        <button type="button" onClick={onMarkEmpty} disabled={controlsDisabled}>
           Mark Empty
         </button>
-        <button type="button" className="danger" onClick={onClearRecord} disabled={!hasFrameRecord}>
+        <button type="button" className="danger" onClick={onClearRecord} disabled={controlsDisabled || !hasFrameRecord}>
           Clear Marker
         </button>
+      </div>
+    </section>
+  );
+}
+
+function AnalysisPanel({
+  detectCount,
+  clfCount,
+  proposalCount,
+}: {
+  detectCount: number;
+  clfCount: number;
+  proposalCount: number;
+}) {
+  return (
+    <section className="lwb-analysis-panel" aria-label="Analysis">
+      <div className="lwb-analysis-head">Analysis</div>
+      <div className="lwb-analysis-grid">
+        <span>
+          <strong>{detectCount}</strong>
+          <small>det box(es)</small>
+        </span>
+        <span>
+          <strong>{clfCount}</strong>
+          <small>clf label</small>
+        </span>
+        <span>
+          <strong>{proposalCount}</strong>
+          <small>proposal(s)</small>
+        </span>
       </div>
     </section>
   );
@@ -289,7 +327,44 @@ function VideoBoxLabelSurface({
           loadLabelsOverride={loadLabelsOverride}
           saveLabelsOverride={saveLabelsOverride}
           disableProposals
-          canvasOverlay={({
+          canvasOverlay={() => (
+            <div className="video-frame-timeline-overlay">
+              <div
+                className="video-frame-timeline-marker-row"
+                aria-label="Video markers"
+                onPointerDown={handleTimelinePointerDown}
+              >
+                {videoSession.timelineMarkers.map((marker) => (
+                  <button
+                    key={marker.key}
+                    type="button"
+                    className={`video-frame-timeline-marker video-frame-timeline-marker--${marker.kind}`}
+                    style={{ left: `${markerLeftPercent(marker.time)}%` }}
+                    title={marker.label}
+                    aria-label={`Go to ${marker.label}`}
+                    onPointerDown={(event) => handleMarkerPointerDown(event, marker.time)}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      handleGotoTime(marker.time);
+                    }}
+                  />
+                ))}
+              </div>
+              <input
+                type="range"
+                min="0"
+                max={videoSession.maxTime}
+                step="0.001"
+                value={Math.min(videoSession.time, videoSession.maxTime)}
+                disabled={!videoSession.current}
+                onInput={(event) => handleGotoTime(Number(event.currentTarget.value))}
+                onChange={(event) => handleGotoTime(Number(event.target.value))}
+                aria-label="Video timestamp"
+              />
+            </div>
+          )}
+          previewDock={({
             entry: overlayEntry,
             entries: overlayEntries,
             currentIndex,
@@ -301,82 +376,50 @@ function VideoBoxLabelSurface({
             assignClassificationClass: assignOverlayClassificationClass,
             reloadWorkspaceClasses,
           }) => (
-            <>
-              <div className="video-frame-overlay-stack">
-                <VideoFrameControlsPanel
-                  sourceLabel={sourceLabel}
-                  segmentCount={sampling.segmentCount}
-                  samplingMode={sampling.samplingMode}
-                  minSpacingMs={sampling.minSpacingMs}
-                  current={Boolean(videoSession.current)}
-                  annotatedFrameCount={videoSession.annotatedFrames.length}
-                  hasFrameRecord={hasFrameRecord}
-                  reviewed={videoSession.reviewed}
-                  videoDurationMs={videoDurationMs}
-                  onSamplingModeChange={sampling.setMode}
-                  onMinSpacingMsChange={sampling.setMinSpacingMs}
-                  onRandomNext={handleRandomNext}
-                  onAddMarker={handleAddMarker}
-                  onCopyPreviousBoxes={videoSession.copyPreviousBoxes}
-                  onMarkReviewed={() => {
-                    if (videoSession.current) videoSession.updateCurrentFrame(videoSession.boxes, !videoSession.reviewed);
-                  }}
-                  onMarkEmpty={videoSession.markEmptyReviewed}
-                  onClearRecord={videoSession.clearFrameRecord}
-                />
-                <AutoLabelModelPanel
-                  workspaceRoot={workspaceRoot}
-                  currentImage={overlayEntry}
-                  entries={overlayEntries}
-                  currentIndex={currentIndex}
-                  boxCount={boxes.length}
-                  proposalCount={proposals.length}
-                  classificationClasses={classificationClasses}
-                  currentClassificationKey={currentClassificationKey}
-                  sourceImageBase64={autoLabelFrameBase64}
-                  sourceUnavailableMessage={hasFrameRecord ? "Loading marker frame..." : "Add a marker or use Random Next to run video Auto Label."}
-                  autoRunAllowed={hasFrameRecord && !videoSession.reviewed}
-                  onApplyDetectPredictions={applyAutoLabelPredictions}
-                  onAssignClassificationClass={assignOverlayClassificationClass}
-                  onClassesChanged={reloadWorkspaceClasses}
-                />
-              </div>
-              <div className="video-frame-timeline-overlay">
-                <div
-                  className="video-frame-timeline-marker-row"
-                  aria-label="Video markers"
-                  onPointerDown={handleTimelinePointerDown}
-                >
-                  {videoSession.timelineMarkers.map((marker) => (
-                    <button
-                      key={marker.key}
-                      type="button"
-                      className={`video-frame-timeline-marker video-frame-timeline-marker--${marker.kind}`}
-                      style={{ left: `${markerLeftPercent(marker.time)}%` }}
-                      title={marker.label}
-                      aria-label={`Go to ${marker.label}`}
-                      onPointerDown={(event) => handleMarkerPointerDown(event, marker.time)}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        handleGotoTime(marker.time);
-                      }}
-                    />
-                  ))}
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max={videoSession.maxTime}
-                  step="0.001"
-                  value={Math.min(videoSession.time, videoSession.maxTime)}
-                  disabled={!videoSession.current}
-                  onInput={(event) => handleGotoTime(Number(event.currentTarget.value))}
-                  onChange={(event) => handleGotoTime(Number(event.target.value))}
-                  aria-label="Video timestamp"
-                />
-              </div>
-            </>
+            <div className="lwb-workbench-dock">
+              <VideoFrameControlsPanel
+                sourceLabel={sourceLabel}
+                segmentCount={sampling.segmentCount}
+                samplingMode={sampling.samplingMode}
+                minSpacingMs={sampling.minSpacingMs}
+                current={Boolean(videoSession.current)}
+                annotatedFrameCount={videoSession.annotatedFrames.length}
+                hasFrameRecord={hasFrameRecord}
+                reviewed={videoSession.reviewed}
+                videoDurationMs={videoDurationMs}
+                onSamplingModeChange={sampling.setMode}
+                onMinSpacingMsChange={sampling.setMinSpacingMs}
+                onRandomNext={handleRandomNext}
+                onAddMarker={handleAddMarker}
+                onCopyPreviousBoxes={videoSession.copyPreviousBoxes}
+                onMarkReviewed={() => {
+                  if (videoSession.current) videoSession.updateCurrentFrame(videoSession.boxes, !videoSession.reviewed);
+                }}
+                onMarkEmpty={videoSession.markEmptyReviewed}
+                onClearRecord={videoSession.clearFrameRecord}
+              />
+              <AutoLabelModelPanel
+                workspaceRoot={workspaceRoot}
+                currentImage={overlayEntry}
+                entries={overlayEntries}
+                currentIndex={currentIndex}
+                boxCount={boxes.length}
+                proposalCount={proposals.length}
+                classificationClasses={classificationClasses}
+                currentClassificationKey={currentClassificationKey}
+                sourceImageBase64={autoLabelFrameBase64}
+                sourceUnavailableMessage={hasFrameRecord ? "Loading marker frame..." : "Add a marker or use Random Next to run video Auto Label."}
+                autoRunAllowed={hasFrameRecord && !videoSession.reviewed}
+                onApplyDetectPredictions={applyAutoLabelPredictions}
+                onAssignClassificationClass={assignOverlayClassificationClass}
+                onClassesChanged={reloadWorkspaceClasses}
+              />
+              <AnalysisPanel
+                detectCount={boxes.length}
+                clfCount={currentClassificationKey ? 1 : 0}
+                proposalCount={proposals.length}
+              />
+            </div>
           )}
         />
       </main>
@@ -724,7 +767,7 @@ export function LabelPage({ active = true, onReady }: Props) {
                   handleSelectionChange({ kind: "image", index });
                 }}
                 onNavigateBoundary={handleMediaBoundaryNavigate}
-                canvasOverlay={({
+                previewDock={({
                   entry,
                   entries,
                   currentIndex,
@@ -736,19 +779,46 @@ export function LabelPage({ active = true, onReady }: Props) {
                   assignClassificationClass,
                   reloadWorkspaceClasses,
                 }) => (
-                  <AutoLabelModelPanel
-                    workspaceRoot={workspaceRoot}
-                    currentImage={entry}
-                    entries={entries}
-                    currentIndex={currentIndex}
-                    boxCount={boxes.length}
-                    proposalCount={proposals.length}
-                    classificationClasses={classificationClasses}
-                    currentClassificationKey={currentClassificationKey}
-                    onApplyDetectPredictions={applyAutoLabelPredictions}
-                    onAssignClassificationClass={assignClassificationClass}
-                    onClassesChanged={reloadWorkspaceClasses}
-                  />
+                  <div className="lwb-workbench-dock">
+                    <VideoFrameControlsPanel
+                      sourceLabel="Image mode"
+                      segmentCount={0}
+                      samplingMode="segments-preferred"
+                      minSpacingMs={2000}
+                      current={false}
+                      disabled
+                      annotatedFrameCount={0}
+                      hasFrameRecord={false}
+                      reviewed={false}
+                      videoDurationMs={0}
+                      onSamplingModeChange={() => {}}
+                      onMinSpacingMsChange={() => {}}
+                      onRandomNext={() => {}}
+                      onAddMarker={() => {}}
+                      onCopyPreviousBoxes={() => {}}
+                      onMarkReviewed={() => {}}
+                      onMarkEmpty={() => {}}
+                      onClearRecord={() => {}}
+                    />
+                    <AutoLabelModelPanel
+                      workspaceRoot={workspaceRoot}
+                      currentImage={entry}
+                      entries={entries}
+                      currentIndex={currentIndex}
+                      boxCount={boxes.length}
+                      proposalCount={proposals.length}
+                      classificationClasses={classificationClasses}
+                      currentClassificationKey={currentClassificationKey}
+                      onApplyDetectPredictions={applyAutoLabelPredictions}
+                      onAssignClassificationClass={assignClassificationClass}
+                      onClassesChanged={reloadWorkspaceClasses}
+                    />
+                    <AnalysisPanel
+                      detectCount={boxes.length}
+                      clfCount={currentClassificationKey ? 1 : 0}
+                      proposalCount={proposals.length}
+                    />
+                  </div>
                 )}
               />
             )}

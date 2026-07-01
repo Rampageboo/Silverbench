@@ -28,6 +28,7 @@ type BoxLabelSurfaceProps = {
   onImageNavigate?: (index: number) => void;
   onNavigateBoundary?: (delta: -1 | 1) => void;
   canvasOverlay?: BoxLabelCanvasOverlay;
+  previewDock?: BoxLabelCanvasOverlay;
 };
 
 export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
@@ -50,6 +51,7 @@ export function BoxLabelSurface({
   onImageNavigate,
   onNavigateBoundary,
   canvasOverlay,
+  previewDock,
 }: BoxLabelSurfaceProps) {
   const { workspaceRoot, chooseWorkspaceFolder } = useWorkspace();
   const { showToast } = useToast();
@@ -426,6 +428,7 @@ export function BoxLabelSurface({
           onRenameClass={renameWorkspaceClass}
           onWorkspaceClassesChanged={loadWorkspaceClasses}
           canvasOverlay={canvasOverlay}
+          previewDock={previewDock}
         />
       </main>
     </div>

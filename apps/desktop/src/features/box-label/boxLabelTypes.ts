@@ -147,6 +147,7 @@ export type BoxLabelViewProps = {
   onRenameClass?: (classKey: string, newName: string) => Promise<void>;
   onWorkspaceClassesChanged?: () => Promise<void>;
   canvasOverlay?: BoxLabelCanvasOverlay;
+  previewDock?: BoxLabelCanvasOverlay;
   imageUrlOverride?: string | null;
   loadLabelsOverride?: (entry: BoxLabelEntry) => Promise<api.LabelBox[]>;
   saveLabelsOverride?: (entry: BoxLabelEntry, boxes: api.LabelBox[]) => Promise<api.LabelBox[]>;
