@@ -17,6 +17,7 @@ import { imageProposalKey, loadImageProposals, saveImageProposals, type ImagePro
 import type { DetectProposal } from "../video/videoAnnotationApi";
 import { buildClassIdByName, resolveAutoLabelClassId } from "./autoLabelClassMapping";
 import { loadEntryLabels, saveEntryLabels, type BoxLabelEntry } from "./boxLabelCore";
+import type { KeyboardStepMultiplier } from "./boxLabelKeyboardShortcuts";
 import type { BoxLabelAutoLabelOptions, BoxLabelAutoLabelResult, BoxLabelViewProps } from "./boxLabelTypes";
 import { findNearestBoxIndex, loadCanvasImage, type BoxAdjustMode, type DragState, type ProposalShape } from "./geometry";
 import { useBoxLabelClasses } from "./useBoxLabelClasses";
@@ -95,6 +96,7 @@ export function useBoxLabelEditor({
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [tracking, setTracking] = useState(false);
+  const [keyboardStepMultiplier, setKeyboardStepMultiplier] = useState<KeyboardStepMultiplier>(1);
   const [imageVersion, setImageVersion] = useState(0);
   const metadataRef = useRef<Map<string, MetadataRow>>(new Map());
   const filename = entry?.basename || "";
@@ -609,6 +611,8 @@ export function useBoxLabelEditor({
     modeRef: labelClasses.modeRef,
     showGridRef,
     boxAdjustModeRef,
+    keyboardStepMultiplier,
+    setKeyboardStepMultiplier,
     classesRef: labelClasses.classesRef,
     pointerToolEnabled: labelClasses.pointerToolEnabled,
     autoFitEnabled: labelClasses.autoFitEnabled,
@@ -799,6 +803,8 @@ export function useBoxLabelEditor({
     autoFitEnabled: labelClasses.autoFitEnabled,
     blackBoxEnabled: labelClasses.blackBoxEnabled,
     boxAdjustMode: labelClasses.boxAdjustMode,
+    keyboardStepMultiplier,
+    setKeyboardStepMultiplier,
     tracking,
     error,
     status,

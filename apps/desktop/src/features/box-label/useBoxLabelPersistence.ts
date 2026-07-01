@@ -11,6 +11,7 @@ import { useConfirm } from "../../components/useConfirm";
 import { errMessage } from "../../lib/errors";
 import { invalidateDatasetImageUrl } from "../dataset-review/datasetAssets";
 import { loadEntryLabels, type BoxLabelEntry } from "./boxLabelCore";
+import type { KeyboardStepMultiplier } from "./boxLabelKeyboardShortcuts";
 import {
   boxCenterPixel,
   boxToRect,
@@ -38,6 +39,7 @@ type UseBoxLabelPersistenceOptions = {
   selectedRef: MutableRefObject<number | null>;
   dragRef: MutableRefObject<DragState>;
   boxAdjustModeRef: MutableRefObject<BoxAdjustMode>;
+  keyboardStepMultiplier: KeyboardStepMultiplier;
   fixedBoxSlots: Array<api.LabelBox | null>;
   setCurrentClass: (classId: number) => void;
   pushUndo: (action: string) => void;
@@ -73,6 +75,7 @@ export function useBoxLabelPersistence({
   selectedRef,
   dragRef,
   boxAdjustModeRef,
+  keyboardStepMultiplier,
   fixedBoxSlots,
   setCurrentClass,
   pushUndo,
@@ -186,7 +189,7 @@ export function useBoxLabelPersistence({
   const moveSelectedBoxByKeyboard = useCallback(
     (dx: number, dy: number, fast: boolean) => {
       const image = imageRef.current;
-      const factor = fast ? 10 : 1;
+      const factor = keyboardStepMultiplier * (fast ? 10 : 1);
       const stepX = factor / Math.max(1, image?.naturalWidth ?? 1);
       const stepY = factor / Math.max(1, image?.naturalHeight ?? 1);
       if (!keyboardAdjustingRef.current) pushUndo("keyboard adjust box");
@@ -202,13 +205,13 @@ export function useBoxLabelPersistence({
       const index = selectedRef.current;
       if (index !== null) syncBoxToSelected(boxesRef.current[index], "sync keyboard adjust", { pushUndo: false }).catch(() => {});
     },
-    [boxesRef, imageRef, pushUndo, selectedRef, syncBoxToSelected, updateSelectedBox]
+    [boxesRef, imageRef, keyboardStepMultiplier, pushUndo, selectedRef, syncBoxToSelected, updateSelectedBox]
   );
 
   const resizeSelectedBoxByKeyboard = useCallback(
     (key: string, fast: boolean) => {
       const image = imageRef.current;
-      const factor = fast ? 10 : 1;
+      const factor = keyboardStepMultiplier * (fast ? 10 : 1);
       const stepX = factor / Math.max(1, image?.naturalWidth ?? 1);
       const stepY = factor / Math.max(1, image?.naturalHeight ?? 1);
       const sign = boxAdjustModeRef.current === "grow" ? 1 : -1;
@@ -227,7 +230,7 @@ export function useBoxLabelPersistence({
       const index = selectedRef.current;
       if (index !== null) syncBoxToSelected(boxesRef.current[index], "sync keyboard resize", { pushUndo: false }).catch(() => {});
     },
-    [boxAdjustModeRef, boxesRef, imageRef, pushUndo, selectedRef, syncBoxToSelected, updateSelectedBox]
+    [boxAdjustModeRef, boxesRef, imageRef, keyboardStepMultiplier, pushUndo, selectedRef, syncBoxToSelected, updateSelectedBox]
   );
 
   const imageMimeForFilename = useCallback((name: string) => {

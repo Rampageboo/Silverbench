@@ -1970,6 +1970,64 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   background: #0f172a;
 }
 
+.react-box-label-page #previewViewer .pool-label-keypad-guide {
+  flex: 1 0 100%;
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: 6px 8px;
+  align-items: center;
+  padding-top: 5px;
+  border-top: 1px solid rgba(51, 65, 85, 0.72);
+  color: #94a3b8;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.react-box-label-page #previewViewer .pool-label-keypad-multipliers,
+.react-box-label-page #previewViewer .pool-label-keypad-map {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.react-box-label-page #previewViewer .pool-label-keypad-multipliers > span {
+  color: #cbd5e1;
+  font-weight: 800;
+}
+
+.react-box-label-page #previewViewer .pool-label-keypad-multipliers button {
+  min-height: 20px;
+  padding: 2px 6px;
+  border: 1px solid rgba(71, 85, 105, 0.86);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #cbd5e1;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.react-box-label-page #previewViewer .pool-label-keypad-multipliers button.active {
+  border-color: rgba(96, 165, 250, 0.72);
+  background: rgba(37, 99, 235, 0.30);
+  color: #dbeafe;
+}
+
+.react-box-label-page #previewViewer .pool-label-keypad-map {
+  justify-content: flex-end;
+}
+
+.react-box-label-page #previewViewer .pool-label-keypad-map kbd {
+  padding: 1px 4px;
+  border: 1px solid rgba(71, 85, 105, 0.78);
+  border-radius: 4px;
+  background: rgba(2, 6, 23, 0.54);
+  color: #dbeafe;
+  font: inherit;
+  font-weight: 800;
+}
+
 .react-box-label-page .pool-label-canvas-class-menu {
   position: absolute;
   z-index: 30;

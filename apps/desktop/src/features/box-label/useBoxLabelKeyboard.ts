@@ -1,5 +1,6 @@
 import { useEffect, type MutableRefObject } from "react";
 import { errMessage } from "../../lib/errors";
+import { keyboardMultiplierForNumpad, type KeyboardStepMultiplier } from "./boxLabelKeyboardShortcuts";
 import type { BoxLabelDuplicateFlow } from "./boxLabelTypes";
 import { arrowKeyDelta, type BoxAdjustMode, type DragState } from "./geometry";
 
@@ -7,6 +8,7 @@ type UseBoxLabelKeyboardOptions = {
   dragRef: MutableRefObject<DragState>;
   selectedRef: MutableRefObject<number | null>;
   keyboardAdjustingRef: MutableRefObject<boolean>;
+  setKeyboardStepMultiplier: (value: KeyboardStepMultiplier) => void;
   setSelectedBoxId: (id: number | null) => void;
   setBoxAdjustMode: (mode: BoxAdjustMode) => void;
   setStatus: (status: string) => void;
@@ -39,6 +41,7 @@ export function useBoxLabelKeyboard({
   dragRef,
   selectedRef,
   keyboardAdjustingRef,
+  setKeyboardStepMultiplier,
   setSelectedBoxId,
   setBoxAdjustMode,
   setStatus,
@@ -167,6 +170,13 @@ export function useBoxLabelKeyboard({
       if (event.key.toLowerCase() === "v" && !event.ctrlKey && !event.altKey && !event.metaKey) {
         event.preventDefault();
         togglePointerTool();
+        return;
+      }
+      const keyboardMultiplier = keyboardMultiplierForNumpad(event.code);
+      if (keyboardMultiplier !== null) {
+        event.preventDefault();
+        setKeyboardStepMultiplier(keyboardMultiplier);
+        setStatus(`Keyboard multiplier: ${keyboardMultiplier}x.`);
         return;
       }
       if (event.code === "NumpadAdd") {

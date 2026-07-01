@@ -1,10 +1,12 @@
 import type { BoxAdjustMode } from "./geometry";
+import { KEYBOARD_STEP_MULTIPLIERS, type KeyboardStepMultiplier } from "./boxLabelKeyboardShortcuts";
 
 type BoxLabelPreviewToolbarProps = {
   pointerToolEnabled: boolean;
   autoFitEnabled: boolean;
   blackBoxEnabled: boolean;
   boxAdjustMode: BoxAdjustMode;
+  keyboardStepMultiplier: KeyboardStepMultiplier;
   tracking: boolean;
   canCopyNext: boolean;
   onTogglePointerTool: () => void;
@@ -12,6 +14,7 @@ type BoxLabelPreviewToolbarProps = {
   onToggleBlackBox: () => void;
   onRestoreBackup: () => void;
   onToggleBoxAdjustMode: () => void;
+  onKeyboardStepMultiplierChange: (value: KeyboardStepMultiplier) => void;
   onCopyNext: () => void;
   onCsrtTrack: () => void;
 };
@@ -21,6 +24,7 @@ export function BoxLabelPreviewToolbar({
   autoFitEnabled,
   blackBoxEnabled,
   boxAdjustMode,
+  keyboardStepMultiplier,
   tracking,
   canCopyNext,
   onTogglePointerTool,
@@ -28,6 +32,7 @@ export function BoxLabelPreviewToolbar({
   onToggleBlackBox,
   onRestoreBackup,
   onToggleBoxAdjustMode,
+  onKeyboardStepMultiplierChange,
   onCopyNext,
   onCsrtTrack
 }: BoxLabelPreviewToolbarProps) {
@@ -141,6 +146,30 @@ export function BoxLabelPreviewToolbar({
           <path d="M17 7l3-3" />
         </svg>
       </button>
+      <div className="pool-label-keypad-guide" aria-label="Keyboard box shortcuts">
+        <div className="pool-label-keypad-multipliers" aria-label="Keyboard multiplier">
+          <span>Keypad</span>
+          {KEYBOARD_STEP_MULTIPLIERS.map((value) => (
+            <button
+              key={value}
+              type="button"
+              className={value === keyboardStepMultiplier ? "active" : ""}
+              title={`Numpad ${value}: ${value}x keyboard multiplier`}
+              aria-label={`Numpad ${value}: ${value}x keyboard multiplier`}
+              aria-pressed={value === keyboardStepMultiplier}
+              onClick={() => onKeyboardStepMultiplierChange(value)}
+            >
+              {value}x
+            </button>
+          ))}
+        </div>
+        <div className="pool-label-keypad-map" aria-label="Numpad shortcut map">
+          <span><kbd>1/3/7/9</kbd> multiplier</span>
+          <span><kbd>2/4/5/6/8</kbd> resize</span>
+          <span><kbd>+/-</kbd> grow/shrink</span>
+          <span><kbd>Arrows</kbd> move</span>
+        </div>
+      </div>
     </div>
   );
 }

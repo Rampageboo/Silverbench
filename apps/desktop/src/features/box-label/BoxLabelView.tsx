@@ -730,6 +730,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
               autoFitEnabled={editor.autoFitEnabled}
               blackBoxEnabled={editor.blackBoxEnabled}
               boxAdjustMode={editor.boxAdjustMode}
+              keyboardStepMultiplier={editor.keyboardStepMultiplier}
               tracking={editor.tracking}
               canCopyNext={editor.selectedBoxId !== null && editor.currentIndex >= 0}
               onTogglePointerTool={editor.togglePointerTool}
@@ -739,6 +740,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
               onToggleBoxAdjustMode={() =>
                 editor.setBoxAdjustMode((value) => (value === "grow" ? "shrink" : "grow"))
               }
+              onKeyboardStepMultiplierChange={editor.setKeyboardStepMultiplier}
               onCopyNext={() => editor.copySelectedBoxToNext().catch((err) => editor.setError(errMessage(err)))}
               onCsrtTrack={() => editor.trackCsrtForward().catch((err) => editor.setError(errMessage(err)))}
             />

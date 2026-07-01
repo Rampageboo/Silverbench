@@ -1,6 +1,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import * as api from "../../api";
 import type { BoxLabelEntry } from "./boxLabelCore";
+import type { KeyboardStepMultiplier } from "./boxLabelKeyboardShortcuts";
 import type { BoxLabelDuplicateFlow } from "./boxLabelTypes";
 import type { BoxAdjustMode, DragState, ProposalShape, ToolMode } from "./geometry";
 
@@ -28,6 +29,8 @@ export type UseBoxLabelInteractionOptions = {
   modeRef: MutableRefObject<ToolMode>;
   showGridRef: MutableRefObject<boolean>;
   boxAdjustModeRef: MutableRefObject<BoxAdjustMode>;
+  keyboardStepMultiplier: KeyboardStepMultiplier;
+  setKeyboardStepMultiplier: (value: KeyboardStepMultiplier) => void;
   classesRef: MutableRefObject<api.LabelClass[]>;
   pointerToolEnabled: boolean;
   autoFitEnabled: boolean;
