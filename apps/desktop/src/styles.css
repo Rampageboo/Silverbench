@@ -7533,3 +7533,129 @@ button.pool-label-task-light-btn:hover:not(:disabled) {
 .video-frame-box-label-page .video-frame-timeline-overlay input::-webkit-slider-thumb {
   margin-top: -5px;
 }
+
+/* Compact right-rail video controls: keep the canvas clear and make markers
+   read like timeline ticks instead of large prototype dots. */
+.react-box-label-page #previewViewer .pool-label-preview-toolbar {
+  padding: 8px 10px;
+  gap: 6px;
+}
+
+.react-box-label-page #previewViewer .pool-label-keypad-guide {
+  grid-template-columns: 1fr;
+  gap: 6px;
+  padding-top: 7px;
+  line-height: 1.15;
+}
+
+.react-box-label-page #previewViewer .pool-label-keypad-multipliers,
+.react-box-label-page #previewViewer .pool-label-keypad-map {
+  justify-content: center;
+}
+
+.react-box-label-page #previewViewer .pool-label-keypad-multipliers > span {
+  color: #9fb0c7;
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.react-box-label-page #previewViewer .pool-label-keypad-multipliers button {
+  min-height: 19px;
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+
+.react-box-label-page #previewViewer .pool-label-keypad-map {
+  gap: 4px 8px;
+  color: #8ea0b8;
+  font-size: 9.5px;
+}
+
+.react-box-label-page #previewViewer .pool-label-keypad-map span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.react-box-label-page #previewViewer .pool-label-keypad-map kbd {
+  padding: 1px 5px;
+  border-radius: 999px;
+}
+
+.video-frame-box-label-page #previewViewer .pool-label-zoom-side .video-frame-timeline-overlay {
+  grid-column: auto;
+  grid-row: auto;
+  align-self: stretch;
+  justify-self: stretch;
+  position: relative;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px 9px;
+  row-gap: 5px;
+  border-radius: 8px;
+  pointer-events: auto;
+}
+
+.video-frame-box-label-page #previewViewer .pool-label-zoom-side .video-frame-timeline-top {
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+}
+
+.video-frame-box-label-page #previewViewer .pool-label-zoom-side .video-frame-playback-btn {
+  min-height: 22px;
+  padding: 2px 9px;
+}
+
+.video-frame-box-label-page #previewViewer .pool-label-zoom-side .video-frame-timeline-marker-row {
+  grid-column: auto;
+  height: 16px;
+  margin: 0;
+}
+
+.video-frame-box-label-page #previewViewer .pool-label-zoom-side .video-frame-timeline-marker-row::before {
+  height: 1px;
+  background: rgba(96, 165, 250, 0.42);
+}
+
+.video-frame-box-label-page #previewViewer .pool-label-zoom-side .video-frame-timeline-marker {
+  width: 3px;
+  height: 15px;
+  border: 0;
+  border-radius: 2px;
+  color: #22c55e;
+  background: currentColor;
+  box-shadow: 0 0 0 1px rgba(3, 7, 18, 0.85), 0 0 10px currentColor;
+  transform: translate(-50%, -50%);
+}
+
+.video-frame-box-label-page #previewViewer .pool-label-zoom-side .video-frame-timeline-marker--clf {
+  color: #f59e0b;
+}
+
+.video-frame-box-label-page #previewViewer .pool-label-zoom-side .video-frame-timeline-marker--mixed {
+  color: #60a5fa;
+}
+
+.video-frame-box-label-page #previewViewer .pool-label-zoom-side .video-frame-timeline-marker--empty {
+  color: #64748b;
+}
+
+.video-frame-box-label-page #previewViewer .pool-label-zoom-side .video-frame-timeline-marker--reviewed {
+  color: #38bdf8;
+}
+
+.video-frame-box-label-page #previewViewer .pool-label-zoom-side .video-frame-timeline-marker--marker {
+  color: #a78bfa;
+}
+
+.video-frame-box-label-page #previewViewer .pool-label-zoom-side .video-frame-timeline-marker:hover,
+.video-frame-box-label-page #previewViewer .pool-label-zoom-side .video-frame-timeline-marker:focus-visible {
+  width: 5px;
+  box-shadow: 0 0 0 1px #dbeafe, 0 0 14px currentColor;
+}
+
+.video-frame-box-label-page #previewViewer .pool-label-zoom-side .video-frame-timeline-overlay input {
+  height: 16px;
+}

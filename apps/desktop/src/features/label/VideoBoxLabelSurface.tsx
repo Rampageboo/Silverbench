@@ -470,6 +470,7 @@ export function VideoBoxLabelSurface({
           loadLabelsOverride={loadLabelsOverride}
           saveLabelsOverride={saveLabelsOverride}
           disableProposals
+          canvasOverlayPlacement="zoom-side"
           canvasOverlay={({ selectedBoxId }) => {
             selectedBoxIdRef.current = selectedBoxId;
             return (

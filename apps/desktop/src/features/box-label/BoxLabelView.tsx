@@ -50,6 +50,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     onWorkbenchBridgeChange,
     showSideStack = true,
     canvasOverlay,
+    canvasOverlayPlacement = "canvas",
     detectTaskEnabled = true,
     clfTaskEnabled = true,
     onToggleDetectTaskEnabled,
@@ -500,6 +501,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
           reloadWorkspaceClasses: onWorkspaceClassesChanged,
         })
       : canvasOverlay;
+  const canvasOverlayInZoomSide = canvasOverlayPlacement === "zoom-side";
   const renderedPreviewDock =
     typeof props.previewDock === "function"
       ? props.previewDock({
@@ -744,8 +746,9 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
               onCopyNext={() => editor.copySelectedBoxToNext().catch((err) => editor.setError(errMessage(err)))}
               onCsrtTrack={() => editor.trackCsrtForward().catch((err) => editor.setError(errMessage(err)))}
             />
+            {canvasOverlayInZoomSide ? renderedCanvasOverlay : null}
           </aside>
-          {renderedCanvasOverlay ?? null}
+          {canvasOverlayInZoomSide ? null : renderedCanvasOverlay}
           {canvasClassSearchMenu ? (
             <div
               className="pool-label-canvas-class-menu"

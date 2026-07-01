@@ -148,7 +148,7 @@ export function BoxLabelPreviewToolbar({
       </button>
       <div className="pool-label-keypad-guide" aria-label="Keyboard box shortcuts">
         <div className="pool-label-keypad-multipliers" aria-label="Keyboard multiplier">
-          <span>Keypad</span>
+          <span>Step</span>
           {KEYBOARD_STEP_MULTIPLIERS.map((value) => (
             <button
               key={value}
@@ -164,9 +164,9 @@ export function BoxLabelPreviewToolbar({
           ))}
         </div>
         <div className="pool-label-keypad-map" aria-label="Numpad shortcut map">
-          <span><kbd>1/3/7/9</kbd> multiplier</span>
+          <span><kbd>1/3/7/9</kbd> step</span>
           <span><kbd>2/4/5/6/8</kbd> resize</span>
-          <span><kbd>+/-</kbd> grow/shrink</span>
+          <span><kbd>+/-</kbd> adjust</span>
           <span><kbd>Arrows</kbd> move</span>
         </div>
       </div>

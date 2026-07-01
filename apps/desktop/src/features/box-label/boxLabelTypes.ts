@@ -161,6 +161,7 @@ export type BoxLabelViewProps = {
   onRenameClass?: (classKey: string, newName: string) => Promise<void>;
   onWorkspaceClassesChanged?: () => Promise<void>;
   canvasOverlay?: BoxLabelCanvasOverlay;
+  canvasOverlayPlacement?: "canvas" | "zoom-side";
   previewDock?: BoxLabelCanvasOverlay;
   imageUrlOverride?: string | null;
   reloadLabelsOnImageUrlChange?: boolean;
