@@ -29,6 +29,7 @@ type Props = {
   currentClassificationKey?: string | null;
   sourceImageBase64?: string | null;
   sourceImagePath?: string | null;
+  prepareSourceImagePath?: (target: BoxLabelEntry) => Promise<string | null | undefined>;
   sourceUnavailableMessage?: string;
   autoRunAllowed?: boolean;
   onApplyDetectPredictions?: (
@@ -119,6 +120,7 @@ export function AutoLabelModelPanel({
   currentClassificationKey = null,
   sourceImageBase64,
   sourceImagePath,
+  prepareSourceImagePath,
   sourceUnavailableMessage,
   autoRunAllowed = true,
   onApplyDetectPredictions,
@@ -183,7 +185,8 @@ export function AutoLabelModelPanel({
   }, [classificationClasses, currentClassificationKey]);
   const sourceBase64 = typeof sourceImageBase64 === "string" ? sourceImageBase64.trim() : "";
   const sourcePath = typeof sourceImagePath === "string" ? sourceImagePath.trim() : "";
-  const sourceReady = sourceImageBase64 === undefined || sourceBase64.length > 0 || sourcePath.length > 0;
+  const canPrepareSource = typeof prepareSourceImagePath === "function";
+  const sourceReady = sourceImageBase64 === undefined || sourceBase64.length > 0 || sourcePath.length > 0 || canPrepareSource;
 
   async function handleImport(kind: AutoLabelModelKind) {
     if (!workspaceRoot.trim()) return;
@@ -244,6 +247,21 @@ export function AutoLabelModelPanel({
     [workspaceRoot]
   );
 
+  const resolveSourcePath = useCallback(
+    async (target: BoxLabelEntry) => {
+      if (sourceBase64) return "";
+      if (sourcePath) return sourcePath;
+      const prepared = await prepareSourceImagePath?.(target);
+      const preparedPath = String(prepared || "").trim();
+      if (prepareSourceImagePath) {
+        if (!preparedPath) throw new Error(sourceUnavailableMessage || "Source image is not ready.");
+        return preparedPath;
+      }
+      return target.imagePath;
+    },
+    [prepareSourceImagePath, sourceBase64, sourcePath, sourceUnavailableMessage]
+  );
+
   const runDetectAuto = useCallback(
     async (target: BoxLabelEntry, token: number, isCancelled: () => boolean) => {
       if (!detectModel || !onApplyDetectPredictions) return false;
@@ -251,9 +269,10 @@ export function AutoLabelModelPanel({
       if (!isCancelled() && runTokenRef.current === token) setStatus("Detect: running...");
       try {
         const modelRoot = activeWorkspaceRootRef.current || workspaceRoot;
+        const imagePath = await resolveSourcePath(target);
         const result = sourceBase64
           ? await api.detectImageBase64WithPt(modelRoot, detectModel, sourceBase64, 640, 0.25, "cpu")
-          : await api.detectImageWithPt(modelRoot, detectModel, sourcePath || target.imagePath, 640, 0.25, "cpu");
+          : await api.detectImageWithPt(modelRoot, detectModel, imagePath, 640, 0.25, "cpu");
         const applied = await onApplyDetectPredictions(target, result.predictions, {
           highConfidence: 0.8,
           proposalConfidence: 0.25,
@@ -274,7 +293,7 @@ export function AutoLabelModelPanel({
         setAutoBusy("detect", false);
       }
     },
-    [detectModel, onApplyDetectPredictions, setAutoBusy, sourceBase64, sourcePath, workspaceRoot]
+    [detectModel, onApplyDetectPredictions, resolveSourcePath, setAutoBusy, sourceBase64, workspaceRoot]
   );
 
   const runClassifyAuto = useCallback(
@@ -284,9 +303,10 @@ export function AutoLabelModelPanel({
       if (!isCancelled() && runTokenRef.current === token) setStatus("Clf: running...");
       try {
         const modelRoot = activeWorkspaceRootRef.current || workspaceRoot;
+        const imagePath = await resolveSourcePath(target);
         const result = sourceBase64
           ? await api.classifyImageBase64WithPt(modelRoot, classifyModel, sourceBase64, 0, "cpu", 5)
-          : await api.classifyImageWithPt(modelRoot, classifyModel, sourcePath || target.imagePath, 0, "cpu", 5);
+          : await api.classifyImageWithPt(modelRoot, classifyModel, imagePath, 0, "cpu", 5);
         const top = result.top ?? result.predictions?.[0] ?? null;
         const name = predictionName(top);
         const match = name ? classByName.get(name.toLowerCase()) : null;
@@ -323,7 +343,7 @@ export function AutoLabelModelPanel({
         setAutoBusy("classify", false);
       }
     },
-    [classByName, classifyModel, onAssignClassificationClass, setAutoBusy, sourceBase64, sourcePath, workspaceRoot]
+    [classByName, classifyModel, onAssignClassificationClass, resolveSourcePath, setAutoBusy, sourceBase64, workspaceRoot]
   );
 
   const handleRunDetectNow = useCallback(async () => {

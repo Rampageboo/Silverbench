@@ -68,12 +68,14 @@ export function useVideoAnnotationSession({
   workspaceRoot,
   active,
   onReady,
-  previewMode = "base64"
+  previewMode = "base64",
+  loadMarkerBase64 = true
 }: {
   workspaceRoot: string;
   active: boolean;
   onReady?: () => void;
   previewMode?: "base64" | "url";
+  loadMarkerBase64?: boolean;
 }) {
   const { showToast } = useToast();
   const { manifest: workspaceManifest } = useWorkspaceArchitecture();
@@ -345,6 +347,7 @@ export function useVideoAnnotationSession({
   }, [active, current, debouncedPreviewTime, previewMode, showError, workspaceRoot]);
 
   useEffect(() => {
+    if (!loadMarkerBase64) return;
     if (previewMode !== "url") return;
     if (!active || !current || !currentFrame) {
       autoLabelFrameRequestRef.current += 1;
@@ -359,7 +362,7 @@ export function useVideoAnnotationSession({
       .catch((reason) => {
         if (requestId === autoLabelFrameRequestRef.current) showError(reason, "preview.marker.load");
       });
-  }, [active, current, currentFrame, previewMode, showError]);
+  }, [active, current, currentFrame, loadMarkerBase64, previewMode, showError]);
 
   const enqueueSave = useCallback(
     (next: VideoAnnotationManifest) => {
@@ -457,22 +460,25 @@ export function useVideoAnnotationSession({
 
   useEffect(() => {
     if (previewMode !== "url" || !active || !current || !workspaceRoot.trim() || !timelineMarkers.length) return;
-    const currentMs = Number(currentKey);
-    const sorted = timelineMarkers
-      .map((marker) => ({ ms: Number(marker.key), time: marker.time }))
-      .filter((marker) => Number.isFinite(marker.ms) && Number.isFinite(marker.time))
-      .sort((a, b) => a.ms - b.ms);
-    const nextIndex = sorted.findIndex((marker) => marker.ms >= currentMs);
-    const candidateIndexes = new Set<number>([
-      Math.max(0, nextIndex < 0 ? sorted.length - 1 : nextIndex - 1),
-      Math.max(0, nextIndex < 0 ? sorted.length - 1 : nextIndex),
-      Math.min(sorted.length - 1, nextIndex < 0 ? sorted.length - 1 : nextIndex + 1)
-    ]);
-    for (const index of candidateIndexes) {
-      const marker = sorted[index];
-      if (!marker) continue;
-      void prefetchAnnotationFrame(workspaceRoot, current.path, marker.time).catch(() => {});
-    }
+    const timeout = window.setTimeout(() => {
+      const currentMs = Number(currentKey);
+      const sorted = timelineMarkers
+        .map((marker) => ({ ms: Number(marker.key), time: marker.time }))
+        .filter((marker) => Number.isFinite(marker.ms) && Number.isFinite(marker.time))
+        .sort((a, b) => a.ms - b.ms);
+      const nextIndex = sorted.findIndex((marker) => marker.ms >= currentMs);
+      const candidateIndexes = new Set<number>([
+        Math.max(0, nextIndex < 0 ? sorted.length - 1 : nextIndex - 1),
+        Math.max(0, nextIndex < 0 ? sorted.length - 1 : nextIndex),
+        Math.min(sorted.length - 1, nextIndex < 0 ? sorted.length - 1 : nextIndex + 1)
+      ]);
+      for (const index of candidateIndexes) {
+        const marker = sorted[index];
+        if (!marker) continue;
+        void prefetchAnnotationFrame(workspaceRoot, current.path, marker.time).catch(() => {});
+      }
+    }, 300);
+    return () => window.clearTimeout(timeout);
   }, [active, current, currentKey, previewMode, timelineMarkers, workspaceRoot]);
 
   const addVideos = useCallback(async () => {

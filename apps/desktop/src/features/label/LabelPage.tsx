@@ -534,28 +534,23 @@ function VideoBoxLabelSurface({
   const hasFrameRecord = Boolean(videoSession.currentFrame);
   const autoLabelFrameTime = videoSession.currentFrame?.time ?? null;
   const autoLabelVideoPath = videoSession.current?.path ?? "";
-  const [autoLabelFramePath, setAutoLabelFramePath] = useState("");
-  const autoLabelFrameBase64 = hasFrameRecord ? videoSession.previewBase64 : null;
+  const autoLabelFramePathCacheRef = useRef<Map<string, Promise<string | null>>>(new Map());
   const classPanelSummaries = useMemo(() => analysisClassPanelSummaries(analysisStats), [analysisStats]);
 
-  useEffect(() => {
-    if (!hasFrameRecord || !autoLabelVideoPath || autoLabelFrameTime === null || !workspaceRoot.trim()) {
-      setAutoLabelFramePath("");
-      return;
-    }
-    let cancelled = false;
+  const prepareAutoLabelFramePath = useCallback(async (target: BoxLabelEntry) => {
+    if (!hasFrameRecord || !autoLabelVideoPath || !workspaceRoot.trim()) return null;
+    const targetTime = videoFrameEntryTime(target) ?? autoLabelFrameTime;
+    if (targetTime === null) return null;
     const root = workspaceRoot.trim();
+    const key = `${autoLabelVideoPath}:${Math.round(targetTime * 1000)}`;
+    const cached = autoLabelFramePathCacheRef.current.get(key);
+    if (cached) return cached;
     const outputRoot = `${root.replace(/[\\/]+$/, "")}/.tmp-autolabel-frames`;
-    saveVideoFrame(autoLabelVideoPath, outputRoot, autoLabelFrameTime, "autolabel", "jpg")
-      .then((path) => {
-        if (!cancelled) setAutoLabelFramePath(workspaceRelativePath(root, path));
-      })
-      .catch(() => {
-        if (!cancelled) setAutoLabelFramePath("");
-      });
-    return () => {
-      cancelled = true;
-    };
+    const pending = saveVideoFrame(autoLabelVideoPath, outputRoot, targetTime, "autolabel", "jpg")
+      .then((path) => workspaceRelativePath(root, path))
+      .catch(() => null);
+    autoLabelFramePathCacheRef.current.set(key, pending);
+    return pending;
   }, [autoLabelFrameTime, autoLabelVideoPath, hasFrameRecord, workspaceRoot]);
 
   const loadBoxesAtVideoTime = videoSession.loadBoxesAtTime;
@@ -754,8 +749,9 @@ function VideoBoxLabelSurface({
                 proposalCount={proposals.length}
                 classificationClasses={classificationClasses}
                 currentClassificationKey={currentClassificationKey}
-                sourceImageBase64={autoLabelFrameBase64}
-                sourceImagePath={autoLabelFramePath}
+                sourceImageBase64={null}
+                sourceImagePath={null}
+                prepareSourceImagePath={hasFrameRecord ? prepareAutoLabelFramePath : undefined}
                 sourceUnavailableMessage={hasFrameRecord ? "Preparing marker frame..." : "Add a marker or use Random Next to run video Auto Label."}
                 autoRunAllowed={hasFrameRecord && !videoSession.reviewed}
                 onApplyDetectPredictions={applyAutoLabelPredictions}
@@ -805,7 +801,8 @@ export function LabelPage({ active = true, onReady }: Props) {
     workspaceRoot,
     active: active && selection.kind === "video",
     onReady,
-    previewMode: "url"
+    previewMode: "url",
+    loadMarkerBase64: false
   });
   const {
     manifest: workspaceClassManifest,
