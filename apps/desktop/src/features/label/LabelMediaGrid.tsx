@@ -144,7 +144,7 @@ export function LabelMediaGrid({ pool, videoSession, selection, activeRevealToke
       inline: "nearest",
       behavior: "smooth"
     });
-  }, [activeKey, activeRevealToken]);
+  }, [activeRevealToken]);
 
   return (
     <section className="panel lwb-media-panel" aria-label="Media">
