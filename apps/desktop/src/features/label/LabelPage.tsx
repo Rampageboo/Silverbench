@@ -450,10 +450,6 @@ function AnalysisPanel({
             ))}
           </select>
         </div>
-        <div className="lwb-analysis-heatmap-meta">
-          <span>{heatmapPoints.length} box(es)</span>
-          <span>{HEATMAP_COLS}x{HEATMAP_ROWS} center density</span>
-        </div>
         <div className="lwb-analysis-heatmap-grid">
           {heatmapPoints.length ? heatmapCells.map((cell) => {
             const heat = cell.weight / heatmapMax;

@@ -7025,23 +7025,13 @@ a.glass-card:focus-visible {
   padding: 4px 6px;
 }
 
-.react-box-label-page .lwb-analysis-heatmap-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  color: var(--lwb-text-muted);
-  font-size: 10px;
-  font-weight: 700;
-}
-
 .react-box-label-page .lwb-analysis-heatmap-grid {
   display: grid;
   grid-template-columns: repeat(8, minmax(0, 1fr));
   grid-template-rows: repeat(5, minmax(12px, 1fr));
   gap: 3px;
   min-width: 0;
-  height: clamp(86px, 12vh, 150px);
+  height: clamp(104px, 14vh, 180px);
   padding: 4px;
   border: 1px solid rgba(129, 149, 176, 0.12);
   border-radius: 7px;
@@ -7098,7 +7088,7 @@ a.glass-card:focus-visible {
   }
 
   .react-box-label-page .lwb-analysis-heatmap-grid {
-    height: clamp(84px, 14vh, 140px);
+    height: clamp(100px, 16vh, 168px);
   }
 }
 
