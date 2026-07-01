@@ -12,6 +12,8 @@ import { LabelWorkbenchInspector } from "./LabelWorkbenchInspector";
 import { LabelMediaGrid, type LabelMediaSelection } from "./LabelMediaGrid";
 import { AutoLabelModelPanel } from "./AutoLabelModelPanel";
 import { classBoxColor } from "../shared/classColors";
+import { useWorkspaceClasses } from "../workspace/useWorkspaceClasses";
+import { activeDetectClassDefs } from "../workspace/workspaceClassTaxonomy";
 import type {
   LabelSourceSummary,
   LabelWorkbenchActionGroup,
@@ -773,6 +775,10 @@ export function LabelPage({ active = true, onReady }: Props) {
     onReady,
     previewMode: "url"
   });
+  const {
+    manifest: workspaceClassManifest,
+    load: loadWorkspaceClasses,
+  } = useWorkspaceClasses(workspaceRoot);
   const analysisStats = useMemo(
     () => combineAnalysisStats(imagePool.datasetStats, videoAnalysisStats(videoSession)),
     [imagePool.datasetStats, videoSession.classes, videoSession.clfClassOptions, videoSession.manifest, videoSession.videos.length]
@@ -783,9 +789,19 @@ export function LabelPage({ active = true, onReady }: Props) {
     for (const item of inspectorState?.classPalette?.detectClasses ?? []) {
       if (typeof item.id === "number" && item.name) names.set(String(item.id), item.name);
     }
+    if (workspaceClassManifest) {
+      for (const item of activeDetectClassDefs(workspaceClassManifest)) {
+        names.set(String(item.yoloId), item.name);
+      }
+    }
     return names;
-  }, [inspectorState?.classPalette?.detectClasses, videoSession.classes]);
+  }, [inspectorState?.classPalette?.detectClasses, videoSession.classes, workspaceClassManifest]);
   const classPanelSummaries = useMemo(() => analysisClassPanelSummaries(analysisStats), [analysisStats]);
+
+  useEffect(() => {
+    if (!workspaceRoot.trim()) return;
+    void loadWorkspaceClasses();
+  }, [loadWorkspaceClasses, workspaceRoot]);
 
   const clearWorkbenchActions = useCallback(() => {
     setActionGroups([]);

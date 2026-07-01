@@ -6968,7 +6968,7 @@ a.glass-card:focus-visible {
   align-content: start;
   gap: 5px;
   min-height: 0;
-  max-height: clamp(120px, 18vh, 260px);
+  max-height: clamp(96px, 13vh, 190px);
   overflow: auto;
   padding-right: 4px;
   scrollbar-gutter: stable;
