@@ -44,7 +44,9 @@ import {
   moveVideoFrameRecord,
   clearVideoClfLabel,
   setVideoClfClass,
+  setVideoClfEnabled,
   setVideoClfReviewed,
+  setVideoDetectEnabled,
   sortedVideoFrames,
   updateVideoDetectBoxes,
   videoTimelineMarkers
@@ -135,9 +137,11 @@ export function useVideoAnnotationSession({
     [detectTask?.boxes]
   );
   const reviewed = Boolean(detectTask?.reviewed);
+  const detectExportEnabled = detectTask?.enabled !== false;
 
   // Clf task derived state
   const clfTask: VideoClfTask | undefined = getClfTask(currentFrame) ?? undefined;
+  const clfExportEnabled = clfTask?.enabled !== false;
 
   const showError = useCallback(
     (reason: unknown, action = "unknown") => {
@@ -703,6 +707,24 @@ export function useVideoAnnotationSession({
     enqueueSave(next);
   }, [clfTask?.reviewed, current, enqueueSave, time]);
 
+  const toggleDetectExportEnabled = useCallback(() => {
+    const source = manifestRef.current;
+    if (!source || !current) return;
+    const next = setVideoDetectEnabled(source, current, time, !detectExportEnabled);
+    manifestRef.current = next;
+    setManifest(next);
+    enqueueSave(next);
+  }, [current, detectExportEnabled, enqueueSave, time]);
+
+  const toggleClfExportEnabled = useCallback(() => {
+    const source = manifestRef.current;
+    if (!source || !current) return;
+    const next = setVideoClfEnabled(source, current, time, !clfExportEnabled);
+    manifestRef.current = next;
+    setManifest(next);
+    enqueueSave(next);
+  }, [clfExportEnabled, current, enqueueSave, time]);
+
   const clearClfLabel = useCallback(() => {
     const source = manifestRef.current;
     if (!source || !current) return;
@@ -734,9 +756,11 @@ export function useVideoAnnotationSession({
     // Detect derived state
     boxes,
     reviewed,
+    detectExportEnabled,
     detectTask,
     // Clf derived state
     clfTask,
+    clfExportEnabled,
     // Classes
     classes,
     activeDetectClasses,
@@ -765,10 +789,12 @@ export function useVideoAnnotationSession({
     markCurrentTimestamp,
     clearFrameRecord,
     moveFrameRecord,
+    toggleDetectExportEnabled,
     // Clf actions
     setClfClass,
     markClfReviewed,
     toggleClfReviewed,
+    toggleClfExportEnabled,
     clearClfLabel,
     showError
   };

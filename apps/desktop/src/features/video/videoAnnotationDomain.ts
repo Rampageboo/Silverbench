@@ -228,6 +228,7 @@ export function updateVideoDetectBoxes(
     boxes: cloneDetectBoxes(boxes),
     reviewed
   };
+  if (existing?.tasks.detect?.enabled === false) detect.enabled = false;
   if (reviewed && boxes.length === 0) detect.empty = true;
   // Preserve existing proposals — updating boxes must not destroy proposals
   const existingProposals = existing?.tasks.detect?.proposals;
@@ -288,7 +289,12 @@ export function markVideoDetectEmpty(
     time: timestampMs / 1000,
     tasks: {
       ...(existing?.tasks ?? {}),
-      detect: { boxes: [], reviewed: true, empty: true }
+      detect: {
+        boxes: [],
+        reviewed: true,
+        empty: true,
+        ...(existing?.tasks.detect?.enabled === false ? { enabled: false } : {})
+      }
     },
     updatedAt: now
   };
@@ -332,6 +338,34 @@ export function moveVideoFrameRecord(
     ...existing,
     timestampMs: toTimestampMs,
     time: toTimestampMs / 1000,
+    updatedAt: now
+  };
+  return { ...manifest, video, updatedAt: now, frames };
+}
+
+export function setVideoDetectEnabled(
+  manifest: VideoAnnotationManifest,
+  video: VideoSource,
+  seconds: number,
+  enabled: boolean,
+  now = new Date().toISOString()
+): VideoAnnotationManifest {
+  const timestampMs = Number(timestampKey(seconds));
+  const key = String(timestampMs);
+  const frames = { ...manifest.frames };
+  const existing = frames[key];
+  const currentDetect = existing?.tasks.detect ?? { boxes: [], reviewed: false };
+  const nextDetect = { ...currentDetect };
+  if (enabled) delete nextDetect.enabled;
+  else nextDetect.enabled = false;
+  frames[key] = {
+    ...(existing ?? {}),
+    timestampMs,
+    time: timestampMs / 1000,
+    tasks: {
+      ...(existing?.tasks ?? {}),
+      detect: nextDetect
+    },
     updatedAt: now
   };
   return { ...manifest, video, updatedAt: now, frames };
@@ -423,6 +457,34 @@ export function setVideoClfReviewed(
     tasks: {
       ...(existing?.tasks ?? {}),
       clf: { ...currentClf, reviewed }
+    },
+    updatedAt: now
+  };
+  return { ...manifest, video, updatedAt: now, frames };
+}
+
+export function setVideoClfEnabled(
+  manifest: VideoAnnotationManifest,
+  video: VideoSource,
+  seconds: number,
+  enabled: boolean,
+  now = new Date().toISOString()
+): VideoAnnotationManifest {
+  const timestampMs = Number(timestampKey(seconds));
+  const key = String(timestampMs);
+  const frames = { ...manifest.frames };
+  const existing = frames[key];
+  const currentClf = existing?.tasks.clf ?? { reviewed: false };
+  const nextClf = { ...currentClf };
+  if (enabled) delete nextClf.enabled;
+  else nextClf.enabled = false;
+  frames[key] = {
+    ...(existing ?? {}),
+    timestampMs,
+    time: timestampMs / 1000,
+    tasks: {
+      ...(existing?.tasks ?? {}),
+      clf: nextClf
     },
     updatedAt: now
   };

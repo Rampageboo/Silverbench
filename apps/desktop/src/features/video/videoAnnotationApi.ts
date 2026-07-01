@@ -65,6 +65,8 @@ export type DetectProposal = {
 
 export type VideoDetectTask = {
   reviewed: boolean;
+  /** False means this timestamp is explicitly excluded from detect export/training. Missing means enabled. */
+  enabled?: boolean;
   empty?: boolean;
   boxes: DetectBoxAnnotation[];
   /** Medium-confidence model suggestions. Never exported until materialized into boxes[]. */
@@ -73,6 +75,8 @@ export type VideoDetectTask = {
 
 export type VideoClfTask = {
   reviewed: boolean;
+  /** False means this timestamp is explicitly excluded from clf export/training. Missing means enabled. */
+  enabled?: boolean;
   classKey?: string;
 };
 
@@ -157,6 +161,7 @@ function normalizeDetectTask(value: unknown): VideoDetectTask | undefined {
   const reviewed = Boolean(src.reviewed ?? boxes.length > 0);
   const empty = Boolean(src.empty);
   const task: VideoDetectTask = { reviewed, boxes };
+  if (src.enabled === false) task.enabled = false;
   if (empty) task.empty = true;
   if (proposals && proposals.length > 0) task.proposals = proposals;
   return task;
@@ -166,7 +171,9 @@ function normalizeClfTask(value: unknown): VideoClfTask | undefined {
   if (!value || typeof value !== "object") return undefined;
   const src = value as Record<string, unknown>;
   const classKey = typeof src.classKey === "string" ? src.classKey.trim() : undefined;
-  return { reviewed: Boolean(src.reviewed), classKey: classKey || undefined };
+  const task: VideoClfTask = { reviewed: Boolean(src.reviewed), classKey: classKey || undefined };
+  if (src.enabled === false) task.enabled = false;
+  return task;
 }
 
 // ---------------------------------------------------------------------------

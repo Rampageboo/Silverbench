@@ -166,7 +166,7 @@ export function planVideoExport(
     const basename = frameBasename(stemId, timestampMs);
     const blackouts = resolveBlackouts ? resolveBlackouts(timestampMs) : [];
 
-    if (includeDetect && tasks.detect) {
+    if (includeDetect && tasks.detect && tasks.detect.enabled !== false) {
       const detect = tasks.detect;
       const isExportReady =
         detectPolicy === "reviewed"
@@ -199,7 +199,7 @@ export function planVideoExport(
       }
     }
 
-    if (includeClf && tasks.clf?.classKey) {
+    if (includeClf && tasks.clf?.enabled !== false && tasks.clf?.classKey) {
       const clfReady = clfPolicy === "reviewed" ? !!tasks.clf.reviewed : true;
       if (clfReady) {
         const classKey = tasks.clf.classKey;

@@ -17,7 +17,9 @@ import {
   markVideoTimestamp,
   moveVideoFrameRecord,
   setVideoClfReviewed,
+  setVideoClfEnabled,
   setVideoClfClass,
+  setVideoDetectEnabled,
   sortedVideoFrames,
   updateVideoDetectBoxes,
   updateVideoFrameAnnotation,
@@ -163,6 +165,20 @@ describe("clf task helpers", () => {
     const frame = frameAnnotationAt(manifest, 1.0);
     expect(getClfTask(frame)).toBeUndefined();
     expect(getDetectTask(frame)?.boxes).toHaveLength(1);
+  });
+
+  it("video task export enabled defaults on and can be disabled explicitly", () => {
+    let manifest = createVideoAnnotationManifest(video);
+    manifest = markVideoTimestamp(manifest, video, 1.0);
+    let frame = frameAnnotationAt(manifest, 1.0);
+    expect(getDetectTask(frame)?.enabled).toBeUndefined();
+    expect(getClfTask(frame)).toBeUndefined();
+
+    manifest = setVideoDetectEnabled(manifest, video, 1.0, false);
+    manifest = setVideoClfEnabled(manifest, video, 1.0, false);
+    frame = frameAnnotationAt(manifest, 1.0);
+    expect(getDetectTask(frame)?.enabled).toBe(false);
+    expect(getClfTask(frame)?.enabled).toBe(false);
   });
 
   it("clearVideoClfLabel removes only clf task — preserves detect", () => {

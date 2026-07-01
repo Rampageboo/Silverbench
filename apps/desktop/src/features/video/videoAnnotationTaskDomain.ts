@@ -40,6 +40,8 @@ export type VideoTimestampDetectBox = {
 
 export type VideoTimestampDetectTask = {
   reviewed: boolean;
+  /** False means this timestamp is explicitly excluded from detect export/training. Missing means enabled. */
+  enabled?: boolean;
   /** True when annotator explicitly confirmed no objects are present. */
   empty?: boolean;
   boxes: VideoTimestampDetectBox[];
@@ -47,6 +49,8 @@ export type VideoTimestampDetectTask = {
 
 export type VideoTimestampClfTask = {
   reviewed: boolean;
+  /** False means this timestamp is explicitly excluded from clf export/training. Missing means enabled. */
+  enabled?: boolean;
   /** Class key for the image-level classification label. */
   classKey?: string;
 };

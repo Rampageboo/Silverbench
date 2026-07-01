@@ -91,6 +91,18 @@ describe("planDetectExports", () => {
     expect(results).toHaveLength(0);
   });
 
+  it("excludes detect frames disabled for export", () => {
+    const frames: Record<string, VideoTimestampAnnotation> = {
+      "4500": {
+        timestampMs: 4500,
+        tasks: { detect: { reviewed: true, enabled: false, boxes: [{ classKey: "car", x: 0.5, y: 0.5, w: 0.1, h: 0.1 }] } },
+        updatedAt: ""
+      }
+    };
+    const results = planDetectExports("vid1", frames, classDefs, detectClassKeys, "exports/detect");
+    expect(results).toHaveLength(0);
+  });
+
   it("does not require clf data", () => {
     const frames: Record<string, VideoTimestampAnnotation> = {
       "5000": makeDetectFrame(5000, [{ classKey: "person", x: 0.5, y: 0.5, w: 0.1, h: 0.1 }])
@@ -132,6 +144,14 @@ describe("planClfExports", () => {
   it("excludes unreviewed clf frames", () => {
     const frames: Record<string, VideoTimestampAnnotation> = {
       "4000": makeClfFrame(4000, "car", false)
+    };
+    const results = planClfExports("vid1", frames, classDefs, "exports/clf");
+    expect(results).toHaveLength(0);
+  });
+
+  it("excludes clf frames disabled for export", () => {
+    const frames: Record<string, VideoTimestampAnnotation> = {
+      "4500": { timestampMs: 4500, tasks: { clf: { reviewed: true, enabled: false, classKey: "car" } }, updatedAt: "" }
     };
     const results = planClfExports("vid1", frames, classDefs, "exports/clf");
     expect(results).toHaveLength(0);

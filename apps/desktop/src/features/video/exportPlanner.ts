@@ -95,7 +95,7 @@ export function planDetectExports(
   const samples: ExportSampleDetect[] = [];
   for (const frame of Object.values(frames)) {
     const detect = frame.tasks?.detect;
-    if (!detect?.reviewed) continue;
+    if (!detect?.reviewed || detect.enabled === false) continue;
     const stem = sampleStem(videoSourceId, frame.timestampMs);
     const outputImagePath = `${outputBase}/images/train/${stem}.jpg`;
     const outputLabelPath = `${outputBase}/labels/train/${stem}.txt`;
@@ -139,7 +139,7 @@ export function planClfExports(
   const samples: ExportSampleClf[] = [];
   for (const frame of Object.values(frames)) {
     const clf = frame.tasks?.clf;
-    if (!clf?.reviewed || !clf.classKey) continue;
+    if (!clf?.reviewed || clf.enabled === false || !clf.classKey) continue;
     const folderName = classKeyToClfFolder(clf.classKey, classDefs);
     const stem = sampleStem(videoSourceId, frame.timestampMs);
     const outputFolder = `${outputBase}/train/${folderName}`;

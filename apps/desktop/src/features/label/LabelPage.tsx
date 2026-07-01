@@ -656,13 +656,13 @@ function VideoBoxLabelSurface({
             if (videoSession.current) videoSession.updateCurrentFrame(videoSession.boxes, !videoSession.reviewed);
           }}
           onToggleFlagged={async () => {}}
-          detectTaskEnabled={videoSession.reviewed}
-          clfTaskEnabled={Boolean(videoSession.clfTask?.reviewed)}
+          detectTaskEnabled={videoSession.detectExportEnabled}
+          clfTaskEnabled={videoSession.clfExportEnabled}
           onToggleDetectTaskEnabled={async () => {
-            if (videoSession.current) videoSession.updateCurrentFrame(videoSession.boxes, !videoSession.reviewed);
+            videoSession.toggleDetectExportEnabled();
           }}
           onToggleClfTaskEnabled={async () => {
-            videoSession.toggleClfReviewed();
+            videoSession.toggleClfExportEnabled();
           }}
           onLabelsChanged={() => {}}
           onStatusText={() => {}}
