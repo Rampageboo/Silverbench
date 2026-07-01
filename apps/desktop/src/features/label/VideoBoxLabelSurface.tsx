@@ -17,6 +17,8 @@ const SAMPLING_MODE_LABELS: Record<SamplingMode, string> = {
 
 const SAMPLING_MODES: SamplingMode[] = ["whole-video", "segments-preferred", "segments-only"];
 const RANDOM_MULTIPLIERS = [1, 5, 10] as const;
+const FALLBACK_PLAYBACK_INTERVAL_MS = 180;
+const FALLBACK_PLAYBACK_STEP_SECONDS = FALLBACK_PLAYBACK_INTERVAL_MS / 1000;
 type RandomMultiplier = (typeof RANDOM_MULTIPLIERS)[number];
 export type VideoFrameKeyboardCommand = "seek-backward" | "seek-forward" | "toggle-playback";
 
@@ -233,6 +235,7 @@ export function VideoBoxLabelSurface({
   const [annotationTargetTime, setAnnotationTargetTime] = useState<number | null>(null);
   const [nativeUnsupportedVideoPaths, setNativeUnsupportedVideoPaths] = useState<Set<string>>(() => new Set());
   const entryTime = annotationTargetTime ?? videoSession.time;
+  const fallbackPreviewTime = videoSession.time;
   const nativeVideoUrl = useMemo(
     () => videoSession.current && workspaceRoot.trim()
       ? videoSourceUrl(workspaceRoot.trim(), videoSession.current.path)
@@ -246,9 +249,9 @@ export function VideoBoxLabelSurface({
   );
   const fallbackFrameUrl = useMemo(
     () => !nativeVideoSupported && videoSession.current && workspaceRoot.trim()
-      ? getAnnotationFrameUrl(workspaceRoot.trim(), videoSession.current.path, entryTime, { fast: true })
+      ? getAnnotationFrameUrl(workspaceRoot.trim(), videoSession.current.path, fallbackPreviewTime, { fast: true })
       : null,
-    [entryTime, nativeVideoSupported, videoSession.current, workspaceRoot]
+    [fallbackPreviewTime, nativeVideoSupported, videoSession.current, workspaceRoot]
   );
   const hasPreviewImage = Boolean(nativeVideoSupported || fallbackFrameUrl || videoSession.previewUrl || videoSession.previewBase64);
   const entry = useMemo(
@@ -286,6 +289,10 @@ export function VideoBoxLabelSurface({
   const autoLabelVideoPath = videoSession.current?.path ?? "";
   const autoLabelFramePathCacheRef = useRef<Map<string, Promise<string | null>>>(new Map());
   const classPanelSummaries = useMemo(() => analysisClassPanelSummaries(analysisStats), [analysisStats]);
+  const handleGotoTime = useCallback((nextTime: number) => {
+    sampling.setLastSource("manual");
+    videoSession.gotoTime(nextTime);
+  }, [sampling, videoSession]);
 
   useEffect(() => {
     setAnnotationTargetTime(initialVideoAnnotationTargetTime(currentFrameTime, 0));
@@ -355,10 +362,6 @@ export function VideoBoxLabelSurface({
     setAnnotationTargetTime(videoSession.time);
     videoSession.markCurrentTimestamp({ kind: "manual" });
   }, [sampling, videoSession]);
-  const handleGotoTime = useCallback((nextTime: number) => {
-    sampling.setLastSource("manual");
-    videoSession.gotoTime(nextTime);
-  }, [sampling, videoSession]);
   const handleVideoPlaybackTimeChange = useCallback((nextTime: number) => {
     videoSession.gotoTime(nextTime);
   }, [videoSession]);
@@ -377,6 +380,21 @@ export function VideoBoxLabelSurface({
     if (!videoSession.current) setPlaying(false);
   }, [videoSession.current]);
   useEffect(() => {
+    if (!playing || nativeVideoSupported || !videoSession.current || videoSession.maxTime <= 0) return;
+    const interval = window.setInterval(() => {
+      const nextTime = nextVideoKeyboardTime(
+        videoSession.time,
+        videoSession.maxTime,
+        "seek-forward",
+        FALLBACK_PLAYBACK_STEP_SECONDS,
+        false
+      );
+      handleGotoTime(nextTime);
+      if (nextTime >= videoSession.maxTime) setPlaying(false);
+    }, FALLBACK_PLAYBACK_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [handleGotoTime, nativeVideoSupported, playing, videoSession.current, videoSession.maxTime, videoSession.time]);
+  useEffect(() => {
     if (!videoSession.current) return;
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -393,7 +411,6 @@ export function VideoBoxLabelSurface({
       if (!command) return;
       event.preventDefault();
       if (command === "toggle-playback") {
-        if (!nativeVideoSupported) return;
         setPlaying((value) => !value);
         return;
       }
@@ -496,7 +513,7 @@ export function VideoBoxLabelSurface({
                   <button
                     type="button"
                     className="video-frame-playback-btn"
-                    disabled={!videoSession.current || !nativeVideoSupported}
+                    disabled={!videoSession.current}
                     aria-pressed={playing}
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
