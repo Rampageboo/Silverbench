@@ -1490,16 +1490,14 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   overflow: hidden;
 }
 
-.react-box-label-page .pool-label-class-panel-header,
-.lwb-inspector-classify-slot .pool-label-class-panel-header {
+.pool-label-classes-panel .pool-label-class-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
-.react-box-label-page .pool-label-class-header-actions,
-.lwb-inspector-classify-slot .pool-label-class-header-actions {
+.pool-label-classes-panel .pool-label-class-header-actions {
   margin-left: auto;
   display: inline-flex;
   align-items: center;
@@ -1507,8 +1505,7 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   min-width: 0;
 }
 
-.react-box-label-page .pool-label-class-icon-btn,
-.lwb-inspector-classify-slot .pool-label-class-icon-btn {
+.pool-label-classes-panel .pool-label-class-icon-btn {
   width: 24px;
   height: 24px;
   min-width: 24px;
@@ -1523,22 +1520,19 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   box-shadow: none;
 }
 
-.react-box-label-page .pool-label-class-icon-btn:hover:not(:disabled),
-.lwb-inspector-classify-slot .pool-label-class-icon-btn:hover:not(:disabled) {
+.pool-label-classes-panel .pool-label-class-icon-btn:hover:not(:disabled) {
   border-color: #475569;
   color: #e2e8f0;
   background: #111827;
 }
 
-.react-box-label-page .pool-label-class-icon-btn.active,
-.lwb-inspector-classify-slot .pool-label-class-icon-btn.active {
+.pool-label-classes-panel .pool-label-class-icon-btn.active {
   border-color: #2f81f7;
   color: #bfdbfe;
   background: #12305c;
 }
 
-.react-box-label-page .pool-label-class-inline-tool,
-.lwb-inspector-classify-slot .pool-label-class-inline-tool {
+.pool-label-classes-panel .pool-label-class-inline-tool {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -1547,14 +1541,12 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   min-width: 0;
 }
 
-.react-box-label-page .pool-label-class-inline-tool input,
-.lwb-inspector-classify-slot .pool-label-class-inline-tool input {
+.pool-label-classes-panel .pool-label-class-inline-tool input {
   flex: 1 1 auto;
   min-width: 0;
 }
 
-.react-box-label-page .pool-label-class-inline-submit,
-.lwb-inspector-classify-slot .pool-label-class-inline-submit {
+.pool-label-classes-panel .pool-label-class-inline-submit {
   width: 34px;
   height: 34px;
   min-width: 34px;
@@ -1568,14 +1560,13 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   color: #eff6ff;
 }
 
-.react-box-label-page .pool-label-class-inline-submit:hover:not(:disabled),
-.lwb-inspector-classify-slot .pool-label-class-inline-submit:hover:not(:disabled) {
+.pool-label-classes-panel .pool-label-class-inline-submit:hover:not(:disabled) {
   border-color: #60a5fa;
   background: #1d4ed8;
   color: #ffffff;
 }
 
-.react-box-label-page .pool-label-class-list {
+.pool-label-classes-panel .pool-label-class-list {
   flex: 1;
   display: flex;
   flex-wrap: wrap;
@@ -1586,13 +1577,13 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   overflow: auto;
 }
 
-.react-box-label-page .pool-label-class-row {
+.pool-label-classes-panel .pool-label-class-row {
   position: relative;
   flex: 0 0 auto;
   max-width: 100%;
 }
 
-.react-box-label-page .pool-label-class-row:not(.pool-label-class-row--static) {
+.pool-label-classes-panel .pool-label-class-row:not(.pool-label-class-row--static) {
   display: inline-flex;
   align-items: center;
   min-height: 24px;
@@ -1610,7 +1601,7 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   text-align: left;
 }
 
-.react-box-label-page .pool-label-class-row--static {
+.pool-label-classes-panel .pool-label-class-row--static {
   display: inline-flex;
   align-items: center;
   min-height: 24px;
@@ -1628,32 +1619,29 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   text-align: left;
 }
 
-.react-box-label-page .pool-label-class-row--static:hover:not(:disabled),
-.lwb-inspector-classify-slot .pool-label-class-row--static:hover:not(:disabled) {
+.pool-label-classes-panel .pool-label-class-row--static:hover:not(:disabled) {
   border-color: #3b82f6;
   background: rgba(37, 99, 235, 0.16);
   color: #dbeafe;
 }
 
-.react-box-label-page .pool-label-class-row--static.selected,
-.lwb-inspector-classify-slot .pool-label-class-row--static.selected {
+.pool-label-classes-panel .pool-label-class-row--static.selected {
   border-color: #60a5fa;
   color: #eff6ff;
   background: rgba(37, 99, 235, 0.28);
   box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.45);
 }
 
-.react-box-label-page .pool-label-class-row--static:disabled,
-.lwb-inspector-classify-slot .pool-label-class-row--static:disabled {
+.pool-label-classes-panel .pool-label-class-row--static:disabled {
   cursor: default;
 }
 
-.react-box-label-page .pool-label-clf-class-status {
+.pool-label-classes-panel .pool-label-clf-class-status {
   flex: 0 0 auto;
   font-size: 11px;
 }
 
-.react-box-label-page .pool-label-class-row-count {
+.pool-label-classes-panel .pool-label-class-row-count {
   position: absolute;
   top: 3px;
   right: 3px;
@@ -1667,12 +1655,12 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   pointer-events: none;
 }
 
-.react-box-label-page .pool-label-class-row.selected .pool-label-class-row-count {
+.pool-label-classes-panel .pool-label-class-row.selected .pool-label-class-row-count {
   color: #15803d;
   background: rgba(34, 197, 94, 0.22);
 }
 
-[data-theme="dark"] .react-box-label-page .pool-label-class-row-count {
+[data-theme="dark"] .pool-label-classes-panel .pool-label-class-row-count {
   color: #4ade80;
   background: rgba(34, 197, 94, 0.2);
 }
@@ -4793,23 +4781,6 @@ a.glass-card:focus-visible {
   overflow: auto;
 }
 
-.lwb-inspector-classify-slot .pool-label-class-row--static {
-  display: block;
-  min-height: 24px;
-  padding: 4px 8px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  border: 1px solid var(--glass-border);
-  border-radius: var(--glass-radius-sm);
-  color: var(--glass-text);
-  background: rgba(15, 23, 42, 0.42);
-  font-size: 12px;
-  font-weight: 650;
-  cursor: pointer;
-  text-align: left;
-}
-
 .lwb-inspector-classify-slot .pool-label-clf-class-status {
   flex: 0 0 auto;
   font-size: 11px;
@@ -5755,8 +5726,7 @@ a.glass-card:focus-visible {
 .label-page--workbench .lwb-media-filter-row button,
 .label-page--workbench .lwb-inspector-action,
 .video-frame-box-label-page .video-frame-controls-actions button,
-.react-box-label-page .pool-label-class-icon-btn,
-.lwb-inspector-classify-slot .pool-label-class-icon-btn,
+.pool-label-classes-panel .pool-label-class-icon-btn,
 .react-box-label-page .pool-label-icon-tool {
   border-color: var(--lwb-border);
   background:
@@ -5770,8 +5740,7 @@ a.glass-card:focus-visible {
 .label-page--workbench .lwb-media-filter-row button:hover:not(:disabled),
 .label-page--workbench .lwb-inspector-action:hover:not(:disabled),
 .video-frame-box-label-page .video-frame-controls-actions button:hover:not(:disabled),
-.react-box-label-page .pool-label-class-icon-btn:hover:not(:disabled),
-.lwb-inspector-classify-slot .pool-label-class-icon-btn:hover:not(:disabled),
+.pool-label-classes-panel .pool-label-class-icon-btn:hover:not(:disabled),
 .react-box-label-page .pool-label-icon-tool:hover:not(:disabled) {
   border-color: rgba(147, 197, 253, 0.36);
   background:
@@ -5912,8 +5881,7 @@ a.glass-card:focus-visible {
 
 .react-box-label-page .pool-label-box-row,
 .lwb-inspector .pool-label-box-row,
-.react-box-label-page .pool-label-class-row--static,
-.lwb-inspector-classify-slot .pool-label-class-row--static,
+.pool-label-classes-panel .pool-label-class-row--static,
 .lwb-inspector-detect-class-list button {
   border-color: rgba(124, 147, 176, 0.18);
   background: rgba(10, 17, 29, 0.64);
@@ -5923,8 +5891,7 @@ a.glass-card:focus-visible {
 
 .react-box-label-page .pool-label-box-row:hover,
 .lwb-inspector .pool-label-box-row:hover,
-.react-box-label-page .pool-label-class-row--static:hover:not(:disabled),
-.lwb-inspector-classify-slot .pool-label-class-row--static:hover:not(:disabled),
+.pool-label-classes-panel .pool-label-class-row--static:hover:not(:disabled),
 .lwb-inspector-detect-class-list button:hover:not(:disabled) {
   border-color: rgba(147, 197, 253, 0.38);
   background: rgba(30, 64, 115, 0.24);
@@ -5933,15 +5900,14 @@ a.glass-card:focus-visible {
 
 .react-box-label-page .pool-label-box-row.selected,
 .lwb-inspector .pool-label-box-row.selected,
-.react-box-label-page .pool-label-class-row--static.selected,
-.lwb-inspector-classify-slot .pool-label-class-row--static.selected,
+.pool-label-classes-panel .pool-label-class-row--static.selected,
 .lwb-inspector-detect-class-list button.selected {
   border-color: rgba(96, 165, 250, 0.76);
   background: linear-gradient(180deg, rgba(37, 99, 235, 0.34), rgba(30, 64, 175, 0.22));
   box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.28), 0 0 18px rgba(37, 99, 235, 0.18);
 }
 
-.react-box-label-page .pool-label-class-row-count {
+.pool-label-classes-panel .pool-label-class-row-count {
   color: #86efac;
   background: rgba(16, 185, 129, 0.18);
   border: 1px solid rgba(52, 211, 153, 0.24);
@@ -6770,8 +6736,7 @@ a.glass-card:focus-visible {
 .label-page--workbench .lwb-media-filter-row button,
 .label-page--workbench .lwb-inspector-action,
 .video-frame-box-label-page .video-frame-controls-actions button,
-.react-box-label-page .pool-label-class-icon-btn,
-.lwb-inspector-classify-slot .pool-label-class-icon-btn,
+.pool-label-classes-panel .pool-label-class-icon-btn,
 .react-box-label-page .pool-label-icon-tool {
   border-color: var(--lwb-panel-border);
   background: linear-gradient(180deg, rgba(18, 29, 48, 0.92), rgba(8, 14, 24, 0.92));
@@ -6783,8 +6748,7 @@ a.glass-card:focus-visible {
 .label-page--workbench .lwb-media-filter-row button:hover:not(:disabled),
 .label-page--workbench .lwb-inspector-action:hover:not(:disabled),
 .video-frame-box-label-page .video-frame-controls-actions button:hover:not(:disabled),
-.react-box-label-page .pool-label-class-icon-btn:hover:not(:disabled),
-.lwb-inspector-classify-slot .pool-label-class-icon-btn:hover:not(:disabled),
+.pool-label-classes-panel .pool-label-class-icon-btn:hover:not(:disabled),
 .react-box-label-page .pool-label-icon-tool:hover:not(:disabled) {
   border-color: rgba(147, 197, 253, 0.40);
   background: var(--lwb-control-bg-hover);
@@ -6859,8 +6823,7 @@ a.glass-card:focus-visible {
 }
 
 .react-box-label-page .pool-label-task-toggle,
-.react-box-label-page .pool-label-task-light-btn,
-.lwb-inspector-classify-slot .pool-label-task-light-btn {
+.pool-label-classes-panel .pool-label-task-light-btn {
   min-height: 24px;
   padding: 3px 9px 3px 7px;
   border-radius: 999px;
@@ -6871,24 +6834,21 @@ a.glass-card:focus-visible {
 }
 
 .react-box-label-page .pool-label-task-toggle.is-on,
-.react-box-label-page .pool-label-task-light-btn.is-on,
-.lwb-inspector-classify-slot .pool-label-task-light-btn.is-on {
+.pool-label-classes-panel .pool-label-task-light-btn.is-on {
   border-color: rgba(34, 197, 94, 0.58);
   background: linear-gradient(180deg, rgba(22, 101, 52, 0.36), rgba(5, 46, 22, 0.26));
   color: #bbf7d0;
 }
 
 .react-box-label-page .pool-label-task-toggle.is-off,
-.react-box-label-page .pool-label-task-light-btn.is-off,
-.lwb-inspector-classify-slot .pool-label-task-light-btn.is-off {
+.pool-label-classes-panel .pool-label-task-light-btn.is-off {
   border-color: rgba(248, 113, 113, 0.62);
   background: linear-gradient(180deg, rgba(127, 29, 29, 0.38), rgba(69, 10, 10, 0.30));
   color: #fecaca;
 }
 
 .react-box-label-page .pool-label-task-light,
-.react-box-label-page .pool-label-task-light-btn > .pool-label-task-light,
-.lwb-inspector-classify-slot .pool-label-task-light-btn > .pool-label-task-light {
+.pool-label-classes-panel .pool-label-task-light-btn > .pool-label-task-light {
   display: inline-block;
   flex: 0 0 10px;
   width: 10px;
@@ -6899,19 +6859,16 @@ a.glass-card:focus-visible {
 }
 
 .react-box-label-page .pool-label-task-toggle.is-on .pool-label-task-light,
-.react-box-label-page .pool-label-task-light-btn.is-on > .pool-label-task-light,
-.lwb-inspector-classify-slot .pool-label-task-light-btn.is-on > .pool-label-task-light {
+.pool-label-classes-panel .pool-label-task-light-btn.is-on > .pool-label-task-light {
   color: #22c55e;
 }
 
 .react-box-label-page .pool-label-task-toggle.is-off .pool-label-task-light,
-.react-box-label-page .pool-label-task-light-btn.is-off > .pool-label-task-light,
-.lwb-inspector-classify-slot .pool-label-task-light-btn.is-off > .pool-label-task-light {
+.pool-label-classes-panel .pool-label-task-light-btn.is-off > .pool-label-task-light {
   color: #ef4444;
 }
 
-.react-box-label-page .pool-label-task-light-btn,
-.lwb-inspector-classify-slot .pool-label-task-light-btn {
+.pool-label-classes-panel .pool-label-task-light-btn {
   appearance: none;
   display: inline-flex;
   align-items: center;
@@ -6930,8 +6887,7 @@ button.pool-label-task-light-btn:hover:not(:disabled) {
   background: rgba(22, 34, 54, 0.78);
 }
 
-.react-box-label-page .pool-label-task-light-btn:disabled,
-.lwb-inspector-classify-slot .pool-label-task-light-btn:disabled {
+.pool-label-classes-panel .pool-label-task-light-btn:disabled {
   opacity: 0.55;
   cursor: default;
 }
