@@ -6897,6 +6897,7 @@ a.glass-card:focus-visible {
 
 .react-box-label-page .lwb-analysis-chart {
   grid-template-rows: auto minmax(0, 1fr);
+  height: clamp(142px, 17vh, 218px);
   min-height: 0;
   overflow: hidden;
 }
@@ -6968,7 +6969,7 @@ a.glass-card:focus-visible {
   align-content: start;
   gap: 5px;
   min-height: 0;
-  max-height: clamp(96px, 13vh, 190px);
+  height: 100%;
   overflow: auto;
   padding-right: 4px;
   scrollbar-gutter: stable;
@@ -7089,6 +7090,10 @@ a.glass-card:focus-visible {
 
   .react-box-label-page .lwb-analysis-heatmap-grid {
     height: clamp(100px, 16vh, 168px);
+  }
+
+  .react-box-label-page .lwb-analysis-chart {
+    height: clamp(136px, 19vh, 204px);
   }
 }
 
