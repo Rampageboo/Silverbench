@@ -85,6 +85,7 @@ export function useBoxLabelEditor({
   const proposalsRef = useRef<ProposalShape[]>([]);
   const selectedProposalIdRef = useRef<string | null>(null);
   const ephemeralProposalIdsRef = useRef<Set<string>>(new Set());
+  const contentRevisionRef = useRef(0);
 
   const [boxes, setBoxes] = useState<api.LabelBox[]>([]);
   const [proposals, setProposals] = useState<DetectProposal[]>([]);
@@ -114,6 +115,7 @@ export function useBoxLabelEditor({
 
   const persistEntryLabels = useCallback(
     async (target: BoxLabelEntry, nextBoxes: api.LabelBox[]) => {
+      if (target.basename === entryRef.current?.basename) contentRevisionRef.current += 1;
       const savedBoxes = saveLabelsOverride
         ? await saveLabelsOverride(target, nextBoxes)
         : await saveEntryLabels(datasetRoot, target, nextBoxes);
@@ -132,6 +134,7 @@ export function useBoxLabelEditor({
     async (proposalsList: ProposalShape[]) => {
       if (disableProposals) return;
       if (!workspaceRoot || !entry) return;
+      contentRevisionRef.current += 1;
       const imageKey = imageProposalKey(entry.imagePath);
       const manifest: ImageProposalManifest = {
         version: 1,
@@ -148,6 +151,7 @@ export function useBoxLabelEditor({
     async (target: BoxLabelEntry, proposalsList: ProposalShape[]) => {
       if (disableProposals) return;
       if (!workspaceRoot) return;
+      if (target.basename === entryRef.current?.basename) contentRevisionRef.current += 1;
       const imageKey = imageProposalKey(target.imagePath);
       const manifest: ImageProposalManifest = {
         version: 1,
@@ -700,6 +704,7 @@ export function useBoxLabelEditor({
         setBoxes([]);
         return;
       }
+      const loadStartedAtRevision = contentRevisionRef.current;
       setError("");
       setStatus("Loading labels...");
       setSelectedBoxId(null);
@@ -718,6 +723,10 @@ export function useBoxLabelEditor({
         const image = await loadCanvasImage(imageUrl);
         if (cancelled) return;
         interaction.imageRef.current = image;
+        if (loadStartedAtRevision !== contentRevisionRef.current) {
+          scheduleDraw();
+          return;
+        }
         boxesRef.current = labelBoxes;
         setBoxes(labelBoxes);
         const loadedProposals = proposalManifest?.proposals ?? [];
