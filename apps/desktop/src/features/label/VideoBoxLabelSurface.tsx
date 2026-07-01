@@ -16,7 +16,47 @@ const SAMPLING_MODE_LABELS: Record<SamplingMode, string> = {
 
 const SAMPLING_MODES: SamplingMode[] = ["whole-video", "segments-preferred", "segments-only"];
 const RANDOM_MULTIPLIERS = [1, 5, 10] as const;
+const VIDEO_PLAYBACK_INTERVAL_MS = 100;
+const VIDEO_PLAYBACK_STEP_SECONDS = VIDEO_PLAYBACK_INTERVAL_MS / 1000;
 type RandomMultiplier = (typeof RANDOM_MULTIPLIERS)[number];
+export type VideoFrameKeyboardCommand = "seek-backward" | "seek-forward" | "toggle-playback";
+
+export function videoFrameKeyboardCommand({
+  key,
+  code = "",
+  ctrlKey = false,
+  altKey = false,
+  metaKey = false,
+  targetTagName = "",
+  targetEditable = false,
+  selectedBoxId = null,
+}: {
+  key: string;
+  code?: string;
+  ctrlKey?: boolean;
+  altKey?: boolean;
+  metaKey?: boolean;
+  targetTagName?: string;
+  targetEditable?: boolean;
+  selectedBoxId?: number | null;
+}): VideoFrameKeyboardCommand | null {
+  const tag = targetTagName.toLowerCase();
+  if (tag === "input" || tag === "select" || tag === "textarea" || targetEditable) return null;
+  if (ctrlKey || altKey || metaKey) return null;
+  if (selectedBoxId !== null) return null;
+  if (key === "ArrowLeft") return "seek-backward";
+  if (key === "ArrowRight") return "seek-forward";
+  if (key === " " || key === "Spacebar" || code === "Space") return "toggle-playback";
+  return null;
+}
+
+export function nextVideoKeyboardTime(currentTime: number, maxTime: number, command: VideoFrameKeyboardCommand, stepSeconds: number, fast: boolean) {
+  if (command !== "seek-backward" && command !== "seek-forward") return currentTime;
+  const direction = command === "seek-forward" ? 1 : -1;
+  const step = Math.max(0.001, Number.isFinite(stepSeconds) ? stepSeconds : 0.1);
+  const amount = fast ? Math.max(1, step * 10) : step;
+  return Math.max(0, Math.min(maxTime, Math.round((currentTime + direction * amount) * 1000) / 1000));
+}
 
 function workspaceRelativePath(workspaceRoot: string, absolutePath: string) {
   const root = workspaceRoot.replace(/\\/g, "/").replace(/\/+$/, "");
@@ -190,6 +230,11 @@ export function VideoBoxLabelSurface({
   const entries = useMemo(() => entry ? [entry] : [], [entry]);
   const selected = useMemo(() => entry ? new Set([entry.basename]) : new Set<string>(), [entry]);
   const [randomMultiplier, setRandomMultiplier] = useState<RandomMultiplier>(1);
+  const [playing, setPlaying] = useState(false);
+  const selectedBoxIdRef = useRef<number | null>(null);
+  const playbackTimeRef = useRef(videoSession.time);
+  const maxTimeRef = useRef(videoSession.maxTime);
+  const handleGotoTimeRef = useRef<(nextTime: number) => void>(() => {});
   const metadata = useMemo(() => new Map(), []);
   const classImageCounts = useMemo(() => {
     const counts = new Map<number, number>();
@@ -277,6 +322,54 @@ export function VideoBoxLabelSurface({
     sampling.setLastSource("manual");
     videoSession.gotoTime(nextTime);
   }, [sampling, videoSession]);
+  handleGotoTimeRef.current = handleGotoTime;
+  playbackTimeRef.current = videoSession.time;
+  maxTimeRef.current = videoSession.maxTime;
+  useEffect(() => {
+    if (!videoSession.current) setPlaying(false);
+  }, [videoSession.current]);
+  useEffect(() => {
+    if (!playing || !videoSession.current || videoSession.maxTime <= 0) return;
+    const interval = window.setInterval(() => {
+      const nextTime = nextVideoKeyboardTime(
+        playbackTimeRef.current,
+        maxTimeRef.current,
+        "seek-forward",
+        VIDEO_PLAYBACK_STEP_SECONDS,
+        false
+      );
+      handleGotoTimeRef.current(nextTime);
+      if (nextTime >= maxTimeRef.current) setPlaying(false);
+    }, VIDEO_PLAYBACK_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [playing, videoSession.current, videoSession.maxTime]);
+  useEffect(() => {
+    if (!videoSession.current) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const command = videoFrameKeyboardCommand({
+        key: event.key,
+        code: event.code,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        metaKey: event.metaKey,
+        targetTagName: target?.tagName,
+        targetEditable: Boolean(target?.isContentEditable),
+        selectedBoxId: selectedBoxIdRef.current,
+      });
+      if (!command) return;
+      event.preventDefault();
+      if (command === "toggle-playback") {
+        setPlaying((value) => !value);
+        return;
+      }
+      handleGotoTime(
+        nextVideoKeyboardTime(videoSession.time, videoSession.maxTime, command, videoSession.stepSeconds, event.shiftKey)
+      );
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [handleGotoTime, videoSession.current, videoSession.maxTime, videoSession.stepSeconds, videoSession.time]);
   const handleMarkerPointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>, markerTime: number) => {
     event.preventDefault();
     event.stopPropagation();
@@ -352,43 +445,62 @@ export function VideoBoxLabelSurface({
           loadLabelsOverride={loadLabelsOverride}
           saveLabelsOverride={saveLabelsOverride}
           disableProposals
-          canvasOverlay={() => (
-            <div className="video-frame-timeline-overlay">
-              <div
-                className="video-frame-timeline-marker-row"
-                aria-label="Video markers"
-                onPointerDown={handleTimelinePointerDown}
-              >
-                {videoSession.timelineMarkers.map((marker) => (
+          canvasOverlay={({ selectedBoxId }) => {
+            selectedBoxIdRef.current = selectedBoxId;
+            return (
+              <div className="video-frame-timeline-overlay">
+                <div className="video-frame-timeline-top">
                   <button
-                    key={marker.key}
                     type="button"
-                    className={`video-frame-timeline-marker video-frame-timeline-marker--${marker.kind}`}
-                    style={{ left: `${markerLeftPercent(marker.time)}%` }}
-                    title={marker.label}
-                    aria-label={`Go to ${marker.label}`}
-                    onPointerDown={(event) => handleMarkerPointerDown(event, marker.time)}
+                    className="video-frame-playback-btn"
+                    disabled={!videoSession.current}
+                    aria-pressed={playing}
+                    onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
-                      handleGotoTime(marker.time);
+                      setPlaying((value) => !value);
                     }}
-                  />
-                ))}
+                  >
+                    {playing ? "Pause" : "Play"}
+                  </button>
+                  <div
+                    className="video-frame-timeline-marker-row"
+                    aria-label="Video markers"
+                    onPointerDown={handleTimelinePointerDown}
+                  >
+                    {videoSession.timelineMarkers.map((marker) => (
+                      <button
+                        key={marker.key}
+                        type="button"
+                        className={`video-frame-timeline-marker video-frame-timeline-marker--${marker.kind}`}
+                        style={{ left: `${markerLeftPercent(marker.time)}%` }}
+                        title={marker.label}
+                        aria-label={`Go to ${marker.label}`}
+                        onPointerDown={(event) => handleMarkerPointerDown(event, marker.time)}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          handleGotoTime(marker.time);
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max={videoSession.maxTime}
+                  step="0.001"
+                  value={Math.min(videoSession.time, videoSession.maxTime)}
+                  disabled={!videoSession.current}
+                  onInput={(event) => handleGotoTime(Number(event.currentTarget.value))}
+                  onChange={(event) => handleGotoTime(Number(event.target.value))}
+                  aria-label="Video timestamp"
+                />
               </div>
-              <input
-                type="range"
-                min="0"
-                max={videoSession.maxTime}
-                step="0.001"
-                value={Math.min(videoSession.time, videoSession.maxTime)}
-                disabled={!videoSession.current}
-                onInput={(event) => handleGotoTime(Number(event.currentTarget.value))}
-                onChange={(event) => handleGotoTime(Number(event.target.value))}
-                aria-label="Video timestamp"
-              />
-            </div>
-          )}
+            );
+          }}
           previewDock={({
             entry: overlayEntry,
             entries: overlayEntries,

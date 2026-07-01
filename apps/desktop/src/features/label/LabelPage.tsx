@@ -202,7 +202,8 @@ export function LabelPage({ active = true, onReady }: Props) {
     active: active && selection.kind === "video",
     onReady,
     previewMode: "url",
-    loadMarkerBase64: false
+    loadMarkerBase64: false,
+    handleArrowKeys: false
   });
   const {
     manifest: workspaceClassManifest,

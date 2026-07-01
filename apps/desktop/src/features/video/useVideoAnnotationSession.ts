@@ -69,13 +69,15 @@ export function useVideoAnnotationSession({
   active,
   onReady,
   previewMode = "base64",
-  loadMarkerBase64 = true
+  loadMarkerBase64 = true,
+  handleArrowKeys = true
 }: {
   workspaceRoot: string;
   active: boolean;
   onReady?: () => void;
   previewMode?: "base64" | "url";
   loadMarkerBase64?: boolean;
+  handleArrowKeys?: boolean;
 }) {
   const { showToast } = useToast();
   const { manifest: workspaceManifest } = useWorkspaceArchitecture();
@@ -440,7 +442,7 @@ export function useVideoAnnotationSession({
   );
 
   useEffect(() => {
-    if (!active || !current) return;
+    if (!active || !current || !handleArrowKeys) return;
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const tag = target?.tagName?.toLowerCase();
@@ -455,7 +457,7 @@ export function useVideoAnnotationSession({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [active, current, gotoTime, stepSeconds, time]);
+  }, [active, current, gotoTime, handleArrowKeys, stepSeconds, time]);
 
   // Annotated = has detect boxes; reviewed = detect task reviewed
   const annotatedFrames = useMemo(

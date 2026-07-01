@@ -76,6 +76,8 @@ export type BoxLabelCanvasOverlayContext = {
   entries: BoxLabelEntry[];
   currentIndex: number;
   boxes: api.LabelBox[];
+  selectedBox: api.LabelBox | null;
+  selectedBoxId: number | null;
   proposals: DetectProposal[];
   activeDetectClasses: Array<{ id: number; name: string }>;
   classificationClasses: Array<{ key: string; name: string; archived?: boolean }>;

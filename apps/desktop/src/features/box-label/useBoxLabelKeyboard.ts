@@ -5,6 +5,7 @@ import { arrowKeyDelta, type BoxAdjustMode, type DragState } from "./geometry";
 
 type UseBoxLabelKeyboardOptions = {
   dragRef: MutableRefObject<DragState>;
+  selectedRef: MutableRefObject<number | null>;
   keyboardAdjustingRef: MutableRefObject<boolean>;
   setSelectedBoxId: (id: number | null) => void;
   setBoxAdjustMode: (mode: BoxAdjustMode) => void;
@@ -36,6 +37,7 @@ type UseBoxLabelKeyboardOptions = {
 
 export function useBoxLabelKeyboard({
   dragRef,
+  selectedRef,
   keyboardAdjustingRef,
   setSelectedBoxId,
   setBoxAdjustMode,
@@ -180,13 +182,13 @@ export function useBoxLabelKeyboard({
         return;
       }
       const arrowDelta = arrowKeyDelta(event.key);
-      if (arrowDelta) {
+      if (arrowDelta && selectedRef.current !== null) {
         event.preventDefault();
         moveSelectedBoxByKeyboard(arrowDelta.x, arrowDelta.y, event.shiftKey);
         return;
       }
       const numpad = event.code.match(/^Numpad([24568])$/);
-      if (numpad) {
+      if (numpad && selectedRef.current !== null) {
         event.preventDefault();
         resizeSelectedBoxByKeyboard(numpad[1], event.shiftKey);
       }

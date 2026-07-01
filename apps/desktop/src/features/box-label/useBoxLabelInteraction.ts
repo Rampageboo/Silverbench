@@ -146,6 +146,7 @@ export function useBoxLabelInteraction({
 
   useBoxLabelKeyboard({
     dragRef,
+    selectedRef,
     keyboardAdjustingRef: persistence.keyboardAdjustingRef,
     setSelectedBoxId,
     setBoxAdjustMode,

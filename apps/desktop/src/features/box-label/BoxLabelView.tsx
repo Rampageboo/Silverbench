@@ -111,6 +111,10 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
       })
       .slice(0, 24);
   }, [canvasClassSearchMenu, editor.classes, editor.isArchivedDetectClass]);
+  const currentClassificationName = useMemo(() => {
+    if (!currentClassificationKey) return "";
+    return classificationClasses.find((item) => item.key === currentClassificationKey)?.name ?? currentClassificationKey;
+  }, [classificationClasses, currentClassificationKey]);
 
   const handleAddClassificationClass = useCallback(() => {
     const name = classificationClassNameInput.trim();
@@ -248,7 +252,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
       <div className="panel-header pool-label-class-panel-header">
         {renderTaskLight(
           "Classify",
-          `Classify Classes${classificationClasses.length ? ` (${classificationClasses.length})` : ""}`,
+          currentClassificationName ? `Classify Classes: ${currentClassificationName}` : "Classify Classes",
           clfTaskEnabled,
           onToggleClfTaskEnabled
         )}
@@ -484,6 +488,8 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
           entries: props.entries,
           currentIndex: props.currentIndex,
           boxes: editor.boxes,
+          selectedBox: editor.selectedBox,
+          selectedBoxId: editor.selectedBoxId,
           proposals: editor.proposals,
           activeDetectClasses: editor.classes.map((item) => ({ id: item.id, name: item.name })),
           classificationClasses,
@@ -501,6 +507,8 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
           entries: props.entries,
           currentIndex: props.currentIndex,
           boxes: editor.boxes,
+          selectedBox: editor.selectedBox,
+          selectedBoxId: editor.selectedBoxId,
           proposals: editor.proposals,
           activeDetectClasses: editor.classes.map((item) => ({ id: item.id, name: item.name })),
           classificationClasses,
