@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { nextVideoKeyboardTime, videoFrameKeyboardCommand } from "./VideoBoxLabelSurface";
+import { VIDEO_PLAYBACK_INTERVAL_MS, nextVideoKeyboardTime, videoFrameKeyboardCommand } from "./VideoBoxLabelSurface";
+import { VIDEO_PREVIEW_DEBOUNCE_MS } from "../video/useVideoAnnotationSession";
 
 describe("VideoBoxLabelSurface keyboard policy", () => {
   it("lets selected boxes keep arrow-key movement", () => {
@@ -27,5 +28,9 @@ describe("VideoBoxLabelSurface keyboard policy", () => {
     expect(nextVideoKeyboardTime(0.05, 10, "seek-backward", 0.1, false)).toBe(0);
     expect(nextVideoKeyboardTime(9.95, 10, "seek-forward", 0.1, false)).toBe(10);
     expect(nextVideoKeyboardTime(1, 10, "seek-forward", 0.1, true)).toBe(2);
+  });
+
+  it("does not starve debounced preview refresh while playback is running", () => {
+    expect(VIDEO_PLAYBACK_INTERVAL_MS).toBeGreaterThan(VIDEO_PREVIEW_DEBOUNCE_MS);
   });
 });

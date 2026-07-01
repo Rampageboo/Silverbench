@@ -53,6 +53,7 @@ import {
 } from "./videoAnnotationDomain";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
+export const VIDEO_PREVIEW_DEBOUNCE_MS = 120;
 
 function defaultClasses(): LabelClass[] {
   return [{ id: 0, name: "object" }];
@@ -112,7 +113,7 @@ export function useVideoAnnotationSession({
   const saveRevisionRef = useRef(0);
   const currentRef = useRef<VideoSource | null>(null);
   const timeRef = useRef(0);
-  const debouncedPreviewTime = useDebouncedValue(time, 120);
+  const debouncedPreviewTime = useDebouncedValue(time, VIDEO_PREVIEW_DEBOUNCE_MS);
 
   const current = currentIndex >= 0 ? videos[currentIndex] || null : null;
   currentRef.current = current;

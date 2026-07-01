@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { saveVideoFrame } from "../video/videoCaptureApi";
 import { useVideoSampling, type SamplingMode } from "../video/useVideoSampling";
-import type { VideoAnnotationSession } from "../video/useVideoAnnotationSession";
+import { VIDEO_PREVIEW_DEBOUNCE_MS, type VideoAnnotationSession } from "../video/useVideoAnnotationSession";
 import { BoxLabelView } from "../box-label/BoxLabelView";
 import type { BoxLabelEntry } from "../box-label/boxLabelCore";
 import type { BoxLabelModel } from "../box-label/useBoxLabel";
@@ -16,7 +16,7 @@ const SAMPLING_MODE_LABELS: Record<SamplingMode, string> = {
 
 const SAMPLING_MODES: SamplingMode[] = ["whole-video", "segments-preferred", "segments-only"];
 const RANDOM_MULTIPLIERS = [1, 5, 10] as const;
-const VIDEO_PLAYBACK_INTERVAL_MS = 100;
+export const VIDEO_PLAYBACK_INTERVAL_MS = VIDEO_PREVIEW_DEBOUNCE_MS + 80;
 const VIDEO_PLAYBACK_STEP_SECONDS = VIDEO_PLAYBACK_INTERVAL_MS / 1000;
 type RandomMultiplier = (typeof RANDOM_MULTIPLIERS)[number];
 export type VideoFrameKeyboardCommand = "seek-backward" | "seek-forward" | "toggle-playback";
