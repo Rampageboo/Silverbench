@@ -7079,6 +7079,21 @@ a.glass-card:focus-visible {
   white-space: nowrap;
 }
 
+.pool-label-classes-panel .pool-label-task-title-chip {
+  flex: 0 1 auto;
+  justify-content: flex-start;
+  max-width: min(100%, 230px);
+  padding: 4px 10px 4px 8px;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.pool-label-classes-panel .pool-label-task-title-chip > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 button.pool-label-task-light-btn {
   cursor: pointer;
 }

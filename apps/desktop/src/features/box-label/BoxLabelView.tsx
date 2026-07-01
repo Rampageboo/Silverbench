@@ -224,9 +224,13 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
   const classificationClassesPanel = (
     <section className="panel filter-panel pool-label-classes-panel pool-label-clf-classes-panel">
       <div className="panel-header pool-label-class-panel-header">
-        <span>Classify Classes{classificationClasses.length ? ` (${classificationClasses.length})` : ""}</span>
+        {renderTaskLight(
+          "Classify",
+          `Classify Classes${classificationClasses.length ? ` (${classificationClasses.length})` : ""}`,
+          clfTaskEnabled,
+          onToggleClfTaskEnabled
+        )}
         <div className="pool-label-class-header-actions">
-          {renderTaskLight("clf", "Classify", clfTaskEnabled, onToggleClfTaskEnabled)}
           <button
             type="button"
             className={`pool-label-class-icon-btn${classificationClassToolMode === "add" ? " active" : ""}`}
@@ -494,17 +498,29 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
       ? "Reviewed"
       : "Unreviewed";
   function renderTaskLight(
-    task: "detect" | "clf",
     label: string,
+    titleText: string,
     enabled: boolean,
     onToggle?: () => Promise<void>
   ) {
     const title = `${label} dataset ${enabled ? "included" : "excluded"}`;
-    if (!onToggle) return null;
+    const content = (
+      <>
+        <span className="pool-label-task-light" aria-hidden="true" />
+        <span>{titleText}</span>
+      </>
+    );
+    if (!onToggle) {
+      return (
+        <span className={`pool-label-task-light-btn pool-label-task-title-chip${enabled ? " is-on" : " is-off"}`} title={title}>
+          {content}
+        </span>
+      );
+    }
     return (
       <button
         type="button"
-        className={`pool-label-task-light-btn${enabled ? " is-on" : " is-off"}`}
+        className={`pool-label-task-light-btn pool-label-task-title-chip${enabled ? " is-on" : " is-off"}`}
         title={title}
         aria-label={title}
         aria-pressed={enabled}
@@ -513,8 +529,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
           onToggle().catch((err) => editor.setError(errMessage(err)));
         }}
       >
-        <span className="pool-label-task-light" aria-hidden="true" />
-        <span>{task === "detect" ? "Detect" : "Clf"}</span>
+        {content}
       </button>
     );
   }
@@ -796,9 +811,8 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
           >
             <section className="panel filter-panel pool-label-classes-panel pool-label-detect-classes-panel">
               <div className="panel-header pool-label-class-panel-header">
-                <span>Detect Classes</span>
+                {renderTaskLight("Detect", "Detect Classes", detectTaskEnabled, onToggleDetectTaskEnabled)}
                 <div className="pool-label-class-header-actions">
-                  {renderTaskLight("detect", "Detect", detectTaskEnabled, onToggleDetectTaskEnabled)}
                   <button
                     type="button"
                     className={`pool-label-class-icon-btn${detectClassToolMode === "add" ? " active" : ""}`}

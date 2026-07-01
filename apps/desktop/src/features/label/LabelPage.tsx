@@ -128,14 +128,12 @@ function VideoFrameControlsPanel({
   disabled = false,
   annotatedFrameCount,
   hasFrameRecord,
-  reviewed,
   videoDurationMs,
   onSamplingModeChange,
   onMinSpacingMsChange,
   onRandomNext,
   onAddMarker,
   onCopyPreviousBoxes,
-  onMarkReviewed,
   onMarkEmpty,
   onClearRecord,
 }: {
@@ -147,14 +145,12 @@ function VideoFrameControlsPanel({
   disabled?: boolean;
   annotatedFrameCount: number;
   hasFrameRecord: boolean;
-  reviewed: boolean;
   videoDurationMs: number;
   onSamplingModeChange: (mode: SamplingMode) => void;
   onMinSpacingMsChange: (value: number) => void;
   onRandomNext: () => void;
   onAddMarker: () => void;
   onCopyPreviousBoxes: () => void;
-  onMarkReviewed: () => void;
   onMarkEmpty: () => void;
   onClearRecord: () => void;
 }) {
@@ -193,7 +189,7 @@ function VideoFrameControlsPanel({
       </div>
       <div className="video-frame-controls-actions">
         <button type="button" className="primary" onClick={onRandomNext} disabled={controlsDisabled || videoDurationMs <= 0}>
-          Random Next
+          Random
         </button>
         <button type="button" onClick={onAddMarker} disabled={controlsDisabled}>
           Add Marker
@@ -201,8 +197,8 @@ function VideoFrameControlsPanel({
         <button type="button" onClick={onCopyPreviousBoxes} disabled={controlsDisabled || annotatedFrameCount <= 0}>
           Copy Previous Boxes
         </button>
-        <button type="button" onClick={onMarkReviewed} disabled={controlsDisabled}>
-          {reviewed ? "Unmark Reviewed" : "Mark Reviewed"}
+        <button type="button" onClick={onRandomNext} disabled={controlsDisabled || videoDurationMs <= 0}>
+          Random Next
         </button>
         <button type="button" onClick={onMarkEmpty} disabled={controlsDisabled}>
           Mark Empty
@@ -457,16 +453,12 @@ function VideoBoxLabelSurface({
                 current={Boolean(videoSession.current)}
                 annotatedFrameCount={videoSession.annotatedFrames.length}
                 hasFrameRecord={hasFrameRecord}
-                reviewed={videoSession.reviewed}
                 videoDurationMs={videoDurationMs}
                 onSamplingModeChange={sampling.setMode}
                 onMinSpacingMsChange={sampling.setMinSpacingMs}
                 onRandomNext={handleRandomNext}
                 onAddMarker={handleAddMarker}
                 onCopyPreviousBoxes={videoSession.copyPreviousBoxes}
-                onMarkReviewed={() => {
-                  if (videoSession.current) videoSession.updateCurrentFrame(videoSession.boxes, !videoSession.reviewed);
-                }}
                 onMarkEmpty={videoSession.markEmptyReviewed}
                 onClearRecord={videoSession.clearFrameRecord}
               />
@@ -862,14 +854,12 @@ export function LabelPage({ active = true, onReady }: Props) {
                       disabled
                       annotatedFrameCount={0}
                       hasFrameRecord={false}
-                      reviewed={false}
                       videoDurationMs={0}
                       onSamplingModeChange={() => {}}
                       onMinSpacingMsChange={() => {}}
                       onRandomNext={() => {}}
                       onAddMarker={() => {}}
                       onCopyPreviousBoxes={() => {}}
-                      onMarkReviewed={() => {}}
                       onMarkEmpty={() => {}}
                       onClearRecord={() => {}}
                     />
