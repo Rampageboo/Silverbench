@@ -40,6 +40,14 @@ type AnalysisClassBucket = {
   count: number;
 };
 
+type AnalysisDetectPoint = {
+  classKey: string;
+  className: string;
+  x: number;
+  y: number;
+  area: number;
+};
+
 type AnalysisStats = {
   totalMedia: number;
   detectSamples: number;
@@ -50,6 +58,7 @@ type AnalysisStats = {
   junk: number;
   detectClasses: AnalysisClassBucket[];
   clfClasses: AnalysisClassBucket[];
+  detectPoints: AnalysisDetectPoint[];
 };
 
 const EMPTY_ANALYSIS_STATS: AnalysisStats = {
@@ -62,7 +71,11 @@ const EMPTY_ANALYSIS_STATS: AnalysisStats = {
   junk: 0,
   detectClasses: [],
   clfClasses: [],
+  detectPoints: [],
 };
+
+const HEATMAP_COLS = 8;
+const HEATMAP_ROWS = 5;
 
 function incrementBucket(map: Map<string, AnalysisClassBucket>, key: string, name: string, amount = 1) {
   const trimmedKey = key.trim();
@@ -80,12 +93,18 @@ function sortedBuckets(map: Map<string, AnalysisClassBucket>): AnalysisClassBuck
   return [...map.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
 
+function clampUnit(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
+
 function videoAnalysisStats(videoSession: ReturnType<typeof useVideoAnnotationSession>): AnalysisStats {
   const frames = Object.values(videoSession.manifest?.frames ?? {});
   const detectNames = new Map(videoSession.classes.map((item) => [String(item.id), item.name]));
   const clfNames = new Map(videoSession.clfClassOptions.map((item) => [item.key, item.name]));
   const detectBuckets = new Map<string, AnalysisClassBucket>();
   const clfBuckets = new Map<string, AnalysisClassBucket>();
+  const detectPoints: AnalysisDetectPoint[] = [];
   let detectSamples = 0;
   let detectHits = 0;
   let clfLabels = 0;
@@ -103,8 +122,17 @@ function videoAnalysisStats(videoSession: ReturnType<typeof useVideoAnnotationSe
     detectHits += detectBoxCount;
     proposals += proposalCount;
     for (const box of detect?.boxes ?? []) {
-      const key = String(box.classId);
-      incrementBucket(detectBuckets, key, detectNames.get(key) ?? `#${key}`);
+      const key = box.classKey || (typeof box.classId === "number" ? String(box.classId) : "");
+      if (!key) continue;
+      const name = detectNames.get(key) ?? `#${key}`;
+      incrementBucket(detectBuckets, key, name);
+      detectPoints.push({
+        classKey: key,
+        className: name,
+        x: clampUnit(box.x),
+        y: clampUnit(box.y),
+        area: clampUnit(box.w) * clampUnit(box.h),
+      });
     }
     if (clf?.classKey) {
       clfLabels += 1;
@@ -123,6 +151,7 @@ function videoAnalysisStats(videoSession: ReturnType<typeof useVideoAnnotationSe
     junk: 0,
     detectClasses: sortedBuckets(detectBuckets),
     clfClasses: sortedBuckets(clfBuckets),
+    detectPoints,
   };
 }
 
@@ -148,6 +177,7 @@ function combineAnalysisStats(...items: AnalysisStats[]): AnalysisStats {
       junk: total.junk + item.junk,
       detectClasses: combineBuckets([total.detectClasses, item.detectClasses]),
       clfClasses: combineBuckets([total.clfClasses, item.clfClasses]),
+      detectPoints: [...total.detectPoints, ...item.detectPoints],
     }),
     EMPTY_ANALYSIS_STATS
   );
@@ -304,10 +334,24 @@ function AnalysisPanel({
     { label: "Reviewed", value: stats.reviewed },
     { label: "Junk", value: stats.junk },
   ];
-  const heatmapBuckets = heatmapClassKey === "all"
-    ? stats.detectClasses.slice(0, 12)
-    : stats.detectClasses.filter((bucket) => bucket.key === heatmapClassKey);
-  const heatmapMax = Math.max(1, ...heatmapBuckets.map((bucket) => bucket.count));
+  const heatmapPoints = heatmapClassKey === "all"
+    ? stats.detectPoints
+    : stats.detectPoints.filter((point) => point.classKey === heatmapClassKey);
+  const heatmapCells = Array.from({ length: HEATMAP_COLS * HEATMAP_ROWS }, (_, index) => ({
+    index,
+    col: index % HEATMAP_COLS,
+    row: Math.floor(index / HEATMAP_COLS),
+    count: 0,
+    weight: 0,
+  }));
+  for (const point of heatmapPoints) {
+    const col = Math.min(HEATMAP_COLS - 1, Math.floor(clampUnit(point.x) * HEATMAP_COLS));
+    const row = Math.min(HEATMAP_ROWS - 1, Math.floor(clampUnit(point.y) * HEATMAP_ROWS));
+    const cell = heatmapCells[row * HEATMAP_COLS + col];
+    cell.count += 1;
+    cell.weight += 1 + Math.sqrt(Math.max(0, point.area));
+  }
+  const heatmapMax = Math.max(1, ...heatmapCells.map((cell) => cell.weight));
   const maxBar = Math.max(1, ...detectBars.map((item) => item.value), ...clfBars.map((item) => item.value));
 
   useEffect(() => {
@@ -355,24 +399,27 @@ function AnalysisPanel({
             ))}
           </select>
         </div>
+        <div className="lwb-analysis-heatmap-meta">
+          <span>{heatmapPoints.length} box(es)</span>
+          <span>{HEATMAP_COLS}x{HEATMAP_ROWS} center density</span>
+        </div>
         <div className="lwb-analysis-heatmap-grid">
-          {heatmapBuckets.length ? heatmapBuckets.map((bucket) => {
-            const heat = bucket.count / heatmapMax;
+          {heatmapPoints.length ? heatmapCells.map((cell) => {
+            const heat = cell.weight / heatmapMax;
             return (
               <div
-                key={bucket.key}
+                key={cell.index}
                 className="lwb-analysis-heatmap-cell"
                 style={{
                   "--heat": heat,
                 } as CSSProperties}
-                title={`${bucket.name}: ${bucket.count}`}
+                title={`row ${cell.row + 1}, col ${cell.col + 1}: ${cell.count} box(es)`}
               >
-                <strong>{bucket.count}</strong>
-                <span>{bucket.name}</span>
+                <span>{cell.count ? cell.count : ""}</span>
               </div>
             );
           }) : (
-            <div className="lwb-analysis-empty">No detect classes.</div>
+            <div className="lwb-analysis-empty">No detect boxes.</div>
           )}
         </div>
       </div>

@@ -22,6 +22,7 @@ import { isWorkspaceMediaChangedEvent, WORKSPACE_MEDIA_CHANGED_EVENT } from "../
 import { BOX_LABEL_CACHE_MS } from "../shared/workspaceCache";
 import {
   loadDetectDatasetClassIndex,
+  loadEntryLabels,
   loadMediaBoxLabelEntries,
   type BoxLabelEntry
 } from "./boxLabelCore";
@@ -64,6 +65,19 @@ type UseBoxLabelOptions = {
   onReady?: () => void;
 };
 
+type DatasetDetectPoint = {
+  classKey: string;
+  className: string;
+  x: number;
+  y: number;
+  area: number;
+};
+
+function clampUnit(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
+
 export function useBoxLabel({
   workspaceRoot,
   focusFilename,
@@ -77,6 +91,7 @@ export function useBoxLabel({
   const [allEntries, setAllEntries] = useState<BoxLabelEntry[]>([]);
   const [labelIndex, setLabelIndex] = useState<Map<string, Set<number>>>(new Map());
   const [metadata, setMetadata] = useState<Map<string, MetadataRow>>(new Map());
+  const [datasetDetectPoints, setDatasetDetectPoints] = useState<DatasetDetectPoint[]>([]);
   const [includeClasses, setIncludeClasses] = useState<Set<number>>(new Set());
   const [excludeClasses, setExcludeClasses] = useState<Set<number>>(new Set());
   const [imageViewMode, setImageViewMode] = useState<"all" | "hideReviewed" | "flagged">("all");
@@ -188,8 +203,45 @@ export function useBoxLabel({
       clfClasses: [...clfClassCounts.entries()]
         .map(([classKey, count]) => ({ key: classKey, name: classKey, count }))
         .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
+      detectPoints: datasetDetectPoints,
     };
-  }, [allEntries.length, labelIndex, metadata]);
+  }, [allEntries.length, datasetDetectPoints, labelIndex, metadata]);
+
+  useEffect(() => {
+    if (!datasetRoot || !allEntries.length || !labelIndex.size) {
+      setDatasetDetectPoints([]);
+      return;
+    }
+
+    let cancelled = false;
+    async function scanDetectPoints() {
+      const points: DatasetDetectPoint[] = [];
+      const entriesWithLabels = allEntries.filter((entry) => {
+        if (!labelIndex.has(entry.basename)) return false;
+        return isTaskExportEnabled(metadata.get(entry.basename), "detect");
+      });
+      for (const entry of entriesWithLabels) {
+        if (cancelled) return;
+        const boxes = await loadEntryLabels(datasetRoot, entry).catch(() => []);
+        for (const box of boxes) {
+          const classKey = String(box.classId);
+          points.push({
+            classKey,
+            className: `#${classKey}`,
+            x: clampUnit(box.x),
+            y: clampUnit(box.y),
+            area: clampUnit(box.w) * clampUnit(box.h),
+          });
+        }
+      }
+      if (!cancelled) setDatasetDetectPoints(points);
+    }
+
+    void scanDetectPoints();
+    return () => {
+      cancelled = true;
+    };
+  }, [allEntries, datasetRoot, labelIndex, metadata]);
 
   const resolveIndex = useCallback((list: BoxLabelEntry[], basename: string) => {
     if (!basename) return 0;
