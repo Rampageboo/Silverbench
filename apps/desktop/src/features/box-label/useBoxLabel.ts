@@ -146,6 +146,39 @@ export function useBoxLabel({
     return counts;
   }, [labelIndex]);
 
+  const datasetStats = useMemo(() => {
+    let clfLabels = 0;
+    let reviewed = 0;
+    let junk = 0;
+    for (const row of metadata.values()) {
+      if (isReviewedFile(row)) reviewed += 1;
+      if (isDetectJunk(row) || isClfJunk(row)) junk += 1;
+      const classKey = String(row.clf_class || "").trim();
+      if (classKey && classKey !== INBOX_JUNK_CLASS && isTaskExportEnabled(row, "clf")) {
+        clfLabels += 1;
+      }
+    }
+
+    let detectSamples = 0;
+    let detectHits = 0;
+    for (const [basename, classIds] of labelIndex) {
+      const row = metadata.get(basename);
+      if (!isTaskExportEnabled(row, "detect")) continue;
+      detectSamples += 1;
+      detectHits += classIds.size;
+    }
+
+    return {
+      totalMedia: allEntries.length,
+      detectSamples,
+      detectHits,
+      clfLabels,
+      proposals: 0,
+      reviewed,
+      junk,
+    };
+  }, [allEntries.length, labelIndex, metadata]);
+
   const resolveIndex = useCallback((list: BoxLabelEntry[], basename: string) => {
     if (!basename) return 0;
     const index = list.findIndex((entry) => entry.basename === basename);
@@ -677,6 +710,7 @@ export function useBoxLabel({
     imageViewMode,
     metadata,
     classImageCounts,
+    datasetStats,
     navigate,
     selectGalleryImage,
     selectedBasenames,

@@ -32,6 +32,74 @@ const SAMPLING_MODE_LABELS: Record<SamplingMode, string> = {
 
 const SAMPLING_MODES: SamplingMode[] = ["whole-video", "segments-preferred", "segments-only"];
 
+type AnalysisStats = {
+  totalMedia: number;
+  detectSamples: number;
+  detectHits: number;
+  clfLabels: number;
+  proposals: number;
+  reviewed: number;
+  junk: number;
+};
+
+const EMPTY_ANALYSIS_STATS: AnalysisStats = {
+  totalMedia: 0,
+  detectSamples: 0,
+  detectHits: 0,
+  clfLabels: 0,
+  proposals: 0,
+  reviewed: 0,
+  junk: 0,
+};
+
+function videoAnalysisStats(videoSession: ReturnType<typeof useVideoAnnotationSession>): AnalysisStats {
+  const frames = Object.values(videoSession.manifest?.frames ?? {});
+  let detectSamples = 0;
+  let detectHits = 0;
+  let clfLabels = 0;
+  let proposals = 0;
+  let reviewed = 0;
+
+  for (const frame of frames) {
+    const detect = frame.tasks.detect;
+    const clf = frame.tasks.clf;
+    const detectBoxCount = detect?.boxes.length ?? 0;
+    const proposalCount = detect?.proposals?.length ?? 0;
+    if (detect && (detectBoxCount > 0 || proposalCount > 0 || detect.reviewed || detect.empty)) {
+      detectSamples += 1;
+    }
+    detectHits += detectBoxCount;
+    proposals += proposalCount;
+    if (clf?.classKey) clfLabels += 1;
+    if (detect?.reviewed || clf?.reviewed) reviewed += 1;
+  }
+
+  return {
+    totalMedia: videoSession.videos.length,
+    detectSamples,
+    detectHits,
+    clfLabels,
+    proposals,
+    reviewed,
+    junk: 0,
+  };
+}
+
+function combineAnalysisStats(...items: AnalysisStats[]): AnalysisStats {
+  return items.reduce<AnalysisStats>(
+    (total, item) => ({
+      totalMedia: total.totalMedia + item.totalMedia,
+      detectSamples: total.detectSamples + item.detectSamples,
+      detectHits: total.detectHits + item.detectHits,
+      clfLabels: total.clfLabels + item.clfLabels,
+      proposals: total.proposals + item.proposals,
+      reviewed: total.reviewed + item.reviewed,
+      junk: total.junk + item.junk,
+    }),
+    EMPTY_ANALYSIS_STATS
+  );
+}
+
 function videoFrameEntry(videoName: string, time: number, mediaPosition: number, mediaCount: number): BoxLabelEntry {
   const stem = videoName.replace(/\.[^.]+$/, "") || "video-frame";
   const stamp = Math.max(0, Math.round(time * 1000));
@@ -148,30 +216,32 @@ function VideoFrameControlsPanel({
 }
 
 function AnalysisPanel({
-  detectCount,
-  clfCount,
-  proposalCount,
+  stats,
 }: {
-  detectCount: number;
-  clfCount: number;
-  proposalCount: number;
+  stats: AnalysisStats;
 }) {
+  const rows = [
+    ["Media", stats.totalMedia],
+    ["Detect samples", stats.detectSamples],
+    ["Detect hits", stats.detectHits],
+    ["Clf labels", stats.clfLabels],
+    ["Proposals", stats.proposals],
+    ["Reviewed", stats.reviewed],
+    ["Junk", stats.junk],
+  ] as const;
   return (
     <section className="lwb-analysis-panel" aria-label="Analysis">
-      <div className="lwb-analysis-head">Analysis</div>
+      <div className="lwb-analysis-head">
+        <span>Analysis</span>
+        <small>Dataset</small>
+      </div>
       <div className="lwb-analysis-grid">
-        <span>
-          <strong>{detectCount}</strong>
-          <small>det box(es)</small>
-        </span>
-        <span>
-          <strong>{clfCount}</strong>
-          <small>clf label</small>
-        </span>
-        <span>
-          <strong>{proposalCount}</strong>
-          <small>proposal(s)</small>
-        </span>
+        {rows.map(([label, value]) => (
+          <span key={label}>
+            <strong>{value}</strong>
+            <small>{label}</small>
+          </span>
+        ))}
       </div>
     </section>
   );
@@ -183,6 +253,7 @@ function VideoBoxLabelSurface({
   imagePool,
   activeMediaPosition,
   mediaCount,
+  analysisStats,
   onNavigateBoundary,
 }: {
   workspaceRoot: string;
@@ -190,6 +261,7 @@ function VideoBoxLabelSurface({
   imagePool: ReturnType<typeof useBoxLabel>;
   activeMediaPosition: number;
   mediaCount: number;
+  analysisStats: AnalysisStats;
   onNavigateBoundary: (delta: -1 | 1) => void;
 }) {
   const entry = useMemo(
@@ -414,11 +486,7 @@ function VideoBoxLabelSurface({
                 onAssignClassificationClass={assignOverlayClassificationClass}
                 onClassesChanged={reloadWorkspaceClasses}
               />
-              <AnalysisPanel
-                detectCount={boxes.length}
-                clfCount={currentClassificationKey ? 1 : 0}
-                proposalCount={proposals.length}
-              />
+              <AnalysisPanel stats={analysisStats} />
             </div>
           )}
         />
@@ -463,6 +531,10 @@ export function LabelPage({ active = true, onReady }: Props) {
     onReady,
     previewMode: "url"
   });
+  const analysisStats = useMemo(
+    () => combineAnalysisStats(imagePool.datasetStats, videoAnalysisStats(videoSession)),
+    [imagePool.datasetStats, videoSession.manifest, videoSession.videos.length]
+  );
 
   const clearWorkbenchActions = useCallback(() => {
     setActionGroups([]);
@@ -754,6 +826,7 @@ export function LabelPage({ active = true, onReady }: Props) {
                 imagePool={imagePool}
                 activeMediaPosition={activeMediaPosition}
                 mediaCount={mediaOrder.length}
+                analysisStats={analysisStats}
                 onNavigateBoundary={handleMediaBoundaryNavigate}
               />
             ) : (
@@ -813,11 +886,7 @@ export function LabelPage({ active = true, onReady }: Props) {
                       onAssignClassificationClass={assignClassificationClass}
                       onClassesChanged={reloadWorkspaceClasses}
                     />
-                    <AnalysisPanel
-                      detectCount={boxes.length}
-                      clfCount={currentClassificationKey ? 1 : 0}
-                      proposalCount={proposals.length}
-                    />
+                    <AnalysisPanel stats={analysisStats} />
                   </div>
                 )}
               />

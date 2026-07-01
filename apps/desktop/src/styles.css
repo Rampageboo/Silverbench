@@ -6646,9 +6646,10 @@ a.glass-card:focus-visible {
 
 .react-box-label-page .lwb-workbench-dock {
   display: grid;
-  grid-template-columns: minmax(260px, 0.9fr) minmax(380px, 1.35fr) minmax(180px, 0.5fr);
+  grid-template-columns: minmax(320px, 360px) minmax(430px, 520px) minmax(340px, 420px);
   gap: 8px;
   align-items: stretch;
+  justify-content: end;
   min-width: 0;
 }
 
@@ -6773,8 +6774,8 @@ a.glass-card:focus-visible {
 }
 
 .react-box-label-page .pool-label-preview-dock .alm-model-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 8px;
 }
 
@@ -6788,7 +6789,7 @@ a.glass-card:focus-visible {
 
 .react-box-label-page .lwb-analysis-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   margin-top: auto;
 }
@@ -6824,6 +6825,7 @@ a.glass-card:focus-visible {
 @media (max-width: 1600px) {
   .react-box-label-page .lwb-workbench-dock {
     grid-template-columns: minmax(260px, 1fr) minmax(360px, 1.2fr);
+    justify-content: stretch;
   }
 
   .react-box-label-page .pool-label-preview-dock .lwb-analysis-panel {
