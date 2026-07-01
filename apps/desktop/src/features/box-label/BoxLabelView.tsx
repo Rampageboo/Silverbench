@@ -694,24 +694,24 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
                   : classNameFor(editor.classes, editor.currentClass)}
               </div>
             </div>
+            <BoxLabelPreviewToolbar
+              pointerToolEnabled={editor.pointerToolEnabled}
+              autoFitEnabled={editor.autoFitEnabled}
+              blackBoxEnabled={editor.blackBoxEnabled}
+              boxAdjustMode={editor.boxAdjustMode}
+              tracking={editor.tracking}
+              canCopyNext={editor.selectedBoxId !== null && editor.currentIndex >= 0}
+              onTogglePointerTool={editor.togglePointerTool}
+              onToggleAutoFit={editor.toggleAutoFitTool}
+              onToggleBlackBox={editor.toggleBlackBoxTool}
+              onRestoreBackup={() => editor.restoreBackup().catch((err) => editor.setError(errMessage(err)))}
+              onToggleBoxAdjustMode={() =>
+                editor.setBoxAdjustMode((value) => (value === "grow" ? "shrink" : "grow"))
+              }
+              onCopyNext={() => editor.copySelectedBoxToNext().catch((err) => editor.setError(errMessage(err)))}
+              onCsrtTrack={() => editor.trackCsrtForward().catch((err) => editor.setError(errMessage(err)))}
+            />
           </aside>
-          <BoxLabelPreviewToolbar
-            pointerToolEnabled={editor.pointerToolEnabled}
-            autoFitEnabled={editor.autoFitEnabled}
-            blackBoxEnabled={editor.blackBoxEnabled}
-            boxAdjustMode={editor.boxAdjustMode}
-            tracking={editor.tracking}
-            canCopyNext={editor.selectedBoxId !== null && editor.currentIndex >= 0}
-            onTogglePointerTool={editor.togglePointerTool}
-            onToggleAutoFit={editor.toggleAutoFitTool}
-            onToggleBlackBox={editor.toggleBlackBoxTool}
-            onRestoreBackup={() => editor.restoreBackup().catch((err) => editor.setError(errMessage(err)))}
-            onToggleBoxAdjustMode={() =>
-              editor.setBoxAdjustMode((value) => (value === "grow" ? "shrink" : "grow"))
-            }
-            onCopyNext={() => editor.copySelectedBoxToNext().catch((err) => editor.setError(errMessage(err)))}
-            onCsrtTrack={() => editor.trackCsrtForward().catch((err) => editor.setError(errMessage(err)))}
-          />
           {renderedCanvasOverlay ?? null}
           {canvasClassSearchMenu ? (
             <div
