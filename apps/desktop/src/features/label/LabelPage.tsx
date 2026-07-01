@@ -342,8 +342,10 @@ function VideoFrameControlsPanel({
 
 function AnalysisPanel({
   stats,
+  detectClassNames,
 }: {
   stats: AnalysisStats;
+  detectClassNames?: Map<string, string>;
 }) {
   const [heatmapClassKey, setHeatmapClassKey] = useState("all");
   const heatmapPoints = heatmapClassKey === "all"
@@ -379,6 +381,11 @@ function AnalysisPanel({
     return `hsl(${hue} 78% 58%)`;
   };
 
+  const bucketName = (bucket: AnalysisClassBucket, tone: "detect" | "clf") => {
+    if (tone === "detect") return detectClassNames?.get(bucket.key) ?? bucket.name;
+    return bucket.name;
+  };
+
   const renderClassBarGroup = (
     title: string,
     summary: string,
@@ -396,6 +403,7 @@ function AnalysisPanel({
         {buckets.length ? buckets.map((bucket, index) => {
           const percent = Math.max(4, (bucket.count / maxCount) * 100);
           const barColor = colorForBucket(bucket, index, tone);
+          const name = bucketName(bucket, tone);
           return (
             <div
               key={bucket.key}
@@ -403,9 +411,9 @@ function AnalysisPanel({
               style={{
                 "--bar-color": barColor,
               } as CSSProperties}
-              title={`${bucket.name}: ${bucket.count}`}
+              title={`${name}: ${bucket.count}`}
             >
-              <span>{bucket.name}</span>
+              <span>{name}</span>
               <div className="lwb-analysis-bar-track" aria-hidden="true">
                 <div className="lwb-analysis-bar-fill" style={{ width: `${percent}%` }} />
               </div>
@@ -435,7 +443,7 @@ function AnalysisPanel({
             <option value="all">All classes</option>
             {stats.detectClasses.slice(0, 80).map((bucket) => (
               <option key={bucket.key} value={bucket.key}>
-                {bucket.name}
+                {detectClassNames?.get(bucket.key) ?? bucket.name}
               </option>
             ))}
           </select>
@@ -475,6 +483,7 @@ function VideoBoxLabelSurface({
   activeMediaPosition,
   mediaCount,
   analysisStats,
+  detectClassNames,
   onNavigateBoundary,
 }: {
   workspaceRoot: string;
@@ -483,6 +492,7 @@ function VideoBoxLabelSurface({
   activeMediaPosition: number;
   mediaCount: number;
   analysisStats: AnalysisStats;
+  detectClassNames: Map<string, string>;
   onNavigateBoundary: (delta: -1 | 1) => void;
 }) {
   const entry = useMemo(
@@ -718,7 +728,7 @@ function VideoBoxLabelSurface({
                 onAssignClassificationClass={assignOverlayClassificationClass}
                 onClassesChanged={reloadWorkspaceClasses}
               />
-              <AnalysisPanel stats={analysisStats} />
+              <AnalysisPanel stats={analysisStats} detectClassNames={detectClassNames} />
             </div>
           )}
         />
@@ -767,6 +777,14 @@ export function LabelPage({ active = true, onReady }: Props) {
     () => combineAnalysisStats(imagePool.datasetStats, videoAnalysisStats(videoSession)),
     [imagePool.datasetStats, videoSession.classes, videoSession.clfClassOptions, videoSession.manifest, videoSession.videos.length]
   );
+  const detectClassNames = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const item of videoSession.classes) names.set(String(item.id), item.name);
+    for (const item of inspectorState?.classPalette?.detectClasses ?? []) {
+      if (typeof item.id === "number" && item.name) names.set(String(item.id), item.name);
+    }
+    return names;
+  }, [inspectorState?.classPalette?.detectClasses, videoSession.classes]);
   const classPanelSummaries = useMemo(() => analysisClassPanelSummaries(analysisStats), [analysisStats]);
 
   const clearWorkbenchActions = useCallback(() => {
@@ -1060,6 +1078,7 @@ export function LabelPage({ active = true, onReady }: Props) {
                 activeMediaPosition={activeMediaPosition}
                 mediaCount={mediaOrder.length}
                 analysisStats={analysisStats}
+                detectClassNames={detectClassNames}
                 onNavigateBoundary={handleMediaBoundaryNavigate}
               />
             ) : (
@@ -1121,7 +1140,7 @@ export function LabelPage({ active = true, onReady }: Props) {
                       onAssignClassificationClass={assignClassificationClass}
                       onClassesChanged={reloadWorkspaceClasses}
                     />
-                    <AnalysisPanel stats={analysisStats} />
+                    <AnalysisPanel stats={analysisStats} detectClassNames={detectClassNames} />
                   </div>
                 )}
               />

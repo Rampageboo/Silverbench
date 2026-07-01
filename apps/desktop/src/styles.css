@@ -7109,6 +7109,39 @@ a.glass-card:focus-visible {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
 }
 
+.react-box-label-page--unified-media .pool-label-classes-panel .filter-panel-body,
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-classify-slot .filter-panel-body {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.react-box-label-page--unified-media .pool-label-classes-panel .pool-label-tools,
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-classify-slot .pool-label-tools {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.react-box-label-page--unified-media .pool-label-classes-panel .pool-label-class-list,
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-classify-slot .pool-label-class-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.react-box-label-page--unified-media .pool-label-classes-panel .pool-label-class-summary,
+.label-page--workbench .label-workbench-body--unified-media .lwb-inspector-classify-slot .pool-label-class-summary {
+  position: relative;
+  z-index: 1;
+  margin-top: 8px;
+  background: linear-gradient(180deg, rgba(14, 23, 38, 0.86), rgba(7, 12, 21, 0.9));
+}
+
 .react-box-label-page #previewViewer .pool-label-zoom-side,
 .react-box-label-page #previewViewer .pool-label-preview-toolbar,
 .react-box-label-page .pool-label-box-panel,
