@@ -6898,6 +6898,7 @@ a.glass-card:focus-visible {
 .react-box-label-page .lwb-analysis-chart {
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
+  overflow: hidden;
 }
 
 .react-box-label-page .lwb-analysis-chart-title,
@@ -6967,8 +6968,10 @@ a.glass-card:focus-visible {
   align-content: start;
   gap: 5px;
   min-height: 0;
+  max-height: clamp(120px, 18vh, 260px);
   overflow: auto;
-  padding-right: 2px;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
 }
 
 .react-box-label-page .lwb-analysis-class-bar-row {
@@ -7003,7 +7006,7 @@ a.glass-card:focus-visible {
 
 .react-box-label-page .lwb-analysis-class-bar-row .lwb-analysis-bar-fill {
   background:
-    linear-gradient(90deg, var(--bar-color-soft), var(--bar-color));
+    linear-gradient(90deg, color-mix(in srgb, var(--bar-color) 45%, transparent), var(--bar-color));
   box-shadow: 0 0 10px color-mix(in srgb, var(--bar-color) 35%, transparent);
 }
 

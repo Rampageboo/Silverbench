@@ -11,6 +11,7 @@ import { LabelWorkbenchHeader } from "./LabelWorkbenchHeader";
 import { LabelWorkbenchInspector } from "./LabelWorkbenchInspector";
 import { LabelMediaGrid, type LabelMediaSelection } from "./LabelMediaGrid";
 import { AutoLabelModelPanel } from "./AutoLabelModelPanel";
+import { classBoxColor } from "../shared/classColors";
 import type {
   LabelSourceSummary,
   LabelWorkbenchActionGroup,
@@ -369,6 +370,15 @@ function AnalysisPanel({
     if (!stats.detectClasses.some((bucket) => bucket.key === heatmapClassKey)) setHeatmapClassKey("all");
   }, [heatmapClassKey, stats.detectClasses]);
 
+  const colorForBucket = (bucket: AnalysisClassBucket, index: number, tone: "detect" | "clf") => {
+    if (tone === "detect") {
+      const classId = Number(bucket.key);
+      if (Number.isFinite(classId)) return classBoxColor(Math.max(0, Math.trunc(classId)));
+    }
+    const hue = (188 + index * 137.508) % 360;
+    return `hsl(${hue} 78% 58%)`;
+  };
+
   const renderClassBarGroup = (
     title: string,
     summary: string,
@@ -385,16 +395,13 @@ function AnalysisPanel({
       <div className="lwb-analysis-class-bars">
         {buckets.length ? buckets.map((bucket, index) => {
           const percent = Math.max(4, (bucket.count / maxCount) * 100);
-          const hue = tone === "detect"
-            ? (208 + index * 47) % 360
-            : 187;
+          const barColor = colorForBucket(bucket, index, tone);
           return (
             <div
               key={bucket.key}
               className="lwb-analysis-class-bar-row"
               style={{
-                "--bar-color": `hsl(${hue} 84% 62%)`,
-                "--bar-color-soft": `hsl(${hue} 84% 38% / 0.38)`,
+                "--bar-color": barColor,
               } as CSSProperties}
               title={`${bucket.name}: ${bucket.count}`}
             >
