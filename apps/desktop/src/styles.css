@@ -6646,10 +6646,10 @@ a.glass-card:focus-visible {
 
 .react-box-label-page .lwb-workbench-dock {
   display: grid;
-  grid-template-columns: minmax(320px, 360px) minmax(430px, 520px) minmax(340px, 420px);
+  grid-template-columns: minmax(425px, 490px) minmax(320px, 390px) minmax(340px, 420px);
   gap: 8px;
   align-items: stretch;
-  justify-content: end;
+  justify-content: start;
   min-width: 0;
 }
 
@@ -6777,6 +6777,21 @@ a.glass-card:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.react-box-label-page .pool-label-preview-dock .alm-model-row {
+  gap: 6px;
+  padding: 6px;
+}
+
+.react-box-label-page .pool-label-preview-dock .alm-panel-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.react-box-label-page .pool-label-preview-dock .alm-panel-btn {
+  min-width: 0;
+  padding: 5px 6px;
+  font-size: 11px;
 }
 
 .react-box-label-page .pool-label-preview-dock .alm-panel-summary {
