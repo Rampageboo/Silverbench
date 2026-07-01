@@ -7017,6 +7017,10 @@ a.glass-card:focus-visible {
 
 .react-box-label-page .lwb-analysis-heatmap {
   margin-top: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .react-box-label-page .lwb-analysis-heatmap-head select {
@@ -7036,7 +7040,8 @@ a.glass-card:focus-visible {
   grid-template-rows: repeat(5, minmax(12px, 1fr));
   gap: 3px;
   min-width: 0;
-  height: clamp(104px, 14vh, 180px);
+  min-height: 0;
+  height: 100%;
   padding: 4px;
   border: 1px solid rgba(129, 149, 176, 0.12);
   border-radius: 7px;
