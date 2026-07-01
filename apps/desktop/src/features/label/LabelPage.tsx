@@ -794,7 +794,6 @@ export function LabelPage({ active = true, onReady }: Props) {
   const previousVideoCountRef = useRef(0);
   const pendingVideoEntryDirectionRef = useRef<-1 | 1 | null>(null);
   const mode: LabelWorkbenchMode = selection.kind === "video" ? "video" : "image";
-  const shellMode: LabelWorkbenchMode = "image";
   const imagePool = useBoxLabel({
     workspaceRoot,
     focusFilename: poolLabelFocusFilename,
@@ -1079,7 +1078,7 @@ export function LabelPage({ active = true, onReady }: Props) {
 
   const ctxValue = useMemo<LabelWorkbenchContextValue>(
     () => ({
-      mode: shellMode,
+      mode,
       setMode: handleModeChange,
       renderMode: "workbench-embedded",
       reportSourceSummary,
@@ -1090,7 +1089,7 @@ export function LabelPage({ active = true, onReady }: Props) {
     [
       clearWorkbenchActions,
       handleModeChange,
-      shellMode,
+      mode,
       reportInspectorState,
       reportSourceSummary,
       registerWorkbenchActions,
@@ -1205,7 +1204,7 @@ export function LabelPage({ active = true, onReady }: Props) {
             )}
           </div>
           <LabelWorkbenchInspector
-            mode={shellMode}
+            mode={mode}
             sourceSummary={sourceSummary}
             inspectorState={inspectorState}
             actionGroups={actionGroups}
