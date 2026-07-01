@@ -113,8 +113,10 @@ export function useBoxLabelEditor({
   const contentRevisionRef = useRef(0);
   const previewImageRequestRef = useRef(0);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
+  const videoPlaybackTimeRef = useRef(videoPlaybackTime);
   const videoPlaybackTimeChangeRef = useRef(onVideoPlaybackTimeChange);
   const videoEndedRef = useRef(onVideoEnded);
+  videoPlaybackTimeRef.current = videoPlaybackTime;
   videoPlaybackTimeChangeRef.current = onVideoPlaybackTimeChange;
   videoEndedRef.current = onVideoEnded;
 
@@ -841,18 +843,30 @@ export function useBoxLabelEditor({
     if (!videoUrlOverride) return;
     let cancelled = false;
     const video = document.createElement("video");
+    video.style.position = "fixed";
+    video.style.left = "-1px";
+    video.style.top = "-1px";
+    video.style.width = "1px";
+    video.style.height = "1px";
+    video.style.opacity = "0";
+    video.style.pointerEvents = "none";
     video.crossOrigin = "anonymous";
     video.preload = "auto";
     video.muted = true;
     video.playsInline = true;
-    video.src = videoUrlOverride;
-    video.currentTime = Math.max(0, videoPlaybackTime || 0);
     videoElementRef.current = video;
 
     const applyVideoSource = () => {
       if (cancelled || videoElementRef.current !== video) return;
       interaction.imageRef.current = video;
       scheduleDraw();
+    };
+    const handleLoadedMetadata = () => {
+      const nextTime = Math.max(0, videoPlaybackTimeRef.current || 0);
+      if (Number.isFinite(nextTime) && Math.abs(video.currentTime - nextTime) > 0.02) {
+        video.currentTime = nextTime;
+      }
+      applyVideoSource();
     };
     const handleTimeUpdate = () => {
       videoPlaybackTimeChangeRef.current?.(video.currentTime);
@@ -862,26 +876,40 @@ export function useBoxLabelEditor({
       videoEndedRef.current?.();
       scheduleDraw();
     };
+    const handleError = () => {
+      if (cancelled || videoElementRef.current !== video) return;
+      const code = video.error?.code;
+      const message = code ? `Video failed to load (media error ${code}).` : "Video failed to load.";
+      setError(message);
+      scheduleDraw();
+    };
 
-    video.addEventListener("loadedmetadata", applyVideoSource);
+    video.addEventListener("loadedmetadata", handleLoadedMetadata);
     video.addEventListener("loadeddata", applyVideoSource);
     video.addEventListener("seeked", applyVideoSource);
     video.addEventListener("timeupdate", handleTimeUpdate);
     video.addEventListener("ended", handleEnded);
+    video.addEventListener("error", handleError);
+    document.body.appendChild(video);
+    video.src = videoUrlOverride;
     video.load();
 
     return () => {
       cancelled = true;
       video.pause();
-      video.removeEventListener("loadedmetadata", applyVideoSource);
+      video.removeEventListener("loadedmetadata", handleLoadedMetadata);
       video.removeEventListener("loadeddata", applyVideoSource);
       video.removeEventListener("seeked", applyVideoSource);
       video.removeEventListener("timeupdate", handleTimeUpdate);
       video.removeEventListener("ended", handleEnded);
+      video.removeEventListener("error", handleError);
+      video.removeAttribute("src");
+      video.load();
+      video.remove();
       if (videoElementRef.current === video) videoElementRef.current = null;
       if (interaction.imageRef.current === video) interaction.imageRef.current = null;
     };
-  }, [interaction.imageRef, scheduleDraw, videoUrlOverride]);
+  }, [interaction.imageRef, scheduleDraw, setError, videoUrlOverride]);
 
   useEffect(() => {
     const video = videoElementRef.current;
