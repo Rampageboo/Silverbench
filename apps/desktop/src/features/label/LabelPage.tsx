@@ -25,6 +25,7 @@ import {
   type AnalysisClassBucket,
   type AnalysisStats,
 } from "./labelAnalysisStats";
+import { buildMediaOrder, normalizeMediaSelection, shouldSelectNewlyLoadedVideo } from "./labelMediaSelection";
 import type {
   LabelSourceSummary,
   LabelWorkbenchActionGroup,
@@ -714,10 +715,7 @@ export function LabelPage({ active = true, onReady }: Props) {
   }, [imagePool.entries.length, videoSession.videos.length]);
 
   const mediaOrder = useMemo(() => {
-    return [
-      ...videoSession.videos.map((_, index) => ({ kind: "video" as const, index })),
-      ...imagePool.entries.map((_, index) => ({ kind: "image" as const, index }))
-    ];
+    return buildMediaOrder(videoSession.videos.length, imagePool.entries.length);
   }, [imagePool.entries, videoSession.videos]);
 
   const activeMediaPosition = useMemo(
@@ -767,23 +765,14 @@ export function LabelPage({ active = true, onReady }: Props) {
 
   useEffect(() => {
     if (!mediaCatalogReady) return;
-    if (selection.kind === "image") {
-      if (imagePool.entries.length) {
-        if (selection.index >= imagePool.entries.length) {
-          handleSelectionChange({ kind: "image", index: imagePool.entries.length - 1 });
-        }
-        return;
-      }
-      if (videoSession.videos.length) handleSelectionChange({ kind: "video", index: Math.max(0, videoSession.currentIndex) });
-      return;
-    }
-    if (videoSession.videos.length) {
-      if (selection.index >= videoSession.videos.length) {
-        handleSelectionChange({ kind: "video", index: videoSession.videos.length - 1 });
-      }
-      return;
-    }
-    if (imagePool.entries.length) handleSelectionChange({ kind: "image", index: Math.max(0, imagePool.currentIndex) });
+    const nextSelection = normalizeMediaSelection({
+      selection,
+      imageCount: imagePool.entries.length,
+      videoCount: videoSession.videos.length,
+      currentImageIndex: imagePool.currentIndex,
+      currentVideoIndex: videoSession.currentIndex,
+    });
+    if (nextSelection) handleSelectionChange(nextSelection);
   }, [
     handleSelectionChange,
     imagePool.currentIndex,
@@ -799,10 +788,10 @@ export function LabelPage({ active = true, onReady }: Props) {
     if (!mediaCatalogReady) return;
     const previousCount = previousVideoCountRef.current;
     previousVideoCountRef.current = videoSession.videos.length;
-    if (videoSession.videos.length <= previousCount) return;
+    if (!shouldSelectNewlyLoadedVideo({ previousVideoCount: previousCount, nextVideoCount: videoSession.videos.length, selection })) return;
     const index = videoSession.currentIndex >= 0 ? videoSession.currentIndex : videoSession.videos.length - 1;
     handleSelectionChange({ kind: "video", index });
-  }, [handleSelectionChange, mediaCatalogReady, videoSession.currentIndex, videoSession.videos.length]);
+  }, [handleSelectionChange, mediaCatalogReady, selection, videoSession.currentIndex, videoSession.videos.length]);
 
   useEffect(() => {
     if (selection.kind !== "video" || !videoSession.current || !videoSession.manifest) return;
