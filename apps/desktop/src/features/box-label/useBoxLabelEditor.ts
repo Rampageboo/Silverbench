@@ -30,6 +30,24 @@ function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
 }
 
+export function nextPreviewImageRequestId(currentRequestId: number) {
+  return currentRequestId + 1;
+}
+
+export function shouldApplyPreviewImageRequest({
+  requestId,
+  latestRequestId,
+  targetImagePath,
+  currentImagePath,
+}: {
+  requestId: number;
+  latestRequestId: number;
+  targetImagePath: string;
+  currentImagePath: string | undefined;
+}) {
+  return requestId === latestRequestId && currentImagePath === targetImagePath;
+}
+
 export function useBoxLabelEditor({
   workspaceRoot,
   datasetRoot,
@@ -88,6 +106,7 @@ export function useBoxLabelEditor({
   const selectedProposalIdRef = useRef<string | null>(null);
   const ephemeralProposalIdsRef = useRef<Set<string>>(new Set());
   const contentRevisionRef = useRef(0);
+  const previewImageRequestRef = useRef(0);
 
   const [boxes, setBoxes] = useState<api.LabelBox[]>([]);
   const [proposals, setProposals] = useState<DetectProposal[]>([]);
@@ -728,7 +747,9 @@ export function useBoxLabelEditor({
         ]);
         const image = await loadCanvasImage(imageUrl);
         if (cancelled) return;
-        interaction.imageRef.current = image;
+        const shouldApplyInitialImage =
+          reloadLabelsOnImageUrlChange || previewImageRequestRef.current === 0;
+        if (shouldApplyInitialImage) interaction.imageRef.current = image;
         if (loadStartedAtRevision !== contentRevisionRef.current) {
           scheduleDraw();
           return;
@@ -781,10 +802,18 @@ export function useBoxLabelEditor({
   useEffect(() => {
     if (reloadLabelsOnImageUrlChange || !datasetRoot || !entry || !imageUrlOverride) return;
     let cancelled = false;
+    const requestId = nextPreviewImageRequestId(previewImageRequestRef.current);
+    previewImageRequestRef.current = requestId;
     const targetImagePath = entry.imagePath;
     loadCanvasImage(imageUrlOverride)
       .then((image) => {
-        if (cancelled || entryRef.current?.imagePath !== targetImagePath) return;
+        if (cancelled) return;
+        if (!shouldApplyPreviewImageRequest({
+          requestId,
+          latestRequestId: previewImageRequestRef.current,
+          targetImagePath,
+          currentImagePath: entryRef.current?.imagePath,
+        })) return;
         interaction.imageRef.current = image;
         scheduleDraw();
       })
