@@ -166,46 +166,52 @@ function VideoFrameControlsPanel({
   return (
     <section className={`video-frame-controls-panel${controlsDisabled ? " is-disabled" : ""}`}>
       <div className="video-frame-controls-head">
-        <span>Video Controls</span>
+        <span>
+          Video Controls
+          <small title={sourceLabel}>Source: {sourceLabel}</small>
+        </span>
         <span>{segmentCount} segment(s)</span>
       </div>
       <div className="video-frame-controls-form">
-        <div className="video-frame-control-source" title={sourceLabel}>Source: {sourceLabel}</div>
-        <label>
-          <span>Sampling mode</span>
-          <select
-            value={samplingMode}
-            disabled={controlsDisabled}
-            onChange={(event) => onSamplingModeChange(event.target.value as SamplingMode)}
-          >
-            {SAMPLING_MODES.map((mode) => (
-              <option key={mode} value={mode}>{SAMPLING_MODE_LABELS[mode]}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>Min spacing (ms)</span>
-          <input
-            type="number"
-            min="0"
-            step="100"
-            value={minSpacingMs}
-            disabled={controlsDisabled}
-            onChange={(event) => onMinSpacingMsChange(Math.max(0, Number(event.target.value) || 0))}
-          />
-        </label>
-        <label>
-          <span>Random multiplier</span>
-          <select
-            value={randomMultiplier}
-            disabled={controlsDisabled}
-            onChange={(event) => onRandomMultiplierChange(Number(event.target.value) as RandomMultiplier)}
-          >
-            {RANDOM_MULTIPLIERS.map((value) => (
-              <option key={value} value={value}>{value}x</option>
-            ))}
-          </select>
-        </label>
+        <div className="video-frame-controls-column">
+          <label>
+            <span>Sampling mode</span>
+            <select
+              value={samplingMode}
+              disabled={controlsDisabled}
+              onChange={(event) => onSamplingModeChange(event.target.value as SamplingMode)}
+            >
+              {SAMPLING_MODES.map((mode) => (
+                <option key={mode} value={mode}>{SAMPLING_MODE_LABELS[mode]}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Min spacing (ms)</span>
+            <input
+              type="number"
+              min="0"
+              step="100"
+              value={minSpacingMs}
+              disabled={controlsDisabled}
+              onChange={(event) => onMinSpacingMsChange(Math.max(0, Number(event.target.value) || 0))}
+            />
+          </label>
+        </div>
+        <div className="video-frame-controls-column video-frame-controls-column--multiplier">
+          <label>
+            <span>Random multiplier</span>
+            <select
+              value={randomMultiplier}
+              disabled={controlsDisabled}
+              onChange={(event) => onRandomMultiplierChange(Number(event.target.value) as RandomMultiplier)}
+            >
+              {RANDOM_MULTIPLIERS.map((value) => (
+                <option key={value} value={value}>{value}x</option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
       <div className="video-frame-controls-actions">
         <button type="button" className="primary" onClick={onRandom} disabled={controlsDisabled || videoDurationMs <= 0}>
