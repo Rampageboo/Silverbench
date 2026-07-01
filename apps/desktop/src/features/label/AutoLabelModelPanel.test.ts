@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  autoLabelMediaKey,
+  autoLabelRunIsCurrent,
   classifyPredictionIsConfident,
   modelRunId,
   shouldAutoRunClassify,
@@ -41,5 +43,27 @@ describe("AutoLabelModelPanel helpers", () => {
     expect(shouldAutoRunForEmptySample(1, 0, null)).toBe(false);
     expect(shouldAutoRunForEmptySample(0, 1, null)).toBe(false);
     expect(shouldAutoRunForEmptySample(0, 0, "chat")).toBe(false);
+  });
+
+  it("uses image path before basename for auto-label media identity", () => {
+    expect(autoLabelMediaKey({ imagePath: "images/a.png", labelPath: "labels/a.txt", basename: "A" })).toBe(
+      "images/a.png"
+    );
+    expect(autoLabelMediaKey({ imagePath: "", labelPath: "labels/a.txt", basename: "A" })).toBe("A");
+    expect(autoLabelMediaKey(null)).toBe("");
+  });
+
+  it("rejects stale auto-label runs by cancellation, run id, or media key", () => {
+    const current = {
+      cancelled: false,
+      token: 4,
+      activeToken: 4,
+      targetMediaKey: "images/a.png",
+      currentMediaKey: "images/a.png",
+    };
+    expect(autoLabelRunIsCurrent(current)).toBe(true);
+    expect(autoLabelRunIsCurrent({ ...current, cancelled: true })).toBe(false);
+    expect(autoLabelRunIsCurrent({ ...current, activeToken: 5 })).toBe(false);
+    expect(autoLabelRunIsCurrent({ ...current, currentMediaKey: "images/b.png" })).toBe(false);
   });
 });
