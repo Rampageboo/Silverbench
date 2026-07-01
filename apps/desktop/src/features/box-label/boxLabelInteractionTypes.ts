@@ -14,6 +14,7 @@ export type UseBoxLabelInteractionOptions = {
   filename: string;
   onNavigate: (index: number) => void;
   onNavigateBoundary?: (delta: -1 | 1) => void;
+  disableMediaNavigationHotkeys?: boolean;
   onToggleReviewed: () => Promise<void>;
   onToggleFlagged: () => Promise<void>;
   onMarkJunk?: () => Promise<void>;

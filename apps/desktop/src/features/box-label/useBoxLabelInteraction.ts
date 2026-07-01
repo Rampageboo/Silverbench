@@ -16,6 +16,7 @@ export function useBoxLabelInteraction({
     filename,
     onNavigate,
     onNavigateBoundary,
+    disableMediaNavigationHotkeys,
     onToggleReviewed,
   onToggleFlagged,
   onMarkJunk,
@@ -168,6 +169,7 @@ export function useBoxLabelInteraction({
     save: persistence.save,
     deleteSelectedBox: persistence.deleteSelectedBox,
     createFixedBoxFromShortcut: persistence.createFixedBoxFromShortcut,
+    disableMediaNavigationHotkeys,
     navigateRelative: persistence.navigateRelative,
     moveSelectedBoxByKeyboard: persistence.moveSelectedBoxByKeyboard,
     resizeSelectedBoxByKeyboard: persistence.resizeSelectedBoxByKeyboard

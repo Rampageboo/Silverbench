@@ -28,6 +28,7 @@ type UseBoxLabelKeyboardOptions = {
   save: () => Promise<void>;
   deleteSelectedBox: () => void;
   createFixedBoxFromShortcut: (slot: number) => void;
+  disableMediaNavigationHotkeys?: boolean;
   navigateRelative: (delta: number) => void;
   moveSelectedBoxByKeyboard: (dx: number, dy: number, fast: boolean) => void;
   resizeSelectedBoxByKeyboard: (key: string, fast: boolean) => void;
@@ -58,6 +59,7 @@ export function useBoxLabelKeyboard({
   save,
   deleteSelectedBox,
   createFixedBoxFromShortcut,
+  disableMediaNavigationHotkeys = false,
   navigateRelative,
   moveSelectedBoxByKeyboard,
   resizeSelectedBoxByKeyboard
@@ -111,12 +113,12 @@ export function useBoxLabelKeyboard({
         createFixedBoxFromShortcut(Number(altDigit[1]));
         return;
       }
-      if (event.key.toLowerCase() === "a" && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      if (!disableMediaNavigationHotkeys && event.key.toLowerCase() === "a" && !event.ctrlKey && !event.altKey && !event.metaKey) {
         event.preventDefault();
         navigateRelative(-1);
         return;
       }
-      if (event.key.toLowerCase() === "d" && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      if (!disableMediaNavigationHotkeys && event.key.toLowerCase() === "d" && !event.ctrlKey && !event.altKey && !event.metaKey) {
         event.preventDefault();
         if (duplicateFlow.active && !duplicateFlow.paused) {
           advanceDuplicateToNext().catch((err) => setError(errMessage(err)));

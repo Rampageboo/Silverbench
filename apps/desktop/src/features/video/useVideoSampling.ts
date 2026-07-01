@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type SampleCandidate, type SamplingMode, sampleTimestamp } from "./videoSamplingDomain";
+import { type SampleCandidate, type SamplingMode, type TimestampRecord, sampleTimestamp } from "./videoSamplingDomain";
 import { loadVideoSegmentManifest, type VideoSegmentManifest } from "./videoSegmentApi";
 import type { VideoAnnotationManifest } from "./videoAnnotationApi";
 
@@ -51,12 +51,12 @@ export function useVideoSampling({
       });
   }, [workspaceRoot, videoPath, videoDurationMs]);
 
-  // Random Next seeks to a new timestamp but does NOT create an annotation record.
+  // Pick a random timestamp candidate. Callers decide whether to seek or create markers.
   // Sampling checks detect task reviewed/boxes from the v2 structure.
-  const randomNext = useCallback((): SampleCandidate | null => {
+  const randomNext = useCallback((extraTimestampsMs: number[] = []): SampleCandidate | null => {
     if (videoDurationMs <= 0) return null;
 
-    const existingTimestamps = annotationManifest
+    const existingTimestamps: TimestampRecord[] = annotationManifest
       ? Object.values(annotationManifest.frames).map((frame) => ({
           timestampMs: frame.timestampMs,
           // Use detect task for avoidReviewed/avoidAnnotated checks
@@ -64,6 +64,13 @@ export function useVideoSampling({
           boxes: frame.tasks.detect?.boxes
         }))
       : [];
+    existingTimestamps.push(
+      ...extraTimestampsMs.map((timestampMs) => ({
+        timestampMs,
+        reviewed: true,
+        boxes: [null]
+      }))
+    );
 
     const enabledSegments = (segmentManifest?.segments ?? [])
       .filter((seg) => seg.enabled)

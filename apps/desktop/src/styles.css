@@ -6696,8 +6696,9 @@ a.glass-card:focus-visible {
 
 .react-box-label-page .pool-label-preview-dock .video-frame-controls-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(140px, auto);
-  gap: 6px 8px;
+  grid-template-columns: minmax(112px, 132px) minmax(136px, 154px);
+  justify-content: center;
+  gap: 6px 14px;
   align-items: center;
 }
 

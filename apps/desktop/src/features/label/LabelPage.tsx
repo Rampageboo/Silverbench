@@ -31,6 +31,8 @@ const SAMPLING_MODE_LABELS: Record<SamplingMode, string> = {
 };
 
 const SAMPLING_MODES: SamplingMode[] = ["whole-video", "segments-preferred", "segments-only"];
+const RANDOM_MULTIPLIERS = [1, 5, 10] as const;
+type RandomMultiplier = (typeof RANDOM_MULTIPLIERS)[number];
 
 type AnalysisStats = {
   totalMedia: number;
@@ -124,6 +126,7 @@ function VideoFrameControlsPanel({
   segmentCount,
   samplingMode,
   minSpacingMs,
+  randomMultiplier,
   current,
   disabled = false,
   annotatedFrameCount,
@@ -131,6 +134,8 @@ function VideoFrameControlsPanel({
   videoDurationMs,
   onSamplingModeChange,
   onMinSpacingMsChange,
+  onRandomMultiplierChange,
+  onRandom,
   onRandomNext,
   onAddMarker,
   onCopyPreviousBoxes,
@@ -141,6 +146,7 @@ function VideoFrameControlsPanel({
   segmentCount: number;
   samplingMode: SamplingMode;
   minSpacingMs: number;
+  randomMultiplier: RandomMultiplier;
   current: boolean;
   disabled?: boolean;
   annotatedFrameCount: number;
@@ -148,6 +154,8 @@ function VideoFrameControlsPanel({
   videoDurationMs: number;
   onSamplingModeChange: (mode: SamplingMode) => void;
   onMinSpacingMsChange: (value: number) => void;
+  onRandomMultiplierChange: (value: RandomMultiplier) => void;
+  onRandom: () => void;
   onRandomNext: () => void;
   onAddMarker: () => void;
   onCopyPreviousBoxes: () => void;
@@ -186,9 +194,21 @@ function VideoFrameControlsPanel({
             onChange={(event) => onMinSpacingMsChange(Math.max(0, Number(event.target.value) || 0))}
           />
         </label>
+        <label>
+          <span>Random multiplier</span>
+          <select
+            value={randomMultiplier}
+            disabled={controlsDisabled}
+            onChange={(event) => onRandomMultiplierChange(Number(event.target.value) as RandomMultiplier)}
+          >
+            {RANDOM_MULTIPLIERS.map((value) => (
+              <option key={value} value={value}>{value}x</option>
+            ))}
+          </select>
+        </label>
       </div>
       <div className="video-frame-controls-actions">
-        <button type="button" className="primary" onClick={onRandomNext} disabled={controlsDisabled || videoDurationMs <= 0}>
+        <button type="button" className="primary" onClick={onRandom} disabled={controlsDisabled || videoDurationMs <= 0}>
           Random
         </button>
         <button type="button" onClick={onAddMarker} disabled={controlsDisabled}>
@@ -268,6 +288,7 @@ function VideoBoxLabelSurface({
   );
   const entries = useMemo(() => entry ? [entry] : [], [entry]);
   const selected = useMemo(() => entry ? new Set([entry.basename]) : new Set<string>(), [entry]);
+  const [randomMultiplier, setRandomMultiplier] = useState<RandomMultiplier>(1);
   const metadata = useMemo(() => new Map(), []);
   const classImageCounts = useMemo(() => {
     const counts = new Map<number, number>();
@@ -303,17 +324,25 @@ function VideoBoxLabelSurface({
     if (classKey) videoSession.setClfClass(classKey);
     else videoSession.clearClfLabel();
   }, [videoSession]);
-  const handleRandomNext = useCallback(() => {
-    const candidate = sampling.randomNext();
-    if (!candidate) return;
-    const nextTime = candidate.timestampMs / 1000;
-    videoSession.markTimestamp(nextTime, {
-      kind: "random",
-      samplingMode: sampling.samplingMode,
-      segmentId: candidate.segmentId,
-    });
-    videoSession.gotoTime(nextTime);
+  const handleRandomMarkers = useCallback((count: RandomMultiplier) => {
+    const addedTimestamps: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const candidate = sampling.randomNext(addedTimestamps);
+      if (!candidate) break;
+      addedTimestamps.push(candidate.timestampMs);
+      videoSession.markTimestamp(candidate.timestampMs / 1000, {
+        kind: "random",
+        samplingMode: sampling.samplingMode,
+        segmentId: candidate.segmentId,
+      });
+    }
   }, [sampling, videoSession]);
+  const handleRandom = useCallback(() => {
+    handleRandomMarkers(randomMultiplier);
+  }, [handleRandomMarkers, randomMultiplier]);
+  const handleRandomNext = useCallback(() => {
+    handleRandomMarkers(1);
+  }, [handleRandomMarkers]);
   const handleAddMarker = useCallback(() => {
     sampling.setLastSource("manual");
     videoSession.markCurrentTimestamp({ kind: "manual" });
@@ -357,6 +386,7 @@ function VideoBoxLabelSurface({
           shiftSelectedFilenames={new Set()}
           onNavigate={() => {}}
           onNavigateBoundary={onNavigateBoundary}
+          disableMediaNavigationHotkeys
           showSideStack
           initialShortcutSlots={imagePool.initialShortcutSlots}
           initialFixedBoxSlots={imagePool.initialFixedBoxSlots}
@@ -450,12 +480,15 @@ function VideoBoxLabelSurface({
                 segmentCount={sampling.segmentCount}
                 samplingMode={sampling.samplingMode}
                 minSpacingMs={sampling.minSpacingMs}
+                randomMultiplier={randomMultiplier}
                 current={Boolean(videoSession.current)}
                 annotatedFrameCount={videoSession.annotatedFrames.length}
                 hasFrameRecord={hasFrameRecord}
                 videoDurationMs={videoDurationMs}
                 onSamplingModeChange={sampling.setMode}
                 onMinSpacingMsChange={sampling.setMinSpacingMs}
+                onRandomMultiplierChange={setRandomMultiplier}
+                onRandom={handleRandom}
                 onRandomNext={handleRandomNext}
                 onAddMarker={handleAddMarker}
                 onCopyPreviousBoxes={videoSession.copyPreviousBoxes}
@@ -850,6 +883,7 @@ export function LabelPage({ active = true, onReady }: Props) {
                       segmentCount={0}
                       samplingMode="segments-preferred"
                       minSpacingMs={2000}
+                      randomMultiplier={1}
                       current={false}
                       disabled
                       annotatedFrameCount={0}
@@ -857,6 +891,8 @@ export function LabelPage({ active = true, onReady }: Props) {
                       videoDurationMs={0}
                       onSamplingModeChange={() => {}}
                       onMinSpacingMsChange={() => {}}
+                      onRandomMultiplierChange={() => {}}
+                      onRandom={() => {}}
                       onRandomNext={() => {}}
                       onAddMarker={() => {}}
                       onCopyPreviousBoxes={() => {}}
