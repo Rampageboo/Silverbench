@@ -403,6 +403,7 @@ export function LabelPage({ active = true, onReady }: Props) {
   const [sourceSummary, setSourceSummary] = useState<LabelSourceSummary | null>(null);
   const [inspectorState, setInspectorState] = useState<LabelWorkbenchInspectorState | null>(null);
   const [actionGroups, setActionGroups] = useState<LabelWorkbenchActionGroup[]>([]);
+  const [mediaRevealToken, setMediaRevealToken] = useState(0);
   const previousVideoCountRef = useRef(0);
   const pendingVideoEntryDirectionRef = useRef<-1 | 1 | null>(null);
   const mode: LabelWorkbenchMode = selection.kind === "video" ? "video" : "image";
@@ -434,6 +435,10 @@ export function LabelPage({ active = true, onReady }: Props) {
 
   const registerWorkbenchActions = useCallback((groups: LabelWorkbenchActionGroup[] | null) => {
     setActionGroups(groups ?? []);
+  }, []);
+
+  const revealActiveMediaTile = useCallback(() => {
+    setMediaRevealToken((token) => token + 1);
   }, []);
 
   const handleSelectionChange = useCallback((nextSelection: LabelMediaSelection) => {
@@ -479,10 +484,11 @@ export function LabelPage({ active = true, onReady }: Props) {
 
   const handleMediaBoundaryNavigate = useCallback(
     (delta: -1 | 1) => {
+      revealActiveMediaTile();
       if (activeMediaPosition < 0) return;
       selectMediaAtPosition(activeMediaPosition + delta, delta);
     },
-    [activeMediaPosition, selectMediaAtPosition]
+    [activeMediaPosition, revealActiveMediaTile, selectMediaAtPosition]
   );
 
   const handleModeChange = useCallback(
@@ -565,6 +571,7 @@ export function LabelPage({ active = true, onReady }: Props) {
       const delta = key === "a" ? -1 : key === "d" ? 1 : 0;
       if (!delta) return;
       event.preventDefault();
+      revealActiveMediaTile();
       const epsilon = 0.0005;
       const markerTimes = videoSession.timelineMarkers
         .map((marker) => marker.time)
@@ -584,6 +591,7 @@ export function LabelPage({ active = true, onReady }: Props) {
   }, [
     active,
     handleMediaBoundaryNavigate,
+    revealActiveMediaTile,
     selection.kind,
     videoSession,
   ]);
@@ -692,6 +700,7 @@ export function LabelPage({ active = true, onReady }: Props) {
             pool={imagePool}
             videoSession={videoSession}
             selection={selection}
+            activeRevealToken={mediaRevealToken}
             onSelectionChange={handleSelectionChange}
           />
           <div className="label-content">
@@ -710,7 +719,10 @@ export function LabelPage({ active = true, onReady }: Props) {
                 showGallery={false}
                 showSideStack
                 unifiedMedia
-                onImageNavigate={(index) => handleSelectionChange({ kind: "image", index })}
+                onImageNavigate={(index) => {
+                  revealActiveMediaTile();
+                  handleSelectionChange({ kind: "image", index });
+                }}
                 onNavigateBoundary={handleMediaBoundaryNavigate}
                 canvasOverlay={({
                   entry,

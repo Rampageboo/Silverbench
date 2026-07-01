@@ -13,6 +13,7 @@ type Props = {
   pool: BoxLabelPageModel;
   videoSession: VideoLabelSession;
   selection: LabelMediaSelection;
+  activeRevealToken?: number;
   onSelectionChange: (selection: LabelMediaSelection) => void;
 };
 
@@ -106,7 +107,8 @@ function mediaKey(selection: LabelMediaSelection) {
   return `${selection.kind}:${selection.index}`;
 }
 
-export function LabelMediaGrid({ pool, videoSession, selection, onSelectionChange }: Props) {
+export function LabelMediaGrid({ pool, videoSession, selection, activeRevealToken = 0, onSelectionChange }: Props) {
+  const activeTileRef = useRef<HTMLButtonElement | null>(null);
   const mediaItems = useMemo<MediaItem[]>(() => {
     const videos: MediaItem[] = videoSession.videos.map((video, index) => ({
       kind: "video",
@@ -134,6 +136,15 @@ export function LabelMediaGrid({ pool, videoSession, selection, onSelectionChang
 
   const activeKey = mediaKey(selection);
   const activePosition = mediaItems.findIndex((item) => `${item.kind}:${item.index}` === activeKey);
+
+  useEffect(() => {
+    if (!activeRevealToken) return;
+    activeTileRef.current?.scrollIntoView({
+      block: "center",
+      inline: "nearest",
+      behavior: "smooth"
+    });
+  }, [activeKey, activeRevealToken]);
 
   return (
     <section className="panel lwb-media-panel" aria-label="Media">
@@ -176,6 +187,7 @@ export function LabelMediaGrid({ pool, videoSession, selection, onSelectionChang
                 <button
                   type="button"
                   key={item.key}
+                  ref={active ? activeTileRef : null}
                   className={`lwb-media-tile${active ? " active" : ""}${shiftSelected ? " shift-selected" : ""}${item.kind === "image" && item.reviewed ? " reviewed" : ""}${item.kind === "image" && item.flagged ? " flagged" : ""}`}
                   title={item.name}
                   onClick={(event) => {
