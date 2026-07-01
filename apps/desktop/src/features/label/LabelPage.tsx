@@ -525,15 +525,17 @@ function VideoBoxLabelSurface({
   const autoLabelFrameBase64 = hasFrameRecord ? videoSession.previewBase64 : null;
   const classPanelSummaries = useMemo(() => analysisClassPanelSummaries(analysisStats), [analysisStats]);
 
+  const loadBoxesAtVideoTime = videoSession.loadBoxesAtTime;
+  const updateVideoFrameAtTime = videoSession.updateFrameAtTime;
   const loadLabelsOverride = useCallback(async (target: BoxLabelEntry) => {
     const targetTime = videoFrameEntryTime(target);
-    return targetTime === null ? [] : videoSession.loadBoxesAtTime(targetTime);
-  }, [videoSession]);
+    return targetTime === null ? [] : loadBoxesAtVideoTime(targetTime);
+  }, [loadBoxesAtVideoTime]);
   const saveLabelsOverride = useCallback(async (target: BoxLabelEntry, boxes: Parameters<typeof videoSession.updateCurrentFrame>[0]) => {
     const targetTime = videoFrameEntryTime(target);
     if (targetTime === null) throw new Error("Cannot resolve video timestamp for label save.");
-    return videoSession.updateFrameAtTime(targetTime, boxes, true);
-  }, [videoSession]);
+    return updateVideoFrameAtTime(targetTime, boxes, true);
+  }, [updateVideoFrameAtTime]);
   const assignClassificationClass = useCallback(async (classKey: string | null) => {
     if (classKey) videoSession.setClfClass(classKey);
     else videoSession.clearClfLabel();

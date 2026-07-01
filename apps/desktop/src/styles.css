@@ -2184,6 +2184,7 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   align-self: end;
   justify-self: stretch;
   z-index: 20;
+  pointer-events: none;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 16px auto;
@@ -2204,6 +2205,7 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   position: relative;
   height: 18px;
   margin: 0 6px;
+  pointer-events: auto;
   cursor: pointer;
 }
 
@@ -2251,6 +2253,7 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
 .video-frame-box-label-page .video-frame-timeline-overlay input {
   width: 100%;
   min-width: 0;
+  pointer-events: auto;
 }
 
 .video-frame-box-label-page .video-frame-timeline-overlay span {
