@@ -1445,7 +1445,7 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   color: #94a3b8;
 }
 
-.react-box-label-page .pool-label-classes-panel {
+.pool-label-classes-panel {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
@@ -1469,12 +1469,12 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   min-width: 0;
 }
 
-.react-box-label-page .pool-label-classes-panel .panel-body {
+.pool-label-classes-panel .panel-body {
   min-height: 0;
   overflow: hidden;
 }
 
-.react-box-label-page .pool-label-classes-panel .filter-panel-body {
+.pool-label-classes-panel .filter-panel-body {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -1482,7 +1482,7 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   overflow: hidden;
 }
 
-.react-box-label-page .pool-label-tools {
+.pool-label-classes-panel .pool-label-tools {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -1721,8 +1721,7 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   cursor: url("/assets/webview_cursor_default.png") 8 2, default;
 }
 
-.react-box-label-page .pool-label-box-row,
-.lwb-inspector .pool-label-box-row {
+.pool-label-box-panel .pool-label-box-row {
   width: 100%;
   text-align: left;
   padding: 8px 10px;
@@ -1732,8 +1731,7 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   color: #e2e8f0;
 }
 
-.react-box-label-page .pool-label-box-row.selected,
-.lwb-inspector .pool-label-box-row.selected {
+.pool-label-box-panel .pool-label-box-row.selected {
   border-color: #2f81f7;
   background: #12305c;
 }
@@ -4734,11 +4732,7 @@ a.glass-card:focus-visible {
 }
 
 .lwb-inspector-classify-slot .pool-label-classes-panel {
-  flex: 1 1 auto;
-  min-height: 0;
   width: 100%;
-  display: flex;
-  flex-direction: column;
   box-shadow: none;
 }
 
@@ -4751,17 +4745,7 @@ a.glass-card:focus-visible {
   box-shadow: none;
 }
 
-.lwb-inspector-classify-slot .pool-label-classes-panel .panel-body,
-.lwb-inspector-classify-slot .pool-label-classes-panel .filter-panel-body,
 .lwb-inspector-classify-slot .video-label-classify-panel .panel-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.lwb-inspector-classify-slot .pool-label-tools {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
@@ -5879,8 +5863,7 @@ a.glass-card:focus-visible {
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-.react-box-label-page .pool-label-box-row,
-.lwb-inspector .pool-label-box-row,
+.pool-label-box-panel .pool-label-box-row,
 .pool-label-classes-panel .pool-label-class-row--static,
 .lwb-inspector-detect-class-list button {
   border-color: rgba(124, 147, 176, 0.18);
@@ -5889,8 +5872,7 @@ a.glass-card:focus-visible {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
-.react-box-label-page .pool-label-box-row:hover,
-.lwb-inspector .pool-label-box-row:hover,
+.pool-label-box-panel .pool-label-box-row:hover,
 .pool-label-classes-panel .pool-label-class-row--static:hover:not(:disabled),
 .lwb-inspector-detect-class-list button:hover:not(:disabled) {
   border-color: rgba(147, 197, 253, 0.38);
@@ -5898,8 +5880,7 @@ a.glass-card:focus-visible {
   color: #eff6ff;
 }
 
-.react-box-label-page .pool-label-box-row.selected,
-.lwb-inspector .pool-label-box-row.selected,
+.pool-label-box-panel .pool-label-box-row.selected,
 .pool-label-classes-panel .pool-label-class-row--static.selected,
 .lwb-inspector-detect-class-list button.selected {
   border-color: rgba(96, 165, 250, 0.76);
@@ -6266,7 +6247,7 @@ a.glass-card:focus-visible {
 
 .label-page--workbench .label-workbench-body--unified-media .lwb-inspector-classify-slot .pool-label-class-row--static,
 .label-page--workbench .label-workbench-body--unified-media .lwb-inspector-detect-class-list button,
-.label-page--workbench .label-workbench-body--unified-media .lwb-inspector .pool-label-box-row {
+.label-page--workbench .label-workbench-body--unified-media .pool-label-box-panel .pool-label-box-row {
   min-height: 26px;
   border-radius: 5px;
   background: rgba(5, 10, 18, 0.38);
