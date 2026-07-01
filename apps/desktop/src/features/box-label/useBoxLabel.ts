@@ -188,6 +188,15 @@ export function useBoxLabel({
         detectClassCounts.set(classId, (detectClassCounts.get(classId) ?? 0) + 1);
       }
     }
+    if (datasetDetectPoints.length) {
+      detectHits = datasetDetectPoints.length;
+      detectClassCounts.clear();
+      for (const point of datasetDetectPoints) {
+        const classId = Number(point.classKey);
+        if (!Number.isFinite(classId)) continue;
+        detectClassCounts.set(classId, (detectClassCounts.get(classId) ?? 0) + 1);
+      }
+    }
 
     return {
       totalMedia: allEntries.length,

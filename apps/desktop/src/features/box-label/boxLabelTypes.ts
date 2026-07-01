@@ -97,6 +97,13 @@ export type BoxLabelCanvasOverlay =
   | ReactNode
   | ((context: BoxLabelCanvasOverlayContext) => ReactNode);
 
+export type BoxLabelClassPanelSummary = {
+  metrics: Array<{
+    label: string;
+    value: number;
+  }>;
+};
+
 export type BoxLabelViewProps = {
   workspaceRoot: string;
   datasetRoot: string;
@@ -131,6 +138,10 @@ export type BoxLabelViewProps = {
   clfTaskEnabled?: boolean;
   onToggleDetectTaskEnabled?: () => Promise<void>;
   onToggleClfTaskEnabled?: () => Promise<void>;
+  classPanelSummaries?: {
+    detect?: BoxLabelClassPanelSummary;
+    clf?: BoxLabelClassPanelSummary;
+  };
   onLabelsChanged: (filename: string, boxes: api.LabelBox[]) => void;
   onMetadataChanged?: () => Promise<void>;
   onStatusText?: (text: string) => void;

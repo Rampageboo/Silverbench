@@ -1577,6 +1577,56 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   overflow: auto;
 }
 
+.pool-label-classes-panel .pool-label-class-summary {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(129, 149, 176, 0.14);
+}
+
+.pool-label-classes-panel .pool-label-class-summary-row {
+  display: grid;
+  grid-template-columns: minmax(48px, 0.36fr) minmax(0, 1fr) minmax(26px, auto);
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--lwb-text-muted);
+  font-size: 10.5px;
+  font-weight: 720;
+}
+
+.pool-label-classes-panel .pool-label-class-summary-row > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pool-label-classes-panel .pool-label-class-summary-row strong {
+  color: #dbeafe;
+  font-size: 10.5px;
+  text-align: right;
+}
+
+.pool-label-classes-panel .pool-label-class-summary-track {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(30, 41, 59, 0.82);
+}
+
+.pool-label-classes-panel .pool-label-class-summary-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #60a5fa);
+}
+
+.pool-label-clf-classes-panel .pool-label-class-summary-fill {
+  background: linear-gradient(90deg, #0891b2, #67e8f9);
+}
+
 .pool-label-classes-panel .pool-label-class-row {
   position: relative;
   flex: 0 0 auto;
@@ -6845,6 +6895,11 @@ a.glass-card:focus-visible {
   background: rgba(5, 10, 18, 0.44);
 }
 
+.react-box-label-page .lwb-analysis-chart {
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+}
+
 .react-box-label-page .lwb-analysis-chart-title,
 .react-box-label-page .lwb-analysis-heatmap-head {
   display: flex;
@@ -6905,6 +6960,51 @@ a.glass-card:focus-visible {
 
 .react-box-label-page .lwb-analysis-chart--clf .lwb-analysis-bar-fill {
   background: linear-gradient(90deg, #0891b2, #67e8f9);
+}
+
+.react-box-label-page .lwb-analysis-class-bars {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.react-box-label-page .lwb-analysis-class-bar-row {
+  display: grid;
+  grid-template-columns: minmax(74px, 42%) minmax(0, 1fr) minmax(26px, auto);
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--lwb-text-muted);
+  font-size: 10.5px;
+  font-weight: 740;
+}
+
+.react-box-label-page .lwb-analysis-class-bar-row > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--lwb-text);
+}
+
+.react-box-label-page .lwb-analysis-class-bar-row strong {
+  color: #dbeafe;
+  font-size: 10.5px;
+  text-align: right;
+}
+
+.react-box-label-page .lwb-analysis-class-bar-row .lwb-analysis-bar-track {
+  height: 7px;
+  background: rgba(30, 41, 59, 0.78);
+}
+
+.react-box-label-page .lwb-analysis-class-bar-row .lwb-analysis-bar-fill {
+  background:
+    linear-gradient(90deg, var(--bar-color-soft), var(--bar-color));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--bar-color) 35%, transparent);
 }
 
 .react-box-label-page .lwb-analysis-heatmap {

@@ -54,6 +54,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     clfTaskEnabled = true,
     onToggleDetectTaskEnabled,
     onToggleClfTaskEnabled,
+    classPanelSummaries,
   } = props;
   const auraRef = useRef<HTMLDivElement | null>(null);
   const canvasClassSearchInputRef = useRef<HTMLInputElement | null>(null);
@@ -209,6 +210,27 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     [editor]
   );
 
+  const renderClassPanelSummary = useCallback((summary: NonNullable<BoxLabelViewProps["classPanelSummaries"]>["detect"] | undefined) => {
+    if (!summary?.metrics.length) return null;
+    const maxValue = Math.max(1, ...summary.metrics.map((item) => item.value));
+    return (
+      <div className="pool-label-class-summary" aria-label="Class panel summary">
+        {summary.metrics.map((item) => (
+          <div key={item.label} className="pool-label-class-summary-row">
+            <span>{item.label}</span>
+            <div className="pool-label-class-summary-track" aria-hidden="true">
+              <div
+                className="pool-label-class-summary-fill"
+                style={{ width: `${item.value ? Math.max(3, (item.value / maxValue) * 100) : 3}%` }}
+              />
+            </div>
+            <strong>{item.value}</strong>
+          </div>
+        ))}
+      </div>
+    );
+  }, []);
+
   useEffect(() => {
     setCanvasClassSearchMenu(null);
   }, [props.entry?.basename]);
@@ -336,6 +358,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
           {classificationClassesStatus ? (
             <div className="hint pool-label-clf-class-status">{classificationClassesStatus}</div>
           ) : null}
+          {renderClassPanelSummary(classPanelSummaries?.clf)}
         </div>
       </div>
     </section>
@@ -922,6 +945,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
                       </button>
                     ))}
                   </div>
+                  {renderClassPanelSummary(classPanelSummaries?.detect)}
                 </div>
               </div>
             </section>

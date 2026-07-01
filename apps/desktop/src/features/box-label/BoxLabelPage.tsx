@@ -11,7 +11,7 @@ import { useWorkspaceClasses } from "../workspace/useWorkspaceClasses";
 import { activeDetectClassDefs, chooseClassificationManifest, classificationOptionsForNewAnnotations } from "../workspace/workspaceClassTaxonomy";
 import { BoxLabelGallery } from "./BoxLabelGallery";
 import { BoxLabelView } from "./BoxLabelView";
-import type { BoxLabelCanvasOverlay, BoxLabelWorkbenchBridge } from "./boxLabelTypes";
+import type { BoxLabelCanvasOverlay, BoxLabelViewProps, BoxLabelWorkbenchBridge } from "./boxLabelTypes";
 import { useBoxLabel } from "./useBoxLabel";
 
 type BoxLabelPageProps = {
@@ -27,6 +27,7 @@ type BoxLabelSurfaceProps = {
   showSideStack?: boolean;
   onImageNavigate?: (index: number) => void;
   onNavigateBoundary?: (delta: -1 | 1) => void;
+  classPanelSummaries?: BoxLabelViewProps["classPanelSummaries"];
   canvasOverlay?: BoxLabelCanvasOverlay;
   previewDock?: BoxLabelCanvasOverlay;
 };
@@ -50,6 +51,7 @@ export function BoxLabelSurface({
   showSideStack = true,
   onImageNavigate,
   onNavigateBoundary,
+  classPanelSummaries,
   canvasOverlay,
   previewDock,
 }: BoxLabelSurfaceProps) {
@@ -411,6 +413,7 @@ export function BoxLabelSurface({
           clfTaskEnabled={pool.currentClfExportEnabled}
           onToggleDetectTaskEnabled={pool.toggleDetectExportEnabled}
           onToggleClfTaskEnabled={pool.toggleClfExportEnabled}
+          classPanelSummaries={classPanelSummaries}
           onLabelsChanged={pool.updateLabelIndexForFile}
           onMetadataChanged={pool.reloadMetadata}
           onStatusText={pool.setStatusText}

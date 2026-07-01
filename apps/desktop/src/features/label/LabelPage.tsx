@@ -183,6 +183,27 @@ function combineAnalysisStats(...items: AnalysisStats[]): AnalysisStats {
   );
 }
 
+function analysisClassPanelSummaries(stats: AnalysisStats) {
+  return {
+    detect: {
+      metrics: [
+        { label: "Classes", value: stats.detectClasses.length },
+        { label: "Samples", value: stats.detectSamples },
+        { label: "Hits", value: stats.detectHits },
+        { label: "Props", value: stats.proposals },
+      ],
+    },
+    clf: {
+      metrics: [
+        { label: "Classes", value: stats.clfClasses.length },
+        { label: "Labels", value: stats.clfLabels },
+        { label: "Reviewed", value: stats.reviewed },
+        { label: "Junk", value: stats.junk },
+      ],
+    },
+  };
+}
+
 function videoFrameEntry(videoName: string, time: number, mediaPosition: number, mediaCount: number): BoxLabelEntry {
   const stem = videoName.replace(/\.[^.]+$/, "") || "video-frame";
   const stamp = Math.max(0, Math.round(time * 1000));
@@ -324,16 +345,6 @@ function AnalysisPanel({
   stats: AnalysisStats;
 }) {
   const [heatmapClassKey, setHeatmapClassKey] = useState("all");
-  const detectBars = [
-    { label: "Samples", value: stats.detectSamples },
-    { label: "Hits", value: stats.detectHits },
-    { label: "Props", value: stats.proposals },
-  ];
-  const clfBars = [
-    { label: "Labels", value: stats.clfLabels },
-    { label: "Reviewed", value: stats.reviewed },
-    { label: "Junk", value: stats.junk },
-  ];
   const heatmapPoints = heatmapClassKey === "all"
     ? stats.detectPoints
     : stats.detectPoints.filter((point) => point.classKey === heatmapClassKey);
@@ -352,37 +363,60 @@ function AnalysisPanel({
     cell.weight += 1 + Math.sqrt(Math.max(0, point.area));
   }
   const heatmapMax = Math.max(1, ...heatmapCells.map((cell) => cell.weight));
-  const maxBar = Math.max(1, ...detectBars.map((item) => item.value), ...clfBars.map((item) => item.value));
 
   useEffect(() => {
     if (heatmapClassKey === "all") return;
     if (!stats.detectClasses.some((bucket) => bucket.key === heatmapClassKey)) setHeatmapClassKey("all");
   }, [heatmapClassKey, stats.detectClasses]);
 
-  const renderBarGroup = (title: string, summary: string, items: Array<{ label: string; value: number }>, tone: "detect" | "clf") => (
+  const renderClassBarGroup = (
+    title: string,
+    summary: string,
+    buckets: AnalysisClassBucket[],
+    tone: "detect" | "clf"
+  ) => {
+    const maxCount = Math.max(1, ...buckets.map((bucket) => bucket.count));
+    return (
     <div className={`lwb-analysis-chart lwb-analysis-chart--${tone}`}>
       <div className="lwb-analysis-chart-title">
         <span>{title}</span>
         <strong>{summary}</strong>
       </div>
-      <div className="lwb-analysis-bars">
-        {items.map((item) => (
-          <div key={item.label} className="lwb-analysis-bar-row">
-            <span>{item.label}</span>
-            <div className="lwb-analysis-bar-track" aria-hidden="true">
-              <div className="lwb-analysis-bar-fill" style={{ width: `${Math.max(3, (item.value / maxBar) * 100)}%` }} />
+      <div className="lwb-analysis-class-bars">
+        {buckets.length ? buckets.map((bucket, index) => {
+          const percent = Math.max(4, (bucket.count / maxCount) * 100);
+          const hue = tone === "detect"
+            ? (208 + index * 47) % 360
+            : 187;
+          return (
+            <div
+              key={bucket.key}
+              className="lwb-analysis-class-bar-row"
+              style={{
+                "--bar-color": `hsl(${hue} 84% 62%)`,
+                "--bar-color-soft": `hsl(${hue} 84% 38% / 0.38)`,
+              } as CSSProperties}
+              title={`${bucket.name}: ${bucket.count}`}
+            >
+              <span>{bucket.name}</span>
+              <div className="lwb-analysis-bar-track" aria-hidden="true">
+                <div className="lwb-analysis-bar-fill" style={{ width: `${percent}%` }} />
+              </div>
+              <strong>{bucket.count}</strong>
             </div>
-            <strong>{item.value}</strong>
-          </div>
-        ))}
+          );
+        }) : (
+          <div className="lwb-analysis-empty">No classes.</div>
+        )}
       </div>
     </div>
   );
+  };
 
   return (
     <section className="lwb-analysis-panel" aria-label="Analysis">
-      {renderBarGroup("Detect", `${stats.detectClasses.length} cls`, detectBars, "detect")}
-      {renderBarGroup("Clf", `${stats.clfClasses.length} cls`, clfBars, "clf")}
+      {renderClassBarGroup("Detect Classes", `${stats.detectClasses.length} cls`, stats.detectClasses, "detect")}
+      {renderClassBarGroup("Clf Classes", `${stats.clfClasses.length} cls`, stats.clfClasses, "clf")}
       <div className="lwb-analysis-heatmap">
         <div className="lwb-analysis-heatmap-head">
           <span>Det heatmap</span>
@@ -474,6 +508,7 @@ function VideoBoxLabelSurface({
       : "Manual";
   const hasFrameRecord = Boolean(videoSession.currentFrame);
   const autoLabelFrameBase64 = hasFrameRecord ? videoSession.previewBase64 : null;
+  const classPanelSummaries = useMemo(() => analysisClassPanelSummaries(analysisStats), [analysisStats]);
 
   const loadLabelsOverride = useCallback(async (target: BoxLabelEntry) => {
     const targetTime = videoFrameEntryTime(target);
@@ -581,6 +616,7 @@ function VideoBoxLabelSurface({
           }}
           onLabelsChanged={() => {}}
           onStatusText={() => {}}
+          classPanelSummaries={classPanelSummaries}
           classificationClasses={videoSession.clfClassOptions}
           classificationClassesPortalId="lwbClassifyClassesSlot"
           currentClassificationKey={videoSession.clfTask?.classKey ?? null}
@@ -724,6 +760,7 @@ export function LabelPage({ active = true, onReady }: Props) {
     () => combineAnalysisStats(imagePool.datasetStats, videoAnalysisStats(videoSession)),
     [imagePool.datasetStats, videoSession.classes, videoSession.clfClassOptions, videoSession.manifest, videoSession.videos.length]
   );
+  const classPanelSummaries = useMemo(() => analysisClassPanelSummaries(analysisStats), [analysisStats]);
 
   const clearWorkbenchActions = useCallback(() => {
     setActionGroups([]);
@@ -1029,6 +1066,7 @@ export function LabelPage({ active = true, onReady }: Props) {
                   handleSelectionChange({ kind: "image", index });
                 }}
                 onNavigateBoundary={handleMediaBoundaryNavigate}
+                classPanelSummaries={classPanelSummaries}
                 previewDock={({
                   entry,
                   entries,
