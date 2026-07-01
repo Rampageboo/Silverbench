@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { saveVideoFrame, videoSourceUrl } from "../video/videoCaptureApi";
 import { useVideoSampling, type SamplingMode } from "../video/useVideoSampling";
 import type { VideoAnnotationSession } from "../video/useVideoAnnotationSession";
+import { getAnnotationFrameUrl } from "../video/videoAnnotationApi";
 import { BoxLabelView } from "../box-label/BoxLabelView";
 import type { BoxLabelEntry } from "../box-label/boxLabelCore";
 import type { BoxLabelModel } from "../box-label/useBoxLabel";
@@ -230,14 +231,26 @@ export function VideoBoxLabelSurface({
   const currentVideoPath = videoSession.current?.path ?? "";
   const currentFrameTime = videoSession.currentFrame?.time ?? null;
   const [annotationTargetTime, setAnnotationTargetTime] = useState<number | null>(null);
+  const [nativeUnsupportedVideoPaths, setNativeUnsupportedVideoPaths] = useState<Set<string>>(() => new Set());
   const entryTime = annotationTargetTime ?? videoSession.time;
-  const videoUrlOverride = useMemo(
+  const nativeVideoUrl = useMemo(
     () => videoSession.current && workspaceRoot.trim()
       ? videoSourceUrl(workspaceRoot.trim(), videoSession.current.path)
       : null,
     [videoSession.current, workspaceRoot]
   );
-  const hasPreviewImage = Boolean(videoUrlOverride || videoSession.previewUrl || videoSession.previewBase64);
+  const nativeVideoSupported = Boolean(
+    nativeVideoUrl &&
+    videoSession.current &&
+    !nativeUnsupportedVideoPaths.has(videoSession.current.path)
+  );
+  const fallbackFrameUrl = useMemo(
+    () => !nativeVideoSupported && videoSession.current && workspaceRoot.trim()
+      ? getAnnotationFrameUrl(workspaceRoot.trim(), videoSession.current.path, entryTime, { fast: true })
+      : null,
+    [entryTime, nativeVideoSupported, videoSession.current, workspaceRoot]
+  );
+  const hasPreviewImage = Boolean(nativeVideoSupported || fallbackFrameUrl || videoSession.previewUrl || videoSession.previewBase64);
   const entry = useMemo(
     () => videoSession.current && hasPreviewImage
       ? videoFrameEntry(videoSession.current.name, entryTime, activeMediaPosition, mediaCount)
@@ -349,6 +362,17 @@ export function VideoBoxLabelSurface({
   const handleVideoPlaybackTimeChange = useCallback((nextTime: number) => {
     videoSession.gotoTime(nextTime);
   }, [videoSession]);
+  const handleNativeVideoLoadError = useCallback(() => {
+    const failedPath = videoSession.current?.path;
+    if (!failedPath) return;
+    setPlaying(false);
+    setNativeUnsupportedVideoPaths((paths) => {
+      if (paths.has(failedPath)) return paths;
+      const next = new Set(paths);
+      next.add(failedPath);
+      return next;
+    });
+  }, [videoSession.current?.path]);
   useEffect(() => {
     if (!videoSession.current) setPlaying(false);
   }, [videoSession.current]);
@@ -369,6 +393,7 @@ export function VideoBoxLabelSurface({
       if (!command) return;
       event.preventDefault();
       if (command === "toggle-playback") {
+        if (!nativeVideoSupported) return;
         setPlaying((value) => !value);
         return;
       }
@@ -378,7 +403,7 @@ export function VideoBoxLabelSurface({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleGotoTime, videoSession.current, videoSession.maxTime, videoSession.stepSeconds, videoSession.time]);
+  }, [handleGotoTime, nativeVideoSupported, videoSession.current, videoSession.maxTime, videoSession.stepSeconds, videoSession.time]);
   const handleMarkerPointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>, markerTime: number) => {
     event.preventDefault();
     event.stopPropagation();
@@ -451,13 +476,14 @@ export function VideoBoxLabelSurface({
           classificationClassesPortalId="lwbClassifyClassesSlot"
           currentClassificationKey={videoSession.clfTask?.classKey ?? null}
           onAssignClassificationClass={assignClassificationClass}
-          imageUrlOverride={imageUrlOverride}
+          imageUrlOverride={fallbackFrameUrl || imageUrlOverride}
           reloadLabelsOnImageUrlChange={false}
-          videoUrlOverride={videoUrlOverride}
+          videoUrlOverride={nativeVideoSupported ? nativeVideoUrl : null}
           videoPlaybackTime={videoSession.time}
-          videoPlaying={playing}
+          videoPlaying={nativeVideoSupported && playing}
           onVideoPlaybackTimeChange={handleVideoPlaybackTimeChange}
           onVideoEnded={() => setPlaying(false)}
+          onVideoLoadError={handleNativeVideoLoadError}
           loadLabelsOverride={loadLabelsOverride}
           saveLabelsOverride={saveLabelsOverride}
           disableProposals
@@ -470,7 +496,7 @@ export function VideoBoxLabelSurface({
                   <button
                     type="button"
                     className="video-frame-playback-btn"
-                    disabled={!videoSession.current}
+                    disabled={!videoSession.current || !nativeVideoSupported}
                     aria-pressed={playing}
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => {

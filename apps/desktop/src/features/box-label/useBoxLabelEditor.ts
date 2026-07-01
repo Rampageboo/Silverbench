@@ -88,6 +88,7 @@ export function useBoxLabelEditor({
   videoPlaying = false,
   onVideoPlaybackTimeChange,
   onVideoEnded,
+  onVideoLoadError,
   loadLabelsOverride,
   saveLabelsOverride,
   disableProposals = false
@@ -116,9 +117,11 @@ export function useBoxLabelEditor({
   const videoPlaybackTimeRef = useRef(videoPlaybackTime);
   const videoPlaybackTimeChangeRef = useRef(onVideoPlaybackTimeChange);
   const videoEndedRef = useRef(onVideoEnded);
+  const videoLoadErrorRef = useRef(onVideoLoadError);
   videoPlaybackTimeRef.current = videoPlaybackTime;
   videoPlaybackTimeChangeRef.current = onVideoPlaybackTimeChange;
   videoEndedRef.current = onVideoEnded;
+  videoLoadErrorRef.current = onVideoLoadError;
 
   const [boxes, setBoxes] = useState<api.LabelBox[]>([]);
   const [proposals, setProposals] = useState<DetectProposal[]>([]);
@@ -880,7 +883,8 @@ export function useBoxLabelEditor({
       if (cancelled || videoElementRef.current !== video) return;
       const code = video.error?.code;
       const message = code ? `Video failed to load (media error ${code}).` : "Video failed to load.";
-      setError(message);
+      if (videoLoadErrorRef.current) videoLoadErrorRef.current({ code, message });
+      else setError(message);
       scheduleDraw();
     };
 

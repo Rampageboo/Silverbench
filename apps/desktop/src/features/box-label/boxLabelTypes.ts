@@ -170,6 +170,7 @@ export type BoxLabelViewProps = {
   videoPlaying?: boolean;
   onVideoPlaybackTimeChange?: (time: number) => void;
   onVideoEnded?: () => void;
+  onVideoLoadError?: (error: { code?: number; message: string }) => void;
   loadLabelsOverride?: (entry: BoxLabelEntry) => Promise<api.LabelBox[]>;
   saveLabelsOverride?: (entry: BoxLabelEntry, boxes: api.LabelBox[]) => Promise<api.LabelBox[]>;
   disableProposals?: boolean;
