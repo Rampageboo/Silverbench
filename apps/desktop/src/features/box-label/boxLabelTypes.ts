@@ -163,6 +163,7 @@ export type BoxLabelViewProps = {
   canvasOverlay?: BoxLabelCanvasOverlay;
   previewDock?: BoxLabelCanvasOverlay;
   imageUrlOverride?: string | null;
+  reloadLabelsOnImageUrlChange?: boolean;
   loadLabelsOverride?: (entry: BoxLabelEntry) => Promise<api.LabelBox[]>;
   saveLabelsOverride?: (entry: BoxLabelEntry, boxes: api.LabelBox[]) => Promise<api.LabelBox[]>;
   disableProposals?: boolean;

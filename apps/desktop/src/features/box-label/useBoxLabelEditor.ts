@@ -64,6 +64,7 @@ export function useBoxLabelEditor({
   onMarkJunk,
   onUndoJunk,
   imageUrlOverride = null,
+  reloadLabelsOnImageUrlChange = true,
   loadLabelsOverride,
   saveLabelsOverride,
   disableProposals = false
@@ -102,6 +103,7 @@ export function useBoxLabelEditor({
   const filename = entry?.basename || "";
   const mediaImagePath = filename ? `${mediaDir.replace(/^\/+|\/+$/g, "") || "media"}/${filename}` : "";
   const entryImagePath = entry?.imagePath ?? "";
+  const imageUrlReloadKey = reloadLabelsOnImageUrlChange ? imageUrlOverride : "";
   entryRef.current = entry;
 
   const scheduleDraw = useCallback(() => scheduleDrawRef.current(), []);
@@ -774,7 +776,23 @@ export function useBoxLabelEditor({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when image path or backup restore version changes
-  }, [datasetRoot, disableProposals, entryImagePath, imageUrlOverride, imageVersion, loadLabelsOverride, workspaceRoot]);
+  }, [datasetRoot, disableProposals, entryImagePath, imageUrlReloadKey, imageVersion, loadLabelsOverride, workspaceRoot]);
+
+  useEffect(() => {
+    if (reloadLabelsOnImageUrlChange || !datasetRoot || !entry || !imageUrlOverride) return;
+    let cancelled = false;
+    const targetImagePath = entry.imagePath;
+    loadCanvasImage(imageUrlOverride)
+      .then((image) => {
+        if (cancelled || entryRef.current?.imagePath !== targetImagePath) return;
+        interaction.imageRef.current = image;
+        scheduleDraw();
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [datasetRoot, entry, imageUrlOverride, interaction.imageRef, reloadLabelsOnImageUrlChange, scheduleDraw]);
 
   const selectedBox = selectedBoxId !== null ? boxes[selectedBoxId] : null;
   const filterText = [

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { VIDEO_PLAYBACK_INTERVAL_MS, nextVideoKeyboardTime, videoFrameKeyboardCommand } from "./VideoBoxLabelSurface";
+import {
+  VIDEO_PLAYBACK_INTERVAL_MS,
+  initialVideoAnnotationTargetTime,
+  markerDrivenAnnotationTargetTime,
+  nextVideoKeyboardTime,
+  videoFrameKeyboardCommand,
+} from "./VideoBoxLabelSurface";
 import { VIDEO_PREVIEW_DEBOUNCE_MS } from "../video/useVideoAnnotationSession";
 
 describe("VideoBoxLabelSurface keyboard policy", () => {
@@ -32,5 +38,12 @@ describe("VideoBoxLabelSurface keyboard policy", () => {
 
   it("does not starve debounced preview refresh while playback is running", () => {
     expect(VIDEO_PLAYBACK_INTERVAL_MS).toBeGreaterThan(VIDEO_PREVIEW_DEBOUNCE_MS);
+  });
+
+  it("keeps annotation boxes driven by marker signals rather than playback ticks", () => {
+    expect(initialVideoAnnotationTargetTime(null, 1.25)).toBe(1.25);
+    expect(initialVideoAnnotationTargetTime(2.5, 1.25)).toBe(2.5);
+    expect(markerDrivenAnnotationTargetTime(2.5, null)).toBe(2.5);
+    expect(markerDrivenAnnotationTargetTime(2.5, 4)).toBe(4);
   });
 });

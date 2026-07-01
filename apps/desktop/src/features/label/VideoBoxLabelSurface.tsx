@@ -58,6 +58,14 @@ export function nextVideoKeyboardTime(currentTime: number, maxTime: number, comm
   return Math.max(0, Math.min(maxTime, Math.round((currentTime + direction * amount) * 1000) / 1000));
 }
 
+export function initialVideoAnnotationTargetTime(currentFrameTime: number | null, playbackTime: number) {
+  return currentFrameTime ?? playbackTime;
+}
+
+export function markerDrivenAnnotationTargetTime(currentTargetTime: number | null, currentFrameTime: number | null) {
+  return currentFrameTime ?? currentTargetTime;
+}
+
 function workspaceRelativePath(workspaceRoot: string, absolutePath: string) {
   const root = workspaceRoot.replace(/\\/g, "/").replace(/\/+$/, "");
   const path = absolutePath.replace(/\\/g, "/");
@@ -221,11 +229,16 @@ export function VideoBoxLabelSurface({
   onNavigateBoundary: (delta: -1 | 1) => void;
   renderAnalysisPanel: () => ReactNode;
 }) {
+  const currentVideoPath = videoSession.current?.path ?? "";
+  const currentFrameTime = videoSession.currentFrame?.time ?? null;
+  const [annotationTargetTime, setAnnotationTargetTime] = useState<number | null>(null);
+  const entryTime = annotationTargetTime ?? videoSession.time;
+  const hasPreviewImage = Boolean(videoSession.previewUrl || videoSession.previewBase64);
   const entry = useMemo(
-    () => videoSession.current && (videoSession.previewUrl || videoSession.previewBase64)
-      ? videoFrameEntry(videoSession.current.name, videoSession.time, activeMediaPosition, mediaCount)
+    () => videoSession.current && hasPreviewImage
+      ? videoFrameEntry(videoSession.current.name, entryTime, activeMediaPosition, mediaCount)
       : null,
-    [activeMediaPosition, mediaCount, videoSession.current, videoSession.previewBase64, videoSession.previewUrl, videoSession.time]
+    [activeMediaPosition, entryTime, hasPreviewImage, mediaCount, videoSession.current]
   );
   const entries = useMemo(() => entry ? [entry] : [], [entry]);
   const selected = useMemo(() => entry ? new Set([entry.basename]) : new Set<string>(), [entry]);
@@ -259,6 +272,15 @@ export function VideoBoxLabelSurface({
   const autoLabelVideoPath = videoSession.current?.path ?? "";
   const autoLabelFramePathCacheRef = useRef<Map<string, Promise<string | null>>>(new Map());
   const classPanelSummaries = useMemo(() => analysisClassPanelSummaries(analysisStats), [analysisStats]);
+
+  useEffect(() => {
+    setAnnotationTargetTime(initialVideoAnnotationTargetTime(currentFrameTime, 0));
+    setPlaying(false);
+  }, [currentVideoPath]);
+
+  useEffect(() => {
+    setAnnotationTargetTime((currentTarget) => markerDrivenAnnotationTargetTime(currentTarget, currentFrameTime));
+  }, [currentFrameTime]);
 
   useEffect(() => {
     autoLabelFramePathCacheRef.current.clear();
@@ -316,6 +338,7 @@ export function VideoBoxLabelSurface({
   }, [handleRandomMarkers]);
   const handleAddMarker = useCallback(() => {
     sampling.setLastSource("manual");
+    setAnnotationTargetTime(videoSession.time);
     videoSession.markCurrentTimestamp({ kind: "manual" });
   }, [sampling, videoSession]);
   const handleGotoTime = useCallback((nextTime: number) => {
@@ -373,6 +396,7 @@ export function VideoBoxLabelSurface({
   const handleMarkerPointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>, markerTime: number) => {
     event.preventDefault();
     event.stopPropagation();
+    setAnnotationTargetTime(markerTime);
     handleGotoTime(markerTime);
   }, [handleGotoTime]);
   const handleTimelinePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
@@ -442,6 +466,7 @@ export function VideoBoxLabelSurface({
           currentClassificationKey={videoSession.clfTask?.classKey ?? null}
           onAssignClassificationClass={assignClassificationClass}
           imageUrlOverride={imageUrlOverride}
+          reloadLabelsOnImageUrlChange={false}
           loadLabelsOverride={loadLabelsOverride}
           saveLabelsOverride={saveLabelsOverride}
           disableProposals
@@ -481,6 +506,7 @@ export function VideoBoxLabelSurface({
                         onClick={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
+                          setAnnotationTargetTime(marker.time);
                           handleGotoTime(marker.time);
                         }}
                       />
