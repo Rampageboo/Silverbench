@@ -929,7 +929,9 @@ export function useBoxLabelEditor({
     const video = videoElementRef.current;
     if (!video) return;
     if (videoPlaying) {
-      void video.play().catch(() => {});
+      void video.play().catch(() => {
+        videoLoadErrorRef.current?.({ message: "Video playback failed." });
+      });
     } else {
       video.pause();
       scheduleDraw();

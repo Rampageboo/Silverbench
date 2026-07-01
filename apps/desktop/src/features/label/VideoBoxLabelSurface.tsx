@@ -234,6 +234,7 @@ export function VideoBoxLabelSurface({
   const currentFrameTime = videoSession.currentFrame?.time ?? null;
   const [annotationTargetTime, setAnnotationTargetTime] = useState<number | null>(null);
   const [nativeUnsupportedVideoPaths, setNativeUnsupportedVideoPaths] = useState<Set<string>>(() => new Set());
+  const fallbackPlaybackRef = useRef({ time: 0, lastTick: 0 });
   const entryTime = annotationTargetTime ?? videoSession.time;
   const fallbackPreviewTime = videoSession.time;
   const nativeVideoUrl = useMemo(
@@ -293,6 +294,7 @@ export function VideoBoxLabelSurface({
     sampling.setLastSource("manual");
     videoSession.gotoTime(nextTime);
   }, [sampling, videoSession]);
+  fallbackPlaybackRef.current.time = videoSession.time;
 
   useEffect(() => {
     setAnnotationTargetTime(initialVideoAnnotationTargetTime(currentFrameTime, 0));
@@ -381,19 +383,26 @@ export function VideoBoxLabelSurface({
   }, [videoSession.current]);
   useEffect(() => {
     if (!playing || nativeVideoSupported || !videoSession.current || videoSession.maxTime <= 0) return;
+    fallbackPlaybackRef.current = { time: videoSession.time, lastTick: window.performance.now() };
     const interval = window.setInterval(() => {
+      const now = window.performance.now();
+      const elapsedSeconds = Math.max(
+        FALLBACK_PLAYBACK_STEP_SECONDS,
+        (now - fallbackPlaybackRef.current.lastTick) / 1000
+      );
       const nextTime = nextVideoKeyboardTime(
-        videoSession.time,
+        fallbackPlaybackRef.current.time,
         videoSession.maxTime,
         "seek-forward",
-        FALLBACK_PLAYBACK_STEP_SECONDS,
+        elapsedSeconds,
         false
       );
+      fallbackPlaybackRef.current = { time: nextTime, lastTick: now };
       handleGotoTime(nextTime);
       if (nextTime >= videoSession.maxTime) setPlaying(false);
     }, FALLBACK_PLAYBACK_INTERVAL_MS);
     return () => window.clearInterval(interval);
-  }, [handleGotoTime, nativeVideoSupported, playing, videoSession.current, videoSession.maxTime, videoSession.time]);
+  }, [handleGotoTime, nativeVideoSupported, playing, videoSession.current, videoSession.maxTime]);
   useEffect(() => {
     if (!videoSession.current) return;
     const onKeyDown = (event: KeyboardEvent) => {
