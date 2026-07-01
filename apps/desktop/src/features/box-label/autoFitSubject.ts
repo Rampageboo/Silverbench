@@ -1,5 +1,5 @@
-import type { ImagePoint, ImageRect } from "./geometry";
-import { clamp } from "./geometry";
+import type { CanvasPreviewSource, ImagePoint, ImageRect } from "./geometry";
+import { clamp, previewSourceSize } from "./geometry";
 
 type PixelRect = { x1: number; y1: number; x2: number; y2: number };
 type PixelPoint = { x: number; y: number };
@@ -119,12 +119,11 @@ function pixelRectToNormalized(rect: PixelRect, width: number, height: number): 
 
 /** Color flood-fill subject selection (legacy poolLabelColorSubjectRectFromBitmap). */
 export function autoFitSubjectFromImage(
-  image: HTMLImageElement,
+  image: CanvasPreviewSource,
   selection: ImageRect,
   seedNorm: ImagePoint
 ): ImageRect | null {
-  const bitmapW = image.naturalWidth;
-  const bitmapH = image.naturalHeight;
+  const { width: bitmapW, height: bitmapH } = previewSourceSize(image);
   const seedPx = { x: seedNorm.x * bitmapW, y: seedNorm.y * bitmapH };
   const selectionRect =
     clampRectToBitmap(

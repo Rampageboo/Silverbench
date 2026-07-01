@@ -17,8 +17,10 @@ import {
   boxToRect,
   clamp,
   enforceMinRect,
+  previewSourceSize,
   rectToBox,
   type BoxAdjustMode,
+  type CanvasPreviewSource,
   type DragState,
   type ImagePixelPoint,
   type ImageRect
@@ -54,7 +56,7 @@ type UseBoxLabelPersistenceOptions = {
   setStatus: (status: string) => void;
   setError: (status: string) => void;
   setImageVersion: Dispatch<SetStateAction<number>>;
-  imageRef: RefObject<HTMLImageElement | null>;
+  imageRef: RefObject<CanvasPreviewSource | null>;
   zoomPointRef: MutableRefObject<ImagePixelPoint | null>;
   lastZoomCenterRef: MutableRefObject<ImagePixelPoint | null>;
   scheduleDraw: () => void;
@@ -176,7 +178,8 @@ export function useBoxLabelPersistence({
       if (!opts?.skipZoomUpdate) {
         const image = imageRef.current;
         if (image) {
-          zoomPointRef.current = boxCenterPixel(next[index], image.naturalWidth, image.naturalHeight);
+          const { width: imageW, height: imageH } = previewSourceSize(image);
+          zoomPointRef.current = boxCenterPixel(next[index], imageW, imageH);
           lastZoomCenterRef.current = zoomPointRef.current;
         }
       }
@@ -190,8 +193,9 @@ export function useBoxLabelPersistence({
     (dx: number, dy: number, fast: boolean) => {
       const image = imageRef.current;
       const factor = keyboardStepMultiplier * (fast ? 10 : 1);
-      const stepX = factor / Math.max(1, image?.naturalWidth ?? 1);
-      const stepY = factor / Math.max(1, image?.naturalHeight ?? 1);
+      const imageSize = image ? previewSourceSize(image) : { width: 1, height: 1 };
+      const stepX = factor / imageSize.width;
+      const stepY = factor / imageSize.height;
       if (!keyboardAdjustingRef.current) pushUndo("keyboard adjust box");
       keyboardAdjustingRef.current = true;
       updateSelectedBox((box) => {
@@ -212,8 +216,9 @@ export function useBoxLabelPersistence({
     (key: string, fast: boolean) => {
       const image = imageRef.current;
       const factor = keyboardStepMultiplier * (fast ? 10 : 1);
-      const stepX = factor / Math.max(1, image?.naturalWidth ?? 1);
-      const stepY = factor / Math.max(1, image?.naturalHeight ?? 1);
+      const imageSize = image ? previewSourceSize(image) : { width: 1, height: 1 };
+      const stepX = factor / imageSize.width;
+      const stepY = factor / imageSize.height;
       const sign = boxAdjustModeRef.current === "grow" ? 1 : -1;
       if (!keyboardAdjustingRef.current) pushUndo("keyboard resize box");
       keyboardAdjustingRef.current = true;
@@ -245,8 +250,9 @@ export function useBoxLabelPersistence({
       const image = imageRef.current;
       if (!image) return;
       const canvas = document.createElement("canvas");
-      canvas.width = image.naturalWidth;
-      canvas.height = image.naturalHeight;
+      const imageSize = previewSourceSize(image);
+      canvas.width = imageSize.width;
+      canvas.height = imageSize.height;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.drawImage(image, 0, 0);
@@ -285,7 +291,8 @@ export function useBoxLabelPersistence({
       setCurrentClass(box.classId);
       const image = imageRef.current;
       if (image) {
-        zoomPointRef.current = boxCenterPixel(box, image.naturalWidth, image.naturalHeight);
+        const { width: imageW, height: imageH } = previewSourceSize(image);
+        zoomPointRef.current = boxCenterPixel(box, imageW, imageH);
         lastZoomCenterRef.current = zoomPointRef.current;
       }
       syncBoxToSelected(box, "sync fixed box", { pushUndo: false }).catch(() => {});

@@ -165,6 +165,11 @@ export type BoxLabelViewProps = {
   previewDock?: BoxLabelCanvasOverlay;
   imageUrlOverride?: string | null;
   reloadLabelsOnImageUrlChange?: boolean;
+  videoUrlOverride?: string | null;
+  videoPlaybackTime?: number;
+  videoPlaying?: boolean;
+  onVideoPlaybackTimeChange?: (time: number) => void;
+  onVideoEnded?: () => void;
   loadLabelsOverride?: (entry: BoxLabelEntry) => Promise<api.LabelBox[]>;
   saveLabelsOverride?: (entry: BoxLabelEntry, boxes: api.LabelBox[]) => Promise<api.LabelBox[]>;
   disableProposals?: boolean;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { saveVideoFrame } from "../video/videoCaptureApi";
+import { saveVideoFrame, videoSourceUrl } from "../video/videoCaptureApi";
 import { useVideoSampling, type SamplingMode } from "../video/useVideoSampling";
-import { VIDEO_PREVIEW_DEBOUNCE_MS, type VideoAnnotationSession } from "../video/useVideoAnnotationSession";
+import type { VideoAnnotationSession } from "../video/useVideoAnnotationSession";
 import { BoxLabelView } from "../box-label/BoxLabelView";
 import type { BoxLabelEntry } from "../box-label/boxLabelCore";
 import type { BoxLabelModel } from "../box-label/useBoxLabel";
@@ -16,8 +16,6 @@ const SAMPLING_MODE_LABELS: Record<SamplingMode, string> = {
 
 const SAMPLING_MODES: SamplingMode[] = ["whole-video", "segments-preferred", "segments-only"];
 const RANDOM_MULTIPLIERS = [1, 5, 10] as const;
-export const VIDEO_PLAYBACK_INTERVAL_MS = VIDEO_PREVIEW_DEBOUNCE_MS + 80;
-const VIDEO_PLAYBACK_STEP_SECONDS = VIDEO_PLAYBACK_INTERVAL_MS / 1000;
 type RandomMultiplier = (typeof RANDOM_MULTIPLIERS)[number];
 export type VideoFrameKeyboardCommand = "seek-backward" | "seek-forward" | "toggle-playback";
 
@@ -233,7 +231,13 @@ export function VideoBoxLabelSurface({
   const currentFrameTime = videoSession.currentFrame?.time ?? null;
   const [annotationTargetTime, setAnnotationTargetTime] = useState<number | null>(null);
   const entryTime = annotationTargetTime ?? videoSession.time;
-  const hasPreviewImage = Boolean(videoSession.previewUrl || videoSession.previewBase64);
+  const videoUrlOverride = useMemo(
+    () => videoSession.current && workspaceRoot.trim()
+      ? videoSourceUrl(workspaceRoot.trim(), videoSession.current.path)
+      : null,
+    [videoSession.current, workspaceRoot]
+  );
+  const hasPreviewImage = Boolean(videoUrlOverride || videoSession.previewUrl || videoSession.previewBase64);
   const entry = useMemo(
     () => videoSession.current && hasPreviewImage
       ? videoFrameEntry(videoSession.current.name, entryTime, activeMediaPosition, mediaCount)
@@ -245,9 +249,6 @@ export function VideoBoxLabelSurface({
   const [randomMultiplier, setRandomMultiplier] = useState<RandomMultiplier>(1);
   const [playing, setPlaying] = useState(false);
   const selectedBoxIdRef = useRef<number | null>(null);
-  const playbackTimeRef = useRef(videoSession.time);
-  const maxTimeRef = useRef(videoSession.maxTime);
-  const handleGotoTimeRef = useRef<(nextTime: number) => void>(() => {});
   const metadata = useMemo(() => new Map(), []);
   const classImageCounts = useMemo(() => {
     const counts = new Map<number, number>();
@@ -345,27 +346,12 @@ export function VideoBoxLabelSurface({
     sampling.setLastSource("manual");
     videoSession.gotoTime(nextTime);
   }, [sampling, videoSession]);
-  handleGotoTimeRef.current = handleGotoTime;
-  playbackTimeRef.current = videoSession.time;
-  maxTimeRef.current = videoSession.maxTime;
+  const handleVideoPlaybackTimeChange = useCallback((nextTime: number) => {
+    videoSession.gotoTime(nextTime);
+  }, [videoSession]);
   useEffect(() => {
     if (!videoSession.current) setPlaying(false);
   }, [videoSession.current]);
-  useEffect(() => {
-    if (!playing || !videoSession.current || videoSession.maxTime <= 0) return;
-    const interval = window.setInterval(() => {
-      const nextTime = nextVideoKeyboardTime(
-        playbackTimeRef.current,
-        maxTimeRef.current,
-        "seek-forward",
-        VIDEO_PLAYBACK_STEP_SECONDS,
-        false
-      );
-      handleGotoTimeRef.current(nextTime);
-      if (nextTime >= maxTimeRef.current) setPlaying(false);
-    }, VIDEO_PLAYBACK_INTERVAL_MS);
-    return () => window.clearInterval(interval);
-  }, [playing, videoSession.current, videoSession.maxTime]);
   useEffect(() => {
     if (!videoSession.current) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -467,6 +453,11 @@ export function VideoBoxLabelSurface({
           onAssignClassificationClass={assignClassificationClass}
           imageUrlOverride={imageUrlOverride}
           reloadLabelsOnImageUrlChange={false}
+          videoUrlOverride={videoUrlOverride}
+          videoPlaybackTime={videoSession.time}
+          videoPlaying={playing}
+          onVideoPlaybackTimeChange={handleVideoPlaybackTimeChange}
+          onVideoEnded={() => setPlaying(false)}
           loadLabelsOverride={loadLabelsOverride}
           saveLabelsOverride={saveLabelsOverride}
           disableProposals

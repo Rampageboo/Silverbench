@@ -67,6 +67,14 @@ export function videoFrameUrl(
   return `${API_BASE_URL}/api/video/frame?${params.toString()}`;
 }
 
+export function videoSourceUrl(workspaceRoot: string, path: string) {
+  const params = new URLSearchParams({
+    workspaceRoot,
+    path
+  });
+  return `${API_BASE_URL}/api/video/source?${params.toString()}`;
+}
+
 export async function prefetchVideoFrame(
   workspaceRoot: string,
   path: string,

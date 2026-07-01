@@ -76,7 +76,7 @@ export function useVideoAnnotationSession({
   workspaceRoot: string;
   active: boolean;
   onReady?: () => void;
-  previewMode?: "base64" | "url";
+  previewMode?: "base64" | "url" | "none";
   loadMarkerBase64?: boolean;
   handleArrowKeys?: boolean;
 }) {
@@ -321,6 +321,12 @@ export function useVideoAnnotationSession({
 
   useEffect(() => {
     if (!active || !current) {
+      setPreviewBase64("");
+      setPreviewUrl("");
+      setPreviewLoading(false);
+      return;
+    }
+    if (previewMode === "none") {
       setPreviewBase64("");
       setPreviewUrl("");
       setPreviewLoading(false);

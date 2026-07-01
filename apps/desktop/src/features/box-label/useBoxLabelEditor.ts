@@ -83,6 +83,11 @@ export function useBoxLabelEditor({
   onUndoJunk,
   imageUrlOverride = null,
   reloadLabelsOnImageUrlChange = true,
+  videoUrlOverride = null,
+  videoPlaybackTime = 0,
+  videoPlaying = false,
+  onVideoPlaybackTimeChange,
+  onVideoEnded,
   loadLabelsOverride,
   saveLabelsOverride,
   disableProposals = false
@@ -107,6 +112,11 @@ export function useBoxLabelEditor({
   const ephemeralProposalIdsRef = useRef<Set<string>>(new Set());
   const contentRevisionRef = useRef(0);
   const previewImageRequestRef = useRef(0);
+  const videoElementRef = useRef<HTMLVideoElement | null>(null);
+  const videoPlaybackTimeChangeRef = useRef(onVideoPlaybackTimeChange);
+  const videoEndedRef = useRef(onVideoEnded);
+  videoPlaybackTimeChangeRef.current = onVideoPlaybackTimeChange;
+  videoEndedRef.current = onVideoEnded;
 
   const [boxes, setBoxes] = useState<api.LabelBox[]>([]);
   const [proposals, setProposals] = useState<DetectProposal[]>([]);
@@ -740,16 +750,20 @@ export function useBoxLabelEditor({
       try {
         if (imageVersion > 0) invalidateDatasetImageUrl(datasetRoot, entry.imagePath);
         const imageKey = imageProposalKey(entry.imagePath);
-        const [labelBoxes, imageUrl, proposalManifest] = await Promise.all([
+        const [labelBoxes, image, proposalManifest] = await Promise.all([
           loadLabelsOverride ? loadLabelsOverride(entry) : loadEntryLabels(datasetRoot, entry),
-          imageUrlOverride ? Promise.resolve(imageUrlOverride) : datasetPreviewImageUrl(datasetRoot, entry.imagePath),
+          videoUrlOverride
+            ? Promise.resolve(null)
+            : (imageUrlOverride ? Promise.resolve(imageUrlOverride) : datasetPreviewImageUrl(datasetRoot, entry.imagePath))
+              .then((imageUrl) => loadCanvasImage(imageUrl)),
           disableProposals || !workspaceRoot ? Promise.resolve(null) : loadImageProposals(workspaceRoot, imageKey)
         ]);
-        const image = await loadCanvasImage(imageUrl);
         if (cancelled) return;
-        const shouldApplyInitialImage =
-          reloadLabelsOnImageUrlChange || previewImageRequestRef.current === 0;
-        if (shouldApplyInitialImage) interaction.imageRef.current = image;
+        if (image) {
+          const shouldApplyInitialImage =
+            reloadLabelsOnImageUrlChange || previewImageRequestRef.current === 0;
+          if (shouldApplyInitialImage) interaction.imageRef.current = image;
+        }
         if (loadStartedAtRevision !== contentRevisionRef.current) {
           scheduleDraw();
           return;
@@ -797,10 +811,10 @@ export function useBoxLabelEditor({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when image path or backup restore version changes
-  }, [datasetRoot, disableProposals, entryImagePath, imageUrlReloadKey, imageVersion, loadLabelsOverride, workspaceRoot]);
+  }, [datasetRoot, disableProposals, entryImagePath, imageUrlReloadKey, imageVersion, loadLabelsOverride, videoUrlOverride, workspaceRoot]);
 
   useEffect(() => {
-    if (reloadLabelsOnImageUrlChange || !datasetRoot || !entry || !imageUrlOverride) return;
+    if (videoUrlOverride || reloadLabelsOnImageUrlChange || !datasetRoot || !entry || !imageUrlOverride) return;
     let cancelled = false;
     const requestId = nextPreviewImageRequestId(previewImageRequestRef.current);
     previewImageRequestRef.current = requestId;
@@ -821,7 +835,85 @@ export function useBoxLabelEditor({
     return () => {
       cancelled = true;
     };
-  }, [datasetRoot, entry, imageUrlOverride, interaction.imageRef, reloadLabelsOnImageUrlChange, scheduleDraw]);
+  }, [datasetRoot, entry, imageUrlOverride, interaction.imageRef, reloadLabelsOnImageUrlChange, scheduleDraw, videoUrlOverride]);
+
+  useEffect(() => {
+    if (!videoUrlOverride) return;
+    let cancelled = false;
+    const video = document.createElement("video");
+    video.crossOrigin = "anonymous";
+    video.preload = "auto";
+    video.muted = true;
+    video.playsInline = true;
+    video.src = videoUrlOverride;
+    video.currentTime = Math.max(0, videoPlaybackTime || 0);
+    videoElementRef.current = video;
+
+    const applyVideoSource = () => {
+      if (cancelled || videoElementRef.current !== video) return;
+      interaction.imageRef.current = video;
+      scheduleDraw();
+    };
+    const handleTimeUpdate = () => {
+      videoPlaybackTimeChangeRef.current?.(video.currentTime);
+      scheduleDraw();
+    };
+    const handleEnded = () => {
+      videoEndedRef.current?.();
+      scheduleDraw();
+    };
+
+    video.addEventListener("loadedmetadata", applyVideoSource);
+    video.addEventListener("loadeddata", applyVideoSource);
+    video.addEventListener("seeked", applyVideoSource);
+    video.addEventListener("timeupdate", handleTimeUpdate);
+    video.addEventListener("ended", handleEnded);
+    video.load();
+
+    return () => {
+      cancelled = true;
+      video.pause();
+      video.removeEventListener("loadedmetadata", applyVideoSource);
+      video.removeEventListener("loadeddata", applyVideoSource);
+      video.removeEventListener("seeked", applyVideoSource);
+      video.removeEventListener("timeupdate", handleTimeUpdate);
+      video.removeEventListener("ended", handleEnded);
+      if (videoElementRef.current === video) videoElementRef.current = null;
+      if (interaction.imageRef.current === video) interaction.imageRef.current = null;
+    };
+  }, [interaction.imageRef, scheduleDraw, videoUrlOverride]);
+
+  useEffect(() => {
+    const video = videoElementRef.current;
+    if (!video) return;
+    const nextTime = Math.max(0, videoPlaybackTime || 0);
+    if (Math.abs(video.currentTime - nextTime) > 0.08) {
+      video.currentTime = nextTime;
+      scheduleDraw();
+    }
+  }, [scheduleDraw, videoPlaybackTime]);
+
+  useEffect(() => {
+    const video = videoElementRef.current;
+    if (!video) return;
+    if (videoPlaying) {
+      void video.play().catch(() => {});
+    } else {
+      video.pause();
+      scheduleDraw();
+    }
+  }, [scheduleDraw, videoPlaying]);
+
+  useEffect(() => {
+    if (!videoPlaying) return;
+    let frame = 0;
+    const draw = () => {
+      scheduleDraw();
+      frame = window.requestAnimationFrame(draw);
+    };
+    frame = window.requestAnimationFrame(draw);
+    return () => window.cancelAnimationFrame(frame);
+  }, [scheduleDraw, videoPlaying]);
 
   const selectedBox = selectedBoxId !== null ? boxes[selectedBoxId] : null;
   const filterText = [

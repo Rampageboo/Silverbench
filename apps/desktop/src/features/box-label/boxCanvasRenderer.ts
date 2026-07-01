@@ -17,7 +17,9 @@ import {
   imagePixelToZoomCanvas,
   intersectRect,
   normalizedImageRect,
+  previewSourceSize,
   zoomSourceRect,
+  type CanvasPreviewSource,
   type DisplayRect,
   type DragState,
   type ImagePixelPoint,
@@ -27,7 +29,7 @@ import {
 
 export type MainCanvasRenderInput = {
   canvas: HTMLCanvasElement;
-  image: HTMLImageElement | null;
+  image: CanvasPreviewSource | null;
   boxes: api.LabelBox[];
   selectedIndex: number | null;
   classes: LabelClass[];
@@ -73,11 +75,12 @@ export function renderMainCanvas(input: MainCanvasRenderInput): DisplayRect | nu
   }
 
   const display = imageDisplayRect(canvas, image, viewport);
+  const imageSize = previewSourceSize(image);
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(image, display.x, display.y, display.w, display.h);
   if (showGrid) drawGrid(ctx, display);
   const crosshairPoint = zoomPoint
-    ? imagePixelPointToNormalized(zoomPoint, image.naturalWidth, image.naturalHeight)
+    ? imagePixelPointToNormalized(zoomPoint, imageSize.width, imageSize.height)
     : null;
   if (!pointerToolEnabled && !autoFitEnabled) {
     drawCrosshair(ctx, display, crosshairPoint);
@@ -95,8 +98,8 @@ export function renderMainCanvas(input: MainCanvasRenderInput): DisplayRect | nu
       canvas,
       display,
       zoomPoint,
-      image.naturalWidth,
-      image.naturalHeight,
+      imageSize.width,
+      imageSize.height,
       currentClassId,
       classes
     );
@@ -106,7 +109,7 @@ export function renderMainCanvas(input: MainCanvasRenderInput): DisplayRect | nu
 
 export type ZoomCanvasRenderInput = {
   canvas: HTMLCanvasElement;
-  image: HTMLImageElement;
+  image: CanvasPreviewSource;
   display: DisplayRect;
   boxes: api.LabelBox[];
   selectedIndex: number | null;
@@ -152,8 +155,7 @@ export function renderZoomCanvas(input: ZoomCanvasRenderInput) {
   ctx.fillStyle = "#111827";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const imageW = image.naturalWidth;
-  const imageH = image.naturalHeight;
+  const { width: imageW, height: imageH } = previewSourceSize(image);
   const dragCurrentPoint =
     drag?.type === "draw"
       ? { x: drag.current.x * imageW, y: drag.current.y * imageH }

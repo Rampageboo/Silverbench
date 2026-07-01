@@ -4,6 +4,7 @@ import { renderMainCanvas, renderZoomCanvas } from "./boxCanvasRenderer";
 import {
   defaultPoolLabelCursor,
   resizeCanvasToParent,
+  type CanvasPreviewSource,
   type DisplayRect,
   type DragState,
   type ImagePixelPoint,
@@ -41,7 +42,7 @@ export function useBoxLabelCanvas({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const zoomCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const imageRef = useRef<HTMLImageElement | null>(null);
+  const imageRef = useRef<CanvasPreviewSource | null>(null);
   const displayRef = useRef<DisplayRect | null>(null);
   const viewportRef = useRef<Viewport>({ zoom: 1, panX: 0, panY: 0 });
   const rafRef = useRef<number | null>(null);

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import hashlib
+import mimetypes
 from contextlib import asynccontextmanager
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -18,6 +19,7 @@ from PIL import Image, ImageOps
 from pydantic import BaseModel, Field, field_validator
 
 from backend.image_pool import scan_image_pool
+from backend.dataset_merge import VIDEO_EXTENSIONS
 from backend.metadata_assign import get_workspace_classes, upsert_metadata_rows
 from backend.video_screenshot import frame_bytes
 from backend.yolo_workspace import IMAGE_EXTENSIONS, load_workspace_config, workspace_meta_dir
@@ -343,6 +345,96 @@ def video_frame_preview(
         BytesIO(payload),
         media_type="image/jpeg",
         headers={"Cache-Control": "no-store"},
+    )
+
+
+def _file_byte_range(path: Path, start: int, end: int, chunk_size: int = 1024 * 1024) -> Iterator[bytes]:
+    with path.open("rb") as handle:
+        handle.seek(start)
+        remaining = end - start + 1
+        while remaining > 0:
+            chunk = handle.read(min(chunk_size, remaining))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+            yield chunk
+
+
+def _parse_range_header(range_header: str, file_size: int) -> tuple[int, int]:
+    if not range_header.startswith("bytes="):
+        raise HTTPException(
+            status_code=416,
+            detail="Only byte ranges are supported.",
+            headers={"Content-Range": f"bytes */{file_size}"},
+        )
+    spec = range_header[len("bytes="):].split(",", 1)[0].strip()
+    if "-" not in spec:
+        raise HTTPException(
+            status_code=416,
+            detail="Invalid byte range.",
+            headers={"Content-Range": f"bytes */{file_size}"},
+        )
+    start_text, end_text = spec.split("-", 1)
+    try:
+        if start_text:
+            start = int(start_text)
+            end = int(end_text) if end_text else file_size - 1
+        else:
+            suffix = int(end_text)
+            if suffix <= 0:
+                raise ValueError
+            start = max(0, file_size - suffix)
+            end = file_size - 1
+    except ValueError as error:
+        raise HTTPException(
+            status_code=416,
+            detail="Invalid byte range.",
+            headers={"Content-Range": f"bytes */{file_size}"},
+        ) from error
+    if start < 0 or end < start or start >= file_size:
+        raise HTTPException(
+            status_code=416,
+            detail="Requested range is not satisfiable.",
+            headers={"Content-Range": f"bytes */{file_size}"},
+        )
+    return start, min(end, file_size - 1)
+
+
+@app.get("/api/video/source")
+def video_source(
+    request: Request,
+    workspaceRoot: str = Query(min_length=1),
+    path: str = Query(min_length=1),
+) -> Response:
+    paths = _workspace_paths_for_http(workspaceRoot)
+    video_path = Path(path).expanduser().resolve()
+    try:
+        _ensure_workspace_child(paths.root, video_path)
+    except HTTPException:
+        media_root = paths.image_pool.resolve()
+        if video_path != media_root and media_root not in video_path.parents:
+            raise
+    if not video_path.is_file() or video_path.suffix.lower() not in VIDEO_EXTENSIONS:
+        raise HTTPException(status_code=404, detail=f"Video not found: {video_path.name}")
+    media_type = mimetypes.guess_type(video_path.name)[0] or "application/octet-stream"
+    stat = video_path.stat()
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "no-store",
+    }
+    range_header = request.headers.get("range")
+    if not range_header:
+        return FileResponse(video_path, media_type=media_type, headers=headers)
+    start, end = _parse_range_header(range_header, stat.st_size)
+    headers.update({
+        "Content-Range": f"bytes {start}-{end}/{stat.st_size}",
+        "Content-Length": str(end - start + 1),
+    })
+    return StreamingResponse(
+        _file_byte_range(video_path, start, end),
+        status_code=206,
+        media_type=media_type,
+        headers=headers,
     )
 
 

@@ -39,6 +39,20 @@ export const SLOT_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0] as const;
 export const POOL_LABEL_ZOOM = { width: 500, height: 600, factor: 2 } as const;
 
 export type ImagePixelPoint = { x: number; y: number };
+export type CanvasPreviewSource = HTMLImageElement | HTMLVideoElement;
+
+export function previewSourceSize(source: CanvasPreviewSource) {
+  if (source instanceof HTMLVideoElement) {
+    return {
+      width: Math.max(1, source.videoWidth || source.clientWidth || 1),
+      height: Math.max(1, source.videoHeight || source.clientHeight || 1)
+    };
+  }
+  return {
+    width: Math.max(1, source.naturalWidth || source.width || 1),
+    height: Math.max(1, source.naturalHeight || source.height || 1)
+  };
+}
 
 export function loadCanvasImage(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
@@ -63,11 +77,12 @@ export function resizeCanvasToParent(canvas: HTMLCanvasElement | null) {
   if (canvas.height !== nextHeight) canvas.height = nextHeight;
 }
 
-export function imageDisplayRect(canvas: HTMLCanvasElement, image: HTMLImageElement, viewport: Viewport): DisplayRect {
-  const baseScale = Math.min(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
+export function imageDisplayRect(canvas: HTMLCanvasElement, image: CanvasPreviewSource, viewport: Viewport): DisplayRect {
+  const size = previewSourceSize(image);
+  const baseScale = Math.min(canvas.width / size.width, canvas.height / size.height);
   const scale = baseScale * viewport.zoom;
-  const w = image.naturalWidth * scale;
-  const h = image.naturalHeight * scale;
+  const w = size.width * scale;
+  const h = size.height * scale;
   return {
     x: (canvas.width - w) / 2 + viewport.panX,
     y: (canvas.height - h) / 2 + viewport.panY,
@@ -77,11 +92,12 @@ export function imageDisplayRect(canvas: HTMLCanvasElement, image: HTMLImageElem
 }
 
 /** Match legacy clampPreviewView() pan/zoom bounds. */
-export function clampViewportPan(canvas: HTMLCanvasElement, image: HTMLImageElement, viewport: Viewport): Viewport {
+export function clampViewportPan(canvas: HTMLCanvasElement, image: CanvasPreviewSource, viewport: Viewport): Viewport {
   const zoom = clamp(viewport.zoom, 1, 12);
-  const baseScale = Math.min(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
-  const w = image.naturalWidth * baseScale * zoom;
-  const h = image.naturalHeight * baseScale * zoom;
+  const size = previewSourceSize(image);
+  const baseScale = Math.min(canvas.width / size.width, canvas.height / size.height);
+  const w = size.width * baseScale * zoom;
+  const h = size.height * baseScale * zoom;
   const maxPanX = Math.max(0, (w - canvas.width) / 2);
   const maxPanY = Math.max(0, (h - canvas.height) / 2);
   let panX = clamp(viewport.panX, -maxPanX, maxPanX);

@@ -18,10 +18,12 @@ import {
   imagePixelPointToNormalized,
   normalizedImageRect,
   pixelRectToBox,
+  previewSourceSize,
   pointerImagePointFromCanvas,
   rectToBox,
   resizeOrMovePixelRect,
   type BoxAdjustMode,
+  type CanvasPreviewSource,
   type DisplayRect,
   type DragState,
   type ImagePixelPoint,
@@ -57,7 +59,7 @@ type UseBoxLabelPointerOptions = {
   archivedDetectIdsRef?: MutableRefObject<Set<number>>;
   setError: (status: string) => void;
   canvasRef: RefObject<HTMLCanvasElement | null>;
-  imageRef: RefObject<HTMLImageElement | null>;
+  imageRef: RefObject<CanvasPreviewSource | null>;
   displayRef: MutableRefObject<DisplayRect | null>;
   viewportRef: MutableRefObject<Viewport>;
   zoomPointRef: MutableRefObject<ImagePixelPoint | null>;
@@ -117,8 +119,7 @@ export function useBoxLabelPointer({
       } catch {
         // pointer capture may fail for some auxiliary buttons
       }
-      const imageW = image.naturalWidth;
-      const imageH = image.naturalHeight;
+      const { width: imageW, height: imageH } = previewSourceSize(image);
       const canvasPoint = eventCanvasPoint(event, canvas);
       if (event.button === 1 || event.button === 2) {
         event.preventDefault();
@@ -231,8 +232,9 @@ export function useBoxLabelPointer({
       if (!canvas || !display) return;
       const drag = dragRef.current;
       const canvasPoint = eventCanvasPoint(event, canvas);
-      const imageW = image?.naturalWidth || 1;
-      const imageH = image?.naturalHeight || 1;
+      const imageSize = image ? previewSourceSize(image) : { width: 1, height: 1 };
+      const imageW = imageSize.width;
+      const imageH = imageSize.height;
 
       if (drag?.type === "pan") {
         if (!image) return;
@@ -327,7 +329,8 @@ export function useBoxLabelPointer({
           const currentDisplay = displayRef.current;
           if (image && currentDisplay) {
             const point = eventCanvasPoint(event, canvas);
-            const hit = hitTest(point, currentDisplay, boxesRef.current, image.naturalWidth, image.naturalHeight);
+            const { width: imageW, height: imageH } = previewSourceSize(image);
+            const hit = hitTest(point, currentDisplay, boxesRef.current, imageW, imageH);
             const box = hit.index >= 0 ? boxesRef.current[hit.index] : null;
             if (box) {
               const cls = classesRef.current.find((item) => item.id === box.classId);
@@ -373,7 +376,8 @@ export function useBoxLabelPointer({
         const rect = normalizedImageRect(drag.start, drag.current);
         const shouldAutoFit = autoFitEnabled && !event.shiftKey && !blackBoxEnabled;
         const shouldBlackBox = blackBoxEnabled;
-        if (selectionTooSmallPixels(rect, image.naturalWidth, image.naturalHeight, { allowAutoFitClick: shouldAutoFit })) {
+        const { width: imageW, height: imageH } = previewSourceSize(image);
+        if (selectionTooSmallPixels(rect, imageW, imageH, { allowAutoFitClick: shouldAutoFit })) {
           scheduleDraw();
           return;
         }
