@@ -147,6 +147,8 @@ export function useBoxLabel({
   }, [labelIndex]);
 
   const datasetStats = useMemo(() => {
+    const detectClassCounts = new Map<number, number>();
+    const clfClassCounts = new Map<string, number>();
     let clfLabels = 0;
     let reviewed = 0;
     let junk = 0;
@@ -156,6 +158,7 @@ export function useBoxLabel({
       const classKey = String(row.clf_class || "").trim();
       if (classKey && classKey !== INBOX_JUNK_CLASS && isTaskExportEnabled(row, "clf")) {
         clfLabels += 1;
+        clfClassCounts.set(classKey, (clfClassCounts.get(classKey) ?? 0) + 1);
       }
     }
 
@@ -166,6 +169,9 @@ export function useBoxLabel({
       if (!isTaskExportEnabled(row, "detect")) continue;
       detectSamples += 1;
       detectHits += classIds.size;
+      for (const classId of classIds) {
+        detectClassCounts.set(classId, (detectClassCounts.get(classId) ?? 0) + 1);
+      }
     }
 
     return {
@@ -176,6 +182,12 @@ export function useBoxLabel({
       proposals: 0,
       reviewed,
       junk,
+      detectClasses: [...detectClassCounts.entries()]
+        .map(([classId, count]) => ({ key: String(classId), name: `#${classId}`, count }))
+        .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
+      clfClasses: [...clfClassCounts.entries()]
+        .map(([classKey, count]) => ({ key: classKey, name: classKey, count }))
+        .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
     };
   }, [allEntries.length, labelIndex, metadata]);
 

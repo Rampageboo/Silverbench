@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { useWorkspace } from "../../app/useWorkspace";
 import { useVideoAnnotationSession } from "../video/useVideoAnnotationSession";
 import { BoxLabelSurface } from "../box-label/BoxLabelPage";
@@ -34,6 +34,12 @@ const SAMPLING_MODES: SamplingMode[] = ["whole-video", "segments-preferred", "se
 const RANDOM_MULTIPLIERS = [1, 5, 10] as const;
 type RandomMultiplier = (typeof RANDOM_MULTIPLIERS)[number];
 
+type AnalysisClassBucket = {
+  key: string;
+  name: string;
+  count: number;
+};
+
 type AnalysisStats = {
   totalMedia: number;
   detectSamples: number;
@@ -42,6 +48,8 @@ type AnalysisStats = {
   proposals: number;
   reviewed: number;
   junk: number;
+  detectClasses: AnalysisClassBucket[];
+  clfClasses: AnalysisClassBucket[];
 };
 
 const EMPTY_ANALYSIS_STATS: AnalysisStats = {
@@ -52,10 +60,32 @@ const EMPTY_ANALYSIS_STATS: AnalysisStats = {
   proposals: 0,
   reviewed: 0,
   junk: 0,
+  detectClasses: [],
+  clfClasses: [],
 };
+
+function incrementBucket(map: Map<string, AnalysisClassBucket>, key: string, name: string, amount = 1) {
+  const trimmedKey = key.trim();
+  if (!trimmedKey) return;
+  const existing = map.get(trimmedKey);
+  if (existing) {
+    existing.count += amount;
+    if (existing.name === trimmedKey && name !== trimmedKey) existing.name = name;
+    return;
+  }
+  map.set(trimmedKey, { key: trimmedKey, name: name || trimmedKey, count: amount });
+}
+
+function sortedBuckets(map: Map<string, AnalysisClassBucket>): AnalysisClassBucket[] {
+  return [...map.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
 
 function videoAnalysisStats(videoSession: ReturnType<typeof useVideoAnnotationSession>): AnalysisStats {
   const frames = Object.values(videoSession.manifest?.frames ?? {});
+  const detectNames = new Map(videoSession.classes.map((item) => [String(item.id), item.name]));
+  const clfNames = new Map(videoSession.clfClassOptions.map((item) => [item.key, item.name]));
+  const detectBuckets = new Map<string, AnalysisClassBucket>();
+  const clfBuckets = new Map<string, AnalysisClassBucket>();
   let detectSamples = 0;
   let detectHits = 0;
   let clfLabels = 0;
@@ -72,7 +102,14 @@ function videoAnalysisStats(videoSession: ReturnType<typeof useVideoAnnotationSe
     }
     detectHits += detectBoxCount;
     proposals += proposalCount;
-    if (clf?.classKey) clfLabels += 1;
+    for (const box of detect?.boxes ?? []) {
+      const key = String(box.classId);
+      incrementBucket(detectBuckets, key, detectNames.get(key) ?? `#${key}`);
+    }
+    if (clf?.classKey) {
+      clfLabels += 1;
+      incrementBucket(clfBuckets, clf.classKey, clfNames.get(clf.classKey) ?? clf.classKey);
+    }
     if (detect?.reviewed || clf?.reviewed) reviewed += 1;
   }
 
@@ -84,7 +121,19 @@ function videoAnalysisStats(videoSession: ReturnType<typeof useVideoAnnotationSe
     proposals,
     reviewed,
     junk: 0,
+    detectClasses: sortedBuckets(detectBuckets),
+    clfClasses: sortedBuckets(clfBuckets),
   };
+}
+
+function combineBuckets(items: AnalysisClassBucket[][]): AnalysisClassBucket[] {
+  const merged = new Map<string, AnalysisClassBucket>();
+  for (const buckets of items) {
+    for (const bucket of buckets) {
+      incrementBucket(merged, bucket.key, bucket.name, bucket.count);
+    }
+  }
+  return sortedBuckets(merged);
 }
 
 function combineAnalysisStats(...items: AnalysisStats[]): AnalysisStats {
@@ -97,6 +146,8 @@ function combineAnalysisStats(...items: AnalysisStats[]): AnalysisStats {
       proposals: total.proposals + item.proposals,
       reviewed: total.reviewed + item.reviewed,
       junk: total.junk + item.junk,
+      detectClasses: combineBuckets([total.detectClasses, item.detectClasses]),
+      clfClasses: combineBuckets([total.clfClasses, item.clfClasses]),
     }),
     EMPTY_ANALYSIS_STATS
   );
@@ -242,28 +293,88 @@ function AnalysisPanel({
 }: {
   stats: AnalysisStats;
 }) {
-  const rows = [
-    ["Media", stats.totalMedia],
-    ["Detect samples", stats.detectSamples],
-    ["Detect hits", stats.detectHits],
-    ["Clf labels", stats.clfLabels],
-    ["Proposals", stats.proposals],
-    ["Reviewed", stats.reviewed],
-    ["Junk", stats.junk],
-  ] as const;
+  const [heatmapClassKey, setHeatmapClassKey] = useState("all");
+  const detectBars = [
+    { label: "Samples", value: stats.detectSamples },
+    { label: "Hits", value: stats.detectHits },
+    { label: "Props", value: stats.proposals },
+  ];
+  const clfBars = [
+    { label: "Labels", value: stats.clfLabels },
+    { label: "Reviewed", value: stats.reviewed },
+    { label: "Junk", value: stats.junk },
+  ];
+  const heatmapBuckets = heatmapClassKey === "all"
+    ? stats.detectClasses.slice(0, 18)
+    : stats.detectClasses.filter((bucket) => bucket.key === heatmapClassKey);
+  const heatmapMax = Math.max(1, ...heatmapBuckets.map((bucket) => bucket.count));
+  const maxBar = Math.max(1, ...detectBars.map((item) => item.value), ...clfBars.map((item) => item.value));
+
+  useEffect(() => {
+    if (heatmapClassKey === "all") return;
+    if (!stats.detectClasses.some((bucket) => bucket.key === heatmapClassKey)) setHeatmapClassKey("all");
+  }, [heatmapClassKey, stats.detectClasses]);
+
+  const renderBarGroup = (title: string, summary: string, items: Array<{ label: string; value: number }>, tone: "detect" | "clf") => (
+    <div className={`lwb-analysis-chart lwb-analysis-chart--${tone}`}>
+      <div className="lwb-analysis-chart-title">
+        <span>{title}</span>
+        <strong>{summary}</strong>
+      </div>
+      <div className="lwb-analysis-bars">
+        {items.map((item) => (
+          <div key={item.label} className="lwb-analysis-bar-row">
+            <span>{item.label}</span>
+            <div className="lwb-analysis-bar-track" aria-hidden="true">
+              <div className="lwb-analysis-bar-fill" style={{ width: `${Math.max(3, (item.value / maxBar) * 100)}%` }} />
+            </div>
+            <strong>{item.value}</strong>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
     <section className="lwb-analysis-panel" aria-label="Analysis">
-      <div className="lwb-analysis-head">
-        <span>Analysis</span>
-        <small>Dataset</small>
-      </div>
-      <div className="lwb-analysis-grid">
-        {rows.map(([label, value]) => (
-          <span key={label}>
-            <strong>{value}</strong>
-            <small>{label}</small>
-          </span>
-        ))}
+      {renderBarGroup("Detect", `${stats.detectClasses.length} cls`, detectBars, "detect")}
+      {renderBarGroup("Clf", `${stats.clfClasses.length} cls`, clfBars, "clf")}
+      <div className="lwb-analysis-heatmap">
+        <div className="lwb-analysis-heatmap-head">
+          <span>Det heatmap</span>
+          <select
+            value={heatmapClassKey}
+            onChange={(event) => setHeatmapClassKey(event.target.value)}
+            aria-label="Detect heatmap class"
+          >
+            <option value="all">All classes</option>
+            {stats.detectClasses.slice(0, 80).map((bucket) => (
+              <option key={bucket.key} value={bucket.key}>
+                {bucket.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="lwb-analysis-heatmap-grid">
+          {heatmapBuckets.length ? heatmapBuckets.map((bucket) => {
+            const heat = bucket.count / heatmapMax;
+            return (
+              <div
+                key={bucket.key}
+                className="lwb-analysis-heatmap-cell"
+                style={{
+                  "--heat": heat,
+                } as CSSProperties}
+                title={`${bucket.name}: ${bucket.count}`}
+              >
+                <strong>{bucket.count}</strong>
+                <span>{bucket.name}</span>
+              </div>
+            );
+          }) : (
+            <div className="lwb-analysis-empty">No detect classes.</div>
+          )}
+        </div>
       </div>
     </section>
   );
@@ -564,7 +675,7 @@ export function LabelPage({ active = true, onReady }: Props) {
   });
   const analysisStats = useMemo(
     () => combineAnalysisStats(imagePool.datasetStats, videoAnalysisStats(videoSession)),
-    [imagePool.datasetStats, videoSession.manifest, videoSession.videos.length]
+    [imagePool.datasetStats, videoSession.classes, videoSession.clfClassOptions, videoSession.manifest, videoSession.videos.length]
   );
 
   const clearWorkbenchActions = useCallback(() => {

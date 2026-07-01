@@ -6813,43 +6813,154 @@ a.glass-card:focus-visible {
   margin-top: auto;
 }
 
-.react-box-label-page .lwb-analysis-panel {
+.react-box-label-page .pool-label-preview-dock .lwb-analysis-panel {
   color: var(--lwb-text);
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  gap: 8px;
+  backdrop-filter: none;
 }
 
-.react-box-label-page .lwb-analysis-grid {
+.react-box-label-page .lwb-analysis-chart-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  margin-top: auto;
+  gap: 8px;
+  min-width: 0;
 }
 
-.react-box-label-page .lwb-analysis-grid span {
+.react-box-label-page .lwb-analysis-chart,
+.react-box-label-page .lwb-analysis-heatmap {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: baseline;
-  gap: 8px;
+  gap: 7px;
   min-width: 0;
   border: 1px solid rgba(129, 149, 176, 0.15);
   border-radius: 7px;
-  padding: 7px 8px;
+  padding: 8px;
   background: rgba(5, 10, 18, 0.44);
 }
 
-.react-box-label-page .lwb-analysis-grid strong {
-  color: #dbeafe;
-  font-size: 16px;
-  line-height: 1;
+.react-box-label-page .lwb-analysis-chart-title,
+.react-box-label-page .lwb-analysis-heatmap-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  color: var(--lwb-text-strong);
+  font-size: 11px;
+  font-weight: 800;
 }
 
-.react-box-label-page .lwb-analysis-grid small {
+.react-box-label-page .lwb-analysis-chart-title strong {
+  color: #bfdbfe;
+  font-size: 12px;
+}
+
+.react-box-label-page .lwb-analysis-bars {
+  display: grid;
+  gap: 6px;
+}
+
+.react-box-label-page .lwb-analysis-bar-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) minmax(22px, auto);
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--lwb-text-muted);
+}
+
+.react-box-label-page .lwb-analysis-bar-row > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--lwb-text-muted);
+}
+
+.react-box-label-page .lwb-analysis-bar-row strong {
+  color: #dbeafe;
   font-size: 11px;
+  text-align: right;
+}
+
+.react-box-label-page .lwb-analysis-bar-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(30, 41, 59, 0.86);
+}
+
+.react-box-label-page .lwb-analysis-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #60a5fa);
+}
+
+.react-box-label-page .lwb-analysis-chart--clf .lwb-analysis-bar-fill {
+  background: linear-gradient(90deg, #0891b2, #67e8f9);
+}
+
+.react-box-label-page .lwb-analysis-heatmap {
+  margin-top: 0;
+}
+
+.react-box-label-page .lwb-analysis-heatmap-head select {
+  min-width: 92px;
+  max-width: 150px;
+  border: 1px solid rgba(129, 149, 176, 0.18);
+  border-radius: 6px;
+  background: rgba(5, 10, 18, 0.62);
+  color: var(--lwb-text);
+  font-size: 10.5px;
+  padding: 4px 6px;
+}
+
+.react-box-label-page .lwb-analysis-heatmap-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  min-width: 0;
+}
+
+.react-box-label-page .lwb-analysis-heatmap-cell {
+  min-width: 0;
+  min-height: 38px;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  border: 1px solid rgba(96, 165, 250, calc(0.16 + var(--heat) * 0.44));
+  border-radius: 6px;
+  padding: 6px;
+  background:
+    linear-gradient(180deg, rgba(37, 99, 235, calc(0.08 + var(--heat) * 0.34)), rgba(8, 13, 22, 0.62));
+}
+
+.react-box-label-page .lwb-analysis-heatmap-cell strong {
+  color: #dbeafe;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.react-box-label-page .lwb-analysis-heatmap-cell span,
+.react-box-label-page .lwb-analysis-empty {
+  color: var(--lwb-text-muted);
+  font-size: 10.5px;
   font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.react-box-label-page .lwb-analysis-empty {
+  grid-column: 1 / -1;
+  min-height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed rgba(129, 149, 176, 0.18);
+  border-radius: 6px;
 }
 
 @media (max-width: 1600px) {
@@ -6862,7 +6973,7 @@ a.glass-card:focus-visible {
     grid-column: 1 / -1;
   }
 
-  .react-box-label-page .lwb-analysis-grid {
+  .react-box-label-page .lwb-analysis-heatmap-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
