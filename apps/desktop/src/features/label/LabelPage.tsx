@@ -826,6 +826,11 @@ export function LabelPage({ active = true, onReady }: Props) {
     return names;
   }, [inspectorState?.classPalette?.detectClasses, videoSession.classes, workspaceClassManifest]);
   const classPanelSummaries = useMemo(() => analysisClassPanelSummaries(analysisStats), [analysisStats]);
+  const mediaCatalogLoading = Boolean(workspaceRoot.trim()) && (
+    !videoSession.videosLoaded ||
+    (imagePool.pending && imagePool.entries.length === 0)
+  );
+  const mediaCatalogReady = !mediaCatalogLoading;
 
   useEffect(() => {
     if (!workspaceRoot.trim()) return;
@@ -918,6 +923,7 @@ export function LabelPage({ active = true, onReady }: Props) {
   );
 
   useEffect(() => {
+    if (!mediaCatalogReady) return;
     if (selection.kind === "image") {
       if (imagePool.entries.length) {
         if (selection.index >= imagePool.entries.length) {
@@ -939,6 +945,7 @@ export function LabelPage({ active = true, onReady }: Props) {
     handleSelectionChange,
     imagePool.currentIndex,
     imagePool.entries.length,
+    mediaCatalogReady,
     selection.index,
     selection.kind,
     videoSession.currentIndex,
@@ -946,12 +953,13 @@ export function LabelPage({ active = true, onReady }: Props) {
   ]);
 
   useEffect(() => {
+    if (!mediaCatalogReady) return;
     const previousCount = previousVideoCountRef.current;
     previousVideoCountRef.current = videoSession.videos.length;
     if (videoSession.videos.length <= previousCount) return;
     const index = videoSession.currentIndex >= 0 ? videoSession.currentIndex : videoSession.videos.length - 1;
     handleSelectionChange({ kind: "video", index });
-  }, [handleSelectionChange, videoSession.currentIndex, videoSession.videos.length]);
+  }, [handleSelectionChange, mediaCatalogReady, videoSession.currentIndex, videoSession.videos.length]);
 
   useEffect(() => {
     if (selection.kind !== "video" || !videoSession.current || !videoSession.manifest) return;
@@ -1111,6 +1119,7 @@ export function LabelPage({ active = true, onReady }: Props) {
             pool={imagePool}
             videoSession={videoSession}
             selection={selection}
+            loading={mediaCatalogLoading}
             activeRevealToken={mediaRevealToken}
             onSelectionChange={handleSelectionChange}
           />

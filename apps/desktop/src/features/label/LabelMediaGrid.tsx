@@ -13,6 +13,7 @@ type Props = {
   pool: BoxLabelPageModel;
   videoSession: VideoLabelSession;
   selection: LabelMediaSelection;
+  loading?: boolean;
   activeRevealToken?: number;
   onSelectionChange: (selection: LabelMediaSelection) => void;
 };
@@ -107,7 +108,7 @@ function mediaKey(selection: LabelMediaSelection) {
   return `${selection.kind}:${selection.index}`;
 }
 
-export function LabelMediaGrid({ pool, videoSession, selection, activeRevealToken = 0, onSelectionChange }: Props) {
+export function LabelMediaGrid({ pool, videoSession, selection, loading = false, activeRevealToken = 0, onSelectionChange }: Props) {
   const activeTileRef = useRef<HTMLButtonElement | null>(null);
   const mediaItems = useMemo<MediaItem[]>(() => {
     const videos: MediaItem[] = videoSession.videos.map((video, index) => ({
@@ -178,7 +179,9 @@ export function LabelMediaGrid({ pool, videoSession, selection, activeRevealToke
         </button>
       </div>
       <div className="panel-body lwb-media-grid-scroll">
-        {mediaItems.length ? (
+        {loading ? (
+          <div className="empty">Loading media...</div>
+        ) : mediaItems.length ? (
           <div className="lwb-media-grid">
             {mediaItems.map((item) => {
               const active = `${item.kind}:${item.index}` === activeKey;

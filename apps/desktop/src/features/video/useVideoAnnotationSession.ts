@@ -94,6 +94,8 @@ export function useVideoAnnotationSession({
   const [previewBase64, setPreviewBase64] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [videosLoading, setVideosLoading] = useState(false);
+  const [videosLoaded, setVideosLoaded] = useState(false);
   const [manifestLoading, setManifestLoading] = useState(false);
   const [manifest, setManifest] = useState<VideoAnnotationManifest | null>(null);
   const [classes, setClasses] = useState<LabelClass[]>(defaultClasses);
@@ -168,6 +170,11 @@ export function useVideoAnnotationSession({
   }, [onReady]);
 
   useEffect(() => {
+    setVideosLoaded(false);
+    setVideosLoading(Boolean(workspaceRoot.trim()));
+  }, [workspaceRoot]);
+
+  useEffect(() => {
     if (active) return;
     previewRequestRef.current += 1;
     autoLabelFrameRequestRef.current += 1;
@@ -182,7 +189,13 @@ export function useVideoAnnotationSession({
       if (!root) {
         setVideos([]);
         setCurrentIndex(-1);
+        setVideosLoading(false);
+        setVideosLoaded(true);
         return;
+      }
+      if (options.replace) {
+        setVideosLoading(true);
+        setVideosLoaded(false);
       }
       try {
         const workspaceVideos = (await listWorkspaceVideos(root))
@@ -209,6 +222,11 @@ export function useVideoAnnotationSession({
         }
       } catch (reason) {
         if (!options.silent) showError(reason, "videos.workspace.load");
+      } finally {
+        if (options.replace) {
+          setVideosLoading(false);
+          setVideosLoaded(true);
+        }
       }
     },
     [showError, workspaceRoot]
@@ -756,6 +774,8 @@ export function useVideoAnnotationSession({
     previewBase64,
     previewUrl,
     previewLoading,
+    videosLoading,
+    videosLoaded,
     manifestLoading,
     manifest,
     currentFrame,
