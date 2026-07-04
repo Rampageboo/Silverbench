@@ -19,6 +19,7 @@ type UseBoxLabelCanvasOptions = {
   classesRef: MutableRefObject<api.LabelClass[]>;
   showGridRef: MutableRefObject<boolean>;
   dragRef: MutableRefObject<DragState>;
+  suppressAnnotationsRef?: MutableRefObject<boolean>;
   pointerToolEnabled: boolean;
   autoFitEnabled: boolean;
   blackBoxEnabled: boolean;
@@ -33,6 +34,7 @@ export function useBoxLabelCanvas({
   classesRef,
   showGridRef,
   dragRef,
+  suppressAnnotationsRef,
   pointerToolEnabled,
   autoFitEnabled,
   blackBoxEnabled,
@@ -54,37 +56,56 @@ export function useBoxLabelCanvas({
     const zoomCanvas = zoomCanvasRef.current;
     const image = imageRef.current;
     if (!canvas) return;
+    const suppressAnnotations = Boolean(suppressAnnotationsRef?.current);
+    const renderBoxes = suppressAnnotations ? [] : boxesRef.current;
+    const renderSelectedIndex = suppressAnnotations ? null : selectedRef.current;
+    const renderDrag = suppressAnnotations ? null : dragRef.current;
+    const renderProposals = suppressAnnotations ? [] : proposalsRef?.current;
+    const renderSelectedProposalId = suppressAnnotations ? null : selectedProposalIdRef?.current;
     displayRef.current = renderMainCanvas({
       canvas,
       image,
-      boxes: boxesRef.current,
-      selectedIndex: selectedRef.current,
+      boxes: renderBoxes,
+      selectedIndex: renderSelectedIndex,
       classes: classesRef.current,
       currentClassId: classRef.current,
       showGrid: showGridRef.current,
       viewport: viewportRef.current,
-      drag: dragRef.current,
+      drag: renderDrag,
       zoomPoint: zoomPointRef.current,
       pointerToolEnabled,
       autoFitEnabled,
       blackBoxEnabled,
-      proposals: proposalsRef?.current,
-      selectedProposalId: selectedProposalIdRef?.current
+      proposals: renderProposals,
+      selectedProposalId: renderSelectedProposalId
     });
     if (image && zoomCanvas && displayRef.current) {
       renderZoomCanvas({
         canvas: zoomCanvas,
         image,
         display: displayRef.current,
-        boxes: boxesRef.current,
-        selectedIndex: selectedRef.current,
-        drag: dragRef.current,
+        boxes: renderBoxes,
+        selectedIndex: renderSelectedIndex,
+        drag: renderDrag,
         currentClassId: classRef.current,
         zoomPoint: zoomPointRef.current,
         lastZoomCenter: lastZoomCenterRef.current
       });
     }
-  }, [autoFitEnabled, blackBoxEnabled, boxesRef, classRef, classesRef, dragRef, pointerToolEnabled, selectedRef, showGridRef]);
+  }, [
+    autoFitEnabled,
+    blackBoxEnabled,
+    boxesRef,
+    classRef,
+    classesRef,
+    dragRef,
+    pointerToolEnabled,
+    proposalsRef,
+    selectedProposalIdRef,
+    selectedRef,
+    showGridRef,
+    suppressAnnotationsRef
+  ]);
 
   const scheduleDraw = useCallback(() => {
     if (rafRef.current !== null) return;

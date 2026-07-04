@@ -113,13 +113,11 @@ export async function loadDetectDatasetClassIndex(
 }
 
 export async function loadEntryLabels(datasetRoot: string, entry: BoxLabelEntry) {
-  let text = "";
   try {
-    text = await api.readTextFile(datasetRoot, entry.labelPath);
+    return parseLabels(await api.readTextFile(datasetRoot, entry.labelPath));
   } catch {
-    text = "";
+    return [];
   }
-  return parseLabels(text);
 }
 
 export async function saveEntryLabels(datasetRoot: string, entry: BoxLabelEntry, boxes: LabelBox[]) {

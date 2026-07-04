@@ -3,7 +3,7 @@ import { backendBaseUrl } from "./lib/backendConfig";
 import type { WorkspaceVersionId, WorkspaceVersionsManifest } from "./features/workspace-versioning/workspaceSnapshotVersions";
 
 export const API_BASE_URL = backendBaseUrl();
-export const REQUIRED_API_SCHEMA_VERSION = 20;
+export const REQUIRED_API_SCHEMA_VERSION = 22;
 
 export type BackendMethod =
   | "markImagePoolSeen"
@@ -62,6 +62,8 @@ export type BackendMethod =
   | "ensureDataYaml"
   | "startDetectFolderWithPt"
   | "startClassifyFolderWithPt"
+  | "startDetectImageWithPt"
+  | "startClassifyImageWithPt"
   | "classifyImageWithPt"
   | "detectImageWithPt"
   | "classifyImageBase64WithPt"
@@ -446,6 +448,17 @@ export type PtDetectImageResult = {
   predictions: PtDetectPrediction[];
 };
 
+export type PtJob = {
+  id: string;
+  kind?: string;
+  status?: string;
+  done?: number;
+  total?: number;
+  detail?: string;
+  errors?: string[];
+  result?: Record<string, unknown> | null;
+};
+
 export type PtClassifyPrediction = {
   classId: number;
   className?: string;
@@ -493,6 +506,24 @@ export async function classifyImageWithPt(
   ]);
 }
 
+export async function startClassifyImageWithPt(
+  workspaceRoot: string,
+  modelRelativePath: string,
+  imageRelativePath: string,
+  imageSize = 0,
+  device = "0",
+  topK = 5
+) {
+  return callJson<PtJob>("startClassifyImageWithPt", [
+    workspaceRoot,
+    modelRelativePath,
+    imageRelativePath,
+    imageSize,
+    device,
+    topK,
+  ]);
+}
+
 export async function classifyImageBase64WithPt(
   workspaceRoot: string,
   modelRelativePath: string,
@@ -529,6 +560,24 @@ export async function detectImageWithPt(
   ]);
 }
 
+export async function startDetectImageWithPt(
+  workspaceRoot: string,
+  modelRelativePath: string,
+  imageRelativePath: string,
+  imageSize = 640,
+  confidence = 0.25,
+  device = "0"
+) {
+  return callJson<PtJob>("startDetectImageWithPt", [
+    workspaceRoot,
+    modelRelativePath,
+    imageRelativePath,
+    imageSize,
+    confidence,
+    device,
+  ]);
+}
+
 export async function detectImageBase64WithPt(
   workspaceRoot: string,
   modelRelativePath: string,
@@ -545,6 +594,14 @@ export async function detectImageBase64WithPt(
     confidence,
     device,
   ]);
+}
+
+export async function getPtJob(jobId: string) {
+  return callJson<PtJob>("getPtJob", [jobId]);
+}
+
+export async function cancelPtJob(jobId: string) {
+  return callJson<PtJob>("cancelPtJob", [jobId]);
 }
 
 export async function createClassFolder(datasetRoot: string, folderName: string) {

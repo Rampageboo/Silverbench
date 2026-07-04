@@ -5,6 +5,8 @@ import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { errMessage } from "../../lib/errors";
 import { recordWorkspaceEventBestEffort, recordWorkspaceOperation } from "../../workbench/auditLog";
 import { useWorkspaceArchitecture } from "../../workspace/WorkspaceArchitectureProvider";
+import { isDetectJunk, loadMetadataMap, markJunkFilenames } from "../image-pool/metadata";
+import type { MetadataRow } from "../image-pool/types";
 import { WORKSPACE_MEDIA_CHANGED_EVENT, isSameWorkspaceRoot, isWorkspaceMediaChangedEvent } from "../shared/mediaEvents";
 import { useArchivedClassIds } from "../workspace/useArchivedClassIds";
 import {
@@ -14,6 +16,7 @@ import {
 } from "../workspace/workspaceClassTaxonomy";
 import {
   chooseAnnotationVideos,
+  createVideoAnnotationManifest,
   DEFAULT_VIDEO_ANNOTATIONS_ROOT,
   getAnnotationFrameBase64,
   getAnnotationFrameUrl,
@@ -54,6 +57,10 @@ import {
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 export const VIDEO_PREVIEW_DEBOUNCE_MS = 120;
+
+export function filterVideoJunk<T extends { name: string }>(videos: T[], metadata: Map<string, MetadataRow>) {
+  return videos.filter((video) => !isDetectJunk(metadata.get(video.name)));
+}
 
 function defaultClasses(): LabelClass[] {
   return [{ id: 0, name: "object" }];
@@ -197,7 +204,8 @@ export function useVideoAnnotationSession({
         setVideosLoaded(false);
       }
       try {
-        const workspaceVideos = (await listWorkspaceVideos(root))
+        const metadata = await loadMetadataMap(root).catch(() => new Map<string, MetadataRow>());
+        const workspaceVideos = filterVideoJunk((await listWorkspaceVideos(root))
           .filter((item) => item.ok !== false && item.path)
           .map((item) => ({
             ok: item.ok,
@@ -206,7 +214,7 @@ export function useVideoAnnotationSession({
             duration: Math.max(0, Number(item.duration) || 0),
             width: Math.max(0, Math.trunc(Number(item.width) || 0)),
             height: Math.max(0, Math.trunc(Number(item.height) || 0))
-          }));
+          })), metadata);
         setVideos((items) => options.replace ? workspaceVideos : mergeVideoSources(items, workspaceVideos));
         setCurrentIndex((index) => {
           if (options.replace) {
@@ -539,6 +547,54 @@ export function useVideoAnnotationSession({
     });
   }, []);
 
+  const markCurrentVideoJunk = useCallback(async () => {
+    const root = workspaceRoot.trim();
+    const target = currentRef.current;
+    if (!root || !target) return;
+    const removedMarkerCount = Object.keys(manifestRef.current?.frames ?? {}).length;
+    const emptyManifest = createVideoAnnotationManifest(target);
+    const revision = ++saveRevisionRef.current;
+    setSaveState("saving");
+    saveQueueRef.current = saveQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        await saveVideoAnnotationManifest(root, emptyManifest, annotationsRoot);
+        if (revision === saveRevisionRef.current) setSaveState("saved");
+      });
+    try {
+      await saveQueueRef.current;
+      await markJunkFilenames(root, [target.name], "both");
+      if (currentRef.current?.path === target.path) {
+        manifestRef.current = emptyManifest;
+        setManifest(emptyManifest);
+        setSelectedIndex(null);
+        setTime(0);
+      }
+      setVideos((items) => {
+        const removedIndex = items.findIndex((item) => item.path === target.path);
+        const next = items.filter((item) => item.path !== target.path);
+        setCurrentIndex((currentValue) => {
+          if (!next.length) return -1;
+          if (currentValue === removedIndex || currentValue < 0) return Math.min(Math.max(removedIndex, 0), next.length - 1);
+          return currentValue > removedIndex ? currentValue - 1 : currentValue;
+        });
+        return next;
+      });
+      setStatus(`Marked ${target.name} as junk and cleared ${removedMarkerCount} marker(s).`);
+      void recordWorkspaceOperation(root, {
+        tool: "video-label",
+        action: "mark-video-junk",
+        status: "done",
+        inputs: { videoPath: target.path, filename: target.name },
+        summary: { removedMarkerCount }
+      }).catch(() => {});
+    } catch (reason) {
+      if (revision === saveRevisionRef.current) setSaveState("error");
+      showError(reason, "video.mark-junk");
+      throw reason;
+    }
+  }, [annotationsRoot, showError, workspaceRoot]);
+
   const assignClass = useCallback(
     (classId: number) => {
       if (archivedDetectIds.has(classId)) {
@@ -586,6 +642,42 @@ export function useVideoAnnotationSession({
       summary: { boxCount: detectBoxes.length }
     }).catch(() => {});
   }, [annotatedFrames, current, currentKey, enqueueSave, showToast, time, workspaceRoot]);
+
+  const duplicateCurrentBoxesToNextMarker = useCallback(() => {
+    const source = manifestRef.current;
+    if (!source || !current) {
+      showToast("Select a video marker before duplicating boxes.", { variant: "error" });
+      return;
+    }
+    if (!boxes.length) {
+      showToast("Current marker has no boxes to duplicate.", { variant: "error" });
+      return;
+    }
+    const currentMs = Number(currentKey);
+    const nextMarker = videoTimelineMarkers(source)
+      .map((marker) => ({ ...marker, ms: Number(marker.key) }))
+      .filter((marker) => Number.isFinite(marker.ms) && marker.ms > currentMs)
+      .sort((a, b) => a.ms - b.ms)[0];
+    if (!nextMarker) {
+      showToast("No next marker to duplicate into.", { variant: "error" });
+      return;
+    }
+    const detectBoxes = boxes.map(labelBoxToDetectBox);
+    const next = updateVideoDetectBoxes(source, current, nextMarker.time, detectBoxes, true);
+    manifestRef.current = next;
+    setManifest(next);
+    setSelectedIndex(null);
+    setTime(clampVideoTime(nextMarker.time, current.duration));
+    enqueueSave(next);
+    setStatus(`Duplicated ${detectBoxes.length} box(es) to ${formatVideoClock(nextMarker.time)}.`);
+    void recordWorkspaceOperation(workspaceRoot, {
+      tool: "video-label",
+      action: "duplicate-to-next-marker",
+      status: "done",
+      inputs: { videoPath: current.path, fromTimestampMs: currentMs, toTimestampMs: nextMarker.ms },
+      summary: { boxCount: detectBoxes.length }
+    }).catch(() => {});
+  }, [boxes, current, currentKey, enqueueSave, showToast, workspaceRoot]);
 
   const gotoReviewed = useCallback(
     (direction: -1 | 1) => {
@@ -729,7 +821,7 @@ export function useVideoAnnotationSession({
   const toggleClfReviewed = useCallback(() => {
     const source = manifestRef.current;
     if (!source || !current) return;
-    const next = setVideoClfReviewed(source, current, time, !Boolean(clfTask?.reviewed));
+    const next = setVideoClfReviewed(source, current, time, !clfTask?.reviewed);
     manifestRef.current = next;
     setManifest(next);
     enqueueSave(next);
@@ -738,7 +830,9 @@ export function useVideoAnnotationSession({
   const toggleDetectExportEnabled = useCallback(() => {
     const source = manifestRef.current;
     if (!source || !current) return;
-    const next = setVideoDetectEnabled(source, current, time, !detectExportEnabled);
+    const next = detectExportEnabled
+      ? setVideoDetectEnabled(updateVideoDetectBoxes(source, current, time, [], false), current, time, false)
+      : setVideoDetectEnabled(source, current, time, true);
     manifestRef.current = next;
     setManifest(next);
     enqueueSave(next);
@@ -769,6 +863,7 @@ export function useVideoAnnotationSession({
     setCurrentIndex,
     current,
     removeVideo,
+    markCurrentVideoJunk,
     addVideos,
     time,
     maxTime,
@@ -812,6 +907,7 @@ export function useVideoAnnotationSession({
     updateFrameAtTime,
     loadBoxesAtTime,
     copyPreviousBoxes,
+    duplicateCurrentBoxesToNextMarker,
     gotoReviewed,
     markEmptyReviewed,
     markTimestamp,

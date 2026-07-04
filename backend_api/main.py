@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import hashlib
 import mimetypes
+import shutil
+import subprocess
 from contextlib import asynccontextmanager
 from io import BytesIO
 from pathlib import Path
@@ -32,7 +34,7 @@ SESSION_DIR = APP_DIR / "Sessions"
 SESSION_FILE = SESSION_DIR / "yolo_label_viewer_session.json"
 HEARTBEAT_METHOD = "__heartbeat"
 # Bump when /health or /api/call routing changes so dev startup can restart stale backends.
-API_SCHEMA_VERSION = 20
+API_SCHEMA_VERSION = 22
 
 # Localhost-only desktop backend: allow any registered service method except heartbeat/private.
 BLOCKED_API_METHODS = frozenset({HEARTBEAT_METHOD})
@@ -77,6 +79,11 @@ class SaveClassesRequest(BaseModel):
 class OpenWorkspaceRequest(BaseModel):
     workspaceRoot: str = Field(min_length=1)
     initIfNeeded: bool = True
+
+
+class VideoProxyRequest(BaseModel):
+    workspaceRoot: str = Field(min_length=1)
+    path: str = Field(min_length=1)
 
 
 class WriteAppSettingsRequest(BaseModel):
@@ -329,14 +336,7 @@ def video_frame_preview(
     maxEdge: int = Query(default=1280, ge=128, le=4096),
     quality: int = Query(default=60, ge=35, le=95),
 ) -> StreamingResponse:
-    paths = _workspace_paths_for_http(workspaceRoot)
-    video_path = Path(path).expanduser().resolve()
-    try:
-        _ensure_workspace_child(paths.root, video_path)
-    except HTTPException:
-        media_root = paths.image_pool.resolve()
-        if video_path != media_root and media_root not in video_path.parents:
-            raise
+    _, video_path = _workspace_video_path_for_http(workspaceRoot, path)
     try:
         payload = frame_bytes(video_path, seconds, "jpg", max_edge=maxEdge, quality=quality)
     except Exception as error:
@@ -346,6 +346,76 @@ def video_frame_preview(
         media_type="image/jpeg",
         headers={"Cache-Control": "no-store"},
     )
+
+
+@app.post("/api/video/proxy")
+def video_proxy(payload: VideoProxyRequest) -> JSONResponse:
+    paths, video_path = _workspace_video_path_for_http(payload.workspaceRoot, payload.path)
+    proxy_path = _video_proxy_path(paths.root, video_path)
+    if proxy_path.is_file() and proxy_path.stat().st_size > 0:
+        return JSONResponse({
+            "ok": True,
+            "path": str(proxy_path),
+            "sourcePath": str(video_path),
+            "cached": True,
+        })
+
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise HTTPException(
+            status_code=500,
+            detail="ffmpeg is not available. Install ffmpeg to generate browser-compatible video proxies.",
+        )
+
+    proxy_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = proxy_path.with_suffix(".tmp.mp4")
+    try:
+        command = [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            str(video_path),
+            "-map",
+            "0:v:0",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "23",
+            "-movflags",
+            "+faststart",
+            "-an",
+            str(tmp_path),
+        ]
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=600, check=False)
+        except OSError as error:
+            raise HTTPException(status_code=500, detail=f"Unable to run ffmpeg: {error}") from error
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "ffmpeg failed.").strip()
+            raise HTTPException(status_code=500, detail=f"Video proxy generation failed: {detail[-1200:]}")
+        if not tmp_path.is_file() or tmp_path.stat().st_size <= 0:
+            raise HTTPException(status_code=500, detail="Video proxy generation produced an empty file.")
+        tmp_path.replace(proxy_path)
+    finally:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
+    return JSONResponse({
+        "ok": True,
+        "path": str(proxy_path),
+        "sourcePath": str(video_path),
+        "cached": False,
+    })
 
 
 def _file_byte_range(path: Path, start: int, end: int, chunk_size: int = 1024 * 1024) -> Iterator[bytes]:
@@ -406,16 +476,7 @@ def video_source(
     workspaceRoot: str = Query(min_length=1),
     path: str = Query(min_length=1),
 ) -> Response:
-    paths = _workspace_paths_for_http(workspaceRoot)
-    video_path = Path(path).expanduser().resolve()
-    try:
-        _ensure_workspace_child(paths.root, video_path)
-    except HTTPException:
-        media_root = paths.image_pool.resolve()
-        if video_path != media_root and media_root not in video_path.parents:
-            raise
-    if not video_path.is_file() or video_path.suffix.lower() not in VIDEO_EXTENSIONS:
-        raise HTTPException(status_code=404, detail=f"Video not found: {video_path.name}")
+    _, video_path = _workspace_video_path_for_http(workspaceRoot, path)
     media_type = mimetypes.guess_type(video_path.name)[0] or "application/octet-stream"
     stat = video_path.stat()
     headers = {
@@ -557,6 +618,29 @@ def _workspace_paths(workspace_root: str):
 def _image_pool_file(workspace_root: str, filename: str) -> Path:
     paths = _workspace_paths_for_http(workspace_root)
     return _image_pool_file_from_paths(paths, filename)
+
+
+def _workspace_video_path_for_http(workspace_root: str, path: str):
+    paths = _workspace_paths_for_http(workspace_root)
+    video_path = Path(path).expanduser().resolve()
+    try:
+        _ensure_workspace_child(paths.root, video_path)
+    except HTTPException:
+        media_root = paths.image_pool.resolve()
+        if video_path != media_root and media_root not in video_path.parents:
+            raise
+    if not video_path.is_file() or video_path.suffix.lower() not in VIDEO_EXTENSIONS:
+        raise HTTPException(status_code=404, detail=f"Video not found: {video_path.name}")
+    return paths, video_path
+
+
+def _video_proxy_path(workspace_root: Path, video_path: Path) -> Path:
+    stat = video_path.stat()
+    source_key = f"{video_path.resolve()}|{stat.st_mtime_ns}|{stat.st_size}"
+    digest = hashlib.sha1(source_key.encode("utf-8")).hexdigest()[:24]
+    safe_stem = "".join("_" if char in '<>:"/\\|?*' else char for char in video_path.stem).strip(" ._")
+    safe_stem = (safe_stem or "video")[:80]
+    return workspace_meta_dir(workspace_root) / "video_proxy" / f"{safe_stem}_{digest}.mp4"
 
 
 def _workspace_paths_for_http(workspace_root: str):

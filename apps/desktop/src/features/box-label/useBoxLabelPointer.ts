@@ -1,7 +1,7 @@
 import { useCallback, type MutableRefObject, type PointerEvent as ReactPointerEvent, type RefObject, type WheelEvent as ReactWheelEvent } from "react";
 import * as api from "../../api";
 import { errMessage } from "../../lib/errors";
-import { autoFitSubjectFromImage, selectionTooSmallPixels } from "./autoFitSubject";
+import { autoFitSubjectFromImage, selectionLooksLikeColorPick, selectionTooSmallPixels } from "./autoFitSubject";
 import {
   boxCenterPixel,
   boxToImagePixelRect,
@@ -392,7 +392,11 @@ export function useBoxLabelPointer({
           return;
         }
         pushUndo("add box");
-        const fittedRect = shouldAutoFit ? autoFitSubjectFromImage(image, rect, drag.start) || rect : rect;
+        const autoFitSelection =
+          shouldAutoFit && selectionLooksLikeColorPick(rect, imageW, imageH)
+            ? { x1: drag.start.x, y1: drag.start.y, x2: drag.start.x, y2: drag.start.y }
+            : rect;
+        const fittedRect = shouldAutoFit ? autoFitSubjectFromImage(image, autoFitSelection, drag.start) || rect : rect;
         const box = rectToBox(fittedRect, classRef.current);
         const next = [...boxesRef.current, box];
         boxesRef.current = next;
@@ -401,7 +405,7 @@ export function useBoxLabelPointer({
         const recordMessage = recordFixedBoxFromBox(box);
         syncBoxToSelected(box, "sync added box", { pushUndo: false }).catch(() => {});
         void persistLabels(
-          recordMessage || (fittedRect !== rect ? "Color subject box saved. Shift keeps drawn box." : "Box added.")
+          recordMessage || (fittedRect !== rect ? "Color Select box saved. Shift keeps drawn box." : "Box added.")
         );
       } else if (drag.type === "box" && drag.moved) {
         setBoxes(boxesRef.current.slice());

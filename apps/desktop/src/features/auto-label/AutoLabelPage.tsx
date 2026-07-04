@@ -6,6 +6,7 @@ import { LogPanel } from "../../components/workbench/LogPanel";
 import { NumberField } from "../../components/workbench/NumberField";
 import { useRunWithConfirm } from "../../components/workbench/useRunWithConfirm";
 import { useToast } from "../../components/useToast";
+import { usePollingJob } from "../../hooks/usePollingJob";
 import { errMessage } from "../../lib/errors";
 import {
   cancelAutoLabelJob,
@@ -74,20 +75,24 @@ export function AutoLabelPage({ onReady }: Props) {
     return () => { cancelled = true; };
   }, [workspaceRoot, inputRoot, detectOutputRoot, classifyOutputRoot, onReady, showError]);
 
-  useEffect(() => {
-    if (!job?.id || job.status !== "running") return;
-    const timer = window.setInterval(() => {
-      getAutoLabelJob(job.id).then((next) => {
-        setJob(next);
-        setStatus(`${next.status || "running"}: ${next.done || 0}/${next.total || 0}`);
-        setLog(JSON.stringify(next, null, 2));
-        if (next.status && next.status !== "running") {
-          showToast(`Auto label ${next.status}.`);
-        }
-      }).catch(showError);
-    }, 800);
-    return () => window.clearInterval(timer);
-  }, [job?.id, job?.status, showError, showToast]);
+  const updateJobState = useCallback((next: PtJob) => {
+    setJob(next);
+    setStatus(`${next.status || "running"}: ${next.done || 0}/${next.total || 0}`);
+    setLog(JSON.stringify(next, null, 2));
+  }, []);
+
+  const notifyJobTerminal = useCallback((next: PtJob) => {
+    if (next.status) showToast(`Auto label ${next.status}.`);
+  }, [showToast]);
+
+  usePollingJob({
+    job,
+    pollMs: 800,
+    getJob: getAutoLabelJob,
+    onUpdate: updateJobState,
+    onTerminal: notifyJobTerminal,
+    onError: showError
+  });
 
   const running = job?.status === "running";
   const canRunDetect = useMemo(

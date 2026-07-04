@@ -23,7 +23,6 @@ describe("LabelWorkbenchInspector", () => {
     expect(output).toContain("Select a box and press T to add it to duplicate list.");
     expect(output).toContain("No duplicate boxes queued.");
     expect(output).toContain("id=\"lwbClassifyClassesSlot\"");
-    expect(output).toContain("No contextual actions available.");
     expect(output).not.toContain("undefined");
     expect(output).not.toContain("NaN");
   });
@@ -137,21 +136,62 @@ describe("LabelWorkbenchInspector", () => {
       },
       actionGroups: [],
     }));
-    expect(output).toContain("clip");
-    expect(output).toContain("Timestamp 00:00:01.234");
-    expect(output).toContain("Detect");
-    expect(output).toContain("Classify");
+    expect(output).not.toContain("clip");
+    expect(output).not.toContain("Timestamp 00:00:01.234");
     expect(output).not.toContain("Detect active: 1");
     expect(output).toContain("Blackouts: 2");
     expect(output).toContain("Segment: 1 enabled");
     expect(output).toContain("Random Sampling");
-    expect(output).toContain("Source: Manual");
+    expect(output).not.toContain("Source: Manual");
     expect(output).toContain("Segments preferred");
     expect(output).toContain("Detect Classes");
     expect(output).toContain("4: Map");
     expect(output).toContain("id=\"lwbClassifyClassesSlot\"");
     expect(output).not.toContain("Current Boxes");
     expect(output).not.toContain("Duplicate to Next Frame");
+  });
+
+  it("renders video duplicate action without an image duplicate queue", () => {
+    const output = html(inspector({
+      mode: "video",
+      sourceSummary: null,
+      inspectorState: null,
+      actionGroups: [{
+        id: "video-duplicate",
+        label: "Duplicate to Next Frame",
+        description: "Duplicate current marker boxes to the next marker.",
+        items: [],
+        actions: [{ id: "video.duplicateToNext", label: "Duplicate to Next", variant: "primary", run: () => {} }],
+      }],
+    }));
+
+    expect(output).toContain("Duplicate to Next Frame");
+    expect(output).toContain("Duplicate current marker boxes to the next marker.");
+    expect(output).toContain("Duplicate to Next");
+    expect(output).not.toContain("No duplicate boxes queued.");
+  });
+
+  it("renders video review actions in the review panel", () => {
+    const output = html(inspector({
+      mode: "video",
+      sourceSummary: null,
+      inspectorState: null,
+      actionGroups: [{
+        id: "video-review",
+        label: "Review",
+        actions: [
+          { id: "review.markReviewed", label: "Mark Reviewed", variant: "primary", run: () => {} },
+          { id: "review.markJunk", label: "Mark Junk", variant: "danger", run: () => {} },
+        ],
+      }],
+    }));
+
+    expect(output).toContain("Review");
+    expect((output.match(/>Review</g) ?? [])).toHaveLength(1);
+    expect(output).toContain("Mark Reviewed");
+    expect(output).toContain("Mark Junk");
+    expect(output).not.toContain("Actions");
+    expect(output).not.toContain("Mark Empty");
   });
 
   it("renders duplicate controls in the image inspector panel", () => {

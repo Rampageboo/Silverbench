@@ -31,31 +31,6 @@ export function formatInspectorMs(ms: number | null | undefined): string | null 
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(millis).padStart(3, "0")}`;
 }
 
-function sourceTitle(mode: LabelWorkbenchMode, source: LabelSourceSummary | null) {
-  if (!source) return mode === "image" ? "No image selected" : "No video timestamp selected";
-  if (source.kind === "image") return source.filename || "Image source";
-  return source.videoName || "Video timestamp";
-}
-
-function sourceMeta(source: LabelSourceSummary | null, state: LabelWorkbenchInspectorState | null) {
-  if (!source) return "Open or select a source to inspect.";
-  if (source.kind === "image") {
-    const index = safeNumber(source.currentIndex);
-    const total = safeNumber(source.totalImages);
-    return index !== null && total !== null && total > 0 ? `${index + 1} / ${total}` : "Image source";
-  }
-  const stamp = state?.timestampLabel || formatInspectorMs(source.timestampMs);
-  return stamp ? `Timestamp ${stamp}` : "Video timestamp";
-}
-
-function reviewLabel(source: LabelSourceSummary | null, state: LabelWorkbenchInspectorState | null) {
-  const status = state?.reviewStatus ?? (source?.kind === "image" ? source.reviewStatus : source?.reviewed ? "approved" : "unreviewed");
-  if (status === "approved") return "Reviewed";
-  if (status === "flagged") return "Flagged";
-  if (status === "unreviewed") return "Unreviewed";
-  return "Unknown";
-}
-
 function isProposalAction(action: LabelWorkbenchAction) {
   return String(action.id).startsWith("proposal.");
 }
@@ -146,6 +121,7 @@ function ActionGroupsView({ groups, hideGroupTitles = false }: { groups: LabelWo
 
 function DuplicateActionsView({ group }: { group: LabelWorkbenchActionGroup | null }) {
   const items = group?.items ?? [];
+  const showItemList = items.length > 0 || !group?.actions.length;
   return (
     <section className="panel pool-label-box-panel lwb-inspector-duplicate-panel">
       <div className="panel-header">
@@ -155,7 +131,8 @@ function DuplicateActionsView({ group }: { group: LabelWorkbenchActionGroup | nu
         <div className="hint lwb-inspector-duplicate-status">
           {group?.description ?? "Select a box and press T to add it to duplicate list."}
         </div>
-        <div className="lwb-inspector-duplicate-list">
+        {group?.actions.length ? <ActionGroupsView groups={[group]} hideGroupTitles /> : null}
+        {showItemList ? <div className="lwb-inspector-duplicate-list">
           {items.length ? (
             items.map((item) => {
               const handleSelect = () => {
@@ -229,7 +206,7 @@ function DuplicateActionsView({ group }: { group: LabelWorkbenchActionGroup | nu
           ) : (
             <div className="empty">No duplicate boxes queued.</div>
           )}
-        </div>
+        </div> : null}
       </div>
     </section>
   );
@@ -243,7 +220,6 @@ function SamplingControlsView({ control }: { control: LabelWorkbenchSamplingCont
         <span className="status">{control.segmentCount} segment(s)</span>
       </div>
       <div className="lwb-inspector-form">
-        <div className="lwb-inspector-static-field">Source: {control.sourceLabel}</div>
         <label>
           <span>Sampling mode</span>
           <select
@@ -312,23 +288,26 @@ function DetectClassPaletteView({ palette }: { palette: LabelWorkbenchClassPalet
 
 export function LabelWorkbenchInspector({
   mode,
-  sourceSummary,
   inspectorState,
   actionGroups,
 }: Props) {
-  const taskKind = inspectorState?.taskKind ?? "both";
   const overlayCount = safeNumber(inspectorState?.overlaySummary?.activeCount);
   const segment = inspectorState?.segmentSummary;
   const samplingControl = inspectorState?.samplingControl ?? null;
   const classPalette = inspectorState?.classPalette ?? null;
   const warnings = inspectorState?.warnings ?? [];
 
-  const duplicateActionGroup = mode === "image"
-    ? actionGroups.find((group) => group.id === "image-duplicate") ?? null
-    : null;
-  const reviewActionGroups = mode === "image"
-    ? actionGroups.filter((group) => group.id === "image-review")
-    : [];
+  const duplicateActionGroup = actionGroups.find((group) => group.id === `${mode}-duplicate`)
+    ?? (mode === "image"
+      ? {
+          id: "image-duplicate",
+          label: "Duplicate to Next Frame",
+          description: "Select a box and press T to add it to duplicate list.",
+          items: [],
+          actions: [],
+        }
+      : null);
+  const reviewActionGroups = actionGroups.filter((group) => group.id === `${mode}-review`);
   const remainingActionGroups = mode === "image"
     ? actionGroups
         .filter((group) => group.id !== "image-review" && group.id !== "image-duplicate")
@@ -336,7 +315,7 @@ export function LabelWorkbenchInspector({
           ...group,
           actions: group.actions.filter((action) => !isProposalAction(action)),
         }))
-    : actionGroups;
+    : actionGroups.filter((group) => group.id !== `${mode}-review` && group.id !== `${mode}-duplicate`);
   const hasReviewActions = reviewActionGroups.some((group) => group.actions.length > 0);
   const hasActions = remainingActionGroups.some((group) => group.actions.length > 0);
   const hasDuplicatePanel = Boolean(duplicateActionGroup);
@@ -353,31 +332,7 @@ export function LabelWorkbenchInspector({
 
   return (
     <aside className="lwb-inspector" aria-label="Label workbench inspector">
-      {mode !== "image" ? (
-        <>
-          <section className="lwb-inspector-section">
-            <div className="lwb-inspector-kicker">Source</div>
-            <div className="lwb-inspector-title" title={sourceTitle(mode, sourceSummary)}>
-              {sourceTitle(mode, sourceSummary)}
-            </div>
-            <div className="lwb-inspector-muted">{sourceMeta(sourceSummary, inspectorState)}</div>
-            {inspectorState?.sourceDetail ? (
-              <div className="lwb-inspector-muted">{inspectorState.sourceDetail}</div>
-            ) : null}
-          </section>
-
-          <section className="lwb-inspector-section">
-            <div className="lwb-inspector-kicker">Status</div>
-            <div className="lwb-inspector-chip-row">
-              {taskKind === "both" || taskKind === "detect" ? <span className="lwb-inspector-chip">Detect</span> : null}
-              {taskKind === "both" || taskKind === "classify" ? <span className="lwb-inspector-chip">Classify</span> : null}
-              <span className="lwb-inspector-chip">{reviewLabel(sourceSummary, inspectorState)}</span>
-            </div>
-          </section>
-        </>
-      ) : null}
-
-      {mode === "image" ? (
+      {reviewActionGroups.length > 0 ? (
         <section className="lwb-inspector-section lwb-inspector-proposal-review">
           <div className="lwb-inspector-kicker">Review</div>
           {reviewActionGroups.some((group) => group.actions.length > 0) ? (
@@ -386,12 +341,9 @@ export function LabelWorkbenchInspector({
         </section>
       ) : null}
 
-      {mode === "image" ? (
-        <>
-          <DuplicateActionsView group={duplicateActionGroup} />
-          <div id="lwbClassifyClassesSlot" className="lwb-inspector-classify-slot" />
-        </>
-      ) : null}
+      {duplicateActionGroup ? <DuplicateActionsView group={duplicateActionGroup} /> : null}
+
+      {mode === "image" ? <div id="lwbClassifyClassesSlot" className="lwb-inspector-classify-slot" /> : null}
 
       {mode === "video" && samplingControl ? <SamplingControlsView control={samplingControl} /> : null}
 

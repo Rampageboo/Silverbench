@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .dataset_merge import IMAGE_EXTENSIONS, unique_path
+from .yolo_pt_model_cache import get_yolo_model
 from .torch_runtime import require_cuda_device
 
 
@@ -30,11 +31,6 @@ def detect_folder_with_pt(
         raise NotADirectoryError(f"Source folder not found: {source_dir}")
     require_cuda_device(device)
 
-    try:
-        from ultralytics import YOLO
-    except ImportError as error:
-        raise RuntimeError("ultralytics is not installed. Install it with: pip install ultralytics") from error
-
     include_names = {Path(name).name for name in (include_filenames or []) if str(name).strip()}
     images = sorted(
         path
@@ -49,7 +45,7 @@ def detect_folder_with_pt(
     if not images:
         return _result(model_path, source_dir, output_dir, 0, 0, 0, {}, [])
 
-    model = YOLO(str(model_path))
+    model = get_yolo_model(model_path)
     class_counts: dict[str, int] = {}
     errors: list[dict[str, str]] = []
     copied = 0
@@ -121,12 +117,7 @@ def detect_image_with_pt(
         raise ValueError(f"Unsupported image file: {image_path.name}")
     require_cuda_device(device)
 
-    try:
-        from ultralytics import YOLO
-    except ImportError as error:
-        raise RuntimeError("ultralytics is not installed. Install it with: pip install ultralytics") from error
-
-    model = YOLO(str(model_path))
+    model = get_yolo_model(model_path)
     results = model.predict(
         source=str(image_path),
         imgsz=int(image_size),

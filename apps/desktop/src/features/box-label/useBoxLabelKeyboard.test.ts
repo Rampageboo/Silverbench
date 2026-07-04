@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { keyboardMultiplierForNumpad } from "./boxLabelKeyboardShortcuts";
+import { isNumpadCode, keyboardMultiplierForNumpad, numpadResizeKey } from "./boxLabelKeyboardShortcuts";
 
 describe("box label keyboard shortcuts", () => {
   it("maps unused numpad corners to keyboard multipliers", () => {
@@ -14,5 +14,13 @@ describe("box label keyboard shortcuts", () => {
     expect(keyboardMultiplierForNumpad("Numpad2")).toBeNull();
     expect(keyboardMultiplierForNumpad("Numpad5")).toBeNull();
     expect(keyboardMultiplierForNumpad("Numpad8")).toBeNull();
+  });
+
+  it("identifies numpad resize keys by physical code", () => {
+    expect(numpadResizeKey("Numpad4")).toBe("4");
+    expect(numpadResizeKey("Numpad6")).toBe("6");
+    expect(numpadResizeKey("Digit4")).toBeNull();
+    expect(isNumpadCode("Numpad4")).toBe(true);
+    expect(isNumpadCode("ArrowLeft")).toBe(false);
   });
 });

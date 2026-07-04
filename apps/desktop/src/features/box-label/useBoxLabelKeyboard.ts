@@ -1,6 +1,6 @@
 import { useEffect, type MutableRefObject } from "react";
 import { errMessage } from "../../lib/errors";
-import { keyboardMultiplierForNumpad, type KeyboardStepMultiplier } from "./boxLabelKeyboardShortcuts";
+import { isNumpadCode, keyboardMultiplierForNumpad, numpadResizeKey, type KeyboardStepMultiplier } from "./boxLabelKeyboardShortcuts";
 import type { BoxLabelDuplicateFlow } from "./boxLabelTypes";
 import { arrowKeyDelta, type BoxAdjustMode, type DragState } from "./geometry";
 
@@ -191,16 +191,16 @@ export function useBoxLabelKeyboard({
         setStatus("Box keyboard resize: shrink.");
         return;
       }
-      const arrowDelta = arrowKeyDelta(event.key);
+      const numpad = numpadResizeKey(event.code);
+      if (numpad && selectedRef.current !== null) {
+        event.preventDefault();
+        resizeSelectedBoxByKeyboard(numpad, event.shiftKey);
+        return;
+      }
+      const arrowDelta = isNumpadCode(event.code) ? null : arrowKeyDelta(event.key);
       if (arrowDelta && selectedRef.current !== null) {
         event.preventDefault();
         moveSelectedBoxByKeyboard(arrowDelta.x, arrowDelta.y, event.shiftKey);
-        return;
-      }
-      const numpad = event.code.match(/^Numpad([24568])$/);
-      if (numpad && selectedRef.current !== null) {
-        event.preventDefault();
-        resizeSelectedBoxByKeyboard(numpad[1], event.shiftKey);
       }
     }
     function onKeyUp() {

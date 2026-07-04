@@ -5,6 +5,7 @@ import { LogPanel } from "../../components/workbench/LogPanel";
 import { useRunWithConfirm } from "../../components/workbench/useRunWithConfirm";
 import { useToast } from "../../components/useToast";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
+import { usePollingJob } from "../../hooks/usePollingJob";
 import { errMessage } from "../../lib/errors";
 import {
   cancelCaptureJob,
@@ -738,21 +739,25 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
     return () => { cancelled = true; };
   }, [active, current?.path, debouncedScrubTime, format, showError]);
 
+  const updateCaptureJobState = useCallback((next: CaptureJob) => {
+    setJob(next);
+    setStatus(`${next.status}: ${next.saved || 0}/${next.total || totalFrames}`);
+    setLog(JSON.stringify(next, null, 2));
+  }, [totalFrames]);
+
+  const notifyCaptureJobTerminal = useCallback((next: CaptureJob) => {
+    if (next.status !== "running") showToast(`Video export ${next.status}.`);
+  }, [showToast]);
+
   // Poll running export job
-  useEffect(() => {
-    if (!job?.id || job.status !== "running") return;
-    const timer = window.setInterval(() => {
-      getCaptureJob(job.id)
-        .then((next) => {
-          setJob(next);
-          setStatus(`${next.status}: ${next.saved || 0}/${next.total || totalFrames}`);
-          setLog(JSON.stringify(next, null, 2));
-          if (next.status !== "running") showToast(`Video export ${next.status}.`);
-        })
-        .catch(showError);
-    }, 500);
-    return () => window.clearInterval(timer);
-  }, [job?.id, job?.status, showError, showToast, totalFrames]);
+  usePollingJob({
+    job,
+    pollMs: 500,
+    getJob: getCaptureJob,
+    onUpdate: updateCaptureJobState,
+    onTerminal: notifyCaptureJobTerminal,
+    onError: showError
+  });
 
   // ---------------------------------------------------------------------------
   // Video list handlers

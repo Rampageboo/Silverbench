@@ -26,6 +26,13 @@ export type CaptureJob = {
   result?: Record<string, unknown> | null;
 };
 
+export type VideoProxyResult = {
+  ok: boolean;
+  path: string;
+  sourcePath: string;
+  cached: boolean;
+};
+
 function rpc<T>(method: BackendMethod, args: unknown[] = []) {
   return callJson<T>(method, args);
 }
@@ -73,6 +80,22 @@ export function videoSourceUrl(workspaceRoot: string, path: string) {
     path
   });
   return `${API_BASE_URL}/api/video/source?${params.toString()}`;
+}
+
+export async function ensureVideoProxy(workspaceRoot: string, path: string) {
+  const response = await fetch(`${API_BASE_URL}/api/video/proxy`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ workspaceRoot, path })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.ok !== true) {
+    const detail = typeof data?.detail === "string" ? data.detail : `HTTP ${response.status}`;
+    throw new Error(detail);
+  }
+  return data as VideoProxyResult;
 }
 
 export async function prefetchVideoFrame(

@@ -82,6 +82,7 @@ export type BoxLabelCanvasOverlayContext = {
   activeDetectClasses: Array<{ id: number; name: string }>;
   classificationClasses: Array<{ key: string; name: string; archived?: boolean }>;
   currentClassificationKey: string | null;
+  capturePreviewBase64?: (options?: { expectedTime?: number; toleranceSeconds?: number }) => string | null;
   addProposals: (
     proposals: DetectProposal[],
     options?: { replace?: boolean; statusMessage?: string }
@@ -148,6 +149,10 @@ export type BoxLabelViewProps = {
   onMetadataChanged?: () => Promise<void>;
   onStatusText?: (text: string) => void;
   onWorkbenchBridgeChange?: (bridge: BoxLabelWorkbenchBridge | null) => void;
+  previewSourceName?: string;
+  previewIndexText?: string;
+  previewReviewLabel?: string;
+  previewStatusItems?: string[];
   onMarkJunk?: () => Promise<void>;
   onUndoJunk?: () => Promise<void>;
   classificationClasses?: Array<{ key: string; name: string; archived?: boolean }>;
@@ -165,9 +170,13 @@ export type BoxLabelViewProps = {
   previewDock?: BoxLabelCanvasOverlay;
   imageUrlOverride?: string | null;
   reloadLabelsOnImageUrlChange?: boolean;
+  labelsReloadKey?: string;
   videoUrlOverride?: string | null;
   videoPlaybackTime?: number;
+  videoSeekTime?: number;
+  videoSeekToken?: number;
   videoPlaying?: boolean;
+  hideAnnotationsWhilePlaying?: boolean;
   onVideoPlaybackTimeChange?: (time: number) => void;
   onVideoEnded?: () => void;
   onVideoLoadError?: (error: { code?: number; message: string }) => void;

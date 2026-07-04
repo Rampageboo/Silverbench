@@ -15,8 +15,30 @@ import type { BoxLabelAutoLabelResult } from "../box-label/boxLabelTypes";
 import { dispatchWorkspaceClassesChanged } from "../shared/workspaceClassEvents";
 import { resolveActiveWorkspaceRoot } from "../workspace/activeWorkspaceRoot";
 import { useWorkspaceClasses } from "../workspace/useWorkspaceClasses";
+import {
+  AUTO_LABEL_IN_FLIGHT_KEYS,
+  autoLabelInFlightKey,
+  autoLabelMediaKey,
+  autoLabelRunButtonText,
+  modelRunId,
+  shouldAutoRunClassify,
+  shouldAutoRunDetect,
+  useAutoLabelRunner,
+  type ClassificationClass,
+} from "./useAutoLabelRunner";
 
-type ClassificationClass = { key: string; name: string; aliases?: string[]; archived?: boolean };
+export {
+  CLF_AUTO_ASSIGN_MIN_CONFIDENCE,
+  autoLabelMediaKey,
+  autoLabelRunButtonText,
+  autoLabelRunCanClearBusy,
+  autoLabelRunIsCurrent,
+  classifyPredictionIsConfident,
+  modelRunId,
+  shouldAutoRunClassify,
+  shouldAutoRunDetect,
+  shouldAutoRunForEmptySample,
+} from "./useAutoLabelRunner";
 
 type Props = {
   workspaceRoot: string;
@@ -29,7 +51,9 @@ type Props = {
   currentClassificationKey?: string | null;
   sourceImageBase64?: string | null;
   sourceImagePath?: string | null;
+  prepareSourceImageBase64?: (target: BoxLabelEntry) => Promise<string | null | undefined> | string | null | undefined;
   prepareSourceImagePath?: (target: BoxLabelEntry) => Promise<string | null | undefined>;
+  requireSourceImageBase64?: boolean;
   sourceUnavailableMessage?: string;
   autoRunAllowed?: boolean;
   onApplyDetectPredictions?: (
@@ -46,8 +70,6 @@ type AutoRunState = {
   classify: boolean;
 };
 
-export const CLF_AUTO_ASSIGN_MIN_CONFIDENCE = 0.55;
-
 function classNamesFromModelInfo(info: api.PtModelInfo) {
   const structured = (info.classes || [])
     .slice()
@@ -58,61 +80,6 @@ function classNamesFromModelInfo(info: api.PtModelInfo) {
   return (info.classNames || [])
     .map((name) => String(name).trim())
     .filter(Boolean);
-}
-
-function predictionName(prediction: api.PtClassifyPrediction | null | undefined) {
-  return (prediction?.className || prediction?.name || "").trim();
-}
-
-function confidenceText(value: number | undefined) {
-  if (!Number.isFinite(value)) return "";
-  return `${Math.round(Math.max(0, Math.min(1, value!)) * 100)}%`;
-}
-
-export function classifyPredictionIsConfident(confidence: unknown) {
-  return typeof confidence === "number" && Number.isFinite(confidence) && confidence >= CLF_AUTO_ASSIGN_MIN_CONFIDENCE;
-}
-
-export function modelRunId(modelPath: string, updatedAt: string | undefined) {
-  const model = modelPath.trim();
-  const stamp = String(updatedAt || "").trim();
-  return stamp ? `${model}@${stamp}` : model;
-}
-
-export function shouldAutoRunDetect(existingBoxCount: number, existingProposalCount: number) {
-  return existingBoxCount <= 0 && existingProposalCount <= 0;
-}
-
-export function shouldAutoRunClassify(currentClassKey: string | null | undefined) {
-  return !String(currentClassKey || "").trim();
-}
-
-export function shouldAutoRunForEmptySample(
-  existingBoxCount: number,
-  existingProposalCount: number,
-  currentClassKey: string | null | undefined
-) {
-  return shouldAutoRunDetect(existingBoxCount, existingProposalCount) && shouldAutoRunClassify(currentClassKey);
-}
-
-export function autoLabelMediaKey(target: BoxLabelEntry | null | undefined) {
-  return target ? target.imagePath || target.basename : "";
-}
-
-export function autoLabelRunIsCurrent({
-  cancelled,
-  token,
-  activeToken,
-  targetMediaKey,
-  currentMediaKey,
-}: {
-  cancelled: boolean;
-  token: number;
-  activeToken: number;
-  targetMediaKey: string;
-  currentMediaKey: string;
-}) {
-  return !cancelled && token === activeToken && targetMediaKey === currentMediaKey;
 }
 
 function modelClassMap(classes: ClassificationClass[]) {
@@ -140,7 +107,9 @@ export function AutoLabelModelPanel({
   currentClassificationKey = null,
   sourceImageBase64,
   sourceImagePath,
+  prepareSourceImageBase64,
   prepareSourceImagePath,
+  requireSourceImageBase64 = false,
   sourceUnavailableMessage,
   autoRunAllowed = true,
   onApplyDetectPredictions,
@@ -206,15 +175,42 @@ export function AutoLabelModelPanel({
   }, [classificationClasses, currentClassificationKey]);
   const sourceBase64 = typeof sourceImageBase64 === "string" ? sourceImageBase64.trim() : "";
   const sourcePath = typeof sourceImagePath === "string" ? sourceImagePath.trim() : "";
+  const canPrepareBase64Source = typeof prepareSourceImageBase64 === "function";
   const canPrepareSource = typeof prepareSourceImagePath === "function";
-  const sourceReady = sourceImageBase64 === undefined || sourceBase64.length > 0 || sourcePath.length > 0 || canPrepareSource;
+  const hasExplicitBase64Source = typeof sourceImageBase64 === "string";
+  const sourceReady = !hasExplicitBase64Source || sourceBase64.length > 0 || canPrepareBase64Source || sourcePath.length > 0 || canPrepareSource;
   const currentMediaKey = autoLabelMediaKey(currentImage);
+  const shouldAutoDetect = shouldAutoRunDetect(boxCount, proposalCount);
+  const shouldAutoClassify = shouldAutoRunClassify(currentClassificationKey);
+  const detectAutoKey = detectModelRunId && currentMediaKey ? `detect:${detectModelRunId}:${currentMediaKey}` : "";
+  const classifyAutoKey = classifyModelRunId && currentMediaKey ? `classify:${classifyModelRunId}:${currentMediaKey}` : "";
+  const canAutoDetect = Boolean(detectAutoKey && onApplyDetectPredictions);
+  const canAutoClassify = Boolean(classifyAutoKey && onAssignClassificationClass && classByName.size > 0);
+  const autoRunPlanKey =
+    workspaceRoot.trim() && currentMediaKey && autoRunKeysLoaded && sourceReady && autoRunAllowed && (shouldAutoDetect || shouldAutoClassify)
+      ? [
+          currentMediaKey,
+          canAutoDetect && shouldAutoDetect ? detectAutoKey : "",
+          canAutoClassify && shouldAutoClassify ? classifyAutoKey : "",
+          boxCount,
+          proposalCount,
+          currentClassificationKey ?? "",
+        ].join("|")
+      : "";
 
   useEffect(() => {
     currentMediaKeyRef.current = currentMediaKey;
     runTokenRef.current += 1;
     setAutoRunning({ detect: false, classify: false });
+    setStatus((current) => current && current.toLowerCase().includes("running") ? null : current);
   }, [currentMediaKey]);
+
+  useEffect(() => {
+    if (autoRunAllowed && sourceReady && currentMediaKey) return;
+    runTokenRef.current += 1;
+    setAutoRunning({ detect: false, classify: false });
+    setStatus((current) => current && current.toLowerCase().includes("running") ? null : current);
+  }, [autoRunAllowed, currentMediaKey, sourceReady]);
 
   async function handleImport(kind: AutoLabelModelKind) {
     if (!workspaceRoot.trim()) return;
@@ -290,113 +286,33 @@ export function AutoLabelModelPanel({
     [prepareSourceImagePath, sourceBase64, sourcePath, sourceUnavailableMessage]
   );
 
-  const runDetectAuto = useCallback(
-    async (target: BoxLabelEntry, token: number, isCancelled: () => boolean) => {
-      if (!detectModel || !onApplyDetectPredictions) return false;
-      const targetMediaKey = autoLabelMediaKey(target);
-      const runMatchesActiveMedia = () =>
-        autoLabelRunIsCurrent({
-          cancelled: false,
-          token,
-          activeToken: runTokenRef.current,
-          targetMediaKey,
-          currentMediaKey: currentMediaKeyRef.current,
-        });
-      const runIsCurrent = () => !isCancelled() && runMatchesActiveMedia();
-      setAutoBusy("detect", true);
-      if (runIsCurrent()) setStatus("Detect: running...");
-      try {
-        const modelRoot = activeWorkspaceRootRef.current || workspaceRoot;
-        const imagePath = await resolveSourcePath(target);
-        if (!runIsCurrent()) return false;
-        const result = sourceBase64
-          ? await api.detectImageBase64WithPt(modelRoot, detectModel, sourceBase64, 640, 0.25, "cpu")
-          : await api.detectImageWithPt(modelRoot, detectModel, imagePath, 640, 0.25, "cpu");
-        if (!runIsCurrent()) return false;
-        const applied = await onApplyDetectPredictions(target, result.predictions, {
-          highConfidence: 0.8,
-          proposalConfidence: 0.25,
-          modelId: detectModel,
-          persistProposals: false,
-        });
-        if (runIsCurrent()) {
-          setStatus(`Detect: ${applied.boxesAdded} box(es), ${applied.proposalsAdded} proposal(s), ${applied.skipped} skipped.`);
-        }
-        return true;
-      } catch (err) {
-        if (runIsCurrent()) {
-          setError(err instanceof Error ? err.message : "Auto detect failed.");
-          setStatus(null);
-        }
-        return false;
-      } finally {
-        if (runMatchesActiveMedia()) setAutoBusy("detect", false);
-      }
+  const resolveSourceBase64 = useCallback(
+    async (target: BoxLabelEntry) => {
+      if (sourceBase64) return sourceBase64;
+      const prepared = await prepareSourceImageBase64?.(target);
+      return String(prepared || "").trim();
     },
-    [detectModel, onApplyDetectPredictions, resolveSourcePath, setAutoBusy, sourceBase64, workspaceRoot]
+    [prepareSourceImageBase64, sourceBase64]
   );
 
-  const runClassifyAuto = useCallback(
-    async (target: BoxLabelEntry, token: number, isCancelled: () => boolean) => {
-      if (!classifyModel || !onAssignClassificationClass || classByName.size === 0) return false;
-      const targetMediaKey = autoLabelMediaKey(target);
-      const runMatchesActiveMedia = () =>
-        autoLabelRunIsCurrent({
-          cancelled: false,
-          token,
-          activeToken: runTokenRef.current,
-          targetMediaKey,
-          currentMediaKey: currentMediaKeyRef.current,
-        });
-      const runIsCurrent = () => !isCancelled() && runMatchesActiveMedia();
-      setAutoBusy("classify", true);
-      if (runIsCurrent()) setStatus("Clf: running...");
-      try {
-        const modelRoot = activeWorkspaceRootRef.current || workspaceRoot;
-        const imagePath = await resolveSourcePath(target);
-        if (!runIsCurrent()) return false;
-        const result = sourceBase64
-          ? await api.classifyImageBase64WithPt(modelRoot, classifyModel, sourceBase64, 0, "cpu", 5)
-          : await api.classifyImageWithPt(modelRoot, classifyModel, imagePath, 0, "cpu", 5);
-        if (!runIsCurrent()) return false;
-        const top = result.top ?? result.predictions?.[0] ?? null;
-        const name = predictionName(top);
-        const match = name ? classByName.get(name.toLowerCase()) : null;
-        const rawConfidence = typeof top?.confidence === "number" ? top.confidence : NaN;
-        const confidence = confidenceText(rawConfidence);
-        if (!classifyPredictionIsConfident(rawConfidence)) {
-          if (runIsCurrent()) {
-            setStatus(
-              name
-                ? `Clf: ${name}${confidence ? ` ${confidence}` : ""} below threshold; not assigned.`
-                : "Clf: no confident prediction."
-            );
-          }
-          return true;
-        }
-        if (!match) {
-          if (runIsCurrent()) {
-            setStatus(name ? `Clf: ${name}${confidence ? ` ${confidence}` : ""} not in class list.` : "Clf: no prediction.");
-          }
-          return true;
-        }
-        await onAssignClassificationClass(match.key, target.basename);
-        if (runIsCurrent()) {
-          setStatus(`Clf: ${match.name}${confidence ? ` ${confidence}` : ""}.`);
-        }
-        return true;
-      } catch (err) {
-        if (runIsCurrent()) {
-          setError(err instanceof Error ? err.message : "Auto classify failed.");
-          setStatus(null);
-        }
-        return false;
-      } finally {
-        if (runMatchesActiveMedia()) setAutoBusy("classify", false);
-      }
-    },
-    [classByName, classifyModel, onAssignClassificationClass, resolveSourcePath, setAutoBusy, sourceBase64, workspaceRoot]
-  );
+  const { runDetectAuto, runClassifyAuto } = useAutoLabelRunner({
+    workspaceRoot,
+    detectModel,
+    classifyModel,
+    classByName,
+    requireSourceImageBase64,
+    sourceUnavailableMessage,
+    activeWorkspaceRootRef,
+    runTokenRef,
+    currentMediaKeyRef,
+    resolveSourceBase64,
+    resolveSourcePath,
+    setAutoBusy,
+    setStatus,
+    setError,
+    onApplyDetectPredictions,
+    onAssignClassificationClass,
+  });
 
   const handleRunDetectNow = useCallback(async () => {
     const target = currentImage;
@@ -419,79 +335,77 @@ export function AutoLabelModelPanel({
   useEffect(() => {
     const root = workspaceRoot.trim();
     const target = currentImage;
-    if (!root || !target || !autoRunKeysLoaded || !sourceReady || !autoRunAllowed) return;
+    if (!autoRunPlanKey || !root || !target || !autoRunKeysLoaded || !sourceReady || !autoRunAllowed) return;
     const targetEntry = target;
-    const targetId = autoLabelMediaKey(targetEntry);
-    const detectKey = detectModelRunId ? `detect:${detectModelRunId}:${targetId}` : "";
-    const classifyKey = classifyModelRunId ? `classify:${classifyModelRunId}:${targetId}` : "";
-    const sampleIsEmpty = shouldAutoRunForEmptySample(boxCount, proposalCount, currentClassificationKey);
+    const detectInFlightKey = detectAutoKey ? autoLabelInFlightKey(root, detectAutoKey) : "";
+    const classifyInFlightKey = classifyAutoKey ? autoLabelInFlightKey(root, classifyAutoKey) : "";
     const shouldDetect = Boolean(
-      detectKey &&
+      detectAutoKey &&
       onApplyDetectPredictions &&
-      sampleIsEmpty &&
-      !autoRunKeysRef.current.has(detectKey)
+      shouldAutoDetect &&
+      !autoRunKeysRef.current.has(detectAutoKey) &&
+      !AUTO_LABEL_IN_FLIGHT_KEYS.has(detectInFlightKey)
     );
     const shouldClassify = Boolean(
-      classifyKey &&
+      classifyAutoKey &&
       onAssignClassificationClass &&
       classByName.size > 0 &&
-      sampleIsEmpty &&
-      !autoRunKeysRef.current.has(classifyKey)
+      shouldAutoClassify &&
+      !autoRunKeysRef.current.has(classifyAutoKey) &&
+      !AUTO_LABEL_IN_FLIGHT_KEYS.has(classifyInFlightKey)
     );
     if (!shouldDetect && !shouldClassify) return;
 
-    if (shouldDetect) autoRunKeysRef.current.add(detectKey);
-    if (shouldClassify) autoRunKeysRef.current.add(classifyKey);
-    const token = runTokenRef.current + 1;
-    runTokenRef.current = token;
-    let cancelled = false;
-
-    const tasks: Promise<void>[] = [];
-    setError(null);
     if (shouldDetect) {
-      tasks.push((async () => {
-        const ok = await runDetectAuto(targetEntry, token, () => cancelled);
-        if (!cancelled && ok) {
-          await persistAutoRunKey(detectKey).catch(() => {});
-        } else if (!ok) {
-          autoRunKeysRef.current.delete(detectKey);
-        }
-      })());
+      autoRunKeysRef.current.add(detectAutoKey);
+      AUTO_LABEL_IN_FLIGHT_KEYS.add(detectInFlightKey);
     }
     if (shouldClassify) {
-      tasks.push((async () => {
-        const ok = await runClassifyAuto(targetEntry, token, () => cancelled);
-        if (!cancelled && ok) {
-          await persistAutoRunKey(classifyKey).catch(() => {});
-        } else if (!ok) {
-          autoRunKeysRef.current.delete(classifyKey);
-        }
-      })());
+      autoRunKeysRef.current.add(classifyAutoKey);
+      AUTO_LABEL_IN_FLIGHT_KEYS.add(classifyInFlightKey);
     }
+    const token = runTokenRef.current + 1;
+    runTokenRef.current = token;
 
-    void Promise.all(tasks);
-    return () => {
-      cancelled = true;
-    };
+    setError(null);
+    void (async () => {
+      if (shouldDetect) {
+        const ok = await runDetectAuto(targetEntry, token, () => token !== runTokenRef.current);
+        AUTO_LABEL_IN_FLIGHT_KEYS.delete(detectInFlightKey);
+        if (token === runTokenRef.current) {
+          if (ok) {
+            await persistAutoRunKey(detectAutoKey).catch(() => {});
+          } else {
+            autoRunKeysRef.current.delete(detectAutoKey);
+          }
+        }
+      }
+      if (token !== runTokenRef.current) return;
+      if (shouldClassify) {
+        const ok = await runClassifyAuto(targetEntry, token, () => token !== runTokenRef.current);
+        AUTO_LABEL_IN_FLIGHT_KEYS.delete(classifyInFlightKey);
+        if (token === runTokenRef.current) {
+          if (ok) {
+            await persistAutoRunKey(classifyAutoKey).catch(() => {});
+          } else {
+            autoRunKeysRef.current.delete(classifyAutoKey);
+          }
+        }
+      }
+    })().finally(() => {
+      if (shouldDetect) AUTO_LABEL_IN_FLIGHT_KEYS.delete(detectInFlightKey);
+      if (shouldClassify) AUTO_LABEL_IN_FLIGHT_KEYS.delete(classifyInFlightKey);
+      if (token !== runTokenRef.current) {
+        if (shouldDetect) autoRunKeysRef.current.delete(detectAutoKey);
+        if (shouldClassify) autoRunKeysRef.current.delete(classifyAutoKey);
+      }
+    });
+    // autoRunPlanKey is the scheduling boundary. The run functions and parent
+    // callbacks may get new identities during normal render churn; that must
+    // not restart the same marker/model auto-label job.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    classByName,
-    boxCount,
-    classifyModel,
-    classifyModelRunId,
-    currentImage,
-    currentClassificationKey,
-    detectModel,
-    detectModelRunId,
-    autoRunKeysLoaded,
-    onApplyDetectPredictions,
-    onAssignClassificationClass,
-    proposalCount,
-    persistAutoRunKey,
-    runClassifyAuto,
-    runDetectAuto,
-    sourceReady,
-    autoRunAllowed,
-    workspaceRoot,
+    autoRunPlanKey,
   ]);
 
   const detectName = activeModelFilename(registry.detect) ?? "Not set";
@@ -516,6 +430,8 @@ export function AutoLabelModelPanel({
   const autoSubtitle = autoRunAllowed
     ? "Runs once when a new image is opened."
     : "Manual buttons only.";
+  const detectRunLabel = autoLabelRunButtonText("detect", autoRunning.detect, status);
+  const classifyRunLabel = autoLabelRunButtonText("classify", autoRunning.classify, status);
 
   return (
     <section className="alm-panel">
@@ -569,7 +485,7 @@ export function AutoLabelModelPanel({
                 void handleRunDetectNow();
               }}
             >
-              {autoRunning.detect ? "Running..." : "Run Detect"}
+              {detectRunLabel}
             </button>
           </div>
         </div>
@@ -613,7 +529,7 @@ export function AutoLabelModelPanel({
                 void handleRunClassifyNow();
               }}
             >
-              {autoRunning.classify ? "Running..." : "Run Clf"}
+              {classifyRunLabel}
             </button>
           </div>
         </div>

@@ -8,7 +8,7 @@ import { LabelWorkbenchHeader } from "./LabelWorkbenchHeader";
 import { LabelWorkbenchInspector } from "./LabelWorkbenchInspector";
 import { LabelMediaGrid, type LabelMediaSelection } from "./LabelMediaGrid";
 import { AutoLabelModelPanel } from "./AutoLabelModelPanel";
-import { VideoBoxLabelSurface, VideoFrameControlsPanel } from "./VideoBoxLabelSurface";
+import { VideoBoxLabelSurface, VideoFrameControlsPanel, wrappedAdjacentVideoMarkerTime } from "./VideoBoxLabelSurface";
 import { classBoxColor } from "../shared/classColors";
 import { useWorkspaceClasses } from "../workspace/useWorkspaceClasses";
 import { activeDetectClassDefs } from "../workspace/workspaceClassTaxonomy";
@@ -380,15 +380,12 @@ export function LabelPage({ active = true, onReady }: Props) {
       if (!delta) return;
       event.preventDefault();
       revealActiveMediaTile();
-      const epsilon = 0.0005;
       const markerTimes = videoSession.timelineMarkers
         .map((marker) => marker.time)
         .filter((time) => Number.isFinite(time))
         .sort((a, b) => a - b);
-      const targetTime = delta > 0
-        ? markerTimes.find((time) => time > videoSession.time + epsilon)
-        : [...markerTimes].reverse().find((time) => time < videoSession.time - epsilon);
-      if (targetTime !== undefined) {
+      const targetTime = wrappedAdjacentVideoMarkerTime(markerTimes, videoSession.time, delta < 0 ? -1 : 1);
+      if (targetTime !== null) {
         videoSession.gotoTime(targetTime);
         return;
       }
@@ -405,18 +402,24 @@ export function LabelPage({ active = true, onReady }: Props) {
   ]);
 
   useEffect(() => {
-    if (selection.kind !== "video" || !videoSession.current) return;
-    const filename = `${videoSession.current.name} @ ${Math.round(videoSession.time * 1000)}ms`;
-    reportSourceSummary({
-      kind: "image",
-      totalImages: mediaOrder.length,
-      currentIndex: activeMediaPosition >= 0 ? activeMediaPosition : null,
-      filename,
-      reviewStatus: videoSession.reviewed ? "approved" : "unreviewed",
-    });
+    if (selection.kind !== "video") return;
+    if (videoSession.current) {
+      const filename = `${videoSession.current.name} @ ${Math.round(videoSession.time * 1000)}ms`;
+      reportSourceSummary({
+        kind: "image",
+        totalImages: mediaOrder.length,
+        currentIndex: activeMediaPosition >= 0 ? activeMediaPosition : null,
+        filename,
+        reviewStatus: videoSession.reviewed ? "approved" : "unreviewed",
+      });
+    } else {
+      reportSourceSummary(null);
+    }
     reportInspectorState({
       taskKind: "both",
-      reviewStatus: videoSession.reviewed ? "approved" : "unreviewed",
+      reviewStatus: videoSession.current
+        ? videoSession.reviewed ? "approved" : "unreviewed"
+        : "unknown",
       classSummary: {
         activeDetectCount: videoSession.activeDetectClasses.length,
         activeClassificationCount: videoSession.clfClassOptions.length,
@@ -430,24 +433,53 @@ export function LabelPage({ active = true, onReady }: Props) {
         readOnlyReason: null,
       },
     });
+    const hasNextVideoMarker = videoSession.timelineMarkers.some((marker) => marker.time > videoSession.time + 0.0005);
     registerWorkbenchActions([
       {
-        id: "image-review",
+        id: "video-duplicate",
+        label: "Duplicate to Next Frame",
+        description: "Duplicate current marker boxes to the next marker.",
+        items: [],
+        actions: [
+          {
+            id: "video.duplicateToNext",
+            label: "Duplicate to Next",
+            variant: "primary",
+            disabled: !videoSession.current || videoSession.boxes.length <= 0 || !hasNextVideoMarker,
+            unavailableReason: !videoSession.current
+              ? "No video selected."
+              : videoSession.boxes.length <= 0
+                ? "Current marker has no boxes."
+                : !hasNextVideoMarker
+                  ? "No next marker available."
+                  : undefined,
+            run: videoSession.duplicateCurrentBoxesToNextMarker,
+          },
+        ],
+      },
+      {
+        id: "video-review",
         label: "Review",
         actions: [
           {
             id: "review.markReviewed",
             label: videoSession.reviewed ? "Unmark Reviewed" : "Mark Reviewed",
             variant: "primary",
+            disabled: !videoSession.current,
+            unavailableReason: videoSession.current ? undefined : "No video selected.",
             run: () => {
               if (videoSession.current) videoSession.updateCurrentFrame(videoSession.boxes, !videoSession.reviewed);
             },
           },
           {
-            id: "review.markEmpty",
-            label: "Mark Empty",
+            id: "review.markJunk",
+            label: "Mark Junk",
             variant: "danger",
-            run: videoSession.markEmptyReviewed,
+            disabled: !videoSession.current,
+            unavailableReason: videoSession.current ? undefined : "No video selected.",
+            run: () => {
+              void videoSession.markCurrentVideoJunk();
+            },
           },
         ],
       },
@@ -459,7 +491,18 @@ export function LabelPage({ active = true, onReady }: Props) {
     reportInspectorState,
     reportSourceSummary,
     selection.kind,
-    videoSession,
+    videoSession.activeDetectClasses,
+    videoSession.boxes,
+    videoSession.clfClassOptions,
+    videoSession.clfTask?.classKey,
+    videoSession.current,
+    videoSession.currentClass,
+    videoSession.duplicateCurrentBoxesToNextMarker,
+    videoSession.markCurrentVideoJunk,
+    videoSession.reviewed,
+    videoSession.time,
+    videoSession.timelineMarkers,
+    videoSession.updateCurrentFrame,
   ]);
 
   const ctxValue = useMemo<LabelWorkbenchContextValue>(
@@ -550,14 +593,13 @@ export function LabelPage({ active = true, onReady }: Props) {
                 }) => (
                   <div className="lwb-workbench-dock">
                     <VideoFrameControlsPanel
-                      sourceLabel="Image mode"
                       segmentCount={0}
                       samplingMode="segments-preferred"
                       minSpacingMs={2000}
                       randomMultiplier={1}
                       current={false}
                       disabled
-                      annotatedFrameCount={0}
+                      canDuplicateToNext={false}
                       hasFrameRecord={false}
                       videoDurationMs={0}
                       onSamplingModeChange={() => {}}
@@ -566,7 +608,7 @@ export function LabelPage({ active = true, onReady }: Props) {
                       onRandom={() => {}}
                       onRandomNext={() => {}}
                       onAddMarker={() => {}}
-                      onCopyPreviousBoxes={() => {}}
+                      onDuplicateToNext={() => {}}
                       onMarkEmpty={() => {}}
                       onClearRecord={() => {}}
                     />

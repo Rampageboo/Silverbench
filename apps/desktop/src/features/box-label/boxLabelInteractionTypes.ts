@@ -24,6 +24,7 @@ export type UseBoxLabelInteractionOptions = {
   persistEntryLabels: (target: BoxLabelEntry, nextBoxes: api.LabelBox[]) => Promise<api.LabelBox[]>;
   boxesRef: MutableRefObject<api.LabelBox[]>;
   selectedRef: MutableRefObject<number | null>;
+  suppressAnnotationsRef?: MutableRefObject<boolean>;
   classRef: MutableRefObject<number>;
   dragRef: MutableRefObject<DragState>;
   modeRef: MutableRefObject<ToolMode>;

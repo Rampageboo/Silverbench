@@ -15,6 +15,7 @@ function fixedBoxReady(slot: FixedBoxSlot | null) {
 
 type ClassToolMode = "none" | "add" | "search";
 type CanvasClassSearchMenu = { x: number; y: number; query: string };
+const CANVAS_CONTEXT_DRAG_THRESHOLD_PX = 5;
 
 function AddIcon() {
   return (
@@ -59,6 +60,8 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
   } = props;
   const auraRef = useRef<HTMLDivElement | null>(null);
   const canvasClassSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const canvasRightPointerRef = useRef<{ startX: number; startY: number; moved: boolean } | null>(null);
+  const suppressNextCanvasContextMenuRef = useRef(false);
   const [classificationClassNameInput, setClassificationClassNameInput] = useState("");
   const [classificationClassSearch, setClassificationClassSearch] = useState("");
   const [detectClassToolMode, setDetectClassToolMode] = useState<ClassToolMode>("none");
@@ -182,6 +185,12 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
   const handleCanvasContextMenu = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
       event.preventDefault();
+      const rightPointer = canvasRightPointerRef.current;
+      if (suppressNextCanvasContextMenuRef.current || rightPointer?.moved) {
+        suppressNextCanvasContextMenuRef.current = false;
+        canvasRightPointerRef.current = null;
+        return;
+      }
       const viewer = event.currentTarget.closest("#previewViewer") as HTMLElement | null;
       const rect = viewer?.getBoundingClientRect();
       const rawX = rect ? event.clientX - rect.left : event.clientX;
@@ -202,7 +211,38 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
   const handleCanvasPointerDown = useCallback(
     (event: React.PointerEvent<HTMLCanvasElement>) => {
       setCanvasClassSearchMenu(null);
+      if (event.button === 2) {
+        canvasRightPointerRef.current = { startX: event.clientX, startY: event.clientY, moved: false };
+        suppressNextCanvasContextMenuRef.current = false;
+      } else {
+        canvasRightPointerRef.current = null;
+      }
       editor.onPointerDown(event);
+    },
+    [editor]
+  );
+
+  const handleCanvasPointerMove = useCallback(
+    (event: React.PointerEvent<HTMLCanvasElement>) => {
+      const rightPointer = canvasRightPointerRef.current;
+      if (rightPointer) {
+        const dx = event.clientX - rightPointer.startX;
+        const dy = event.clientY - rightPointer.startY;
+        if (Math.abs(dx) > CANVAS_CONTEXT_DRAG_THRESHOLD_PX || Math.abs(dy) > CANVAS_CONTEXT_DRAG_THRESHOLD_PX) {
+          rightPointer.moved = true;
+        }
+      }
+      editor.onPointerMove(event);
+    },
+    [editor]
+  );
+
+  const handleCanvasPointerUp = useCallback(
+    (event: React.PointerEvent<HTMLCanvasElement>) => {
+      const rightPointer = canvasRightPointerRef.current;
+      if (rightPointer?.moved) suppressNextCanvasContextMenuRef.current = true;
+      canvasRightPointerRef.current = null;
+      editor.onPointerUp(event);
     },
     [editor]
   );
@@ -495,6 +535,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
           activeDetectClasses: editor.classes.map((item) => ({ id: item.id, name: item.name })),
           classificationClasses,
           currentClassificationKey: currentClassificationKey ?? null,
+          capturePreviewBase64: editor.capturePreviewBase64,
           addProposals: editor.addProposals,
           applyAutoLabelPredictions: editor.applyAutoLabelPredictions,
           assignClassificationClass: onAssignClassificationClass,
@@ -515,6 +556,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
           activeDetectClasses: editor.classes.map((item) => ({ id: item.id, name: item.name })),
           classificationClasses,
           currentClassificationKey: currentClassificationKey ?? null,
+          capturePreviewBase64: editor.capturePreviewBase64,
           addProposals: editor.addProposals,
           applyAutoLabelPredictions: editor.applyAutoLabelPredictions,
           assignClassificationClass: onAssignClassificationClass,
@@ -522,14 +564,15 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
         })
       : props.previewDock;
   const currentMetadata = props.entry ? props.metadata.get(props.entry.basename) : undefined;
-  const previewSourceName = props.entry?.basename ?? "No media selected";
+  const previewSourceName = props.previewSourceName ?? props.entry?.basename ?? "No media selected";
   const previewIndexText =
-    props.entry && props.entries.length > 0 ? `${props.currentIndex + 1} / ${props.entries.length}` : "0 / 0";
-  const previewReviewLabel = isFlaggedFile(currentMetadata)
+    props.previewIndexText ?? (props.entry && props.entries.length > 0 ? `${props.currentIndex + 1} / ${props.entries.length}` : "0 / 0");
+  const previewReviewLabel = props.previewReviewLabel ?? (isFlaggedFile(currentMetadata)
     ? "Flagged"
     : isReviewedFile(currentMetadata)
       ? "Reviewed"
-      : "Unreviewed";
+      : "Unreviewed");
+  const previewStatusItems = props.previewStatusItems ?? [];
   function renderTaskLight(
     label: string,
     titleText: string,
@@ -578,7 +621,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
             const slotData = editor.shortcutSlots[slot];
             const bound = slotData != null && editor.classes.some((item) => item.id === slotData.classId);
             const slotMode = slotData?.mode ?? "draw";
-            const modeTag = slotMode === "subject-select" ? " · SS" : "";
+            const modeTag = slotMode === "subject-select" ? " · CS" : "";
             return (
               <div className="pool-label-shortcut-slot" key={slot}>
                 <div className="pool-label-shortcut-number">{slot}</div>
@@ -611,7 +654,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
                   <button
                     type="button"
                     className={`pool-label-shortcut-mode-btn${slotMode === "subject-select" ? " mode-ss" : " mode-draw"}`}
-                    title={`Shortcut ${slot} mode: ${slotMode === "subject-select" ? "Subject Select" : "Draw"} — click to toggle`}
+                    title={`Shortcut ${slot} mode: ${slotMode === "subject-select" ? "Color Select" : "Draw"} - click to toggle`}
                     disabled={!bound}
                     onClick={() => {
                       const next = editor.shortcutSlots.slice();
@@ -623,7 +666,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
                       };
                       editor.setShortcutSlots(next);
                       editor.setStatus(
-                        `Shortcut ${slot} mode → ${next[slot]!.mode === "subject-select" ? "Subject Select" : "Draw"}.`
+                        `Shortcut ${slot} mode -> ${next[slot]!.mode === "subject-select" ? "Color Select" : "Draw"}.`
                       );
                     }}
                   >
@@ -686,6 +729,9 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
           <div className="pool-label-preview-status-row">
             <span className="pool-label-preview-index">{previewIndexText}</span>
             <span className="pool-label-preview-chip">{previewReviewLabel}</span>
+            {previewStatusItems.map((item) => (
+              <span key={item} className="pool-label-preview-chip">{item}</span>
+            ))}
             <span id="boxCount" className="status pool-label-preview-box-count">
               {editor.boxes.length} box(es)
             </span>
@@ -704,9 +750,9 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
               id="previewCanvas"
               ref={editor.canvasRef}
               onPointerDown={handleCanvasPointerDown}
-              onPointerMove={editor.onPointerMove}
-              onPointerUp={editor.onPointerUp}
-              onPointerCancel={editor.onPointerUp}
+              onPointerMove={handleCanvasPointerMove}
+              onPointerUp={handleCanvasPointerUp}
+              onPointerCancel={handleCanvasPointerUp}
               onContextMenu={handleCanvasContextMenu}
               onWheel={editor.onWheel}
             />

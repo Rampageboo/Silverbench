@@ -25,6 +25,7 @@ export function useBoxLabelInteraction({
   persistEntryLabels,
   boxesRef,
   selectedRef,
+  suppressAnnotationsRef,
   classRef,
   dragRef,
   modeRef,
@@ -68,6 +69,7 @@ export function useBoxLabelInteraction({
   const canvas = useBoxLabelCanvas({
     boxesRef,
     selectedRef,
+    suppressAnnotationsRef,
     classRef,
     classesRef,
     showGridRef,

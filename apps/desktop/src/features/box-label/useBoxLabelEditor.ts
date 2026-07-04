@@ -48,6 +48,34 @@ export function shouldApplyPreviewImageRequest({
   return requestId === latestRequestId && currentImagePath === targetImagePath;
 }
 
+function capturePreviewSourceBase64(
+  source: HTMLImageElement | HTMLVideoElement | null,
+  options: { expectedTime?: number; toleranceSeconds?: number } = {}
+): string | null {
+  if (!source) return null;
+  const width = source instanceof HTMLVideoElement ? source.videoWidth : source.naturalWidth || source.width;
+  const height = source instanceof HTMLVideoElement ? source.videoHeight : source.naturalHeight || source.height;
+  if (!width || !height) return null;
+  if (source instanceof HTMLVideoElement && (source.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || source.seeking)) {
+    return null;
+  }
+  if (source instanceof HTMLVideoElement && Number.isFinite(options.expectedTime)) {
+    const tolerance = Math.max(0.001, options.toleranceSeconds ?? 0.035);
+    if (Math.abs(source.currentTime - Number(options.expectedTime)) > tolerance) return null;
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+  try {
+    context.drawImage(source, 0, 0, width, height);
+    return canvas.toDataURL("image/jpeg", 0.92).split(",", 2)[1] || null;
+  } catch {
+    return null;
+  }
+}
+
 export function useBoxLabelEditor({
   workspaceRoot,
   datasetRoot,
@@ -83,9 +111,13 @@ export function useBoxLabelEditor({
   onUndoJunk,
   imageUrlOverride = null,
   reloadLabelsOnImageUrlChange = true,
+  labelsReloadKey = "",
   videoUrlOverride = null,
   videoPlaybackTime = 0,
+  videoSeekTime,
+  videoSeekToken,
   videoPlaying = false,
+  hideAnnotationsWhilePlaying = false,
   onVideoPlaybackTimeChange,
   onVideoEnded,
   onVideoLoadError,
@@ -110,18 +142,28 @@ export function useBoxLabelEditor({
   const entryRef = useRef<BoxLabelEntry | null>(null);
   const proposalsRef = useRef<ProposalShape[]>([]);
   const selectedProposalIdRef = useRef<string | null>(null);
+  const suppressAnnotationsRef = useRef(false);
+  const videoFrameSeekingRef = useRef(false);
+  const hideAnnotationsWhilePlayingRef = useRef(hideAnnotationsWhilePlaying);
+  const videoPlayingRef = useRef(videoPlaying);
   const ephemeralProposalIdsRef = useRef<Set<string>>(new Set());
   const contentRevisionRef = useRef(0);
   const previewImageRequestRef = useRef(0);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const videoPlaybackTimeRef = useRef(videoPlaybackTime);
+  const videoSeekTimeRef = useRef(videoSeekTime);
+  const lastAppliedVideoSeekTokenRef = useRef<number | null>(null);
   const videoPlaybackTimeChangeRef = useRef(onVideoPlaybackTimeChange);
   const videoEndedRef = useRef(onVideoEnded);
   const videoLoadErrorRef = useRef(onVideoLoadError);
   videoPlaybackTimeRef.current = videoPlaybackTime;
+  videoSeekTimeRef.current = videoSeekTime;
   videoPlaybackTimeChangeRef.current = onVideoPlaybackTimeChange;
   videoEndedRef.current = onVideoEnded;
   videoLoadErrorRef.current = onVideoLoadError;
+  hideAnnotationsWhilePlayingRef.current = hideAnnotationsWhilePlaying;
+  videoPlayingRef.current = videoPlaying;
+  suppressAnnotationsRef.current = Boolean(hideAnnotationsWhilePlaying && (videoPlaying || videoFrameSeekingRef.current));
 
   const [boxes, setBoxes] = useState<api.LabelBox[]>([]);
   const [proposals, setProposals] = useState<DetectProposal[]>([]);
@@ -141,6 +183,13 @@ export function useBoxLabelEditor({
   entryRef.current = entry;
 
   const scheduleDraw = useCallback(() => scheduleDrawRef.current(), []);
+  const setVideoFrameSeeking = useCallback((seeking: boolean) => {
+    videoFrameSeekingRef.current = seeking;
+    suppressAnnotationsRef.current = Boolean(
+      hideAnnotationsWhilePlayingRef.current && (videoPlayingRef.current || seeking)
+    );
+    scheduleDraw();
+  }, [scheduleDraw]);
   const persistLabelsProxy = useCallback(
     (statusMessage?: string) => persistLabelsRef.current(statusMessage),
     []
@@ -642,6 +691,7 @@ export function useBoxLabelEditor({
     persistEntryLabels,
     boxesRef,
     selectedRef,
+    suppressAnnotationsRef,
     classRef,
     dragRef,
     modeRef: labelClasses.modeRef,
@@ -736,7 +786,7 @@ export function useBoxLabelEditor({
       .catch(() => {});
   }, [workspaceRoot]);
 
-  // Reload labels when the active image changes; avoid deps that would re-fetch on every editor tick.
+  // Reload labels when the active image or an external label source revision changes.
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -815,8 +865,8 @@ export function useBoxLabelEditor({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when image path or backup restore version changes
-  }, [datasetRoot, disableProposals, entryImagePath, imageUrlReloadKey, imageVersion, loadLabelsOverride, videoUrlOverride, workspaceRoot]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when image path or explicit label source revision changes
+  }, [datasetRoot, disableProposals, entryImagePath, imageUrlReloadKey, imageVersion, labelsReloadKey, loadLabelsOverride, videoUrlOverride, workspaceRoot]);
 
   useEffect(() => {
     if (videoUrlOverride || reloadLabelsOnImageUrlChange || !datasetRoot || !entry || !imageUrlOverride) return;
@@ -845,6 +895,7 @@ export function useBoxLabelEditor({
   useEffect(() => {
     if (!videoUrlOverride) return;
     let cancelled = false;
+    lastAppliedVideoSeekTokenRef.current = null;
     const video = document.createElement("video");
     video.style.position = "fixed";
     video.style.left = "-1px";
@@ -861,13 +912,16 @@ export function useBoxLabelEditor({
 
     const applyVideoSource = () => {
       if (cancelled || videoElementRef.current !== video) return;
+      setVideoFrameSeeking(false);
       interaction.imageRef.current = video;
       scheduleDraw();
     };
     const handleLoadedMetadata = () => {
-      const nextTime = Math.max(0, videoPlaybackTimeRef.current || 0);
+      const nextTime = Math.max(0, videoSeekTimeRef.current ?? videoPlaybackTimeRef.current ?? 0);
       if (Number.isFinite(nextTime) && Math.abs(video.currentTime - nextTime) > 0.02) {
+        setVideoFrameSeeking(true);
         video.currentTime = nextTime;
+        return;
       }
       applyVideoSource();
     };
@@ -881,6 +935,7 @@ export function useBoxLabelEditor({
     };
     const handleError = () => {
       if (cancelled || videoElementRef.current !== video) return;
+      setVideoFrameSeeking(false);
       const code = video.error?.code;
       const message = code ? `Video failed to load (media error ${code}).` : "Video failed to load.";
       if (videoLoadErrorRef.current) videoLoadErrorRef.current({ code, message });
@@ -912,18 +967,29 @@ export function useBoxLabelEditor({
       video.remove();
       if (videoElementRef.current === video) videoElementRef.current = null;
       if (interaction.imageRef.current === video) interaction.imageRef.current = null;
+      setVideoFrameSeeking(false);
     };
-  }, [interaction.imageRef, scheduleDraw, setError, videoUrlOverride]);
+  }, [interaction.imageRef, scheduleDraw, setError, setVideoFrameSeeking, videoUrlOverride]);
 
   useEffect(() => {
     const video = videoElementRef.current;
     if (!video) return;
-    const nextTime = Math.max(0, videoPlaybackTime || 0);
+    if (typeof videoSeekToken === "number") {
+      if (lastAppliedVideoSeekTokenRef.current === videoSeekToken) return;
+      lastAppliedVideoSeekTokenRef.current = videoSeekToken;
+    }
+    const nextTime = Math.max(0, videoSeekTime ?? videoPlaybackTime ?? 0);
     if (Math.abs(video.currentTime - nextTime) > 0.08) {
+      setVideoFrameSeeking(true);
       video.currentTime = nextTime;
       scheduleDraw();
     }
-  }, [scheduleDraw, videoPlaybackTime]);
+  }, [scheduleDraw, setVideoFrameSeeking, videoPlaybackTime, videoSeekTime, videoSeekToken]);
+
+  useEffect(() => {
+    suppressAnnotationsRef.current = Boolean(hideAnnotationsWhilePlaying && (videoPlaying || videoFrameSeekingRef.current));
+    scheduleDraw();
+  }, [hideAnnotationsWhilePlaying, scheduleDraw, videoPlaying]);
 
   useEffect(() => {
     const video = videoElementRef.current;
@@ -934,6 +1000,7 @@ export function useBoxLabelEditor({
       });
     } else {
       video.pause();
+      videoPlaybackTimeChangeRef.current?.(video.currentTime);
       scheduleDraw();
     }
   }, [scheduleDraw, videoPlaying]);
@@ -942,6 +1009,8 @@ export function useBoxLabelEditor({
     if (!videoPlaying) return;
     let frame = 0;
     const draw = () => {
+      const video = videoElementRef.current;
+      if (video) videoPlaybackTimeChangeRef.current?.(video.currentTime);
       scheduleDraw();
       frame = window.requestAnimationFrame(draw);
     };
@@ -957,6 +1026,11 @@ export function useBoxLabelEditor({
   ]
     .filter(Boolean)
     .join(" | ");
+  const capturePreviewBase64 = useCallback(
+    (options?: { expectedTime?: number; toleranceSeconds?: number }) =>
+      capturePreviewSourceBase64(interaction.imageRef.current, options),
+    [interaction.imageRef]
+  );
 
   return {
     canvasRef: interaction.canvasRef,
@@ -1031,6 +1105,7 @@ export function useBoxLabelEditor({
     setSelectedProposalId,
     addProposals,
     applyAutoLabelPredictions,
+    capturePreviewBase64,
     materializeProposal,
     rejectProposal,
     acceptAllProposals,

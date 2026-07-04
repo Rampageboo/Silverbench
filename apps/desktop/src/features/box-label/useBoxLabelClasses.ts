@@ -384,7 +384,7 @@ export function useBoxLabelClasses({
       const cls = classesRef.current.find((item) => item.id === classId);
       setClassNameInput(cls?.name || "");
 
-      const modeName = slotData?.mode === "subject-select" ? "Subject Select" : "Draw";
+      const modeName = slotData?.mode === "subject-select" ? "Color Select" : "Draw";
       setStatus(
         useSlot
           ? `Shortcut ${slot}: ${classNameFor(classes, classId)} (${modeName}).`

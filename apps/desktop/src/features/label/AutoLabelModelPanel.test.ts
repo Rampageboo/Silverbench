@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   autoLabelMediaKey,
+  autoLabelRunButtonText,
+  autoLabelRunCanClearBusy,
   autoLabelRunIsCurrent,
   classifyPredictionIsConfident,
   modelRunId,
@@ -38,11 +40,13 @@ describe("AutoLabelModelPanel helpers", () => {
     expect(shouldAutoRunClassify("chat")).toBe(false);
   });
 
-  it("only auto-runs either model when the sample has neither detect nor clf labels", () => {
+  it("keeps detect and classify auto-run eligibility independent", () => {
     expect(shouldAutoRunForEmptySample(0, 0, null)).toBe(true);
     expect(shouldAutoRunForEmptySample(1, 0, null)).toBe(false);
     expect(shouldAutoRunForEmptySample(0, 1, null)).toBe(false);
     expect(shouldAutoRunForEmptySample(0, 0, "chat")).toBe(false);
+    expect(shouldAutoRunDetect(1, 0)).toBe(false);
+    expect(shouldAutoRunClassify(null)).toBe(true);
   });
 
   it("uses image path before basename for auto-label media identity", () => {
@@ -65,5 +69,20 @@ describe("AutoLabelModelPanel helpers", () => {
     expect(autoLabelRunIsCurrent({ ...current, cancelled: true })).toBe(false);
     expect(autoLabelRunIsCurrent({ ...current, activeToken: 5 })).toBe(false);
     expect(autoLabelRunIsCurrent({ ...current, currentMediaKey: "images/b.png" })).toBe(false);
+  });
+
+  it("lets only the active run token clear busy state", () => {
+    expect(autoLabelRunCanClearBusy(4, 4)).toBe(true);
+    expect(autoLabelRunCanClearBusy(4, 5)).toBe(false);
+  });
+
+  it("surfaces auto-label run phases in the run button", () => {
+    expect(autoLabelRunButtonText("detect", false, null)).toBe("Run Detect");
+    expect(autoLabelRunButtonText("classify", false, null)).toBe("Run Clf");
+    expect(autoLabelRunButtonText("detect", true, "Detect: preparing source...")).toBe("Preparing...");
+    expect(autoLabelRunButtonText("detect", true, "Detect: starting backend job...")).toBe("Starting...");
+    expect(autoLabelRunButtonText("detect", true, "Detect: Running detect...")).toBe("Detecting...");
+    expect(autoLabelRunButtonText("classify", true, "Clf: Running classify...")).toBe("Classifying...");
+    expect(autoLabelRunButtonText("classify", true, "Clf: applying result...")).toBe("Applying...");
   });
 });

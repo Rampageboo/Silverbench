@@ -181,6 +181,18 @@ describe("clf task helpers", () => {
     expect(getClfTask(frame)?.enabled).toBe(false);
   });
 
+  it("can clear detect boxes while leaving detect disabled", () => {
+    let manifest = createVideoAnnotationManifest(video);
+    manifest = updateVideoDetectBoxes(manifest, video, 1.0, [box], true);
+    manifest = updateVideoDetectBoxes(manifest, video, 1.0, [], false);
+    manifest = setVideoDetectEnabled(manifest, video, 1.0, false);
+
+    const detect = getDetectTask(frameAnnotationAt(manifest, 1.0));
+
+    expect(detect?.enabled).toBe(false);
+    expect(detect?.boxes).toEqual([]);
+  });
+
   it("clearVideoClfLabel removes only clf task — preserves detect", () => {
     let manifest = createVideoAnnotationManifest(video);
     manifest = updateVideoDetectBoxes(manifest, video, 1.0, [box], true);

@@ -2245,7 +2245,7 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   pointer-events: none;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 16px auto;
+  grid-template-rows: 16px auto auto;
   align-items: center;
   row-gap: 4px;
   padding: 6px 9px 7px;
@@ -2281,6 +2281,14 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
 
 .video-frame-box-label-page .video-frame-playback-btn:disabled {
   opacity: 0.48;
+}
+
+.video-frame-box-label-page .video-frame-timeline-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 0;
+  pointer-events: auto;
 }
 
 .video-frame-box-label-page .video-frame-timeline-marker-row {
@@ -7592,15 +7600,10 @@ button.pool-label-task-light-btn:hover:not(:disabled) {
   position: relative;
   width: 100%;
   margin: 0;
-  padding: 8px 10px 9px;
+  padding: 8px 10px 8px;
   row-gap: 5px;
   border-radius: 8px;
   pointer-events: auto;
-}
-
-.video-frame-box-label-page #previewViewer .pool-label-zoom-side .video-frame-timeline-top {
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 8px;
 }
 
 .video-frame-box-label-page #previewViewer .pool-label-zoom-side .video-frame-playback-btn {
@@ -7608,8 +7611,13 @@ button.pool-label-task-light-btn:hover:not(:disabled) {
   padding: 2px 9px;
 }
 
+.video-frame-box-label-page #previewViewer .pool-label-zoom-side .video-frame-timeline-controls {
+  min-height: 22px;
+  padding-top: 1px;
+}
+
 .video-frame-box-label-page #previewViewer .pool-label-zoom-side .video-frame-timeline-marker-row {
-  grid-column: auto;
+  grid-column: 1 / -1;
   height: 16px;
   margin: 0;
 }

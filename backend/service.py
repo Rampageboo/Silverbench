@@ -5,7 +5,6 @@ import json
 import shutil
 import tempfile
 import threading
-import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -13,6 +12,7 @@ from typing import Any
 from .batch_crop import batch_crop_files, batch_crop_images
 from .classification_dataset import create_class_folder, move_images_to_class, move_val_back_to_train
 from .duplicate_images import delete_images, duplicate_images, find_duplicate_images
+from .job_store import JobStore
 from .mask_noise import export_folder as mask_noise_export_folder
 from .mask_noise import preview_base64 as mask_noise_preview_base64
 from .mask_noise import save_one as mask_noise_save_one
@@ -84,6 +84,10 @@ from .workspace_snapshot_versions import (
 from .yolo_tracker import track_yolo_forward_from_json
 
 
+_PT_JOB_TTL_SECONDS = 10 * 60
+_MAX_RETAINED_PT_JOBS = 64
+
+
 class BackendService:
     def __init__(
         self,
@@ -113,12 +117,13 @@ class BackendService:
         self.choose_train_model_file = choose_train_model_file
         self.choose_video_files = choose_video_files
         self.open_directory_callback = open_directory
-        self._capture_jobs: dict[str, dict[str, Any]] = {}
-        self._capture_jobs_lock = threading.Lock()
-        self._pt_jobs: dict[str, dict[str, Any]] = {}
-        self._pt_jobs_lock = threading.Lock()
-        self._build_jobs: dict[str, dict[str, Any]] = {}
-        self._build_jobs_lock = threading.Lock()
+        self._capture_jobs = JobStore(not_found_message="Capture job not found.")
+        self._pt_jobs = JobStore(
+            not_found_message="PT job not found.",
+            ttl_seconds=_PT_JOB_TTL_SECONDS,
+            max_retained=_MAX_RETAINED_PT_JOBS,
+        )
+        self._build_jobs = JobStore(not_found_message="Build job not found.")
         self._auto_label_model_lock = threading.Lock()
         self._handlers = self._build_handlers()
 
@@ -213,6 +218,8 @@ class BackendService:
             "detectFolderWithPt": self._handle_detectFolderWithPt,
             "startClassifyFolderWithPt": self._handle_startClassifyFolderWithPt,
             "startDetectFolderWithPt": self._handle_startDetectFolderWithPt,
+            "startClassifyImageWithPt": self._handle_startClassifyImageWithPt,
+            "startDetectImageWithPt": self._handle_startDetectImageWithPt,
             "classifyImageWithPt": self._handle_classifyImageWithPt,
             "detectImageWithPt": self._handle_detectImageWithPt,
             "classifyImageBase64WithPt": self._handle_classifyImageBase64WithPt,
@@ -651,9 +658,7 @@ class BackendService:
         filenames = None
         if len(args) > 2 and args[2]:
             filenames = json.loads(args[2] or "[]")
-        job_id = uuid.uuid4().hex
         state: dict[str, Any] = {
-            "id": job_id,
             "status": "running",
             "done": 0,
             "total": 1,
@@ -661,16 +666,10 @@ class BackendService:
             "errors": [],
             "result": None,
         }
-        with self._build_jobs_lock:
-            self._build_jobs[job_id] = state
+        job_id, _ = self._build_jobs.create(state)
 
         def update(done: int, total: int, detail: str) -> None:
-            with self._build_jobs_lock:
-                current = self._build_jobs.get(job_id)
-                if current:
-                    current["done"] = done
-                    current["total"] = max(total, 1)
-                    current["detail"] = detail
+            self._build_jobs.update(job_id, {"done": done, "total": max(total, 1), "detail": detail})
 
         def run() -> None:
             try:
@@ -680,31 +679,32 @@ class BackendService:
                     filenames=filenames,
                     progress_callback=update,
                 )
-                with self._build_jobs_lock:
-                    current = self._build_jobs.get(job_id)
-                    if current:
-                        current["status"] = "done" if result.get("ok", True) else "error"
-                        current["done"] = current.get("total") or current.get("done") or 0
-                        current["errors"] = result.get("errors") or []
-                        current["result"] = result
-                        current["detail"] = "构建完成" if result.get("ok", True) else "构建完成但有错误"
+                current = self._build_jobs.snapshot(job_id)
+                self._build_jobs.finish(
+                    job_id,
+                    {
+                        "status": "done" if result.get("ok", True) else "error",
+                        "done": current.get("total") or current.get("done") or 0,
+                        "errors": result.get("errors") or [],
+                        "result": result,
+                        "detail": "构建完成" if result.get("ok", True) else "构建完成但有错误",
+                    },
+                )
             except Exception as error:
-                with self._build_jobs_lock:
-                    current = self._build_jobs.get(job_id)
-                    if current:
-                        current["status"] = "error"
-                        current["errors"] = [str(error)]
-                        current["detail"] = str(error)
+                self._build_jobs.finish(
+                    job_id,
+                    {
+                        "status": "error",
+                        "errors": [str(error)],
+                        "detail": str(error),
+                    },
+                )
 
         threading.Thread(target=run, daemon=True).start()
         return self._build_job_snapshot(job_id)
 
     def _build_job_snapshot(self, job_id: str) -> dict[str, Any]:
-        with self._build_jobs_lock:
-            state = self._build_jobs.get(job_id)
-            if not state:
-                raise ValueError("Build job not found.")
-            return {key: value for key, value in state.items()}
+        return self._build_jobs.snapshot(job_id)
 
     def _handle_readImagePoolThumb(self, args: list[Any]) -> object:
             root = self.path_access.require_path(args[0])
@@ -1034,6 +1034,12 @@ class BackendService:
     def _handle_startDetectFolderWithPt(self, args: list[Any]) -> object:
             return json.dumps(self._start_pt_job("detect", args), ensure_ascii=False)
 
+    def _handle_startClassifyImageWithPt(self, args: list[Any]) -> object:
+            return json.dumps(self._start_pt_image_job("classify", args), ensure_ascii=False)
+
+    def _handle_startDetectImageWithPt(self, args: list[Any]) -> object:
+            return json.dumps(self._start_pt_image_job("detect", args), ensure_ascii=False)
+
     def _handle_getPtJob(self, args: list[Any]) -> object:
             return json.dumps(self._pt_job_snapshot(str(args[0])), ensure_ascii=False)
 
@@ -1041,10 +1047,7 @@ class BackendService:
             return json.dumps(self._cancel_pt_job(str(args[0])), ensure_ascii=False)
 
     def _start_pt_job(self, kind: str, args: list[Any]) -> dict[str, Any]:
-        job_id = uuid.uuid4().hex
-        cancel_event = threading.Event()
         state: dict[str, Any] = {
-            "id": job_id,
             "kind": kind,
             "status": "running",
             "done": 0,
@@ -1052,18 +1055,11 @@ class BackendService:
             "detail": "Starting...",
             "errors": [],
             "result": None,
-            "cancelEvent": cancel_event,
         }
-        with self._pt_jobs_lock:
-            self._pt_jobs[job_id] = state
+        job_id, cancel_event = self._pt_jobs.create(state, cancelable=True)
 
         def update(done: int, total: int, detail: str) -> None:
-            with self._pt_jobs_lock:
-                current = self._pt_jobs.get(job_id)
-                if current:
-                    current["done"] = done
-                    current["total"] = total
-                    current["detail"] = detail
+            self._pt_jobs.update(job_id, {"done": done, "total": total, "detail": detail})
 
         def run() -> None:
             try:
@@ -1101,43 +1097,100 @@ class BackendService:
                         cancel_event,
                     )
                     done = int(result.get("copied") or 0)
-                with self._pt_jobs_lock:
-                    current = self._pt_jobs.get(job_id)
-                    if current:
-                        current["status"] = "cancelled" if result.get("cancelled") else "done"
-                        current["done"] = max(int(current.get("done") or 0), done)
-                        current["total"] = int(result.get("total") or current.get("total") or 0)
-                        current["errors"] = result.get("errors") or []
-                        current["result"] = result
-                        current["detail"] = "Cancelled." if result.get("cancelled") else "Done."
+                current = self._pt_jobs.snapshot(job_id)
+                self._pt_jobs.finish(
+                    job_id,
+                    {
+                        "status": "cancelled" if result.get("cancelled") else "done",
+                        "done": max(int(current.get("done") or 0), done),
+                        "total": int(result.get("total") or current.get("total") or 0),
+                        "errors": result.get("errors") or [],
+                        "result": result,
+                        "detail": "Cancelled." if result.get("cancelled") else "Done.",
+                    },
+                )
             except Exception as error:
-                with self._pt_jobs_lock:
-                    current = self._pt_jobs.get(job_id)
-                    if current:
-                        current["status"] = "error"
-                        current["errors"] = [str(error)]
-                        current["detail"] = str(error)
+                self._pt_jobs.finish(
+                    job_id,
+                    {
+                        "status": "error",
+                        "errors": [str(error)],
+                        "detail": str(error),
+                    },
+                )
+
+        threading.Thread(target=run, daemon=True).start()
+        return self._pt_job_snapshot(job_id)
+
+    def _start_pt_image_job(self, kind: str, args: list[Any]) -> dict[str, Any]:
+        state: dict[str, Any] = {
+            "kind": f"{kind}-image",
+            "status": "running",
+            "done": 0,
+            "total": 1,
+            "detail": "Starting...",
+            "errors": [],
+            "result": None,
+        }
+        job_id, cancel_event = self._pt_jobs.create(state, cancelable=True)
+
+        def run() -> None:
+            try:
+                if cancel_event.is_set():
+                    result: dict[str, Any] = {"ok": True, "cancelled": True}
+                elif kind == "classify":
+                    self._pt_jobs.update(job_id, {"detail": "Running classify..."})
+                    image_size = int(args[3]) if len(args) > 3 else 0
+                    device = str(args[4]) if len(args) > 4 else "0"
+                    top_k = int(args[5]) if len(args) > 5 else 5
+                    result = classify_image_with_pt(
+                        self.path_access.safe_child_path(args[0], str(args[1])),
+                        self.path_access.safe_child_path(args[0], str(args[2])),
+                        image_size,
+                        device,
+                        top_k,
+                    )
+                else:
+                    self._pt_jobs.update(job_id, {"detail": "Running detect..."})
+                    image_size = int(args[3]) if len(args) > 3 else 640
+                    confidence = float(args[4]) if len(args) > 4 else 0.25
+                    device = str(args[5]) if len(args) > 5 else "0"
+                    result = detect_image_with_pt(
+                        self.path_access.safe_child_path(args[0], str(args[1])),
+                        self.path_access.safe_child_path(args[0], str(args[2])),
+                        image_size,
+                        confidence,
+                        device,
+                    )
+                self._pt_jobs.finish(
+                    job_id,
+                    {
+                        "status": "cancelled" if result.get("cancelled") else "done",
+                        "done": 0 if result.get("cancelled") else 1,
+                        "total": 1,
+                        "errors": [],
+                        "result": result,
+                        "detail": "Cancelled." if result.get("cancelled") else "Done.",
+                    },
+                )
+            except Exception as error:
+                self._pt_jobs.finish(
+                    job_id,
+                    {
+                        "status": "error",
+                        "errors": [str(error)],
+                        "detail": str(error),
+                    },
+                )
 
         threading.Thread(target=run, daemon=True).start()
         return self._pt_job_snapshot(job_id)
 
     def _pt_job_snapshot(self, job_id: str) -> dict[str, Any]:
-        with self._pt_jobs_lock:
-            state = self._pt_jobs.get(job_id)
-            if not state:
-                raise ValueError("PT job not found.")
-            return {key: value for key, value in state.items() if key != "cancelEvent"}
+        return self._pt_jobs.snapshot(job_id)
 
     def _cancel_pt_job(self, job_id: str) -> dict[str, Any]:
-        with self._pt_jobs_lock:
-            state = self._pt_jobs.get(job_id)
-            if not state:
-                raise ValueError("PT job not found.")
-            cancel_event = state.get("cancelEvent")
-            if cancel_event:
-                cancel_event.set()
-            state["detail"] = "Cancelling..."
-            return {key: value for key, value in state.items() if key != "cancelEvent"}
+        return self._pt_jobs.cancel(job_id)
 
     def _start_capture_video_screenshot_jobs(self, args: list[Any]) -> dict[str, Any]:
         jobs = json.loads(args[0] or "[]")
@@ -1148,67 +1201,51 @@ class BackendService:
         prefix = str(args[3]) if len(args) > 3 else ""
         image_format = str(args[4]) if len(args) > 4 else "jpg"
         total = int(args[5]) if len(args) > 5 else 0
-        job_id = uuid.uuid4().hex
-        cancel_event = threading.Event()
         state: dict[str, Any] = {
-            "id": job_id,
             "status": "running",
             "saved": 0,
             "total": total,
             "detail": "Starting export...",
             "errors": [],
             "result": None,
-            "cancelEvent": cancel_event,
         }
-        with self._capture_jobs_lock:
-            self._capture_jobs[job_id] = state
+        job_id, cancel_event = self._capture_jobs.create(state, cancelable=True)
 
         def update(saved: int, detail: str) -> None:
-            with self._capture_jobs_lock:
-                current = self._capture_jobs.get(job_id)
-                if current:
-                    current["saved"] = saved
-                    current["detail"] = detail
+            self._capture_jobs.update(job_id, {"saved": saved, "detail": detail})
 
         def run() -> None:
             try:
                 result = capture_video_screenshot_jobs(jobs, output_dir, interval, prefix, image_format, update, cancel_event)
-                with self._capture_jobs_lock:
-                    current = self._capture_jobs.get(job_id)
-                    if current:
-                        current["status"] = "cancelled" if result.get("cancelled") else "done"
-                        current["saved"] = int(result.get("saved") or current["saved"])
-                        current["errors"] = result.get("errors") or []
-                        current["result"] = result
-                        current["detail"] = "Cancelled." if result.get("cancelled") else "Done."
+                current = self._capture_jobs.snapshot(job_id)
+                self._capture_jobs.finish(
+                    job_id,
+                    {
+                        "status": "cancelled" if result.get("cancelled") else "done",
+                        "saved": int(result.get("saved") or current["saved"]),
+                        "errors": result.get("errors") or [],
+                        "result": result,
+                        "detail": "Cancelled." if result.get("cancelled") else "Done.",
+                    },
+                )
             except Exception as error:
-                with self._capture_jobs_lock:
-                    current = self._capture_jobs.get(job_id)
-                    if current:
-                        current["status"] = "error"
-                        current["errors"] = [str(error)]
-                        current["detail"] = str(error)
+                self._capture_jobs.finish(
+                    job_id,
+                    {
+                        "status": "error",
+                        "errors": [str(error)],
+                        "detail": str(error),
+                    },
+                )
 
         threading.Thread(target=run, daemon=True).start()
         return self._capture_job_snapshot(job_id)
 
     def _capture_job_snapshot(self, job_id: str) -> dict[str, Any]:
-        with self._capture_jobs_lock:
-            state = self._capture_jobs.get(job_id)
-            if not state:
-                raise ValueError("Capture job not found.")
-            return {key: value for key, value in state.items() if key != "cancelEvent"}
+        return self._capture_jobs.snapshot(job_id)
 
     def _cancel_capture_job(self, job_id: str) -> dict[str, Any]:
-        with self._capture_jobs_lock:
-            state = self._capture_jobs.get(job_id)
-            if not state:
-                raise ValueError("Capture job not found.")
-            cancel_event = state.get("cancelEvent")
-            if cancel_event:
-                cancel_event.set()
-            state["detail"] = "Cancelling..."
-            return {key: value for key, value in state.items() if key != "cancelEvent"}
+        return self._capture_jobs.cancel(job_id)
 
     def _choose_directory(self, title: str) -> str:
         if not self.choose_directory:

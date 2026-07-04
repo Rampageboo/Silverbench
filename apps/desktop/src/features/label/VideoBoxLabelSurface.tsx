@@ -1,13 +1,24 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { saveVideoFrame, videoSourceUrl } from "../video/videoCaptureApi";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ensureVideoProxy, saveVideoFrame, videoSourceUrl } from "../video/videoCaptureApi";
 import { useVideoSampling, type SamplingMode } from "../video/useVideoSampling";
 import type { VideoAnnotationSession } from "../video/useVideoAnnotationSession";
-import { getAnnotationFrameUrl } from "../video/videoAnnotationApi";
+import { formatVideoClock } from "../video/videoAnnotationDomain";
 import { BoxLabelView } from "../box-label/BoxLabelView";
 import type { BoxLabelEntry } from "../box-label/boxLabelCore";
 import type { BoxLabelModel } from "../box-label/useBoxLabel";
 import { AutoLabelModelPanel } from "./AutoLabelModelPanel";
 import { analysisClassPanelSummaries, type AnalysisStats } from "./labelAnalysisStats";
+import { adjacentVideoMarkerTime, useVideoPlaybackTimeline } from "./useVideoPlaybackTimeline";
+
+export {
+  initialVideoAnnotationTargetTime,
+  markerDrivenAnnotationTargetTime,
+  nextVideoKeyboardTime,
+  shouldClearActiveMarker,
+  videoFrameKeyboardCommand,
+  wrappedAdjacentVideoMarkerTime,
+  type VideoFrameKeyboardCommand,
+} from "./useVideoPlaybackTimeline";
 
 const SAMPLING_MODE_LABELS: Record<SamplingMode, string> = {
   "whole-video": "Whole video",
@@ -17,54 +28,37 @@ const SAMPLING_MODE_LABELS: Record<SamplingMode, string> = {
 
 const SAMPLING_MODES: SamplingMode[] = ["whole-video", "segments-preferred", "segments-only"];
 const RANDOM_MULTIPLIERS = [1, 5, 10] as const;
-const FALLBACK_PLAYBACK_INTERVAL_MS = 180;
-const FALLBACK_PLAYBACK_STEP_SECONDS = FALLBACK_PLAYBACK_INTERVAL_MS / 1000;
+const AUTO_LABEL_FRAME_SAVE_TIMEOUT_MS = 15000;
 type RandomMultiplier = (typeof RANDOM_MULTIPLIERS)[number];
-export type VideoFrameKeyboardCommand = "seek-backward" | "seek-forward" | "toggle-playback";
 
-export function videoFrameKeyboardCommand({
-  key,
-  code = "",
-  ctrlKey = false,
-  altKey = false,
-  metaKey = false,
-  targetTagName = "",
-  targetEditable = false,
-  selectedBoxId = null,
-}: {
-  key: string;
-  code?: string;
-  ctrlKey?: boolean;
-  altKey?: boolean;
-  metaKey?: boolean;
-  targetTagName?: string;
-  targetEditable?: boolean;
-  selectedBoxId?: number | null;
-}): VideoFrameKeyboardCommand | null {
-  const tag = targetTagName.toLowerCase();
-  if (tag === "input" || tag === "select" || tag === "textarea" || targetEditable) return null;
-  if (ctrlKey || altKey || metaKey) return null;
-  if (selectedBoxId !== null) return null;
-  if (key === "ArrowLeft") return "seek-backward";
-  if (key === "ArrowRight") return "seek-forward";
-  if (key === " " || key === "Spacebar" || code === "Space") return "toggle-playback";
-  return null;
+function withVideoFrameTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
 }
 
-export function nextVideoKeyboardTime(currentTime: number, maxTime: number, command: VideoFrameKeyboardCommand, stepSeconds: number, fast: boolean) {
-  if (command !== "seek-backward" && command !== "seek-forward") return currentTime;
-  const direction = command === "seek-forward" ? 1 : -1;
-  const step = Math.max(0.001, Number.isFinite(stepSeconds) ? stepSeconds : 0.1);
-  const amount = fast ? Math.max(1, step * 10) : step;
-  return Math.max(0, Math.min(maxTime, Math.round((currentTime + direction * amount) * 1000) / 1000));
-}
-
-export function initialVideoAnnotationTargetTime(currentFrameTime: number | null, playbackTime: number) {
-  return currentFrameTime ?? playbackTime;
-}
-
-export function markerDrivenAnnotationTargetTime(currentTargetTime: number | null, currentFrameTime: number | null) {
-  return currentFrameTime ?? currentTargetTime;
+function waitForVideoPreviewCapture(
+  capture: ((options?: { expectedTime?: number; toleranceSeconds?: number }) => string | null) | undefined,
+  expectedTime: number,
+  attempts = 10
+): Promise<string | null> {
+  const value = capture?.({ expectedTime, toleranceSeconds: 0.04 }) ?? null;
+  if (value || attempts <= 1) return Promise.resolve(value);
+  return new Promise((resolve) => {
+    window.setTimeout(() => {
+      resolve(waitForVideoPreviewCapture(capture, expectedTime, attempts - 1));
+    }, 50);
+  });
 }
 
 function workspaceRelativePath(workspaceRoot: string, absolutePath: string) {
@@ -95,15 +89,37 @@ function videoFrameEntryTime(entry: BoxLabelEntry): number | null {
   return Number.isFinite(timestampMs) ? timestampMs / 1000 : null;
 }
 
+export function visibleVideoDetectBoxes<T>(boxes: T[], markerIsActive: boolean, detectEnabled: boolean) {
+  return markerIsActive && detectEnabled ? boxes : [];
+}
+
+export function videoLabelsReloadKey({
+  annotationTime,
+  detectEnabled,
+  frameUpdatedAt,
+  visibleBoxCount,
+}: {
+  annotationTime: number | null;
+  detectEnabled: boolean;
+  frameUpdatedAt?: string;
+  visibleBoxCount: number;
+}) {
+  return [
+    annotationTime === null ? "none" : Math.round(annotationTime * 1000),
+    detectEnabled ? "detect-on" : "detect-off",
+    frameUpdatedAt || "no-frame",
+    visibleBoxCount,
+  ].join(":");
+}
+
 export function VideoFrameControlsPanel({
-  sourceLabel,
   segmentCount,
   samplingMode,
   minSpacingMs,
   randomMultiplier,
   current,
   disabled = false,
-  annotatedFrameCount,
+  canDuplicateToNext,
   hasFrameRecord,
   videoDurationMs,
   onSamplingModeChange,
@@ -112,18 +128,17 @@ export function VideoFrameControlsPanel({
   onRandom,
   onRandomNext,
   onAddMarker,
-  onCopyPreviousBoxes,
+  onDuplicateToNext,
   onMarkEmpty,
   onClearRecord,
 }: {
-  sourceLabel: string;
   segmentCount: number;
   samplingMode: SamplingMode;
   minSpacingMs: number;
   randomMultiplier: RandomMultiplier;
   current: boolean;
   disabled?: boolean;
-  annotatedFrameCount: number;
+  canDuplicateToNext: boolean;
   hasFrameRecord: boolean;
   videoDurationMs: number;
   onSamplingModeChange: (mode: SamplingMode) => void;
@@ -132,7 +147,7 @@ export function VideoFrameControlsPanel({
   onRandom: () => void;
   onRandomNext: () => void;
   onAddMarker: () => void;
-  onCopyPreviousBoxes: () => void;
+  onDuplicateToNext: () => void;
   onMarkEmpty: () => void;
   onClearRecord: () => void;
 }) {
@@ -140,10 +155,7 @@ export function VideoFrameControlsPanel({
   return (
     <section className={`video-frame-controls-panel${controlsDisabled ? " is-disabled" : ""}`}>
       <div className="video-frame-controls-head">
-        <span>
-          Video Controls
-          <small title={sourceLabel}>Source: {sourceLabel}</small>
-        </span>
+        <span>Video Controls</span>
         <span>{segmentCount} segment(s)</span>
       </div>
       <div className="video-frame-controls-form">
@@ -194,13 +206,13 @@ export function VideoFrameControlsPanel({
         <button type="button" onClick={onAddMarker} disabled={controlsDisabled}>
           Add Marker
         </button>
-        <button type="button" onClick={onCopyPreviousBoxes} disabled={controlsDisabled || annotatedFrameCount <= 0}>
-          Copy Previous Boxes
+        <button type="button" onClick={onDuplicateToNext} disabled={controlsDisabled || !canDuplicateToNext}>
+          Duplicate to Next
         </button>
         <button type="button" onClick={onRandomNext} disabled={controlsDisabled || videoDurationMs <= 0}>
           Random Next
         </button>
-        <button type="button" onClick={onMarkEmpty} disabled={controlsDisabled}>
+        <button type="button" onClick={onMarkEmpty} disabled={controlsDisabled || !hasFrameRecord}>
           Mark Empty
         </button>
         <button type="button" className="danger" onClick={onClearRecord} disabled={controlsDisabled || !hasFrameRecord}>
@@ -232,47 +244,25 @@ export function VideoBoxLabelSurface({
 }) {
   const currentVideoPath = videoSession.current?.path ?? "";
   const currentFrameTime = videoSession.currentFrame?.time ?? null;
-  const [annotationTargetTime, setAnnotationTargetTime] = useState<number | null>(null);
-  const [nativeUnsupportedVideoPaths, setNativeUnsupportedVideoPaths] = useState<Set<string>>(() => new Set());
-  const fallbackPlaybackRef = useRef({ time: 0, lastTick: 0 });
-  const entryTime = annotationTargetTime ?? videoSession.time;
-  const fallbackPreviewTime = videoSession.time;
-  const nativeVideoUrl = useMemo(
-    () => videoSession.current && workspaceRoot.trim()
-      ? videoSourceUrl(workspaceRoot.trim(), videoSession.current.path)
-      : null,
-    [videoSession.current, workspaceRoot]
-  );
-  const nativeVideoSupported = Boolean(
-    nativeVideoUrl &&
-    videoSession.current &&
-    !nativeUnsupportedVideoPaths.has(videoSession.current.path)
-  );
-  const fallbackFrameUrl = useMemo(
-    () => !nativeVideoSupported && videoSession.current && workspaceRoot.trim()
-      ? getAnnotationFrameUrl(workspaceRoot.trim(), videoSession.current.path, fallbackPreviewTime, { fast: true })
-      : null,
-    [fallbackPreviewTime, nativeVideoSupported, videoSession.current, workspaceRoot]
-  );
-  const hasPreviewImage = Boolean(nativeVideoSupported || fallbackFrameUrl || videoSession.previewUrl || videoSession.previewBase64);
-  const entry = useMemo(
-    () => videoSession.current && hasPreviewImage
-      ? videoFrameEntry(videoSession.current.name, entryTime, activeMediaPosition, mediaCount)
-      : null,
-    [activeMediaPosition, entryTime, hasPreviewImage, mediaCount, videoSession.current]
-  );
-  const entries = useMemo(() => entry ? [entry] : [], [entry]);
-  const selected = useMemo(() => entry ? new Set([entry.basename]) : new Set<string>(), [entry]);
+  const [videoProxyByPath, setVideoProxyByPath] = useState<Map<string, string>>(() => new Map());
+  const [videoProxyPendingPaths, setVideoProxyPendingPaths] = useState<Set<string>>(() => new Set());
+  const [videoProxyFailedPaths, setVideoProxyFailedPaths] = useState<Set<string>>(() => new Set());
+  const [nativeFailedVideoPaths, setNativeFailedVideoPaths] = useState<Set<string>>(() => new Set());
   const [randomMultiplier, setRandomMultiplier] = useState<RandomMultiplier>(1);
-  const [playing, setPlaying] = useState(false);
   const selectedBoxIdRef = useRef<number | null>(null);
-  const metadata = useMemo(() => new Map(), []);
-  const classImageCounts = useMemo(() => {
-    const counts = new Map<number, number>();
-    for (const box of videoSession.boxes) counts.set(box.classId, (counts.get(box.classId) ?? 0) + 1);
-    return counts;
-  }, [videoSession.boxes]);
-  const imageUrlOverride = videoSession.previewUrl || (videoSession.previewBase64 ? `data:image/jpeg;base64,${videoSession.previewBase64}` : null);
+  const autoLabelFramePathCacheRef = useRef<Map<string, Promise<string | null>>>(new Map());
+  const root = workspaceRoot.trim();
+  const proxiedVideoPath = currentVideoPath ? videoProxyByPath.get(currentVideoPath) ?? null : null;
+  const nativeVideoPath = currentVideoPath && !nativeFailedVideoPaths.has(proxiedVideoPath ?? currentVideoPath)
+    ? (proxiedVideoPath ?? currentVideoPath)
+    : null;
+  const nativeVideoUrl = useMemo(
+    () => nativeVideoPath && root
+      ? videoSourceUrl(root, nativeVideoPath)
+      : null,
+    [nativeVideoPath, root]
+  );
+  const hasPreviewImage = Boolean(nativeVideoUrl || videoSession.previewUrl || videoSession.previewBase64);
   const videoDurationMs = videoSession.current ? Math.round(videoSession.current.duration * 1000) : 0;
   const sampling = useVideoSampling({
     workspaceRoot,
@@ -285,25 +275,104 @@ export function VideoBoxLabelSurface({
     : sampling.lastSource === "random-whole-video"
       ? "Random whole-video"
       : "Manual";
-  const hasFrameRecord = Boolean(videoSession.currentFrame);
-  const autoLabelFrameTime = videoSession.currentFrame?.time ?? null;
+  const {
+    annotationTime,
+    markerIsActive,
+    playbackTime,
+    videoSeekToken,
+    playing,
+    seekPlayerToTime,
+    selectMarkerTime,
+    stopPlayback,
+    togglePlayback,
+    handleAddMarker,
+    handleVideoPlaybackTimeChange,
+    handleVideoEnded,
+    handleMarkerPointerDown,
+    handleTimelinePointerDown,
+    handleTimelineRangeKeyDown,
+    markerLeftPercent,
+  } = useVideoPlaybackTimeline({
+    videoSession,
+    currentVideoPath,
+    currentFrameTime,
+    nativeVideoUrl,
+    proxiedVideoPath,
+    selectedBoxIdRef,
+    onNavigateBoundary,
+    setLastSource: sampling.setLastSource,
+  });
+  const entryTime = annotationTime ?? 0;
+  const entry = useMemo(
+    () => videoSession.current && hasPreviewImage
+      ? videoFrameEntry(videoSession.current.name, entryTime, activeMediaPosition, mediaCount)
+      : null,
+    [activeMediaPosition, entryTime, hasPreviewImage, mediaCount, videoSession.current]
+  );
+  const entries = useMemo(() => entry ? [entry] : [], [entry]);
+  const selected = useMemo(() => entry ? new Set([entry.basename]) : new Set<string>(), [entry]);
+  const metadata = useMemo(() => new Map(), []);
+  const activeFrame = markerIsActive ? videoSession.currentFrame : null;
+  const activeBoxes = useMemo(
+    () => markerIsActive ? videoSession.boxes : [],
+    [markerIsActive, videoSession.boxes]
+  );
+  const activeReviewed = markerIsActive ? videoSession.reviewed : false;
+  const activeDetectExportEnabled = markerIsActive ? videoSession.detectExportEnabled : true;
+  const activeClfExportEnabled = markerIsActive ? videoSession.clfExportEnabled : true;
+  const activeClfTask = markerIsActive ? videoSession.clfTask : undefined;
+  const visibleDetectBoxes = visibleVideoDetectBoxes(activeBoxes, markerIsActive, activeDetectExportEnabled);
+  const labelsReloadKey = videoLabelsReloadKey({
+    annotationTime,
+    detectEnabled: activeDetectExportEnabled,
+    frameUpdatedAt: activeFrame?.updatedAt,
+    visibleBoxCount: visibleDetectBoxes.length,
+  });
+  const classImageCounts = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const box of visibleDetectBoxes) counts.set(box.classId, (counts.get(box.classId) ?? 0) + 1);
+    return counts;
+  }, [visibleDetectBoxes]);
+  const imageUrlOverride = videoSession.previewUrl || (videoSession.previewBase64 ? `data:image/jpeg;base64,${videoSession.previewBase64}` : null);
+  const hasFrameRecord = markerIsActive && Boolean(videoSession.current);
+  const autoLabelFrameTime = activeFrame?.time ?? annotationTime;
   const autoLabelVideoPath = videoSession.current?.path ?? "";
-  const autoLabelFramePathCacheRef = useRef<Map<string, Promise<string | null>>>(new Map());
   const classPanelSummaries = useMemo(() => analysisClassPanelSummaries(analysisStats), [analysisStats]);
-  const handleGotoTime = useCallback((nextTime: number) => {
-    sampling.setLastSource("manual");
-    videoSession.gotoTime(nextTime);
-  }, [sampling, videoSession]);
-  fallbackPlaybackRef.current.time = videoSession.time;
+  const nextMarkerTime = useMemo(
+    () => annotationTime === null
+      ? null
+      : adjacentVideoMarkerTime(videoSession.timelineMarkers.map((marker) => marker.time), annotationTime, 1),
+    [annotationTime, videoSession.timelineMarkers]
+  );
+  const canDuplicateToNextMarker = hasFrameRecord && activeBoxes.length > 0 && nextMarkerTime !== null;
+  const previewMediaIndexText = activeMediaPosition >= 0 && mediaCount > 0
+    ? `${activeMediaPosition + 1} / ${mediaCount}`
+    : `0 / ${mediaCount}`;
+  const previewReviewLabel = activeReviewed ? "Reviewed" : "Unreviewed";
+  const previewStatusItems = useMemo(
+    () => [
+      formatVideoClock(annotationTime ?? videoSession.time),
+      sourceLabel,
+    ],
+    [annotationTime, sourceLabel, videoSession.time]
+  );
 
-  useEffect(() => {
-    setAnnotationTargetTime(initialVideoAnnotationTargetTime(currentFrameTime, 0));
-    setPlaying(false);
-  }, [currentVideoPath]);
-
-  useEffect(() => {
-    setAnnotationTargetTime((currentTarget) => markerDrivenAnnotationTargetTime(currentTarget, currentFrameTime));
-  }, [currentFrameTime]);
+  const handleDuplicateToNextMarker = useCallback(() => {
+    if (!videoSession.current || annotationTime === null) {
+      videoSession.showError("Select or add a marker before duplicating boxes.", "video.duplicate-next");
+      return;
+    }
+    if (!activeBoxes.length) {
+      videoSession.showError("Current marker has no boxes to duplicate.", "video.duplicate-next");
+      return;
+    }
+    if (nextMarkerTime === null) {
+      videoSession.showError("No next marker to duplicate into.", "video.duplicate-next");
+      return;
+    }
+    videoSession.updateFrameAtTime(nextMarkerTime, activeBoxes, true);
+    selectMarkerTime(nextMarkerTime);
+  }, [activeBoxes, annotationTime, nextMarkerTime, selectMarkerTime, videoSession]);
 
   useEffect(() => {
     autoLabelFramePathCacheRef.current.clear();
@@ -318,9 +387,16 @@ export function VideoBoxLabelSurface({
     const cached = autoLabelFramePathCacheRef.current.get(key);
     if (cached) return cached;
     const outputRoot = `${root.replace(/[\\/]+$/, "")}/.tmp-autolabel-frames`;
-    const pending = saveVideoFrame(autoLabelVideoPath, outputRoot, targetTime, "autolabel", "jpg")
+    const pending = withVideoFrameTimeout(
+      saveVideoFrame(autoLabelVideoPath, outputRoot, targetTime, "autolabel", "jpg"),
+      AUTO_LABEL_FRAME_SAVE_TIMEOUT_MS,
+      "Preparing auto-label frame timed out."
+    )
       .then((path) => workspaceRelativePath(root, path))
-      .catch(() => null);
+      .catch((error) => {
+        autoLabelFramePathCacheRef.current.delete(key);
+        throw error;
+      });
     autoLabelFramePathCacheRef.current.set(key, pending);
     return pending;
   }, [autoLabelFrameTime, autoLabelVideoPath, hasFrameRecord, workspaceRoot]);
@@ -328,18 +404,28 @@ export function VideoBoxLabelSurface({
   const loadBoxesAtVideoTime = videoSession.loadBoxesAtTime;
   const updateVideoFrameAtTime = videoSession.updateFrameAtTime;
   const loadLabelsOverride = useCallback(async (target: BoxLabelEntry) => {
+    if (annotationTime === null || !activeDetectExportEnabled) return [];
     const targetTime = videoFrameEntryTime(target);
+    if (targetTime === null || Math.round(targetTime * 1000) !== Math.round(annotationTime * 1000)) return [];
     return targetTime === null ? [] : loadBoxesAtVideoTime(targetTime);
-  }, [loadBoxesAtVideoTime]);
+  }, [activeDetectExportEnabled, annotationTime, loadBoxesAtVideoTime]);
   const saveLabelsOverride = useCallback(async (target: BoxLabelEntry, boxes: Parameters<typeof videoSession.updateCurrentFrame>[0]) => {
+    if (annotationTime === null) throw new Error("Select or add a marker before saving video labels.");
     const targetTime = videoFrameEntryTime(target);
     if (targetTime === null) throw new Error("Cannot resolve video timestamp for label save.");
+    if (Math.round(targetTime * 1000) !== Math.round(annotationTime * 1000)) {
+      throw new Error("Video marker changed before labels could be saved.");
+    }
     return updateVideoFrameAtTime(targetTime, boxes, true);
-  }, [updateVideoFrameAtTime]);
+  }, [annotationTime, updateVideoFrameAtTime]);
   const assignClassificationClass = useCallback(async (classKey: string | null) => {
+    if (annotationTime === null) {
+      videoSession.showError("Select or add a marker before assigning classification.", "video.clf.assign");
+      return;
+    }
     if (classKey) videoSession.setClfClass(classKey);
     else videoSession.clearClfLabel();
-  }, [videoSession]);
+  }, [annotationTime, videoSession]);
   const handleRandomMarkers = useCallback((count: RandomMultiplier) => {
     const addedTimestamps: number[] = [];
     for (let i = 0; i < count; i++) {
@@ -359,98 +445,54 @@ export function VideoBoxLabelSurface({
   const handleRandomNext = useCallback(() => {
     handleRandomMarkers(1);
   }, [handleRandomMarkers]);
-  const handleAddMarker = useCallback(() => {
-    sampling.setLastSource("manual");
-    setAnnotationTargetTime(videoSession.time);
-    videoSession.markCurrentTimestamp({ kind: "manual" });
-  }, [sampling, videoSession]);
-  const handleVideoPlaybackTimeChange = useCallback((nextTime: number) => {
-    videoSession.gotoTime(nextTime);
-  }, [videoSession]);
-  const handleNativeVideoLoadError = useCallback(() => {
-    const failedPath = videoSession.current?.path;
-    if (!failedPath) return;
-    setPlaying(false);
-    setNativeUnsupportedVideoPaths((paths) => {
+  const handleNativeVideoLoadError = useCallback((error?: { code?: number; message: string }) => {
+    const originalPath = videoSession.current?.path ?? "";
+    const failedPath = nativeVideoPath ?? originalPath;
+    if (!originalPath || !failedPath) return;
+    stopPlayback();
+    setNativeFailedVideoPaths((paths) => {
       if (paths.has(failedPath)) return paths;
       const next = new Set(paths);
       next.add(failedPath);
       return next;
     });
-  }, [videoSession.current?.path]);
-  useEffect(() => {
-    if (!videoSession.current) setPlaying(false);
-  }, [videoSession.current]);
-  useEffect(() => {
-    if (!playing || nativeVideoSupported || !videoSession.current || videoSession.maxTime <= 0) return;
-    fallbackPlaybackRef.current = { time: videoSession.time, lastTick: window.performance.now() };
-    const interval = window.setInterval(() => {
-      const now = window.performance.now();
-      const elapsedSeconds = Math.max(
-        FALLBACK_PLAYBACK_STEP_SECONDS,
-        (now - fallbackPlaybackRef.current.lastTick) / 1000
-      );
-      const nextTime = nextVideoKeyboardTime(
-        fallbackPlaybackRef.current.time,
-        videoSession.maxTime,
-        "seek-forward",
-        elapsedSeconds,
-        false
-      );
-      fallbackPlaybackRef.current = { time: nextTime, lastTick: now };
-      handleGotoTime(nextTime);
-      if (nextTime >= videoSession.maxTime) setPlaying(false);
-    }, FALLBACK_PLAYBACK_INTERVAL_MS);
-    return () => window.clearInterval(interval);
-  }, [handleGotoTime, nativeVideoSupported, playing, videoSession.current, videoSession.maxTime]);
-  useEffect(() => {
-    if (!videoSession.current) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const command = videoFrameKeyboardCommand({
-        key: event.key,
-        code: event.code,
-        ctrlKey: event.ctrlKey,
-        altKey: event.altKey,
-        metaKey: event.metaKey,
-        targetTagName: target?.tagName,
-        targetEditable: Boolean(target?.isContentEditable),
-        selectedBoxId: selectedBoxIdRef.current,
+    if (failedPath !== originalPath || videoProxyByPath.has(originalPath) || videoProxyPendingPaths.has(originalPath) || videoProxyFailedPaths.has(originalPath) || !root) {
+      return;
+    }
+    setVideoProxyPendingPaths((paths) => {
+      const next = new Set(paths);
+      next.add(originalPath);
+      return next;
+    });
+    ensureVideoProxy(root, originalPath)
+      .then((result) => {
+        setVideoProxyByPath((items) => {
+          const next = new Map(items);
+          next.set(originalPath, result.path);
+          return next;
+        });
+        setNativeFailedVideoPaths((paths) => {
+          const next = new Set(paths);
+          next.delete(result.path);
+          return next;
+        });
+      })
+      .catch((reason) => {
+        setVideoProxyFailedPaths((paths) => {
+          const next = new Set(paths);
+          next.add(originalPath);
+          return next;
+        });
+        videoSession.showError(error?.message ? `${error.message} Proxy unavailable: ${reason}` : reason, "video.proxy");
+      })
+      .finally(() => {
+        setVideoProxyPendingPaths((paths) => {
+          const next = new Set(paths);
+          next.delete(originalPath);
+          return next;
+        });
       });
-      if (!command) return;
-      event.preventDefault();
-      if (command === "toggle-playback") {
-        setPlaying((value) => !value);
-        return;
-      }
-      handleGotoTime(
-        nextVideoKeyboardTime(videoSession.time, videoSession.maxTime, command, videoSession.stepSeconds, event.shiftKey)
-      );
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleGotoTime, nativeVideoSupported, videoSession.current, videoSession.maxTime, videoSession.stepSeconds, videoSession.time]);
-  const handleMarkerPointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>, markerTime: number) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setAnnotationTargetTime(markerTime);
-    handleGotoTime(markerTime);
-  }, [handleGotoTime]);
-  const handleTimelinePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!videoSession.current || videoSession.maxTime <= 0) return;
-    const target = event.target as HTMLElement | null;
-    if (target?.closest(".video-frame-timeline-marker")) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    if (rect.width <= 0) return;
-    const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-    event.preventDefault();
-    event.stopPropagation();
-    handleGotoTime(Math.round(ratio * videoSession.maxTime * 1000) / 1000);
-  }, [handleGotoTime, videoSession.current, videoSession.maxTime]);
-  const markerLeftPercent = useCallback((markerTime: number) => {
-    if (videoSession.maxTime <= 0) return 0;
-    return Math.max(0, Math.min(100, (markerTime / videoSession.maxTime) * 100));
-  }, [videoSession.maxTime]);
+  }, [nativeVideoPath, root, stopPlayback, videoProxyByPath, videoProxyFailedPaths, videoProxyPendingPaths, videoSession]);
 
   return (
     <div className="app pool-label react-box-label-page react-box-label-page--embedded react-box-label-page--unified-media video-frame-box-label-page">
@@ -484,31 +526,39 @@ export function VideoBoxLabelSurface({
           onClearClassFilters={() => {}}
           onImageViewModeChange={() => {}}
           onToggleReviewed={async () => {
-            if (videoSession.current) videoSession.updateCurrentFrame(videoSession.boxes, !videoSession.reviewed);
+            if (videoSession.current && annotationTime !== null) videoSession.updateCurrentFrame(activeBoxes, !activeReviewed);
           }}
           onToggleFlagged={async () => {}}
-          detectTaskEnabled={videoSession.detectExportEnabled}
-          clfTaskEnabled={videoSession.clfExportEnabled}
+          detectTaskEnabled={activeDetectExportEnabled}
+          clfTaskEnabled={activeClfExportEnabled}
           onToggleDetectTaskEnabled={async () => {
-            videoSession.toggleDetectExportEnabled();
+            if (annotationTime !== null) videoSession.toggleDetectExportEnabled();
           }}
           onToggleClfTaskEnabled={async () => {
-            videoSession.toggleClfExportEnabled();
+            if (annotationTime !== null) videoSession.toggleClfExportEnabled();
           }}
           onLabelsChanged={() => {}}
           onStatusText={() => {}}
           classPanelSummaries={classPanelSummaries}
           classificationClasses={videoSession.clfClassOptions}
           classificationClassesPortalId="lwbClassifyClassesSlot"
-          currentClassificationKey={videoSession.clfTask?.classKey ?? null}
+          currentClassificationKey={activeClfTask?.classKey ?? null}
           onAssignClassificationClass={assignClassificationClass}
-          imageUrlOverride={fallbackFrameUrl || imageUrlOverride}
+          imageUrlOverride={imageUrlOverride}
           reloadLabelsOnImageUrlChange={false}
-          videoUrlOverride={nativeVideoSupported ? nativeVideoUrl : null}
-          videoPlaybackTime={videoSession.time}
-          videoPlaying={nativeVideoSupported && playing}
+          labelsReloadKey={labelsReloadKey}
+          previewSourceName={videoSession.current?.name ?? "No video selected"}
+          previewIndexText={previewMediaIndexText}
+          previewReviewLabel={previewReviewLabel}
+          previewStatusItems={previewStatusItems}
+          videoUrlOverride={nativeVideoUrl}
+          videoPlaybackTime={playbackTime}
+          videoSeekTime={playbackTime}
+          videoSeekToken={videoSeekToken}
+          videoPlaying={Boolean(nativeVideoUrl && playing)}
+          hideAnnotationsWhilePlaying
           onVideoPlaybackTimeChange={handleVideoPlaybackTimeChange}
-          onVideoEnded={() => setPlaying(false)}
+          onVideoEnded={handleVideoEnded}
           onVideoLoadError={handleNativeVideoLoadError}
           loadLabelsOverride={loadLabelsOverride}
           saveLabelsOverride={saveLabelsOverride}
@@ -518,56 +568,57 @@ export function VideoBoxLabelSurface({
             selectedBoxIdRef.current = selectedBoxId;
             return (
               <div className="video-frame-timeline-overlay">
-                <div className="video-frame-timeline-top">
-                  <button
-                    type="button"
-                    className="video-frame-playback-btn"
-                    disabled={!videoSession.current}
-                    aria-pressed={playing}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      setPlaying((value) => !value);
-                    }}
-                  >
-                    {playing ? "Pause" : "Play"}
-                  </button>
-                  <div
-                    className="video-frame-timeline-marker-row"
-                    aria-label="Video markers"
-                    onPointerDown={handleTimelinePointerDown}
-                  >
-                    {videoSession.timelineMarkers.map((marker) => (
-                      <button
-                        key={marker.key}
-                        type="button"
-                        className={`video-frame-timeline-marker video-frame-timeline-marker--${marker.kind}`}
-                        style={{ left: `${markerLeftPercent(marker.time)}%` }}
-                        title={marker.label}
-                        aria-label={`Go to ${marker.label}`}
-                        onPointerDown={(event) => handleMarkerPointerDown(event, marker.time)}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          setAnnotationTargetTime(marker.time);
-                          handleGotoTime(marker.time);
-                        }}
-                      />
-                    ))}
-                  </div>
+                <div
+                  className="video-frame-timeline-marker-row"
+                  aria-label="Video markers"
+                  onPointerDown={handleTimelinePointerDown}
+                >
+                  {videoSession.timelineMarkers.map((marker) => (
+                    <button
+                      key={marker.key}
+                      type="button"
+                      className={`video-frame-timeline-marker video-frame-timeline-marker--${marker.kind}`}
+                      style={{ left: `${markerLeftPercent(marker.time)}%` }}
+                      title={marker.label}
+                      aria-label={`Go to ${marker.label}`}
+                      onPointerDown={(event) => handleMarkerPointerDown(event, marker.time)}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        selectMarkerTime(marker.time);
+                      }}
+                    />
+                  ))}
                 </div>
                 <input
                   type="range"
                   min="0"
                   max={videoSession.maxTime}
                   step="0.001"
-                  value={Math.min(videoSession.time, videoSession.maxTime)}
+                  value={Math.min(playbackTime, videoSession.maxTime)}
                   disabled={!videoSession.current}
-                  onInput={(event) => handleGotoTime(Number(event.currentTarget.value))}
-                  onChange={(event) => handleGotoTime(Number(event.target.value))}
+                  onInput={(event) => seekPlayerToTime(Number(event.currentTarget.value))}
+                  onChange={(event) => seekPlayerToTime(Number(event.target.value))}
+                  onKeyDown={handleTimelineRangeKeyDown}
+                  onPointerUp={(event) => event.currentTarget.blur()}
                   aria-label="Video timestamp"
                 />
+                <div className="video-frame-timeline-controls">
+                  <button
+                    type="button"
+                    className="video-frame-playback-btn"
+                    disabled={!videoSession.current || !nativeVideoUrl}
+                    aria-pressed={playing}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      togglePlayback();
+                    }}
+                  >
+                    {playing ? "Pause" : "Play"}
+                  </button>
+                </div>
               </div>
             );
           }}
@@ -582,16 +633,16 @@ export function VideoBoxLabelSurface({
             applyAutoLabelPredictions,
             assignClassificationClass: assignOverlayClassificationClass,
             reloadWorkspaceClasses,
+            capturePreviewBase64,
           }) => (
             <div className="lwb-workbench-dock">
               <VideoFrameControlsPanel
-                sourceLabel={sourceLabel}
                 segmentCount={sampling.segmentCount}
                 samplingMode={sampling.samplingMode}
                 minSpacingMs={sampling.minSpacingMs}
                 randomMultiplier={randomMultiplier}
                 current={Boolean(videoSession.current)}
-                annotatedFrameCount={videoSession.annotatedFrames.length}
+                canDuplicateToNext={canDuplicateToNextMarker}
                 hasFrameRecord={hasFrameRecord}
                 videoDurationMs={videoDurationMs}
                 onSamplingModeChange={sampling.setMode}
@@ -600,9 +651,15 @@ export function VideoBoxLabelSurface({
                 onRandom={handleRandom}
                 onRandomNext={handleRandomNext}
                 onAddMarker={handleAddMarker}
-                onCopyPreviousBoxes={videoSession.copyPreviousBoxes}
-                onMarkEmpty={videoSession.markEmptyReviewed}
-                onClearRecord={videoSession.clearFrameRecord}
+                onDuplicateToNext={() => {
+                  handleDuplicateToNextMarker();
+                }}
+                onMarkEmpty={() => {
+                  if (annotationTime !== null) videoSession.markEmptyReviewed();
+                }}
+                onClearRecord={() => {
+                  if (annotationTime !== null) videoSession.clearFrameRecord();
+                }}
               />
               <AutoLabelModelPanel
                 workspaceRoot={workspaceRoot}
@@ -615,9 +672,14 @@ export function VideoBoxLabelSurface({
                 currentClassificationKey={currentClassificationKey}
                 sourceImageBase64={null}
                 sourceImagePath={null}
+                prepareSourceImageBase64={hasFrameRecord ? (target) => {
+                  const targetTime = videoFrameEntryTime(target) ?? annotationTime;
+                  return targetTime === null ? null : waitForVideoPreviewCapture(capturePreviewBase64, targetTime);
+                } : undefined}
                 prepareSourceImagePath={hasFrameRecord ? prepareAutoLabelFramePath : undefined}
-                sourceUnavailableMessage={hasFrameRecord ? "Preparing marker frame..." : "Add a marker or use Random Next to run video Auto Label."}
-                autoRunAllowed={hasFrameRecord && !videoSession.reviewed}
+                requireSourceImageBase64={hasFrameRecord}
+                sourceUnavailableMessage={hasFrameRecord ? "Cannot confirm Auto Label frame matches the visible label frame." : "Add a marker or use Random Next to run video Auto Label."}
+                autoRunAllowed={hasFrameRecord && !activeReviewed}
                 onApplyDetectPredictions={applyAutoLabelPredictions}
                 onAssignClassificationClass={assignOverlayClassificationClass}
                 onClassesChanged={reloadWorkspaceClasses}

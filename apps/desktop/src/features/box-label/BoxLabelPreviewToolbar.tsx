@@ -57,8 +57,8 @@ export function BoxLabelPreviewToolbar({
         id="poolLabelAutoFitToolBtn"
         type="button"
         className={`pool-label-icon-tool${autoFitEnabled ? " active" : ""}`}
-        title="Select (W)"
-        aria-label="Select"
+        title="Color Select (W)"
+        aria-label="Color Select"
         aria-pressed={autoFitEnabled}
         onClick={onToggleAutoFit}
       >
