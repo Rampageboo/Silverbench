@@ -9,6 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from .atomic_write import write_text_atomic
 from .batch_crop import batch_crop_files, batch_crop_images
 from .classification_dataset import create_class_folder, move_images_to_class, move_val_back_to_train
 from .duplicate_images import delete_images, duplicate_images, find_duplicate_images
@@ -763,8 +764,7 @@ class BackendService:
 
     def _handle_writeSessionFile(self, args: list[Any]) -> object:
             json.loads(args[0])
-            self.session_dir.mkdir(parents=True, exist_ok=True)
-            self.session_file.write_text(args[0], encoding="utf-8")
+            write_text_atomic(self.session_file, args[0])
             return str(self.session_file)
 
     def _handle_saveMaskNoiseTempImage(self, args: list[Any]) -> object:
@@ -1332,8 +1332,7 @@ class BackendService:
                 "activeModel": rel_dest,
                 "updatedAt": str(args[3] if len(args) > 3 else ""),
             }
-            registry_path.parent.mkdir(parents=True, exist_ok=True)
-            registry_path.write_text(json.dumps(registry, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            write_text_atomic(registry_path, json.dumps(registry, ensure_ascii=False, indent=2) + "\n")
         return json.dumps(registry, ensure_ascii=False)
 
     def _auto_label_model_registry_path(self, workspace_root: Path) -> Path:
@@ -1383,8 +1382,7 @@ class BackendService:
             changed = True
 
         if changed:
-            registry_path.parent.mkdir(parents=True, exist_ok=True)
-            registry_path.write_text(json.dumps(registry, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            write_text_atomic(registry_path, json.dumps(registry, ensure_ascii=False, indent=2) + "\n")
         return registry
 
     def _read_auto_label_model_registry(self, workspace_root: Path) -> dict[str, Any]:

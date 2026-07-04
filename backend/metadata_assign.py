@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import csv
+import io
 import json
 import re
+import threading
 from pathlib import Path
 from typing import Any, Callable
 
+from .atomic_write import write_text_atomic
 from .path_access import _normalize_path
 from .yolo_workspace import (
     DEFAULT_CLF_CLASSES,
@@ -37,6 +40,36 @@ def _csv_to_bool_default(value: str | None, default: bool) -> bool:
 
 
 INBOX_JUNK_CLASS = "__junk__"
+
+# Serializes read-modify-write of each workspace's metadata.csv so concurrent
+# requests (FastAPI runs sync endpoints in a threadpool) cannot lose updates or
+# interleave writes. Keyed by the resolved metadata path.
+_METADATA_LOCKS_GUARD = threading.Lock()
+_METADATA_LOCKS: dict[str, threading.Lock] = {}
+
+
+def _metadata_lock(metadata_path: Path) -> threading.Lock:
+    key = str(Path(metadata_path).resolve())
+    with _METADATA_LOCKS_GUARD:
+        lock = _METADATA_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _METADATA_LOCKS[key] = lock
+        return lock
+
+
+_METADATA_FIELDNAMES = [
+    "filename",
+    "split",
+    "detect_enabled",
+    "clf_enabled",
+    "clf_class",
+    "detect_junk",
+    "detect_export_enabled",
+    "clf_export_enabled",
+    "reviewed",
+    "flagged",
+]
 
 
 def _add_class_name(classes: list[str], seen: set[str], raw: str) -> None:
@@ -243,6 +276,13 @@ def upsert_metadata_rows(workspace_root: Path, updates: list[dict[str, Any]]) ->
 
     paths = load_workspace_config(workspace_root)
     metadata_path = paths.metadata
+    with _metadata_lock(metadata_path):
+        return _upsert_metadata_rows_locked(workspace_root, metadata_path, updates)
+
+
+def _upsert_metadata_rows_locked(
+    workspace_root: Path, metadata_path: Path, updates: list[dict[str, Any]]
+) -> dict[str, Any]:
     payload = read_metadata_rows(workspace_root)
     by_filename = {row["filename"]: dict(row) for row in payload["rows"]}
 
@@ -301,25 +341,11 @@ def upsert_metadata_rows(workspace_root: Path, updates: list[dict[str, Any]]) ->
             changed += 1
 
     rows = sorted(by_filename.values(), key=lambda row: row["filename"].lower())
-    metadata_path.parent.mkdir(parents=True, exist_ok=True)
-    with metadata_path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(
-            handle,
-            fieldnames=[
-                "filename",
-                "split",
-                "detect_enabled",
-                "clf_enabled",
-                "clf_class",
-                "detect_junk",
-                "detect_export_enabled",
-                "clf_export_enabled",
-                "reviewed",
-                "flagged",
-            ],
-        )
-        writer.writeheader()
-        writer.writerows(rows)
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=_METADATA_FIELDNAMES)
+    writer.writeheader()
+    writer.writerows(rows)
+    write_text_atomic(metadata_path, buffer.getvalue())
 
     return {
         "ok": True,

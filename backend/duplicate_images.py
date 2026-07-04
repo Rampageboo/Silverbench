@@ -121,7 +121,8 @@ def delete_images(root: Path, image_paths: list[str]) -> dict[str, Any]:
     deleted_images: list[str] = []
     deleted_labels: list[str] = []
     skipped: list[str] = []
-    backup_root = root / "originals_before_edit" / f"deleted_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    stamp = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{random.randrange(36**4):04x}"
+    backup_root = root / "originals_before_edit" / f"deleted_{stamp}"
 
     for relative in image_paths:
         image_path = _safe_child_path(root, relative)

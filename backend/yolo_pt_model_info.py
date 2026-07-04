@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from .pt_safety import assert_safe_pt_file
+
 
 def pt_model_info(model_path: Path) -> dict[str, Any]:
     path = model_path.expanduser().resolve()
@@ -16,6 +18,7 @@ def pt_model_info(model_path: Path) -> dict[str, Any]:
     except ImportError as error:
         raise RuntimeError("ultralytics is not installed. Install it with: pip install ultralytics") from error
 
+    assert_safe_pt_file(path)
     model = YOLO(str(path))
     names = _normalize_names(getattr(model, "names", None) or {})
     task = str(getattr(model, "task", "") or "")

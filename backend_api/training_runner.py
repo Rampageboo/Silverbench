@@ -6,10 +6,17 @@ reconnecting clients receive the full history without a file on disk.
 from __future__ import annotations
 
 import asyncio
+import itertools
 import os
 import shlex
+from collections import deque
 from dataclasses import dataclass, field
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Deque, Optional
+
+# Cap the in-memory output buffer so a long training run (hours of per-batch
+# logging) cannot grow memory without bound. Older lines are dropped; the total
+# produced count is tracked separately so SSE clients stay correctly positioned.
+_MAX_BUFFERED_LINES = 5000
 
 
 @dataclass
@@ -18,9 +25,14 @@ class _State:
     stopped: bool = False
     exit_code: Optional[int] = None
     process: Optional[asyncio.subprocess.Process] = None
-    lines: list[str] = field(default_factory=list)
+    lines: Deque[str] = field(default_factory=lambda: deque(maxlen=_MAX_BUFFERED_LINES))
+    produced: int = 0
     command: str = ""
     error: str = ""
+
+    def append_line(self, line: str) -> None:
+        self.lines.append(line)
+        self.produced += 1
 
 
 _state = _State()
@@ -31,7 +43,7 @@ def get_status() -> dict:
         "running": _state.running,
         "stopped": _state.stopped,
         "exitCode": _state.exit_code,
-        "lineCount": len(_state.lines),
+        "lineCount": _state.produced,
         "command": _state.command,
         "error": _state.error,
     }
@@ -75,17 +87,17 @@ async def start(command: str) -> dict:
             assert proc.stdout is not None
             async for raw in proc.stdout:
                 line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
-                _state.lines.append(line)
+                _state.append_line(line)
             _state.exit_code = await proc.wait()
         except FileNotFoundError:
-            _state.lines.append(
+            _state.append_line(
                 f"[error] '{args[0]}' not found. "
                 "Is YOLO (ultralytics) installed in the active Python environment?"
             )
             _state.exit_code = 127
             _state.error = "executable_not_found"
         except Exception as exc:
-            _state.lines.append(f"[error] {exc}")
+            _state.append_line(f"[error] {exc}")
             _state.exit_code = -1
             _state.error = str(exc)
         finally:
@@ -104,23 +116,34 @@ async def stop() -> dict:
     try:
         proc.terminate()
         _state.stopped = True
-        _state.lines.append("[stopped by user]")
+        _state.append_line("[stopped by user]")
         return {"ok": True, "message": "Training terminated."}
     except Exception as exc:
         return {"ok": False, "reason": "error", "message": str(exc)}
 
 
 async def stream_output() -> AsyncGenerator[str, None]:
-    """SSE generator: replay the full buffer then follow live output."""
+    """SSE generator: replay the buffered history then follow live output.
+
+    ``sent`` counts absolute line positions. Because the buffer is bounded, some
+    early lines may have been evicted; when that happens we skip forward to the
+    oldest line still retained instead of re-reading a shifted list by index.
+    """
     sent = 0
     while True:
-        chunk = _state.lines[sent:]
-        for line in chunk:
-            safe = line.replace("\r", "").replace("\n", " ")
-            yield f"data: {safe}\n\n"
-            sent += 1
+        produced = _state.produced
+        buffered = len(_state.lines)
+        oldest_retained = produced - buffered  # absolute index of lines[0]
+        if sent < oldest_retained:
+            sent = oldest_retained
+        if sent < produced:
+            start = sent - oldest_retained
+            for line in itertools.islice(list(_state.lines), start, None):
+                safe = line.replace("\r", "").replace("\n", " ")
+                yield f"data: {safe}\n\n"
+                sent += 1
 
-        if not _state.running and sent >= len(_state.lines):
+        if not _state.running and sent >= _state.produced:
             code = _state.exit_code if _state.exit_code is not None else -1
             yield f"event: done\ndata: {code}\n\n"
             return

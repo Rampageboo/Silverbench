@@ -5,6 +5,8 @@ import hashlib
 import mimetypes
 import shutil
 import subprocess
+import threading
+import uuid
 from contextlib import asynccontextmanager
 from io import BytesIO
 from pathlib import Path
@@ -20,6 +22,8 @@ from starlette.responses import Response
 from PIL import Image, ImageOps
 from pydantic import BaseModel, Field, field_validator
 
+from backend.atomic_write import write_text_atomic
+from backend.image_safety import ImageTooLargeError, ensure_safe_image_size
 from backend.image_pool import scan_image_pool
 from backend.dataset_merge import VIDEO_EXTENSIONS
 from backend.metadata_assign import get_workspace_classes, upsert_metadata_rows
@@ -38,6 +42,10 @@ API_SCHEMA_VERSION = 22
 
 # Localhost-only desktop backend: allow any registered service method except heartbeat/private.
 BLOCKED_API_METHODS = frozenset({HEARTBEAT_METHOD})
+
+# Guards concurrent proxy transcodes for the same output file.
+_VIDEO_PROXY_LOCKS_GUARD = threading.Lock()
+_VIDEO_PROXY_LOCKS: dict[str, threading.Lock] = {}
 
 
 class ApiCallRequest(BaseModel):
@@ -348,6 +356,16 @@ def video_frame_preview(
     )
 
 
+def _video_proxy_lock(proxy_path: Path) -> threading.Lock:
+    key = str(proxy_path)
+    with _VIDEO_PROXY_LOCKS_GUARD:
+        lock = _VIDEO_PROXY_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _VIDEO_PROXY_LOCKS[key] = lock
+        return lock
+
+
 @app.post("/api/video/proxy")
 def video_proxy(payload: VideoProxyRequest) -> JSONResponse:
     paths, video_path = _workspace_video_path_for_http(payload.workspaceRoot, payload.path)
@@ -367,8 +385,23 @@ def video_proxy(payload: VideoProxyRequest) -> JSONResponse:
             detail="ffmpeg is not available. Install ffmpeg to generate browser-compatible video proxies.",
         )
 
+    # Serialize concurrent requests for the same proxy so two transcodes don't
+    # race on the output; the second caller then sees the finished file.
+    with _video_proxy_lock(proxy_path):
+        if proxy_path.is_file() and proxy_path.stat().st_size > 0:
+            return JSONResponse({
+                "ok": True,
+                "path": str(proxy_path),
+                "sourcePath": str(video_path),
+                "cached": True,
+            })
+        return _transcode_video_proxy(ffmpeg, video_path, proxy_path)
+
+
+def _transcode_video_proxy(ffmpeg: str, video_path: Path, proxy_path: Path) -> JSONResponse:
     proxy_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = proxy_path.with_suffix(".tmp.mp4")
+    # Per-call unique temp name so distinct sources / retries never collide.
+    tmp_path = proxy_path.with_name(f"{proxy_path.stem}.{uuid.uuid4().hex}.tmp.mp4")
     try:
         command = [
             ffmpeg,
@@ -482,6 +515,7 @@ def video_source(
     headers = {
         "Accept-Ranges": "bytes",
         "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
     }
     range_header = request.headers.get("range")
     if not range_header:
@@ -516,11 +550,11 @@ def label_classes_save(payload: SaveClassesRequest) -> JSONResponse:
     names = [by_id.get(index, "") for index in range(max_id + 1)]
     classes_text = "\n".join(names) + "\n"
     data_yaml_text = _data_yaml_text(names)
-    (paths.root / "classes.txt").write_text(classes_text, encoding="utf-8")
-    (paths.root / "data.yaml").write_text(data_yaml_text, encoding="utf-8")
+    write_text_atomic(paths.root / "classes.txt", classes_text)
+    write_text_atomic(paths.root / "data.yaml", data_yaml_text)
     detect_data_yaml = paths.root / "detect_dataset" / "data.yaml"
     if detect_data_yaml.parent.is_dir():
-        detect_data_yaml.write_text(data_yaml_text, encoding="utf-8")
+        write_text_atomic(detect_data_yaml, data_yaml_text)
     saved = [{"id": item.id, "name": item.name.strip()} for item in classes if item.name.strip()]
     return JSONResponse({"ok": True, "workspaceRoot": str(paths.root), "classes": saved})
 
@@ -559,9 +593,8 @@ def label_save(payload: SaveLabelsRequest) -> JSONResponse:
     paths = _workspace_paths_for_http(payload.workspaceRoot)
     image_path = _image_pool_file_from_paths(paths, payload.filename)
     label_path = _primary_label_path(paths, image_path.name)
-    label_path.parent.mkdir(parents=True, exist_ok=True)
     text = _boxes_to_yolo_text(payload.boxes)
-    label_path.write_text(text, encoding="utf-8")
+    write_text_atomic(label_path, text)
     return JSONResponse(
         {
             "ok": True,
@@ -835,6 +868,7 @@ def _jpeg_response(path: Path, *, max_edge: int, quality: int, cache_path: Path 
 
     try:
         with Image.open(path) as image:
+            ensure_safe_image_size(image)
             image = ImageOps.exif_transpose(image)
             image.thumbnail((max_edge, max_edge))
             if image.mode != "RGB":
@@ -842,6 +876,8 @@ def _jpeg_response(path: Path, *, max_edge: int, quality: int, cache_path: Path 
             buffer = BytesIO()
             image.save(buffer, format="JPEG", quality=quality, optimize=True)
             payload = buffer.getvalue()
+    except ImageTooLargeError as error:
+        raise HTTPException(status_code=413, detail=str(error)) from error
     except Exception as error:
         raise HTTPException(status_code=500, detail=f"Failed to render image: {error}") from error
 

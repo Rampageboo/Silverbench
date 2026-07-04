@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .atomic_write import write_text_atomic
+
 SNAPSHOT_MANIFEST_FILENAME = "workspace_versions.json"
 SNAPSHOT_MANIFEST_VERSION = 1
 SNAPSHOT_MANIFEST_TYPE = "yolo-workbench-snapshot-versions"
@@ -83,7 +85,7 @@ def write_snapshot_versions(workspace_root: Path, manifest: dict[str, Any]) -> d
     root = workspace_root.expanduser().resolve()
     normalized = validate_snapshot_versions_manifest(manifest)
     path = snapshot_manifest_path(root)
-    path.write_text(json.dumps(normalized, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    write_text_atomic(path, json.dumps(normalized, indent=2, ensure_ascii=False) + "\n")
     return normalized
 
 
@@ -105,10 +107,17 @@ def resolve_version_path(workspace_root: Path, version_id: str) -> Path:
     manifest = read_snapshot_versions(root)
     for entry in manifest["versions"]:
         if entry["id"] == normalized_id:
-            path = Path(str(entry.get("path") or normalized_id))
-            if not path.is_absolute():
-                path = root / path
-            return path.resolve()
+            raw_path = str(entry.get("path") or normalized_id)
+            path = Path(raw_path)
+            # Version folders must live inside the workspace. Reject absolute or
+            # traversing paths so a tampered manifest cannot redirect the active
+            # workspace to an arbitrary directory on disk.
+            if path.is_absolute() or ".." in path.parts:
+                raise ValueError(f"Workspace version path must be inside the workspace: {raw_path}")
+            resolved = (root / path).resolve()
+            if resolved != root and root not in resolved.parents:
+                raise ValueError(f"Workspace version path escapes the workspace: {raw_path}")
+            return resolved
     raise ValueError(f"Workspace version does not exist: {normalized_id}")
 
 

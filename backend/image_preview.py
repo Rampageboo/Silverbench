@@ -7,6 +7,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from .image_safety import ensure_safe_image_size
 from .yolo_workspace import IMAGE_EXTENSIONS
 
 
@@ -19,6 +20,7 @@ def image_scaled_jpeg_base64(path: Path, max_edge: int = 1280, quality: int = 70
     edge = max(256, min(int(max_edge), 4096))
     jpeg_quality = max(35, min(int(quality), 92))
     with Image.open(path) as image:
+        ensure_safe_image_size(image)
         preview = image.convert("RGB")
         if max(preview.size) > edge:
             preview.thumbnail((edge, edge))
@@ -57,6 +59,7 @@ def image_thumbnail_jpeg_base64(
             cache_path = None
 
     with Image.open(path) as image:
+        ensure_safe_image_size(image)
         preview = image.convert("RGB")
         preview.thumbnail((size, size))
         buffer = io.BytesIO()

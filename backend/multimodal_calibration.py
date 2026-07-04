@@ -10,6 +10,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 APRILTAG_DICTIONARY_NAME = "DICT_APRILTAG_36h11"
 CALIBRATION_TAG_IDS = (0, 1, 2, 3)
+# Reject decoded frames whose pixel count would risk memory exhaustion.
+_MAX_CALIBRATION_IMAGE_PIXELS = 60_000_000
 
 
 def _dictionary():
@@ -51,6 +53,12 @@ def decode_image_base64(value: str):
     image = cv2.imdecode(data, cv2.IMREAD_COLOR)
     if image is None:
         raise ValueError("Cannot decode camera image.")
+    height, width = image.shape[:2]
+    if width * height > _MAX_CALIBRATION_IMAGE_PIXELS:
+        raise ValueError(
+            f"Camera image is too large ({width}x{height}); "
+            f"limit is {_MAX_CALIBRATION_IMAGE_PIXELS:,} pixels."
+        )
     return image
 
 
