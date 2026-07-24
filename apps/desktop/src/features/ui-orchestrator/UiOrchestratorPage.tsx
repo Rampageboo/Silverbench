@@ -39,6 +39,7 @@ import {
 import {
   validateDoc,
   type Associate,
+  type DecisionResult,
   type DetBox,
   type Element,
   type Page,
@@ -46,6 +47,7 @@ import {
   type Repeat,
   type UiOrchestrationDoc
 } from "./schema";
+import { FlowGraphPanel } from "./FlowGraphPanel";
 import "./uiOrchestrator.css";
 
 type UiOrchestratorPageProps = {
@@ -162,6 +164,9 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
   const [clfModelPath, setClfModelPath] = useState("");
   const [predictions, setPredictions] = useState<Predictions | null>(null);
   const [predicting, setPredicting] = useState(false);
+  const [mode, setMode] = useState<"pages" | "flow">("pages");
+  const [activeFlowId, setActiveFlowId] = useState<string | null>(null);
+  const [decision, setDecision] = useState<DecisionResult | null>(null);
   const [referenceBoxesByPage, setReferenceBoxesByPage] = useState<Record<string, Record<string, ImageRect>>>(
     {}
   );
@@ -341,7 +346,42 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
         ctx.restore();
       }
     }
-  }, [canvasBoxes, canvasClasses, canvasDrag, predictions, selectedCanvasIndex]);
+
+    // Decision-preview overlay: the intended target box + crosshair at the
+    // intended click point (schema §5 center). Intent only — never dispatched.
+    if (display && decision?.intended && predW > 0 && predH > 0) {
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.save();
+        const target = decision.intended;
+        const rect = boxToCanvasRect(
+          {
+            x1: target.box[0] / predW,
+            y1: target.box[1] / predH,
+            x2: target.box[2] / predW,
+            y2: target.box[3] / predH
+          },
+          display
+        );
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([]);
+        ctx.strokeStyle = "#34d399";
+        ctx.strokeRect(rect.x1, rect.y1, rect.x2 - rect.x1, rect.y2 - rect.y1);
+        const px = display.x + (target.point[0] / predW) * display.w;
+        const py = display.y + (target.point[1] / predH) * display.h;
+        ctx.beginPath();
+        ctx.moveTo(px - 10, py);
+        ctx.lineTo(px + 10, py);
+        ctx.moveTo(px, py - 10);
+        ctx.lineTo(px, py + 10);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(px, py, 5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }, [canvasBoxes, canvasClasses, canvasDrag, decision, predictions, selectedCanvasIndex]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -758,6 +798,25 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
           </p>
         </div>
         <div className="uio-header-actions">
+          <div className="uio-mode-toggle" role="tablist">
+            <button
+              type="button"
+              className={mode === "pages" ? "active" : ""}
+              onClick={() => setMode("pages")}
+            >
+              Pages
+            </button>
+            <button
+              type="button"
+              className={mode === "flow" ? "active" : ""}
+              onClick={() => {
+                setMode("flow");
+                if (!activeFlowId && doc.flows[0]) setActiveFlowId(doc.flows[0].id);
+              }}
+            >
+              Flow
+            </button>
+          </div>
           <label>
             <span>Map name</span>
             <input value={mapName} onChange={(event) => setMapName(event.target.value)} />
@@ -961,6 +1020,7 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
           </div>
         </main>
 
+        {mode === "pages" ? (
         <aside className="uio-panel uio-elements-panel">
           <div className="uio-panel-heading">
             <div>
@@ -1204,6 +1264,17 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
             )}
           </div>
         </aside>
+        ) : (
+          <FlowGraphPanel
+            doc={doc}
+            activeFlowId={activeFlowId}
+            predictions={predictions}
+            onChange={(updater) => setDoc(updater)}
+            onSelectFlow={setActiveFlowId}
+            onDecision={setDecision}
+            setStatus={setStatus}
+          />
+        )}
       </div>
     </section>
   );

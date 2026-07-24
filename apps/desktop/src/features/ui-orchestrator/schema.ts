@@ -162,6 +162,13 @@ export interface Predictions {
   ocr?: OcrRead[];
 }
 
+// Result of the preview interpreter (schema §12).
+export interface DecisionResult {
+  outcome: EndOutcome | "Indeterminate";
+  intended?: { element: string; box: [number, number, number, number]; point: [number, number] };
+  trace: string[];
+}
+
 export type ValidationResult = { ok: true } | { ok: false; errors: string[] };
 
 type UnknownRecord = Record<string, unknown>;

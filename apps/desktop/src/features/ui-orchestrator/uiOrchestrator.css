@@ -341,6 +341,123 @@
   margin-top: 5px;
 }
 
+.uio-mode-toggle {
+  display: inline-flex;
+  gap: 0;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.uio-mode-toggle button {
+  min-height: 30px;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.uio-mode-toggle button.active {
+  background: linear-gradient(180deg, #2563eb, #1d4ed8) !important;
+  color: white;
+}
+
+.uio-flow-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.uio-flow-select select {
+  flex: 1;
+}
+
+.uio-node-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.uio-node-add button {
+  min-height: 26px;
+  font-size: 10px;
+}
+
+.uio-node-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.uio-node-card {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  padding: 7px;
+  background: rgba(15, 27, 45, 0.5);
+}
+
+.uio-node-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.uio-node-kind {
+  min-width: 58px;
+  color: #60a5fa;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.uio-node-id {
+  flex: 1;
+}
+
+.uio-node-fields {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.uio-node-json {
+  width: 100%;
+  min-height: 96px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  box-sizing: border-box;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 7px;
+  color: #dbeafe;
+  background: rgba(6, 12, 22, 0.85);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  resize: vertical;
+}
+
+.uio-edge-list {
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.uio-edge-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.uio-flow-errors {
+  max-height: 180px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: #fecaca;
+  font-size: 11px;
+}
+
 @media (max-width: 1150px) {
   .uio-workspace {
     grid-template-columns: 220px minmax(360px, 1fr) 280px;
