@@ -69,6 +69,7 @@ _METADATA_FIELDNAMES = [
     "clf_export_enabled",
     "reviewed",
     "flagged",
+    "next_train",
 ]
 
 
@@ -236,6 +237,7 @@ def read_metadata_rows(workspace_root: Path) -> dict[str, Any]:
                         ),
                         "reviewed": _bool_to_csv(_csv_to_bool(raw.get("reviewed") or "")),
                         "flagged": _bool_to_csv(_csv_to_bool(raw.get("flagged") or "")),
+                        "next_train": _bool_to_csv(_csv_to_bool(raw.get("next_train") or "")),
                     }
                 )
     detect_classes = list_detect_dataset_classes(root)
@@ -306,6 +308,7 @@ def _upsert_metadata_rows_locked(
                 "clf_export_enabled": "1",
                 "reviewed": "0",
                 "flagged": "0",
+                "next_train": "0",
             }
         if "split" in item and item["split"]:
             split = str(item["split"]).strip().lower()
@@ -334,6 +337,8 @@ def _upsert_metadata_rows_locked(
             row["reviewed"] = _bool_to_csv(_value_to_bool(item["reviewed"]))
         if "flagged" in item:
             row["flagged"] = _bool_to_csv(_value_to_bool(item["flagged"]))
+        if "next_train" in item:
+            row["next_train"] = _bool_to_csv(_value_to_bool(item["next_train"]))
         by_filename[filename] = row
         if is_new:
             created += 1

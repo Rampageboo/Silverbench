@@ -22,6 +22,7 @@ export type MetadataRow = {
   clf_export_enabled?: boolean;
   reviewed?: boolean;
   flagged?: boolean;
+  next_train?: boolean;
 };
 
 export type ImagePoolUiSession = {

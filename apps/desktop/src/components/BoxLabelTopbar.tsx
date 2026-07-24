@@ -7,11 +7,13 @@ type BoxLabelTopbarProps = {
   reviewedLabel?: string;
   reviewedActive?: boolean;
   flagged?: boolean;
+  nextTraining?: boolean;
   onOpenWorkspace: () => void;
   onMarkJunk: () => void;
   onUndoJunk: () => void;
   onToggleReviewed?: () => void;
   onToggleFlagged?: () => void;
+  onToggleNextTraining?: () => void;
 };
 
 export function BoxLabelTopbar({
@@ -23,11 +25,13 @@ export function BoxLabelTopbar({
   reviewedLabel = "Reviewed",
   reviewedActive = false,
   flagged = false,
+  nextTraining = false,
   onOpenWorkspace,
   onMarkJunk,
   onUndoJunk,
   onToggleReviewed,
-  onToggleFlagged
+  onToggleFlagged,
+  onToggleNextTraining
 }: BoxLabelTopbarProps) {
   return (
     <header className="topbar react-box-label-topbar">
@@ -54,6 +58,18 @@ export function BoxLabelTopbar({
             onClick={() => onToggleFlagged()}
           >
             {flagged ? "Flagged" : "Flag"}
+          </button>
+        ) : null}
+        {onToggleNextTraining ? (
+          <button
+            type="button"
+            id="nextTrainingBtn"
+            className={nextTraining ? "primary next-training-active" : ""}
+            aria-pressed={nextTraining}
+            title="Include this image in the next training batch"
+            onClick={() => onToggleNextTraining()}
+          >
+            {nextTraining ? "★ Next Training" : "☆ Next Training"}
           </button>
         ) : null}
         {canMarkJunk ? (

@@ -128,13 +128,13 @@ export type BoxLabelViewProps = {
   onToolStateChange?: (pointerToolEnabled: boolean, autoFitEnabled: boolean) => void;
   includeClasses: Set<number>;
   excludeClasses: Set<number>;
-  imageViewMode: "all" | "hideReviewed" | "flagged";
+  imageViewMode: "all" | "hideReviewed" | "flagged" | "nextTraining";
   metadata: Map<string, MetadataRow>;
   classImageCounts: Map<number, number>;
   onAddIncludeClass: (classId: number) => void;
   onAddExcludeClass: (classId: number) => void;
   onClearClassFilters: () => void;
-  onImageViewModeChange: (mode: "all" | "hideReviewed" | "flagged") => void;
+  onImageViewModeChange: (mode: "all" | "hideReviewed" | "flagged" | "nextTraining") => void;
   onToggleReviewed: () => Promise<void>;
   onToggleFlagged: () => Promise<void>;
   detectTaskEnabled?: boolean;

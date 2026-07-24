@@ -1,7 +1,7 @@
 import React, { useRef, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { errMessage } from "../../lib/errors";
-import { isFlaggedFile, isReviewedFile } from "../image-pool/metadata";
+import { isFlaggedFile, isNextTrainingFile, isReviewedFile } from "../image-pool/metadata";
 import type { BoxLabelViewProps } from "./boxLabelTypes";
 import { BoxLabelPreviewToolbar } from "./BoxLabelPreviewToolbar";
 import { BoxLabelShortcutDropdown } from "./BoxLabelShortcutDropdown";
@@ -572,7 +572,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     : isReviewedFile(currentMetadata)
       ? "Reviewed"
       : "Unreviewed");
-  const previewStatusItems = props.previewStatusItems ?? [];
+  const previewStatusItems = props.previewStatusItems ?? (isNextTrainingFile(currentMetadata) ? ["★ Next training"] : []);
   function renderTaskLight(
     label: string,
     titleText: string,

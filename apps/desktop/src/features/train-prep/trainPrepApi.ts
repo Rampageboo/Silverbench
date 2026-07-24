@@ -2,12 +2,14 @@ import {
   callJson,
   getWorkspaceInfo,
   listDatasetFiles,
+  readMetadataRows,
   type BackendMethod,
   type WorkspaceInfo
 } from "../../api";
 import { backendBaseUrl } from "../../lib/backendConfig";
 
 export type DatasetTask = "detect" | "classify";
+export type TrainPrepMetadataRow = Record<string, unknown>;
 
 export type TrainPrepResult = {
   ok?: boolean;
@@ -38,11 +40,45 @@ function rpc<T>(method: BackendMethod, args: unknown[] = []) {
 
 export async function loadTrainPrepWorkspace(workspaceRoot: string) {
   const info = await getWorkspaceInfo(workspaceRoot);
-  const [detectFiles, classifyFiles] = await Promise.all([
+  const [detectFiles, classifyFiles, metadata] = await Promise.all([
     info.detectDataset ? listDatasetFiles(info.detectDataset).catch(() => []) : Promise.resolve([]),
-    info.clfDataset ? listDatasetFiles(info.clfDataset).catch(() => []) : Promise.resolve([])
+    info.clfDataset ? listDatasetFiles(info.clfDataset).catch(() => []) : Promise.resolve([]),
+    readMetadataRows(workspaceRoot).catch(() => ({ rows: [] }))
   ]);
-  return { info, detectFiles, classifyFiles };
+  return { info, detectFiles, classifyFiles, metadataRows: metadata.rows ?? [] };
+}
+
+function truthyMetadataFlag(value: unknown) {
+  return value === true || value === 1 || String(value ?? "").trim().toLowerCase() === "true" || String(value ?? "").trim() === "1";
+}
+
+function metadataFlagEnabledByDefault(value: unknown) {
+  return value == null || value === "" ? true : truthyMetadataFlag(value);
+}
+
+export function nextTrainingFilenames(rows: TrainPrepMetadataRow[], task: DatasetTask) {
+  return rows.flatMap((row) => {
+    const filename = String(row.filename ?? "").trim();
+    if (!filename || !truthyMetadataFlag(row.next_train)) return [];
+    if (task === "detect") {
+      const ready =
+        truthyMetadataFlag(row.detect_enabled) &&
+        !truthyMetadataFlag(row.detect_junk) &&
+        metadataFlagEnabledByDefault(row.detect_export_enabled);
+      return ready ? [filename] : [];
+    }
+    const className = String(row.clf_class ?? "").trim();
+    const ready =
+      truthyMetadataFlag(row.clf_enabled) &&
+      Boolean(className) &&
+      className !== "__junk__" &&
+      metadataFlagEnabledByDefault(row.clf_export_enabled);
+    return ready ? [filename] : [];
+  });
+}
+
+export function nextTrainingStarCount(rows: TrainPrepMetadataRow[]) {
+  return rows.filter((row) => truthyMetadataFlag(row.next_train) && String(row.filename ?? "").trim()).length;
 }
 
 export function datasetRootForTask(info: WorkspaceInfo | null, task: DatasetTask) {

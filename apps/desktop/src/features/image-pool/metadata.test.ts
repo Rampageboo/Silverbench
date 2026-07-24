@@ -6,6 +6,7 @@ import {
   isDetectJunk,
   isFlaggedFile,
   isJunkFile,
+  isNextTrainingFile,
   isReviewedFile,
   isTaskExportEnabled,
   junkLabelForFile,
@@ -46,9 +47,10 @@ describe("metadata flags", () => {
   });
 
   it("reviewed and flagged helpers", () => {
-    const row: MetadataRow = { filename: "c.jpg", reviewed: true, flagged: true };
+    const row: MetadataRow = { filename: "c.jpg", reviewed: true, flagged: true, next_train: true };
     expect(isReviewedFile(row)).toBe(true);
     expect(isFlaggedFile(row)).toBe(true);
+    expect(isNextTrainingFile(row)).toBe(true);
   });
 
   it("junkLabelForFile describes scope", () => {
@@ -93,6 +95,7 @@ describe("loadMetadataMap", () => {
           filename: "img.jpg",
           reviewed: "1",
           flagged: 1,
+          next_train: "1",
           detect_junk: "1",
           detect_enabled: true,
           detect_export_enabled: "0",
@@ -114,7 +117,8 @@ describe("loadMetadataMap", () => {
       detect_export_enabled: false,
       clf_export_enabled: true,
       reviewed: true,
-      flagged: true
+      flagged: true,
+      next_train: true
     });
   });
 });

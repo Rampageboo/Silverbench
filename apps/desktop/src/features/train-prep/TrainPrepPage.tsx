@@ -5,17 +5,21 @@ import { useRunWithConfirm } from "../../components/workbench/useRunWithConfirm"
 import { useToast } from "../../components/useToast";
 import { errMessage } from "../../lib/errors";
 import type { WorkspaceInfo } from "../../api";
+import { runBuildYoloLinksJob } from "../inbox/buildJob";
 import {
   datasetRootForTask,
   ensureTrainPrepDataYaml,
   getTrainingStatus,
   loadTrainPrepWorkspace,
   moveTrainPrepValBackToTrain,
+  nextTrainingFilenames,
+  nextTrainingStarCount,
   prepareTrainPrepValidationSplit,
   startTraining,
   stopTraining,
   trainingStreamUrl,
   type DatasetTask,
+  type TrainPrepMetadataRow,
   type TrainPrepResult
 } from "./trainPrepApi";
 
@@ -27,6 +31,7 @@ type LoadState = {
   info: WorkspaceInfo | null;
   detectFiles: string[];
   classifyFiles: string[];
+  metadataRows: TrainPrepMetadataRow[];
 };
 
 type CmdMode = "train" | "continue" | "export";
@@ -43,7 +48,8 @@ function formatElapsed(seconds: number) {
 const DEFAULT_LOAD_STATE: LoadState = {
   info: null,
   detectFiles: [],
-  classifyFiles: []
+  classifyFiles: [],
+  metadataRows: []
 };
 
 function clampRatio(value: number) {
@@ -273,6 +279,11 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
   const detect = detectStats(state.detectFiles);
   const classify = classifyStats(state.classifyFiles);
   const totalFiles = state.detectFiles.length + state.classifyFiles.length;
+  const starredCount = nextTrainingStarCount(state.metadataRows);
+  const readyNextTraining = useMemo(
+    () => nextTrainingFilenames(state.metadataRows, task),
+    [state.metadataRows, task]
+  );
   const pending = loading || running;
 
   // Auto-generated YOLO command
@@ -386,6 +397,39 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
     );
   }
 
+  function handleBuildNextTrainingBatch() {
+    if (!readyNextTraining.length) {
+      showToast(
+        starredCount
+          ? `No starred images are ready for ${task === "detect" ? "Detection" : "Classification"}. Add the required label first.`
+          : "Star images in Label before preparing the next training batch.",
+        { variant: "warning" }
+      );
+      return;
+    }
+    void runOperation(
+      `Preparing ${readyNextTraining.length} starred image(s)…`,
+      async () => {
+        const result = await runBuildYoloLinksJob(
+          workspaceRoot,
+          false,
+          JSON.stringify(readyNextTraining),
+          (done, total, detail) => {
+            setOpStatus(`Starred batch ${done}/${total}${detail ? ` · ${detail}` : ""}`);
+          }
+        );
+        const built = result.builtFilenames?.length ?? 0;
+        const errors = result.errors ?? [];
+        return {
+          ok: errors.length === 0,
+          message: `Prepared ${built} starred image(s) for the ${task === "detect" ? "Detection" : "Classification"} dataset.`,
+          skipped: Math.max(0, readyNextTraining.length - built),
+          failures: errors,
+        };
+      }
+    );
+  }
+
   const wsName = state.info?.name || (workspaceRoot ? workspaceRoot.split(/[\\/]/).pop() : "");
 
   return (
@@ -411,6 +455,31 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
                 {loading ? "Loading…" : "Refresh"}
               </button>
             </div>
+          </div>
+
+          <div className="tp-divider" />
+
+          <div className="tp-section">
+            <p className="tp-section-title">★ Next Training Batch</p>
+            <div className="info-card tp-next-training-card">
+              <StatRow label="Starred images" value={starredCount} accent={starredCount > 0} />
+              <StatRow
+                label={`Ready for ${task === "detect" ? "Detection" : "Classification"}`}
+                value={readyNextTraining.length}
+                accent={readyNextTraining.length > 0}
+              />
+              <button
+                type="button"
+                className="primary"
+                onClick={handleBuildNextTrainingBatch}
+                disabled={pending || !workspaceRoot.trim() || readyNextTraining.length === 0}
+              >
+                Prepare Starred Batch
+              </button>
+            </div>
+            <p className="hint">
+              Starred images stay queued after preparation, so a failed or repeated training run does not lose the selection.
+            </p>
           </div>
 
           <div className="tp-divider" />

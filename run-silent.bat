@@ -31,7 +31,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-python -c "import fastapi, uvicorn, ultralytics" >nul 2>nul
+python -c "import fastapi, uvicorn, ultralytics, mcp" >nul 2>nul
 if errorlevel 1 (
     python -m pip install -r "requirements.txt" >>"%LOG_FILE%" 2>&1
     rem requirements.txt owns heavy runtime deps; keep this from replacing torch/cv2.

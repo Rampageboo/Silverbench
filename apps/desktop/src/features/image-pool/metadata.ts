@@ -22,7 +22,8 @@ function normalizeMetadataRow(row: Record<string, unknown>): MetadataRow {
     detect_export_enabled: optionalTruthyFlag(row.detect_export_enabled),
     clf_export_enabled: optionalTruthyFlag(row.clf_export_enabled),
     reviewed: truthyFlag(row.reviewed),
-    flagged: truthyFlag(row.flagged)
+    flagged: truthyFlag(row.flagged),
+    next_train: truthyFlag(row.next_train)
   };
 }
 
@@ -51,6 +52,10 @@ export function isReviewedFile(row: MetadataRow | undefined) {
 
 export function isFlaggedFile(row: MetadataRow | undefined) {
   return Boolean(row?.flagged);
+}
+
+export function isNextTrainingFile(row: MetadataRow | undefined) {
+  return Boolean(row?.next_train);
 }
 
 export function isTaskExportEnabled(row: MetadataRow | undefined, task: "detect" | "clf") {
@@ -223,7 +228,8 @@ export async function restoreMetadataSnapshots(
       detect_export_enabled: row.detect_export_enabled,
       clf_export_enabled: row.clf_export_enabled,
       reviewed: row.reviewed,
-      flagged: row.flagged
+      flagged: row.flagged,
+      next_train: row.next_train
     };
   });
   await callJson("upsertMetadataRows", [workspaceRoot, JSON.stringify(updates)]);
@@ -232,7 +238,7 @@ export async function restoreMetadataSnapshots(
 export async function setMetadataFlags(
   workspaceRoot: string,
   filenames: string[],
-  flags: Partial<Pick<MetadataRow, "reviewed" | "flagged">>
+  flags: Partial<Pick<MetadataRow, "reviewed" | "flagged" | "next_train">>
 ) {
   const updates = [...new Set(filenames)].map((filename) => ({ filename, ...flags }));
   if (updates.length) {

@@ -7,6 +7,7 @@ import {
   isClfJunk,
   isDetectJunk,
   isFlaggedFile,
+  isNextTrainingFile,
   isReviewedFile,
   isTaskExportEnabled,
   loadMetadataMap,
@@ -94,7 +95,7 @@ export function useBoxLabel({
   const [datasetDetectPoints, setDatasetDetectPoints] = useState<DatasetDetectPoint[]>([]);
   const [includeClasses, setIncludeClasses] = useState<Set<number>>(new Set());
   const [excludeClasses, setExcludeClasses] = useState<Set<number>>(new Set());
-  const [imageViewMode, setImageViewMode] = useState<"all" | "hideReviewed" | "flagged">("all");
+  const [imageViewMode, setImageViewMode] = useState<"all" | "hideReviewed" | "flagged" | "nextTraining">("all");
   const [currentIndex, setCurrentIndex] = useState(0);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -133,6 +134,7 @@ export function useBoxLabel({
       if (isDetectJunk(row)) return false;
       if (imageViewMode === "hideReviewed" && isReviewedFile(row)) return false;
       if (imageViewMode === "flagged" && !isFlaggedFile(row)) return false;
+      if (imageViewMode === "nextTraining" && !isNextTrainingFile(row)) return false;
       return true;
     });
   }, [allEntries, excludeClasses, imageViewMode, includeClasses, labelIndex, metadata]);
@@ -584,6 +586,20 @@ export function useBoxLabel({
     setMetadata(await loadMetadataMap(root));
   }, [metadata, root, selectedOrCurrentBasenames]);
 
+  const toggleNextTraining = useCallback(async () => {
+    if (!root) return;
+    const names = selectedOrCurrentBasenames();
+    if (!names.length) return;
+    const shouldQueue = names.some((name) => !isNextTrainingFile(metadata.get(name)));
+    await setMetadataFlags(root, names, { next_train: shouldQueue });
+    setMetadata(await loadMetadataMap(root));
+    setStatusText(
+      shouldQueue
+        ? `Added ${names.length} image(s) to the next training batch.`
+        : `Removed ${names.length} image(s) from the next training batch.`
+    );
+  }, [metadata, root, selectedOrCurrentBasenames]);
+
   const reloadMetadata = useCallback(async () => {
     if (!root) return;
     setMetadata(await loadMetadataMap(root));
@@ -798,6 +814,7 @@ export function useBoxLabel({
     setImageViewMode,
     toggleReviewed,
     toggleFlagged,
+    toggleNextTraining,
     updateLabelIndexForFile,
     reloadMetadata,
     assignClassificationClass,

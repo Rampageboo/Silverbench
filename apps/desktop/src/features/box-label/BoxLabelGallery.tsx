@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { computeVirtualGridLayout, scrollVirtualGridToIndex } from "../image-pool/virtualGrid";
-import { isFlaggedFile, isReviewedFile } from "../image-pool/metadata";
+import { isFlaggedFile, isNextTrainingFile, isReviewedFile } from "../image-pool/metadata";
 import { datasetImageUrl } from "../dataset-review/datasetAssets";
 import type { MetadataRow } from "../image-pool/types";
 import type { BoxLabelEntry } from "./boxLabelCore";
@@ -12,13 +12,13 @@ type BoxLabelGalleryProps = {
   currentIndex: number;
   shiftSelectedBasenames: Set<string>;
   metadata: Map<string, MetadataRow>;
-  imageViewMode: "all" | "hideReviewed" | "flagged";
+  imageViewMode: "all" | "hideReviewed" | "flagged" | "nextTraining";
   restoreScrollTop: number | null;
   restoreImagePath: string;
   onSelect: (index: number, options?: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean }) => void;
   onScrollChange: (scrollTop: number, imagePath: string) => void;
   onViewportRestored: () => void;
-  onImageViewModeChange: (mode: "all" | "hideReviewed" | "flagged") => void;
+  onImageViewModeChange: (mode: "all" | "hideReviewed" | "flagged" | "nextTraining") => void;
 };
 
 const BOX_LABEL_GRID_PARAMS = { columnUnit: 138, gap: 10, rowExtra: 36, aspectRatio: 10 / 16 } as const;
@@ -27,7 +27,8 @@ const FLIP_SELECTOR = "[data-box-label-gallery-key]";
 function galleryThumbTags(row: MetadataRow | undefined) {
   const flagged = isFlaggedFile(row);
   const reviewed = isReviewedFile(row);
-  return `${flagged ? "[FLAG] " : ""}${reviewed ? "[OK] " : ""}`;
+  const nextTraining = isNextTrainingFile(row);
+  return `${nextTraining ? "[★] " : ""}${flagged ? "[FLAG] " : ""}${reviewed ? "[OK] " : ""}`;
 }
 
 function LazyThumb({ datasetRoot, imagePath }: { datasetRoot: string; imagePath: string }) {
@@ -278,6 +279,14 @@ export function BoxLabelGallery({
           >
             Show Flagged
           </button>
+          <button
+            id="showNextTrainingImagesBtn"
+            type="button"
+            className={imageViewMode === "nextTraining" ? "active" : ""}
+            onClick={() => onImageViewModeChange("nextTraining")}
+          >
+            ★ Next Train
+          </button>
           <span id="imageCount" className="status">
             {currentIndex + 1} / {entries.length}
           </span>
@@ -311,11 +320,12 @@ export function BoxLabelGallery({
               const row = metadata.get(item.basename);
               const reviewed = isReviewedFile(row);
               const flagged = isFlaggedFile(row);
+              const nextTraining = isNextTrainingFile(row);
               return (
                 <div
                   key={item.imagePath}
                   data-box-label-gallery-key={item.imagePath}
-                  className={`thumb${active ? " active" : ""}${shiftSelected ? " shift-selected" : ""}${reviewed ? " reviewed" : ""}${flagged ? " flagged" : ""}`}
+                  className={`thumb${active ? " active" : ""}${shiftSelected ? " shift-selected" : ""}${reviewed ? " reviewed" : ""}${flagged ? " flagged" : ""}${nextTraining ? " next-training" : ""}`}
                   onClick={(event) => {
                     pendingKeyboardRevealIndexRef.current = null;
                     onSelect(index, {

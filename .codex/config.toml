@@ -1,0 +1,9 @@
+[mcp_servers.yoloworkbench]
+command = "cmd.exe"
+args = ["/d", "/c", "scripts\\run-yoloworkbench-mcp.cmd"]
+cwd = ".."
+enabled = true
+required = false
+startup_timeout_sec = 15
+tool_timeout_sec = 120
+default_tools_approval_mode = "writes"

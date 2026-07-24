@@ -2489,6 +2489,16 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
   border-color: #22c55e;
 }
 
+.boxlabel-gallery-scroll .thumb.next-training,
+#galleryScroll .thumb.next-training {
+  box-shadow: inset 0 0 0 2px rgba(250, 204, 21, 0.7);
+}
+
+.react-box-label-topbar .next-training-active {
+  border-color: rgba(250, 204, 21, 0.72);
+  color: #fef08a;
+}
+
 .boxlabel-gallery-scroll .thumb.selected {
   outline: 2px solid #3b82f6;
   outline-offset: -2px;
@@ -3041,6 +3051,13 @@ html.app-startup-active:not(.app-startup-overlay-ready) #root {
 .tp-stat-label { color: var(--muted, #64748b); }
 .tp-stat-value { font-variant-numeric: tabular-nums; }
 .tp-stat-accent { color: var(--text-1, #e2e8f0); font-weight: 600; }
+
+.tp-next-training-card {
+  display: grid;
+  gap: 6px;
+  border-color: rgba(250, 204, 21, 0.28);
+  background: linear-gradient(145deg, rgba(113, 63, 18, 0.16), rgba(15, 23, 42, 0.72));
+}
 
 .tp-yaml-badge {
   font-size: 10px;
@@ -4289,6 +4306,10 @@ a.glass-card:focus-visible {
   border-color: rgba(251, 191, 36, 0.46);
 }
 
+.lwb-media-tile.next-training {
+  box-shadow: inset 0 0 0 1px rgba(250, 204, 21, 0.58);
+}
+
 .lwb-media-kind {
   position: absolute;
   top: 4px;
@@ -4350,6 +4371,25 @@ a.glass-card:focus-visible {
   color: #7f8da3;
   font-size: 11px;
   font-weight: 700;
+}
+
+.lwb-media-next-training {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 1px solid rgba(254, 240, 138, 0.62);
+  border-radius: 999px;
+  background: rgba(66, 32, 6, 0.86);
+  color: #fde047;
+  font-size: 13px;
+  line-height: 1;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.42);
 }
 
 /* ============================================================

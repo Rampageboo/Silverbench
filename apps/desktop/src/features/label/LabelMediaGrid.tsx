@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { datasetPreviewImageUrl } from "../dataset-review/datasetAssets";
-import { isFlaggedFile, isReviewedFile } from "../image-pool/metadata";
+import { isFlaggedFile, isNextTrainingFile, isReviewedFile } from "../image-pool/metadata";
 import { getAnnotationFrameUrl } from "../video/videoAnnotationApi";
 import type { BoxLabelModel } from "../box-label/useBoxLabel";
 import type { VideoAnnotationSession } from "../video/useVideoAnnotationSession";
@@ -20,7 +20,7 @@ type Props = {
 
 type MediaItem =
   | { kind: "video"; index: number; key: string; name: string; detail: string; previewSeconds: number; taskDetail: string }
-  | { kind: "image"; index: number; key: string; name: string; imagePath: string; reviewed: boolean; flagged: boolean };
+  | { kind: "image"; index: number; key: string; name: string; imagePath: string; reviewed: boolean; flagged: boolean; nextTraining: boolean };
 
 function formatDuration(seconds: number) {
   if (!Number.isFinite(seconds) || seconds <= 0) return "";
@@ -129,7 +129,8 @@ export function LabelMediaGrid({ pool, videoSession, selection, loading = false,
         name: entry.basename,
         imagePath: entry.imagePath,
         reviewed: isReviewedFile(row),
-        flagged: isFlaggedFile(row)
+        flagged: isFlaggedFile(row),
+        nextTraining: isNextTrainingFile(row)
       };
     });
     return [...videos, ...images];
@@ -177,6 +178,9 @@ export function LabelMediaGrid({ pool, videoSession, selection, loading = false,
         <button type="button" className={pool.imageViewMode === "flagged" ? "active" : ""} onClick={() => pool.setImageViewMode("flagged")}>
           Flagged
         </button>
+        <button type="button" className={pool.imageViewMode === "nextTraining" ? "active" : ""} onClick={() => pool.setImageViewMode("nextTraining")}>
+          ★ Next train
+        </button>
       </div>
       <div className="panel-body lwb-media-grid-scroll">
         {loading ? (
@@ -191,7 +195,7 @@ export function LabelMediaGrid({ pool, videoSession, selection, loading = false,
                   type="button"
                   key={item.key}
                   ref={active ? activeTileRef : null}
-                  className={`lwb-media-tile${active ? " active" : ""}${shiftSelected ? " shift-selected" : ""}${item.kind === "image" && item.reviewed ? " reviewed" : ""}${item.kind === "image" && item.flagged ? " flagged" : ""}`}
+                  className={`lwb-media-tile${active ? " active" : ""}${shiftSelected ? " shift-selected" : ""}${item.kind === "image" && item.reviewed ? " reviewed" : ""}${item.kind === "image" && item.flagged ? " flagged" : ""}${item.kind === "image" && item.nextTraining ? " next-training" : ""}`}
                   title={item.name}
                   onClick={(event) => {
                     if (item.kind === "image") {
@@ -229,6 +233,9 @@ export function LabelMediaGrid({ pool, videoSession, selection, loading = false,
                       />
                     )}
                     {item.kind === "video" && item.detail ? <span className="lwb-media-duration">{item.detail}</span> : null}
+                    {item.kind === "image" && item.nextTraining ? (
+                      <span className="lwb-media-next-training" title="Queued for next training" aria-label="Queued for next training">★</span>
+                    ) : null}
                   </span>
                 </button>
               );

@@ -71,6 +71,29 @@ class MetadataJunkPersistenceTests(unittest.TestCase):
             self.assertEqual(row["clf_enabled"], "1")
             self.assertEqual(row["clf_class"], "chat")
 
+    def test_upsert_next_train_persists_independently_from_review_flags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_workspace(root)
+
+            result = upsert_metadata_rows(
+                root,
+                {
+                    "filename": "sample.jpg",
+                    "reviewed": True,
+                    "flagged": False,
+                    "next_train": True,
+                },
+            )
+            self.assertTrue(result["ok"])
+
+            payload = read_metadata_rows(root)
+            row = next(item for item in payload["rows"] if item["filename"] == "sample.jpg")
+            self.assertEqual(row["reviewed"], "1")
+            self.assertEqual(row["flagged"], "0")
+            self.assertEqual(row["next_train"], "1")
+            self.assertIn("next_train", (root / "metadata.csv").read_text(encoding="utf-8").splitlines()[0])
+
     def test_upsert_rejects_non_object_metadata_update(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

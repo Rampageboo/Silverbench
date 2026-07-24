@@ -3,7 +3,7 @@ import { useWorkspace } from "../../app/useWorkspace";
 import { useToast } from "../../components/useToast";
 import { BoxLabelTopbar } from "../../components/BoxLabelTopbar";
 import { errMessage } from "../../lib/errors";
-import { isFlaggedFile, isReviewedFile } from "../image-pool/metadata";
+import { isFlaggedFile, isNextTrainingFile, isReviewedFile } from "../image-pool/metadata";
 import { isLabelWorkbenchEmbedded, useLabelWorkbench } from "../label/useLabelWorkbench";
 import type { LabelWorkbenchActionGroup } from "../label/labelWorkbenchTypes";
 import { useArchivedClassIds } from "../workspace/useArchivedClassIds";
@@ -81,6 +81,7 @@ export function BoxLabelSurface({
     : isReviewedFile(currentMeta)
       ? "approved" as const
       : "unreviewed" as const;
+  const currentNextTraining = isNextTrainingFile(currentMeta);
 
   const imageActionGroups = useMemo<LabelWorkbenchActionGroup[]>(() => {
     const duplicateFlow = workbenchBridge?.duplicateFlow ?? null;
@@ -112,6 +113,21 @@ export function BoxLabelSurface({
         ],
       },
       {
+        id: "image-next-training",
+        label: "Next Training",
+        description: "Star this image so it can be added to the next training batch.",
+        actions: [
+          {
+            id: "training.toggleNext",
+            label: currentNextTraining ? "★ Remove from Next Training" : "☆ Add to Next Training",
+            variant: currentNextTraining ? "primary" : "default",
+            disabled: !pool.currentEntry,
+            unavailableReason: pool.currentEntry ? undefined : "No image selected.",
+            run: () => void pool.toggleNextTraining().catch(showError),
+          },
+        ],
+      },
+      {
         id: "image-duplicate",
         label: "Duplicate to Next Frame",
         description: duplicateFlow?.message ?? "Select a box and press T to add it to duplicate list.",
@@ -137,10 +153,12 @@ export function BoxLabelSurface({
     ];
   }, [
     currentReviewStatus,
+    currentNextTraining,
     pool.currentEntry,
     pool.junkButtonLabel,
     pool.markJunk,
     pool.toggleReviewed,
+    pool.toggleNextTraining,
     showError,
     workbenchBridge,
     workspaceRoot,
@@ -303,13 +321,17 @@ export function BoxLabelSurface({
   const reviewedActive = reviewNames.length > 0 && reviewedCount === reviewNames.length;
   const flagged =
     reviewNames.length > 0 && reviewNames.some((name) => isFlaggedFile(pool.metadata.get(name)));
+  const nextTraining =
+    reviewNames.length > 0 && reviewNames.every((name) => isNextTrainingFile(pool.metadata.get(name)));
 
   const topbarCommon = {
     reviewedLabel,
     reviewedActive,
     flagged,
+    nextTraining,
     onToggleReviewed: () => pool.toggleReviewed().catch(showError),
-    onToggleFlagged: () => pool.toggleFlagged().catch(showError)
+    onToggleFlagged: () => pool.toggleFlagged().catch(showError),
+    onToggleNextTraining: () => pool.toggleNextTraining().catch(showError)
   };
 
   if (pool.pending && !pool.entries.length) {

@@ -6,6 +6,7 @@ fastapi
 uvicorn[standard]
 matplotlib
 requests
+mcp>=1.27,<2
 torch
 torchvision
 psutil
