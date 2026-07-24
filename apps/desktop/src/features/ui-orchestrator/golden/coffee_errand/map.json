@@ -1,0 +1,88 @@
+{
+  "schemaVersion": "1.0",
+  "game": "Zenless_Zone_Zero",
+  "pages": [
+    {
+      "id": "Schedule.Errands",
+      "trigger": { "clf": "Schedule_Errands", "minConfidence": 0.9 },
+      "guard": { "require": ["errands_container"] },
+      "elements": {
+        "errands_container": { "kind": "container", "detClass": "errands_container" },
+        "action_card": {
+          "kind": "container",
+          "in": "errands_container",
+          "detClass": "errand_card",
+          "repeat": { "control": "horizontal_scroll" },
+          "children": {
+            "title": {
+              "kind": "text",
+              "relRect": [0.14, 0.12, 0.86, 0.27],
+              "phraseTable": "zzz/errands@1"
+            },
+            "go_button": {
+              "kind": "button",
+              "detClass": "go_button",
+              "associate": { "rule": "xColumn", "verticalToleranceRatio": 0.2 }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "flows": [
+    {
+      "id": "daily.coffee_errand",
+      "nodes": [
+        { "id": "start", "kind": "Start" },
+        { "id": "seeErrands", "kind": "Observe", "page": "Schedule.Errands", "timeoutMs": 8000 },
+        {
+          "id": "hasCoffee",
+          "kind": "Branch",
+          "condition": {
+            "type": "elementFound",
+            "target": {
+              "element": "action_card",
+              "select": {
+                "by": "ocrMatch",
+                "child": "title",
+                "phraseTable": "zzz/errands@1",
+                "phrase": "Try 1 coffee",
+                "minScore": 0.78
+              }
+            }
+          }
+        },
+        {
+          "id": "clickGo",
+          "kind": "Act",
+          "intent": {
+            "type": "click",
+            "target": {
+              "element": "action_card",
+              "select": {
+                "by": "ocrMatch",
+                "child": "title",
+                "phraseTable": "zzz/errands@1",
+                "phrase": "Try 1 coffee",
+                "minScore": 0.78
+              },
+              "child": "go_button"
+            }
+          }
+        },
+        { "id": "done", "kind": "End", "outcome": "Completed" },
+        { "id": "nothing", "kind": "End", "outcome": "NothingToDo" },
+        { "id": "notFound", "kind": "End", "outcome": "Failed" }
+      ],
+      "edges": [
+        { "from": "start", "to": "seeErrands", "on": "Next" },
+        { "from": "seeErrands", "to": "hasCoffee", "on": "Next" },
+        { "from": "seeErrands", "to": "notFound", "on": "Timeout" },
+        { "from": "hasCoffee", "to": "clickGo", "on": "True" },
+        { "from": "hasCoffee", "to": "nothing", "on": "False" },
+        { "from": "hasCoffee", "to": "nothing", "on": "Indeterminate" },
+        { "from": "clickGo", "to": "done", "on": "Next" }
+      ]
+    }
+  ]
+}

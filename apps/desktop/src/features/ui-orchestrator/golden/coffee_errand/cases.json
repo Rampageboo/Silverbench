@@ -1,0 +1,85 @@
+{
+  "schemaVersion": "1.0",
+  "map": "map.json",
+  "flowId": "daily.coffee_errand",
+  "description": "ZZZ Schedule.Errands coffee flow. Two cards side by side; card A (x 200..600) is the coffee errand, card B (x 700..1100) is a distractor. GO buttons sit just below each card.",
+  "cases": [
+    {
+      "name": "coffee_present_with_ocr",
+      "description": "OCR confirms the coffee card -> click its GO button.",
+      "predictions": {
+        "imageSize": [1600, 900],
+        "clf": { "label": "Schedule_Errands", "conf": 0.95 },
+        "det": [
+          { "class": "errands_container", "box": [100, 200, 1500, 700], "conf": 0.99 },
+          { "class": "errand_card", "box": [200, 250, 600, 650], "conf": 0.95 },
+          { "class": "errand_card", "box": [700, 250, 1100, 650], "conf": 0.93 },
+          { "class": "go_button", "box": [300, 660, 500, 700], "conf": 0.9 },
+          { "class": "go_button", "box": [800, 660, 1000, 700], "conf": 0.9 }
+        ],
+        "ocr": [
+          { "box": [270, 300, 530, 350], "text": "Try 1 coffee", "conf": 0.95 },
+          { "box": [770, 300, 1030, 350], "text": "Buy potions", "conf": 0.95 }
+        ]
+      },
+      "expected": {
+        "outcome": "Completed",
+        "intended": { "element": "go_button", "point": [400, 680] },
+        "trace": ["start", "seeErrands", "hasCoffee", "clickGo", "done"]
+      }
+    },
+    {
+      "name": "ocr_unavailable_is_indeterminate",
+      "description": "No OCR -> the ocrMatch selector is Indeterminate -> fail-closed to NothingToDo, never a guessed click.",
+      "predictions": {
+        "imageSize": [1600, 900],
+        "clf": { "label": "Schedule_Errands", "conf": 0.95 },
+        "det": [
+          { "class": "errands_container", "box": [100, 200, 1500, 700], "conf": 0.99 },
+          { "class": "errand_card", "box": [200, 250, 600, 650], "conf": 0.95 },
+          { "class": "errand_card", "box": [700, 250, 1100, 650], "conf": 0.93 },
+          { "class": "go_button", "box": [300, 660, 500, 700], "conf": 0.9 },
+          { "class": "go_button", "box": [800, 660, 1000, 700], "conf": 0.9 }
+        ]
+      },
+      "expected": {
+        "outcome": "NothingToDo",
+        "trace": ["start", "seeErrands", "hasCoffee", "nothing"]
+      }
+    },
+    {
+      "name": "clf_below_threshold_times_out",
+      "description": "Classifier not confident enough -> the page does not hold -> Observe Timeout -> Failed.",
+      "predictions": {
+        "imageSize": [1600, 900],
+        "clf": { "label": "Schedule_Errands", "conf": 0.5 },
+        "det": [
+          { "class": "errands_container", "box": [100, 200, 1500, 700], "conf": 0.99 },
+          { "class": "errand_card", "box": [200, 250, 600, 650], "conf": 0.95 }
+        ],
+        "ocr": [{ "box": [270, 300, 530, 350], "text": "Try 1 coffee", "conf": 0.95 }]
+      },
+      "expected": {
+        "outcome": "Failed",
+        "trace": ["start", "seeErrands", "notFound"]
+      }
+    },
+    {
+      "name": "guard_absent_is_indeterminate",
+      "description": "CLF fires but the guard DET (errands_container) is missing -> the page does not hold -> Timeout -> Failed (CLF picks, DET confirms).",
+      "predictions": {
+        "imageSize": [1600, 900],
+        "clf": { "label": "Schedule_Errands", "conf": 0.95 },
+        "det": [
+          { "class": "errand_card", "box": [200, 250, 600, 650], "conf": 0.95 },
+          { "class": "go_button", "box": [300, 660, 500, 700], "conf": 0.9 }
+        ],
+        "ocr": [{ "box": [270, 300, 530, 350], "text": "Try 1 coffee", "conf": 0.95 }]
+      },
+      "expected": {
+        "outcome": "Failed",
+        "trace": ["start", "seeErrands", "notFound"]
+      }
+    }
+  ]
+}
