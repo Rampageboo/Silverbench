@@ -4,10 +4,10 @@ import type {
   WorkspaceVersionId,
   WorkspaceVersionsManifest
 } from "./features/workspace-versioning/workspaceSnapshotVersions";
-import type { UiOrchestrationDoc } from "./features/ui-orchestrator/schema";
+import type { Predictions, UiOrchestrationDoc } from "./features/ui-orchestrator/schema";
 
 export const API_BASE_URL = backendBaseUrl();
-export const REQUIRED_API_SCHEMA_VERSION = 23;
+export const REQUIRED_API_SCHEMA_VERSION = 24;
 
 export type BackendMethod =
   | "markImagePoolSeen"
@@ -57,6 +57,7 @@ export type BackendMethod =
   | "getWorkspaceClasses"
   | "loadUiMap"
   | "saveUiMap"
+  | "runReferencePredictions"
   | "chooseVideoFiles"
   | "listWorkspaceVideos"
   | "getVideoFrameBase64"
@@ -373,6 +374,26 @@ export async function loadUiMap(name: string) {
 
 export async function saveUiMap(name: string, doc: UiOrchestrationDoc) {
   return callJson<SaveUiMapResponse>("saveUiMap", [name, doc]);
+}
+
+export async function chooseTrainModelFile(title = "Choose YOLO Model (.pt)") {
+  return callJson<string>("chooseTrainModelFile", [title]);
+}
+
+export type ReferencePredictionOptions = { imageSize?: number; confidence?: number; device?: string };
+
+export async function runReferencePredictions(
+  imagePath: string,
+  detModelPath: string | null,
+  clfModelPath: string | null,
+  options: ReferencePredictionOptions = {}
+) {
+  const result = await callJson<{ ok: boolean; predictions?: Predictions; error?: string }>(
+    "runReferencePredictions",
+    [imagePath, detModelPath, clfModelPath, options]
+  );
+  if (!result.ok || !result.predictions) throw new Error(result.error || "Reference prediction failed.");
+  return result.predictions;
 }
 
 export async function chooseMediaFiles(title = "Choose Media to Import") {

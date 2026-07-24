@@ -204,8 +204,59 @@
 
 .uio-canvas-column {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   overflow: hidden;
+}
+
+.uio-modelassist {
+  max-height: 208px;
+  overflow: auto;
+  padding: 9px 11px;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  font-size: 11px;
+  color: #a7b7ca;
+}
+
+.uio-model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 7px;
+}
+
+.uio-model-row > span {
+  color: #8aa0ba;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uio-predictions {
+  margin-top: 9px;
+}
+
+.uio-clf-readout {
+  color: #f5cf8a;
+  font-weight: 600;
+}
+
+.uio-predictions ul {
+  list-style: none;
+  margin: 7px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.uio-predictions li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.uio-predictions li > button {
+  min-height: 26px;
 }
 
 .uio-canvas-toolbar {

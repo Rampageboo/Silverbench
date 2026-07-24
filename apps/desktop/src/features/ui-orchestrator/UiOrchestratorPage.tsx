@@ -10,6 +10,7 @@ import * as api from "../../api";
 import { errMessage } from "../../lib/errors";
 import { renderMainCanvas } from "../box-label/boxCanvasRenderer";
 import {
+  boxToCanvasRect,
   canvasToImagePoint,
   enforceMinRect,
   eventCanvasPoint,
@@ -28,6 +29,7 @@ import {
 import {
   deleteElementAtPath,
   elementEntries,
+  imageRectFromPixelBox,
   relRectFromReferenceBoxes,
   renameElementAtPath,
   resolveReferenceBoxes,
@@ -37,8 +39,10 @@ import {
 import {
   validateDoc,
   type Associate,
+  type DetBox,
   type Element,
   type Page,
+  type Predictions,
   type Repeat,
   type UiOrchestrationDoc
 } from "./schema";
@@ -152,7 +156,12 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
   const [status, setStatus] = useState("Ready. Load a reference image and add a page element.");
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [imageName, setImageName] = useState("");
+  const [imagePath, setImagePath] = useState("");
   const [imageRevision, setImageRevision] = useState(0);
+  const [detModelPath, setDetModelPath] = useState("");
+  const [clfModelPath, setClfModelPath] = useState("");
+  const [predictions, setPredictions] = useState<Predictions | null>(null);
+  const [predicting, setPredicting] = useState(false);
   const [referenceBoxesByPage, setReferenceBoxesByPage] = useState<Record<string, Record<string, ImageRect>>>(
     {}
   );
@@ -301,7 +310,38 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
       autoFitEnabled: false,
       blackBoxEnabled: false
     });
-  }, [canvasBoxes, canvasClasses, canvasDrag, selectedCanvasIndex]);
+
+    // Model-assist overlay: draw predicted DET boxes in a distinct dashed style
+    // on top of the authored elements. Display-only (accept is via the panel).
+    const display = displayRef.current;
+    const [predW, predH] = predictions?.imageSize ?? [0, 0];
+    if (display && predictions && predW > 0 && predH > 0) {
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.save();
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 4]);
+        ctx.strokeStyle = "#f5a623";
+        ctx.font = "12px system-ui, sans-serif";
+        ctx.textBaseline = "top";
+        predictions.det.forEach((det) => {
+          const rect = boxToCanvasRect(
+            {
+              x1: det.box[0] / predW,
+              y1: det.box[1] / predH,
+              x2: det.box[2] / predW,
+              y2: det.box[3] / predH
+            },
+            display
+          );
+          ctx.strokeRect(rect.x1, rect.y1, rect.x2 - rect.x1, rect.y2 - rect.y1);
+          ctx.fillStyle = "#f5a623";
+          ctx.fillText(`${det.class} ${(det.conf * 100).toFixed(0)}%`, rect.x1 + 3, rect.y1 + 3);
+        });
+        ctx.restore();
+      }
+    }
+  }, [canvasBoxes, canvasClasses, canvasDrag, predictions, selectedCanvasIndex]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -332,11 +372,74 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
       const base64 = await api.readImageFileBase64(path);
       imageRef.current = await loadCanvasImage(`data:${imageMime(path)};base64,${base64}`);
       setImageName(basename(path));
+      setImagePath(path);
+      setPredictions(null);
       setImageRevision((value) => value + 1);
       setStatus(`Loaded reference image ${basename(path)}.`);
     } catch (error) {
       setStatus(`Reference image failed: ${errMessage(error)}`);
     }
+  }
+
+  async function chooseModel(kind: "det" | "clf") {
+    try {
+      const path = await api.chooseTrainModelFile(
+        kind === "det" ? "Choose detector .pt model" : "Choose classifier .pt model"
+      );
+      if (!path) return;
+      if (kind === "det") setDetModelPath(path);
+      else setClfModelPath(path);
+      setStatus(`${kind === "det" ? "Detector" : "Classifier"} model: ${basename(path)}`);
+    } catch (error) {
+      setStatus(`Model selection failed: ${errMessage(error)}`);
+    }
+  }
+
+  async function runPredictions() {
+    if (!imagePath) {
+      setStatus("Load a reference image before running predictions.");
+      return;
+    }
+    if (!detModelPath && !clfModelPath) {
+      setStatus("Choose a detector and/or classifier model first.");
+      return;
+    }
+    setPredicting(true);
+    setStatus("Running predictions on the reference frame…");
+    try {
+      const result = await api.runReferencePredictions(
+        imagePath,
+        detModelPath || null,
+        clfModelPath || null,
+        { confidence: 0.25 }
+      );
+      setPredictions(result);
+      const clfText = result.clf.label
+        ? `CLF ${result.clf.label} ${(result.clf.conf * 100).toFixed(0)}%`
+        : "no CLF";
+      setStatus(`Predictions ready: ${result.det.length} detections · ${clfText}.`);
+    } catch (error) {
+      setStatus(`Prediction failed: ${errMessage(error)}`);
+    } finally {
+      setPredicting(false);
+    }
+  }
+
+  function acceptPrediction(det: DetBox) {
+    if (!predictions) return;
+    const base = (det.class || "element").replace(/[^A-Za-z0-9_]+/g, "_").replace(/^_+|_+$/g, "") || "element";
+    const existing = new Set(entries.map((entry) => entry.name));
+    let name = base;
+    let suffix = 2;
+    while (existing.has(name)) name = `${base}_${suffix++}`;
+    const element: Element = { kind: "container", detClass: det.class };
+    updateCurrentPage((page) => ({
+      ...page,
+      elements: { ...page.elements, [name]: element }
+    }));
+    setAuthoredReferenceBox(name, imageRectFromPixelBox(det.box, predictions.imageSize));
+    setSelectedName(name);
+    setStatus(`Accepted ${det.class} as element ${name}.`);
   }
 
   function pointerImagePoint(event: ReactPointerEvent<HTMLCanvasElement>) {
@@ -799,6 +902,62 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
           </div>
           <div className="uio-status" role="status">
             {status}
+          </div>
+
+          <div className="uio-modelassist">
+            <div className="uio-section-title">
+              <strong>Model assist</strong>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => void runPredictions()}
+                disabled={predicting || !imagePath || (!detModelPath && !clfModelPath)}
+              >
+                {predicting ? "Running…" : "Run predictions"}
+              </button>
+            </div>
+            <div className="uio-model-row">
+              <button type="button" onClick={() => void chooseModel("det")}>
+                Detector .pt
+              </button>
+              <span title={detModelPath}>{detModelPath ? basename(detModelPath) : "none"}</span>
+            </div>
+            <div className="uio-model-row">
+              <button type="button" onClick={() => void chooseModel("clf")}>
+                Classifier .pt
+              </button>
+              <span title={clfModelPath}>{clfModelPath ? basename(clfModelPath) : "none"}</span>
+            </div>
+            {predictions ? (
+              <div className="uio-predictions">
+                <div className="uio-clf-readout">
+                  {predictions.clf.label
+                    ? `CLF: ${predictions.clf.label} (${(predictions.clf.conf * 100).toFixed(0)}%)`
+                    : "CLF: no confident label"}
+                </div>
+                <ul>
+                  {predictions.det.map((det, index) => (
+                    <li key={`${det.class}-${index}`}>
+                      <span>
+                        {det.class} · {(det.conf * 100).toFixed(0)}%
+                      </span>
+                      <button type="button" onClick={() => acceptPrediction(det)}>
+                        Accept as element
+                      </button>
+                    </li>
+                  ))}
+                  {predictions.det.length === 0 ? (
+                    <li>
+                      <small>No detections above threshold.</small>
+                    </li>
+                  ) : null}
+                </ul>
+              </div>
+            ) : (
+              <p className="uio-empty-copy">
+                Pick a detector and/or classifier .pt, then run predictions on the reference frame.
+              </p>
+            )}
           </div>
         </main>
 

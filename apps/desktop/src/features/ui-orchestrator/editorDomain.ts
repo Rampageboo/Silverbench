@@ -140,6 +140,29 @@ export function relRectFromReferenceBoxes(child: ImageRect, parent: ImageRect): 
   ];
 }
 
+function clamp01(value: number) {
+  return Math.min(1, Math.max(0, value));
+}
+
+/**
+ * Convert a schema §12 pixel box `[x0,y0,x1,y1]` into the editor's normalized
+ * ImageRect authoring space, dividing by the prediction frame size `[w,h]` and
+ * clamping to [0,1]. Used when accepting a predicted DET box as an element.
+ */
+export function imageRectFromPixelBox(
+  box: [number, number, number, number],
+  imageSize: [number, number]
+): ImageRect {
+  const width = imageSize[0] > 0 ? imageSize[0] : 1;
+  const height = imageSize[1] > 0 ? imageSize[1] : 1;
+  return {
+    x1: clamp01(box[0] / width),
+    y1: clamp01(box[1] / height),
+    x2: clamp01(box[2] / width),
+    y2: clamp01(box[3] / height)
+  };
+}
+
 export function referenceBoxFromRelRect(relRect: RelRect, parent: ImageRect): ImageRect {
   const width = parent.x2 - parent.x1;
   const height = parent.y2 - parent.y1;

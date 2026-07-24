@@ -142,6 +142,26 @@ export interface DetPresentCond {
   minConfidence: number;
 }
 
+// ── Predictions input (schema §12) — produced by the backend, consumed by the
+// editor overlay and (M3) the preview interpreter. Boxes are pixels of the
+// reference frame; `imageSize` is [w, h] px.
+export interface DetBox {
+  class: string;
+  box: [number, number, number, number];
+  conf: number;
+}
+export interface OcrRead {
+  box: [number, number, number, number];
+  text: string;
+  conf: number;
+}
+export interface Predictions {
+  imageSize: [number, number];
+  det: DetBox[];
+  clf: { label: string; conf: number; topK?: { label: string; conf: number }[] };
+  ocr?: OcrRead[];
+}
+
 export type ValidationResult = { ok: true } | { ok: false; errors: string[] };
 
 type UnknownRecord = Record<string, unknown>;

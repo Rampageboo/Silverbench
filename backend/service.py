@@ -19,7 +19,10 @@ from .mask_noise import preview_base64 as mask_noise_preview_base64
 from .mask_noise import save_one as mask_noise_save_one
 from .mask_noise import save_temp_image as mask_noise_save_temp_image
 from .mask_noise import settings_from_json as mask_noise_settings_from_json
+from .image_safety import open_image_checked
 from .path_access import PathAccess
+from .pt_safety import assert_safe_pt_file
+from .ui_orchestrator_predictions import build_predictions
 from .ui_orchestrator_store import load_ui_map, save_ui_map
 from .torch_runtime import torch_runtime_info
 from .video_screenshot import capture_video_screenshot_jobs, capture_video_screenshots, find_videos, frame_base64, save_video_frame, video_info, videos_json
@@ -165,6 +168,7 @@ class BackendService:
             "writeAppSettings": self._handle_writeAppSettings,
             "loadUiMap": self._handle_loadUiMap,
             "saveUiMap": self._handle_saveUiMap,
+            "runReferencePredictions": self._handle_runReferencePredictions,
             "openFolder": self._handle_openFolder,
             "createWorkspace": self._handle_createWorkspace,
             "readSnapshotVersions": self._handle_readSnapshotVersions,
@@ -452,6 +456,53 @@ class BackendService:
             if len(args) != 2:
                 raise ValueError("saveUiMap expects positional args [name, doc].")
             return save_ui_map(str(args[0]), args[1])
+
+    def _handle_runReferencePredictions(self, args: list[Any]) -> object:
+            # args: [imagePath, detModelPath|None, clfModelPath|None, options?]
+            try:
+                image_arg = args[0] if args else None
+                det_model = args[1] if len(args) > 1 else None
+                clf_model = args[2] if len(args) > 2 else None
+                options = args[3] if len(args) > 3 and isinstance(args[3], dict) else {}
+                if not image_arg:
+                    raise ValueError("A reference image path is required.")
+                if not det_model and not clf_model:
+                    raise ValueError("Choose a detector and/or classifier model.")
+
+                image_path = self.path_access.require_path(image_arg)
+                image_size = int(options.get("imageSize") or 0)
+                confidence = float(options.get("confidence") or 0.25)
+                device = str(options.get("device") or "0")
+
+                # image_safety: open + size-check the reference frame, and read (w, h).
+                image = open_image_checked(Path(image_path))
+                try:
+                    width, height = image.size
+                finally:
+                    close = getattr(image, "close", None)
+                    if callable(close):
+                        close()
+
+                raw_det = None
+                if det_model:
+                    det_path = self.path_access.require_path(det_model)
+                    assert_safe_pt_file(Path(det_path))
+                    raw_det = detect_image_with_pt(
+                        Path(det_path), Path(image_path), image_size or 640, confidence, device
+                    )
+
+                raw_clf = None
+                if clf_model:
+                    clf_path = self.path_access.require_path(clf_model)
+                    assert_safe_pt_file(Path(clf_path))
+                    raw_clf = classify_image_with_pt(
+                        Path(clf_path), Path(image_path), image_size, device, 5
+                    )
+
+                predictions = build_predictions((width, height), raw_det, raw_clf)
+                return json.dumps({"ok": True, "predictions": predictions}, ensure_ascii=False)
+            except (PermissionError, FileNotFoundError, ValueError, RuntimeError, OSError) as error:
+                return json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False)
 
     def _remember_workspace_paths(self, workspace_root: Path | str) -> Path:
         root = Path(self.path_access.remember_parent(workspace_root))
