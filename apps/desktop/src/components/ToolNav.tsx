@@ -7,8 +7,9 @@ const NAV_ICONS: Record<string, string> = {
     '<rect x="3" y="3" width="6" height="18" rx="1"/><rect x="11" y="3" width="4" height="18" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/>',
   label:
     '<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M9 12h6M12 9v6"/><circle cx="12" cy="12" r="0.5" fill="currentColor"/>',
-  review:
-    '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>',
+  orchestrate:
+    '<rect x="3" y="3" width="7" height="6" rx="1"/><rect x="14" y="15" width="7" height="6" rx="1"/><path d="M10 6h4a3 3 0 013 3v6M14 18h-4a3 3 0 01-3-3V9"/>',
+  review: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>',
   export:
     '<path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
   settings:
@@ -50,11 +51,15 @@ export function ToolNav({ activeTab, imagePoolNewCount = 0, onSelectTab }: ToolN
     // Legacy tabs that live under Label
     if (tab === "label" && (activeTab === "video" || activeTab === "pool-label")) return true;
     // Legacy tabs that live under Export
-    if (tab === "export" && (activeTab === "train-prep" || activeTab === "train" || activeTab === "video-capture")) return true;
+    if (
+      tab === "export" &&
+      (activeTab === "train-prep" || activeTab === "train" || activeTab === "video-capture")
+    )
+      return true;
     // Legacy tabs that live under Review
     if (tab === "review" && activeTab === "image-pool") return true;
     // Legacy tabs that live under Library
-    if (tab === "library" && (activeTab === "image-pool")) return false; // image-pool handled by review above
+    if (tab === "library" && activeTab === "image-pool") return false; // image-pool handled by review above
     return false;
   }
 
@@ -73,13 +78,7 @@ export function ToolNav({ activeTab, imagePoolNewCount = 0, onSelectTab }: ToolN
       <div className="tabbar-surface">
         <div className="tabbar-head">
           <div className="brand" title="YoloWorkBench">
-            <img
-              className="brand-icon"
-              src="/assets/app-icon.svg"
-              width={22}
-              height={22}
-              alt=""
-            />
+            <img className="brand-icon" src="/assets/app-icon.svg" width={22} height={22} alt="" />
             <span className="brand-text">YoloWorkBench</span>
           </div>
         </div>
@@ -88,7 +87,9 @@ export function ToolNav({ activeTab, imagePoolNewCount = 0, onSelectTab }: ToolN
             const active = isNavActive(tool.tab);
             const badge =
               tool.tab === "review" && imagePoolNewCount > 0
-                ? imagePoolNewCount > 99 ? "99+" : String(imagePoolNewCount)
+                ? imagePoolNewCount > 99
+                  ? "99+"
+                  : String(imagePoolNewCount)
                 : "";
             return (
               <button
@@ -107,7 +108,11 @@ export function ToolNav({ activeTab, imagePoolNewCount = 0, onSelectTab }: ToolN
                   <span className="tool-nav-item-title">{tool.label}</span>
                   <span className="tool-nav-item-sub">{tool.labelZh}</span>
                 </span>
-                {badge ? <span className="tool-nav-badge" aria-hidden="true">{badge}</span> : null}
+                {badge ? (
+                  <span className="tool-nav-badge" aria-hidden="true">
+                    {badge}
+                  </span>
+                ) : null}
               </button>
             );
           })}

@@ -20,6 +20,7 @@ from .mask_noise import save_one as mask_noise_save_one
 from .mask_noise import save_temp_image as mask_noise_save_temp_image
 from .mask_noise import settings_from_json as mask_noise_settings_from_json
 from .path_access import PathAccess
+from .ui_orchestrator_store import load_ui_map, save_ui_map
 from .torch_runtime import torch_runtime_info
 from .video_screenshot import capture_video_screenshot_jobs, capture_video_screenshots, find_videos, frame_base64, save_video_frame, video_info, videos_json
 from .yolo_classifier import classify_dataset_images, model_info
@@ -162,6 +163,8 @@ class BackendService:
             "writeFileBase64": self._handle_writeFileBase64,
             "readAppSettings": self._handle_readAppSettings,
             "writeAppSettings": self._handle_writeAppSettings,
+            "loadUiMap": self._handle_loadUiMap,
+            "saveUiMap": self._handle_saveUiMap,
             "openFolder": self._handle_openFolder,
             "createWorkspace": self._handle_createWorkspace,
             "readSnapshotVersions": self._handle_readSnapshotVersions,
@@ -439,6 +442,16 @@ class BackendService:
                 settings = {}
             write_app_settings(self.app_settings_dir, settings)
             return True
+
+    def _handle_loadUiMap(self, args: list[Any]) -> object:
+            if len(args) != 1:
+                raise ValueError("loadUiMap expects positional args [name].")
+            return load_ui_map(str(args[0]))
+
+    def _handle_saveUiMap(self, args: list[Any]) -> object:
+            if len(args) != 2:
+                raise ValueError("saveUiMap expects positional args [name, doc].")
+            return save_ui_map(str(args[0]), args[1])
 
     def _remember_workspace_paths(self, workspace_root: Path | str) -> Path:
         root = Path(self.path_access.remember_parent(workspace_root))

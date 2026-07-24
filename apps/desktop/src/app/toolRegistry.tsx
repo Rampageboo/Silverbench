@@ -33,17 +33,32 @@ const LabelTool = lazy(async () => {
 
 const ReviewHubTool = lazy(async () => {
   const { ReviewHubPage } = await import("../features/review-hub/ReviewHubPage");
-  return { default: (props: ToolPageProps) => <ReviewHubPage active={props.active} onReady={props.onReady} /> };
+  return {
+    default: (props: ToolPageProps) => <ReviewHubPage active={props.active} onReady={props.onReady} />
+  };
+});
+
+const UiOrchestratorTool = lazy(async () => {
+  const { UiOrchestratorPage } = await import("../features/ui-orchestrator/UiOrchestratorPage");
+  return {
+    default: (props: ToolPageProps) => (
+      <UiOrchestratorPage active={props.active} workspaceRoot={props.workspaceRoot} onReady={props.onReady} />
+    )
+  };
 });
 
 const ExportHubTool = lazy(async () => {
   const { ExportHubPage } = await import("../features/export-hub/ExportHubPage");
-  return { default: (props: ToolPageProps) => <ExportHubPage active={props.active} onReady={props.onReady} /> };
+  return {
+    default: (props: ToolPageProps) => <ExportHubPage active={props.active} onReady={props.onReady} />
+  };
 });
 
 const SettingsTool = lazy(async () => {
   const { SettingsPage } = await import("../features/settings/SettingsPage");
-  return { default: (props: ToolPageProps) => <SettingsPage active={props.active} onReady={props.onReady} /> };
+  return {
+    default: (props: ToolPageProps) => <SettingsPage active={props.active} onReady={props.onReady} />
+  };
 });
 
 // ── Legacy keep-alive tools ───────────────────────────────────────────────────
@@ -72,7 +87,9 @@ const VideoLabelTool = lazy(async () => {
 const VideoCaptureTool = lazy(async () => {
   const module = await import("../features/video/VideoCapturePage");
   return {
-    default: (props: ToolPageProps) => <module.VideoCapturePage active={props.active} onReady={props.onReady} />
+    default: (props: ToolPageProps) => (
+      <module.VideoCapturePage active={props.active} onReady={props.onReady} />
+    )
   };
 });
 
@@ -111,6 +128,7 @@ const TOOL_COMPONENTS: Record<ToolTab, WorkbenchToolDefinition["component"]> = {
   home: HomeTool,
   library: LibraryTool,
   label: LabelTool,
+  orchestrate: UiOrchestratorTool,
   review: ReviewHubTool,
   export: ExportHubTool,
   settings: SettingsTool,

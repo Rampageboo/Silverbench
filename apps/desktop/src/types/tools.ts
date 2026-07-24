@@ -1,5 +1,5 @@
 /** Primary navigation tabs visible in the redesigned sidebar. */
-export type PrimaryTab = "home" | "library" | "label" | "review" | "export" | "settings";
+export type PrimaryTab = "home" | "library" | "label" | "orchestrate" | "review" | "export" | "settings";
 
 /** Legacy tool tabs kept alive for KeepAlive rendering; not shown directly in nav. */
 export type LegacyToolTab =
@@ -33,7 +33,7 @@ export type WorkbenchTool = {
 };
 
 /**
- * Primary navigation items — the 6 items shown in the new sidebar.
+ * Primary navigation items shown in the sidebar.
  */
 export const PRIMARY_NAV_TOOLS: readonly WorkbenchTool[] = [
   {
@@ -65,6 +65,17 @@ export const PRIMARY_NAV_TOOLS: readonly WorkbenchTool[] = [
     heavy: true,
     requiresWorkspace: true,
     primary: true,
+    navPrimary: true
+  },
+  {
+    tab: "orchestrate",
+    label: "Orchestrate",
+    labelZh: "编排",
+    keywords: "orchestrate ui map page element automation author editor",
+    group: "primary",
+    keepAlive: true,
+    heavy: true,
+    requiresWorkspace: true,
     navPrimary: true
   },
   {
@@ -191,7 +202,4 @@ export const WORKBENCH_TOOLS: readonly WorkbenchTool[] = [
 ] as const;
 
 /** All tools combined — primary nav + legacy tools. */
-export const ALL_TOOLS: readonly WorkbenchTool[] = [
-  ...PRIMARY_NAV_TOOLS,
-  ...WORKBENCH_TOOLS
-] as const;
+export const ALL_TOOLS: readonly WorkbenchTool[] = [...PRIMARY_NAV_TOOLS, ...WORKBENCH_TOOLS] as const;

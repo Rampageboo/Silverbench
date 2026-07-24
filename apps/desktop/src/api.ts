@@ -1,9 +1,13 @@
 import { errMessage } from "./lib/errors";
 import { backendBaseUrl } from "./lib/backendConfig";
-import type { WorkspaceVersionId, WorkspaceVersionsManifest } from "./features/workspace-versioning/workspaceSnapshotVersions";
+import type {
+  WorkspaceVersionId,
+  WorkspaceVersionsManifest
+} from "./features/workspace-versioning/workspaceSnapshotVersions";
+import type { UiOrchestrationDoc } from "./features/ui-orchestrator/schema";
 
 export const API_BASE_URL = backendBaseUrl();
-export const REQUIRED_API_SCHEMA_VERSION = 22;
+export const REQUIRED_API_SCHEMA_VERSION = 23;
 
 export type BackendMethod =
   | "markImagePoolSeen"
@@ -50,6 +54,9 @@ export type BackendMethod =
   | "chooseMediaFiles"
   | "chooseTrainModelFile"
   | "readImageFileBase64"
+  | "getWorkspaceClasses"
+  | "loadUiMap"
+  | "saveUiMap"
   | "chooseVideoFiles"
   | "listWorkspaceVideos"
   | "getVideoFrameBase64"
@@ -343,6 +350,31 @@ export async function chooseImageFiles(title = "Choose Images to Import") {
   return callJson<string[]>("chooseImageFiles", [title]);
 }
 
+export async function readImageFileBase64(path: string) {
+  return callJson<string>("readImageFileBase64", [path]);
+}
+
+export async function getWorkspaceClassNames(workspaceRoot: string) {
+  const result = await callJson<{ ok: boolean; classes?: string[]; error?: string }>("getWorkspaceClasses", [
+    workspaceRoot
+  ]);
+  if (!result.ok) throw new Error(result.error || "Failed to load workspace classifier classes.");
+  return result.classes ?? [];
+}
+
+export type SaveUiMapResponse = {
+  name: string;
+  path: string;
+};
+
+export async function loadUiMap(name: string) {
+  return callJson<UiOrchestrationDoc>("loadUiMap", [name]);
+}
+
+export async function saveUiMap(name: string, doc: UiOrchestrationDoc) {
+  return callJson<SaveUiMapResponse>("saveUiMap", [name, doc]);
+}
+
 export async function chooseMediaFiles(title = "Choose Media to Import") {
   return callJson<string[]>("chooseMediaFiles", [title]);
 }
@@ -502,7 +534,7 @@ export async function classifyImageWithPt(
     imageRelativePath,
     imageSize,
     device,
-    topK,
+    topK
   ]);
 }
 
@@ -520,7 +552,7 @@ export async function startClassifyImageWithPt(
     imageRelativePath,
     imageSize,
     device,
-    topK,
+    topK
   ]);
 }
 
@@ -538,7 +570,7 @@ export async function classifyImageBase64WithPt(
     imageBase64,
     imageSize,
     device,
-    topK,
+    topK
   ]);
 }
 
@@ -556,7 +588,7 @@ export async function detectImageWithPt(
     imageRelativePath,
     imageSize,
     confidence,
-    device,
+    device
   ]);
 }
 
@@ -574,7 +606,7 @@ export async function startDetectImageWithPt(
     imageRelativePath,
     imageSize,
     confidence,
-    device,
+    device
   ]);
 }
 
@@ -592,7 +624,7 @@ export async function detectImageBase64WithPt(
     imageBase64,
     imageSize,
     confidence,
-    device,
+    device
   ]);
 }
 
@@ -651,7 +683,14 @@ export async function appSettings() {
   return data as AppSettings;
 }
 
-export async function writeAppSettings(settings: Partial<Pick<AppSettings, "lastOpenedWorkspace" | "lastOpenedFolder" | "lastOpenedYoloFolder" | "startupOverlayMode">>) {
+export async function writeAppSettings(
+  settings: Partial<
+    Pick<
+      AppSettings,
+      "lastOpenedWorkspace" | "lastOpenedFolder" | "lastOpenedYoloFolder" | "startupOverlayMode"
+    >
+  >
+) {
   const response = await fetch(`${API_BASE_URL}/api/app-settings`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -808,7 +847,12 @@ export async function readFileBase64(root: string, relativePath: string) {
   return callJson<string>("readFileBase64", [root, relativePath]);
 }
 
-export async function readFilePreviewBase64(root: string, relativePath: string, maxEdge = 1280, quality = 60) {
+export async function readFilePreviewBase64(
+  root: string,
+  relativePath: string,
+  maxEdge = 1280,
+  quality = 60
+) {
   return callJson<string>("readFilePreviewBase64", [root, relativePath, maxEdge, quality]);
 }
 
@@ -823,10 +867,7 @@ export async function writeTextFile(root: string, relativePath: string, text: st
 }
 
 export async function readLabelTextsBatch(datasetRoot: string, labelPaths: string[]) {
-  return callJson<Record<string, string>>("readLabelTextsBatch", [
-    datasetRoot,
-    JSON.stringify(labelPaths)
-  ]);
+  return callJson<Record<string, string>>("readLabelTextsBatch", [datasetRoot, JSON.stringify(labelPaths)]);
 }
 
 function parseClassIdsFromLabelText(text: string) {
@@ -853,11 +894,7 @@ export async function loadPoolLabelClassIndex(workspaceRoot: string) {
   return index;
 }
 
-export async function startBuildYoloLinks(
-  workspaceRoot: string,
-  rebuild: boolean,
-  filenamesJson = ""
-) {
+export async function startBuildYoloLinks(workspaceRoot: string, rebuild: boolean, filenamesJson = "") {
   return callJson<BuildJobState>("startBuildYoloLinks", [workspaceRoot, rebuild, filenamesJson]);
 }
 
