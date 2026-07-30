@@ -7,18 +7,20 @@ the active brief, repository code, or verified tests (see
 ## Metadata
 
 ```text
-Last updated: 2026-07-25 (UI Orchestrator M1–M4 shipped to main @ 4b8faed)
+Last updated: 2026-07-30 (UI Orchestrator M5–M7: Temporal schema 2.0,
+  authoring/replay/export, and cross-repository golden conformance)
 Last verified branch: main
-Last verified commit: 4b8faed (UI Orchestrator M4 golden conformance)
-Updated by: Claude (M1 routed to Codex; M2–M4 implemented directly after the
-  Codex sandbox broke — see gotcha; owned review, validation, and git throughout)
-Context confidence: UI Orchestrator code paths verified this session (build +
-  27 vitest + direct backend exercise); older bootstrap survey of unrelated
-  modules still partially stale.
+Last verified commit: (this commit — Temporal schema 2.0 authoring, replay,
+  export, and cross-repository golden fixtures)
+Updated by: Codex (Owner-direct, with key architecture and safety decisions
+  jointly reviewed in one persistent ChatGPT Pro conversation)
+Context confidence: Temporal Orchestrator verified with 47 focused frontend
+  tests, production build, 10 backend store tests, and browser farm replay/export.
 
 Git execution environments:
 - Windows 11 workstation (c:\Users\jieyi\Desktop\YoloWorkBench) | Claude Code (VSCode extension) | claude-git — CONFIRMED this session (Claude owned commit+push; Codex ran zero git) | 2026-07-25
 - Codex MCP (codex-user bridge, ChatGPT account) | connected + verified this session (thread created, effort high; Spark not available on this channel) | 2026-07-25
+- Windows 11 / Codex desktop / local PowerShell (C:\Users\jieyi\Documents\Projects\YoloWorkBench) | codex-git | 2026-07-30
 ```
 
 ## Project summary
@@ -129,26 +131,44 @@ not bolted into the labeling flow.
     crosshair). `DecisionResult` type added.
   - **M4 `4b8faed`** — `golden/coffee_errand/{map,cases}.json` (4 neutral cases) +
     `golden.test.ts` runner + `golden/README.md` (two-interpreter contract).
-- **NEXT (not started):** in-app end-to-end verification of the live model path
-  (needs a real detector/classifier `.pt` + GPU — never run in validation here);
-  wire the AutoHoyo-side adapter/importer against `golden/` + Export JSON.
+- **M5–M7 DONE (2026-07-30):** schema 2.0 defines the shared temporal contract:
+  `FrameEvent | ActionResultEvent | TickEvent | AbortEvent`, typed
+  Observe/Act/Branch/End nodes, stable DET/CLF evidence, correlation IDs,
+  deadline-before-event semantics, graph-external abort, and direct causal
+  evidence for terminal success. A strict validator rejects unknown fields and
+  unsupported map majors.
+- **Temporal authoring workbench:** `TemporalFlowPanel` provides coffee, farm,
+  and contract templates, validated JSON authoring, visual graph inspection,
+  deterministic event replay, and JSON export. Preview remains side-effect-free.
+- **Canonical v2 conformance:** `golden/v2/coffee-completion.json`,
+  `farm-single-run.json`, `temporal-contract.json`, and `cases.json` are the
+  cross-runtime source of truth. The sibling AutoHoyo importer/interpreter loads
+  these fixtures; coffee is bound DryRun-only and farm remains deliberately
+  unbound/fail-closed.
+- **Validation:** 7 frontend test files / 47 tests passed; production build
+  passed; 10 backend store tests passed; browser QA replayed farm to Completed
+  and exported the map with no console warnings or errors.
+- **NEXT:** implement click/input/OCR and selector-child execution only after
+  their target and input-safety contract is locked. Register `zzz.farm.run`
+  explicitly before any farm map can become executable in AutoHoyo.
 - **Open items (non-blocking):** OCR phrase-table storage location (only the
   reference form `ns/name@ver` is locked); OCR is not yet produced by the backend
-  (predictions carry no `ocr` → ocr conditions are Indeterminate until wired);
-  the detClass dropdown reads `getWorkspaceClasses` rather than box-label's
-  `workspace/classes.json` manifest (refine if it matters). Neutral schema +
-  AutoHoyo importer chosen over direct `ScriptStore` export (D9).
+  (predictions carry no `ocr` → OCR conditions remain unsupported for temporal
+  execution); the detClass dropdown reads `getWorkspaceClasses` rather than
+  box-label's `workspace/classes.json` manifest (refine if it matters). Neutral
+  schema, AutoHoyo importer, node vocabulary, runtime capability separation,
+  and cross-repository golden fixtures are resolved.
 
 ## Pending decisions / open questions
 
-- Git execution mode for this workstation — RESOLVED: claude-git (confirmed
-  2026-07-25; Claude owned M1 commit+push, Codex ran zero git).
-- Whether/when to commit the untracked protocol files and `PROJECTCONTEXT.md`
-  — Owner call on timing (still uncommitted as of d86e43b; M1 code committed
-  separately without them).
-- Open UI Orchestrator items unchanged: OCR phrase-table storage location; neutral
-  schema + AutoHoyo importer vs direct `ScriptStore` export; flow node vocab
-  alignment with AutoHoyo — all deferred to M2+/joint pass, not blocking.
+- Git execution mode is environment-specific. The 2026-07-25 Claude workstation
+  remained `claude-git`; the current 2026-07-30 Codex desktop environment is
+  independently verified `codex-git` and owns this commit/push.
+- OCR phrase-table storage remains open. Neutral schema/importer choice, temporal
+  node vocabulary, runtime capability preflight, and the shared golden contract
+  are resolved by M5–M7.
+- Farm execution remains intentionally unavailable until AutoHoyo registers a
+  concrete `zzz.farm.run` binding and its success evidence/input safety are tested.
 - `PROJECTCONTEXT_TEMPLATE.md` referenced by the project-context module does
   not exist in the repo; this file was authored from the module's spec
   instead. Create the template or drop the reference.

@@ -9,7 +9,7 @@ from .atomic_write import write_text_atomic
 from .path_access import PathAccess
 
 
-SUPPORTED_SCHEMA_MAJOR = 1
+SUPPORTED_SCHEMA_MAJOR = 2
 REPO_ROOT = Path(__file__).resolve().parent.parent
 UI_MAPS_ROOT = REPO_ROOT / "ui_maps"
 _SCHEMA_VERSION_RE = re.compile(r"^(\d+)\.(\d+)$")

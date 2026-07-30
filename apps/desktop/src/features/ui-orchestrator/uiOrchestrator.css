@@ -458,6 +458,231 @@
   font-size: 11px;
 }
 
+.uio-workspace.temporal {
+  display: block;
+  overflow: auto;
+}
+
+.uio-temporal-panel {
+  min-width: 920px;
+}
+
+.uio-temporal-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 2px 10px;
+}
+
+.uio-temporal-toolbar > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.uio-temporal-template-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.uio-temporal-status {
+  margin: -3px 0 8px;
+  padding: 7px 10px;
+  border: 1px solid rgba(96, 165, 250, 0.18);
+  border-radius: 7px;
+  color: #bfdbfe;
+  background: rgba(15, 27, 45, 0.6);
+  font-size: 11px;
+}
+
+.uio-temporal-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.95fr) minmax(440px, 1.25fr);
+  grid-template-rows: minmax(420px, 1fr) minmax(300px, 0.8fr);
+  gap: 8px;
+}
+
+.uio-temporal-source,
+.uio-temporal-replay,
+.uio-temporal-graph-panel,
+.uio-temporal-result {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.uio-temporal-source textarea,
+.uio-temporal-replay textarea {
+  width: 100%;
+  min-height: 0;
+  margin-top: 8px;
+  padding: 10px;
+  box-sizing: border-box;
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  border-radius: 8px;
+  color: #dbeafe;
+  background: #050b14;
+  font:
+    11px/1.5 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  resize: none;
+}
+
+.uio-temporal-errors {
+  max-height: 110px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding-left: 20px;
+  color: #fecaca;
+  font-size: 11px;
+}
+
+.uio-temporal-ok {
+  margin: 8px 0 0;
+  color: #86efac;
+  font-size: 11px;
+}
+
+.uio-temporal-graph {
+  display: grid;
+  gap: 7px;
+  margin-top: 8px;
+  overflow: auto;
+}
+
+.uio-temporal-node {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.8fr) minmax(210px, 1.2fr);
+  gap: 12px;
+  padding: 9px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.17);
+  border-left: 3px solid #64748b;
+  border-radius: 8px;
+  background: rgba(6, 14, 26, 0.78);
+}
+
+.uio-temporal-node.kind-observe {
+  border-left-color: #38bdf8;
+}
+
+.uio-temporal-node.kind-decide {
+  border-left-color: #f59e0b;
+}
+
+.uio-temporal-node.kind-act {
+  border-left-color: #c084fc;
+}
+
+.uio-temporal-node.kind-end {
+  border-left-color: #4ade80;
+}
+
+.uio-temporal-node > div {
+  display: grid;
+  gap: 2px;
+}
+
+.uio-temporal-node > div > span {
+  color: #60a5fa;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.uio-temporal-node small,
+.uio-temporal-node em {
+  color: #94a3b8;
+  font-size: 10px;
+  font-style: normal;
+}
+
+.uio-temporal-node ul {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.uio-temporal-node li {
+  display: grid;
+  grid-template-columns: minmax(88px, auto) 1fr;
+  gap: 8px;
+  color: #a8b7ca;
+  font-size: 10px;
+}
+
+.uio-temporal-node code,
+.uio-temporal-result code,
+.uio-temporal-trace code {
+  color: #93c5fd;
+}
+
+.uio-temporal-replay {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.uio-temporal-result {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.uio-temporal-result dl {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 9px 0;
+}
+
+.uio-temporal-result dl > div {
+  padding: 7px;
+  border-radius: 7px;
+  background: rgba(15, 27, 45, 0.72);
+}
+
+.uio-temporal-result dt {
+  color: #94a3b8;
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.uio-temporal-result dd {
+  margin: 3px 0 0;
+  color: #e5edf8;
+  font-size: 13px;
+}
+
+.uio-temporal-trace {
+  display: grid;
+  gap: 5px;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.uio-temporal-trace li {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 8px;
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: rgba(6, 14, 26, 0.62);
+  font:
+    10px/1.4 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+}
+
+.uio-temporal-trace span {
+  overflow-wrap: anywhere;
+  color: #a8b7ca;
+}
+
 @media (max-width: 1150px) {
   .uio-workspace {
     grid-template-columns: 220px minmax(360px, 1fr) 280px;

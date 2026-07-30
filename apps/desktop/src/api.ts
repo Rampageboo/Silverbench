@@ -5,6 +5,7 @@ import type {
   WorkspaceVersionsManifest
 } from "./features/workspace-versioning/workspaceSnapshotVersions";
 import type { Predictions, UiOrchestrationDoc } from "./features/ui-orchestrator/schema";
+import type { UiOrchestrationDocV2 } from "./features/ui-orchestrator/schemaV2";
 
 export const API_BASE_URL = backendBaseUrl();
 export const REQUIRED_API_SCHEMA_VERSION = 24;
@@ -368,11 +369,13 @@ export type SaveUiMapResponse = {
   path: string;
 };
 
+export type UiMapDocument = UiOrchestrationDoc | UiOrchestrationDocV2;
+
 export async function loadUiMap(name: string) {
-  return callJson<UiOrchestrationDoc>("loadUiMap", [name]);
+  return callJson<UiMapDocument>("loadUiMap", [name]);
 }
 
-export async function saveUiMap(name: string, doc: UiOrchestrationDoc) {
+export async function saveUiMap(name: string, doc: UiMapDocument) {
   return callJson<SaveUiMapResponse>("saveUiMap", [name, doc]);
 }
 

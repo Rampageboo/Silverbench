@@ -25,7 +25,8 @@ import type {
 } from "./schema";
 
 type Box = [number, number, number, number];
-type Tri = "True" | "False" | "Indeterminate";
+export type VisionDecision = "True" | "False" | "Indeterminate";
+type Tri = VisionDecision;
 type Resolution = { status: "resolved"; box: Box } | { status: "absent" } | { status: "indeterminate" };
 
 type ElementInfo = { element: Element; parentName: string | null };
@@ -249,6 +250,35 @@ function evalCondition(condition: Condition, index: PageIndex, predictions: Pred
   const { reads, score } = ocrBestScore(resolution.box, condition.phrase, predictions.ocr);
   if (reads === 0) return "Indeterminate";
   return score >= condition.minScore ? "True" : "False";
+}
+
+// Shared single-frame primitives used by the schema-2.0 temporal interpreter.
+// Missing-channel handling stays in that interpreter; these helpers only run
+// after it has proved that every required prediction channel is available.
+export function evaluatePageSnapshot(page: Page, predictions: Predictions): "True" | "False" {
+  return pageHolds(page, indexPage(page), predictions) ? "True" : "False";
+}
+
+export function evaluateConditionSnapshot(
+  page: Page,
+  condition: Condition,
+  predictions: Predictions
+): VisionDecision {
+  return evalCondition(condition, indexPage(page), predictions);
+}
+
+export function resolveClickSnapshot(
+  page: Page,
+  target: { element: string; select?: Selector; child?: string },
+  predictions: Predictions
+): DecisionResult["intended"] | undefined {
+  const resolution = resolveRef(indexPage(page), target, predictions);
+  if (resolution.status !== "resolved") return undefined;
+  return {
+    element: target.child ?? target.element,
+    box: resolution.box,
+    point: center(resolution.box)
+  };
 }
 
 export function interpretFlow(

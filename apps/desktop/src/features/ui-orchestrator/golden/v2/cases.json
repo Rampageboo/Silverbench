@@ -1,0 +1,725 @@
+{
+  "schemaVersion": "2.0",
+  "cases": [
+    {
+      "name": "missing-frame-resets-stability-and-times-out",
+      "map": "coffee-completion.json",
+      "flowId": "zzz.coffee.complete.phase1",
+      "events": [
+        {
+          "type": "frame",
+          "seq": 1,
+          "atMs": 0
+        },
+        {
+          "type": "frame",
+          "seq": 2,
+          "atMs": 100,
+          "frame": {
+            "imageSize": [100, 100],
+            "clf": {
+              "status": "ok",
+              "value": {
+                "label": "Coffee_MissionScene",
+                "conf": 0.99
+              }
+            },
+            "det": {
+              "status": "ok",
+              "value": [
+                {
+                  "class": "mission_hud",
+                  "box": [0, 0, 100, 20],
+                  "conf": 0.99
+                }
+              ]
+            },
+            "ocr": {
+              "status": "ok",
+              "value": []
+            }
+          }
+        },
+        {
+          "type": "tick",
+          "atMs": 1001
+        }
+      ],
+      "expected": {
+        "status": "Failed",
+        "currentNodeId": "missionTimeout",
+        "emittedRequestIds": [],
+        "terminalEvidence": {
+          "source": "timeout",
+          "nodeId": "observeMission"
+        },
+        "trace": [
+          {
+            "type": "node",
+            "nodeId": "start",
+            "atMs": 0
+          },
+          {
+            "type": "transition",
+            "from": "start",
+            "to": "observeMission",
+            "on": "Next",
+            "atMs": 0
+          },
+          {
+            "type": "node",
+            "nodeId": "observeMission",
+            "atMs": 0
+          },
+          {
+            "type": "transition",
+            "from": "observeMission",
+            "to": "missionTimeout",
+            "on": "Timeout",
+            "atMs": 1001
+          },
+          {
+            "type": "node",
+            "nodeId": "missionTimeout",
+            "atMs": 1001
+          },
+          {
+            "type": "terminal",
+            "status": "Failed",
+            "nodeId": "missionTimeout",
+            "atMs": 1001
+          }
+        ]
+      }
+    },
+    {
+      "name": "missing-ocr-is-indeterminate-not-false",
+      "map": "temporal-contract.json",
+      "flowId": "test.temporal.contract",
+      "events": [
+        {
+          "type": "frame",
+          "seq": 1,
+          "atMs": 0,
+          "frame": {
+            "imageSize": [100, 100],
+            "clf": {
+              "status": "ok",
+              "value": {
+                "label": "Contract_Ready",
+                "conf": 0.99
+              }
+            },
+            "det": {
+              "status": "ok",
+              "value": [
+                {
+                  "class": "ready_panel",
+                  "box": [0, 0, 100, 100],
+                  "conf": 0.99
+                },
+                {
+                  "class": "status_text",
+                  "box": [20, 20, 80, 40],
+                  "conf": 0.99
+                }
+              ]
+            },
+            "ocr": {
+              "status": "missing",
+              "reason": "not-run"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "status": "Running",
+        "currentNodeId": "waitForFreshFrame",
+        "emittedRequestIds": [],
+        "trace": [
+          {
+            "type": "node",
+            "nodeId": "start",
+            "atMs": 0
+          },
+          {
+            "type": "transition",
+            "from": "start",
+            "to": "observeReady",
+            "on": "Next",
+            "atMs": 0
+          },
+          {
+            "type": "node",
+            "nodeId": "observeReady",
+            "atMs": 0
+          },
+          {
+            "type": "transition",
+            "from": "observeReady",
+            "to": "isReady",
+            "on": "Observed",
+            "atMs": 0
+          },
+          {
+            "type": "node",
+            "nodeId": "isReady",
+            "atMs": 0
+          },
+          {
+            "type": "transition",
+            "from": "isReady",
+            "to": "waitForFreshFrame",
+            "on": "Indeterminate",
+            "atMs": 0
+          },
+          {
+            "type": "node",
+            "nodeId": "waitForFreshFrame",
+            "atMs": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "stale-action-result-is-ignored-then-times-out",
+      "map": "coffee-completion.json",
+      "flowId": "zzz.coffee.complete.phase1",
+      "events": [
+        {
+          "type": "frame",
+          "seq": 1,
+          "atMs": 0,
+          "frame": {
+            "imageSize": [100, 100],
+            "clf": {
+              "status": "ok",
+              "value": {
+                "label": "Coffee_MissionScene",
+                "conf": 0.99
+              }
+            },
+            "det": {
+              "status": "ok",
+              "value": [
+                {
+                  "class": "mission_hud",
+                  "box": [0, 0, 100, 20],
+                  "conf": 0.99
+                }
+              ]
+            },
+            "ocr": {
+              "status": "ok",
+              "value": []
+            }
+          }
+        },
+        {
+          "type": "frame",
+          "seq": 2,
+          "atMs": 100,
+          "frame": {
+            "imageSize": [100, 100],
+            "clf": {
+              "status": "ok",
+              "value": {
+                "label": "Coffee_MissionScene",
+                "conf": 0.99
+              }
+            },
+            "det": {
+              "status": "ok",
+              "value": [
+                {
+                  "class": "mission_hud",
+                  "box": [0, 0, 100, 20],
+                  "conf": 0.99
+                }
+              ]
+            },
+            "ocr": {
+              "status": "ok",
+              "value": []
+            }
+          }
+        },
+        {
+          "type": "actionResult",
+          "requestId": "stale-request",
+          "atMs": 200,
+          "status": "Succeeded",
+          "code": "coffee_dry_run_completion_confirmed"
+        },
+        {
+          "type": "tick",
+          "atMs": 5101
+        }
+      ],
+      "expected": {
+        "status": "Failed",
+        "currentNodeId": "actionTimeout",
+        "emittedRequestIds": ["zzz.coffee.complete.phase1:invokeCompletion:1"],
+        "terminalEvidence": {
+          "source": "timeout",
+          "nodeId": "invokeCompletion"
+        },
+        "trace": [
+          {
+            "type": "node",
+            "nodeId": "start",
+            "atMs": 0
+          },
+          {
+            "type": "transition",
+            "from": "start",
+            "to": "observeMission",
+            "on": "Next",
+            "atMs": 0
+          },
+          {
+            "type": "node",
+            "nodeId": "observeMission",
+            "atMs": 0
+          },
+          {
+            "type": "transition",
+            "from": "observeMission",
+            "to": "invokeCompletion",
+            "on": "Observed",
+            "atMs": 100
+          },
+          {
+            "type": "node",
+            "nodeId": "invokeCompletion",
+            "atMs": 100
+          },
+          {
+            "type": "actionRequest",
+            "nodeId": "invokeCompletion",
+            "requestId": "zzz.coffee.complete.phase1:invokeCompletion:1",
+            "atMs": 100
+          },
+          {
+            "type": "diagnostic",
+            "code": "StaleActionResultIgnored",
+            "atMs": 200,
+            "detail": "requestId=stale-request"
+          },
+          {
+            "type": "transition",
+            "from": "invokeCompletion",
+            "to": "actionTimeout",
+            "on": "Timeout",
+            "atMs": 5101
+          },
+          {
+            "type": "node",
+            "nodeId": "actionTimeout",
+            "atMs": 5101
+          },
+          {
+            "type": "terminal",
+            "status": "Failed",
+            "nodeId": "actionTimeout",
+            "atMs": 5101
+          }
+        ]
+      }
+    },
+    {
+      "name": "action-result-deadline-is-bounded",
+      "map": "coffee-completion.json",
+      "flowId": "zzz.coffee.complete.phase1",
+      "events": [
+        {
+          "type": "frame",
+          "seq": 1,
+          "atMs": 0,
+          "frame": {
+            "imageSize": [100, 100],
+            "clf": {
+              "status": "ok",
+              "value": {
+                "label": "Coffee_MissionScene",
+                "conf": 0.99
+              }
+            },
+            "det": {
+              "status": "ok",
+              "value": [
+                {
+                  "class": "mission_hud",
+                  "box": [0, 0, 100, 20],
+                  "conf": 0.99
+                }
+              ]
+            },
+            "ocr": {
+              "status": "ok",
+              "value": []
+            }
+          }
+        },
+        {
+          "type": "frame",
+          "seq": 2,
+          "atMs": 100,
+          "frame": {
+            "imageSize": [100, 100],
+            "clf": {
+              "status": "ok",
+              "value": {
+                "label": "Coffee_MissionScene",
+                "conf": 0.99
+              }
+            },
+            "det": {
+              "status": "ok",
+              "value": [
+                {
+                  "class": "mission_hud",
+                  "box": [0, 0, 100, 20],
+                  "conf": 0.99
+                }
+              ]
+            },
+            "ocr": {
+              "status": "ok",
+              "value": []
+            }
+          }
+        },
+        {
+          "type": "tick",
+          "atMs": 5101
+        }
+      ],
+      "expected": {
+        "status": "Failed",
+        "currentNodeId": "actionTimeout",
+        "emittedRequestIds": ["zzz.coffee.complete.phase1:invokeCompletion:1"],
+        "terminalEvidence": {
+          "source": "timeout",
+          "nodeId": "invokeCompletion"
+        }
+      }
+    },
+    {
+      "name": "abort-is-global-and-final",
+      "map": "coffee-completion.json",
+      "flowId": "zzz.coffee.complete.phase1",
+      "events": [
+        {
+          "type": "frame",
+          "seq": 1,
+          "atMs": 0,
+          "frame": {
+            "imageSize": [100, 100],
+            "clf": {
+              "status": "ok",
+              "value": {
+                "label": "Coffee_MissionScene",
+                "conf": 0.99
+              }
+            },
+            "det": {
+              "status": "ok",
+              "value": [
+                {
+                  "class": "mission_hud",
+                  "box": [0, 0, 100, 20],
+                  "conf": 0.99
+                }
+              ]
+            },
+            "ocr": {
+              "status": "ok",
+              "value": []
+            }
+          }
+        },
+        {
+          "type": "frame",
+          "seq": 2,
+          "atMs": 100,
+          "frame": {
+            "imageSize": [100, 100],
+            "clf": {
+              "status": "ok",
+              "value": {
+                "label": "Coffee_MissionScene",
+                "conf": 0.99
+              }
+            },
+            "det": {
+              "status": "ok",
+              "value": [
+                {
+                  "class": "mission_hud",
+                  "box": [0, 0, 100, 20],
+                  "conf": 0.99
+                }
+              ]
+            },
+            "ocr": {
+              "status": "ok",
+              "value": []
+            }
+          }
+        },
+        {
+          "type": "abort",
+          "atMs": 200,
+          "reason": "user-stop"
+        }
+      ],
+      "expected": {
+        "status": "Aborted",
+        "currentNodeId": "invokeCompletion",
+        "emittedRequestIds": ["zzz.coffee.complete.phase1:invokeCompletion:1"],
+        "terminalEvidence": {
+          "source": "abort",
+          "reason": "user-stop"
+        }
+      }
+    },
+    {
+      "name": "farm-completes-only-after-settlement-confirmation",
+      "map": "farm-single-run.json",
+      "flowId": "zzz.farm.single-run",
+      "events": [
+        {
+          "type": "frame",
+          "seq": 1,
+          "atMs": 0,
+          "frame": {
+            "imageSize": [100, 100],
+            "clf": {
+              "status": "ok",
+              "value": {
+                "label": "Farm_Ready",
+                "conf": 0.99
+              }
+            },
+            "det": {
+              "status": "ok",
+              "value": [
+                {
+                  "class": "farm_start_button",
+                  "box": [40, 70, 60, 90],
+                  "conf": 0.99
+                }
+              ]
+            },
+            "ocr": {
+              "status": "ok",
+              "value": []
+            }
+          }
+        },
+        {
+          "type": "frame",
+          "seq": 2,
+          "atMs": 100,
+          "frame": {
+            "imageSize": [100, 100],
+            "clf": {
+              "status": "ok",
+              "value": {
+                "label": "Farm_Ready",
+                "conf": 0.99
+              }
+            },
+            "det": {
+              "status": "ok",
+              "value": [
+                {
+                  "class": "farm_start_button",
+                  "box": [40, 70, 60, 90],
+                  "conf": 0.99
+                }
+              ]
+            },
+            "ocr": {
+              "status": "ok",
+              "value": []
+            }
+          }
+        },
+        {
+          "type": "actionResult",
+          "requestId": "zzz.farm.single-run:invokeRun:1",
+          "atMs": 200,
+          "status": "Succeeded",
+          "code": "combat_finished"
+        },
+        {
+          "type": "tick",
+          "atMs": 1000
+        },
+        {
+          "type": "frame",
+          "seq": 3,
+          "atMs": 1100,
+          "frame": {
+            "imageSize": [100, 100],
+            "clf": {
+              "status": "ok",
+              "value": {
+                "label": "Farm_Settlement",
+                "conf": 0.99
+              }
+            },
+            "det": {
+              "status": "ok",
+              "value": [
+                {
+                  "class": "farm_settlement_panel",
+                  "box": [10, 10, 90, 90],
+                  "conf": 0.99
+                }
+              ]
+            },
+            "ocr": {
+              "status": "ok",
+              "value": []
+            }
+          }
+        },
+        {
+          "type": "frame",
+          "seq": 4,
+          "atMs": 1300,
+          "frame": {
+            "imageSize": [100, 100],
+            "clf": {
+              "status": "ok",
+              "value": {
+                "label": "Farm_Settlement",
+                "conf": 0.99
+              }
+            },
+            "det": {
+              "status": "ok",
+              "value": [
+                {
+                  "class": "farm_settlement_panel",
+                  "box": [10, 10, 90, 90],
+                  "conf": 0.99
+                }
+              ]
+            },
+            "ocr": {
+              "status": "ok",
+              "value": []
+            }
+          }
+        }
+      ],
+      "checkpoints": [
+        {
+          "afterEvent": 3,
+          "status": "Running",
+          "currentNodeId": "observeSettlement",
+          "terminal": false
+        },
+        {
+          "afterEvent": 5,
+          "status": "Running",
+          "currentNodeId": "observeSettlement",
+          "terminal": false
+        }
+      ],
+      "expected": {
+        "status": "Completed",
+        "currentNodeId": "done",
+        "emittedRequestIds": ["zzz.farm.single-run:invokeRun:1"],
+        "terminalEvidence": {
+          "source": "condition",
+          "nodeId": "confirmSettlement",
+          "outcome": "True"
+        },
+        "trace": [
+          {
+            "type": "node",
+            "nodeId": "start",
+            "atMs": 0
+          },
+          {
+            "type": "transition",
+            "from": "start",
+            "to": "observeReady",
+            "on": "Next",
+            "atMs": 0
+          },
+          {
+            "type": "node",
+            "nodeId": "observeReady",
+            "atMs": 0
+          },
+          {
+            "type": "transition",
+            "from": "observeReady",
+            "to": "invokeRun",
+            "on": "Observed",
+            "atMs": 100
+          },
+          {
+            "type": "node",
+            "nodeId": "invokeRun",
+            "atMs": 100
+          },
+          {
+            "type": "actionRequest",
+            "nodeId": "invokeRun",
+            "requestId": "zzz.farm.single-run:invokeRun:1",
+            "atMs": 100
+          },
+          {
+            "type": "transition",
+            "from": "invokeRun",
+            "to": "observeSettlement",
+            "on": "Succeeded",
+            "atMs": 200
+          },
+          {
+            "type": "node",
+            "nodeId": "observeSettlement",
+            "atMs": 200
+          },
+          {
+            "type": "transition",
+            "from": "observeSettlement",
+            "to": "confirmSettlement",
+            "on": "Observed",
+            "atMs": 1300
+          },
+          {
+            "type": "node",
+            "nodeId": "confirmSettlement",
+            "atMs": 1300
+          },
+          {
+            "type": "transition",
+            "from": "confirmSettlement",
+            "to": "done",
+            "on": "True",
+            "atMs": 1300
+          },
+          {
+            "type": "node",
+            "nodeId": "done",
+            "atMs": 1300
+          },
+          {
+            "type": "terminal",
+            "status": "Completed",
+            "nodeId": "done",
+            "atMs": 1300
+          }
+        ]
+      }
+    }
+  ]
+}

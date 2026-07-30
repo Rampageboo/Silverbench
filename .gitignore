@@ -207,6 +207,8 @@ runs/
 exports/
 video_segments/
 [vV][0-9]*/
+!apps/desktop/src/features/ui-orchestrator/golden/v2/
+!apps/desktop/src/features/ui-orchestrator/golden/v2/**
 workspace_versions.json
 metadata.csv
 workspace/autolabel_models.json

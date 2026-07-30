@@ -50,13 +50,23 @@ def test_unsafe_names_are_rejected(ui_maps_root: Path, name: str) -> None:
 
 def test_newer_major_version_is_rejected_with_typed_error(ui_maps_root: Path) -> None:
     doc = _valid_doc()
-    doc["schemaVersion"] = "2.0"
+    doc["schemaVersion"] = "3.0"
 
     with pytest.raises(store.UnsupportedUiMapVersionError) as caught:
         store.save_ui_map("future", doc)
 
     assert caught.value.code == "unsupported_ui_map_version"
-    assert caught.value.schema_version == "2.0"
+    assert caught.value.schema_version == "3.0"
+
+
+def test_schema_2_document_round_trips(ui_maps_root: Path) -> None:
+    doc = _valid_doc()
+    doc["schemaVersion"] = "2.0"
+    doc["flows"] = [{"id": "test.temporal", "nodes": [], "edges": []}]
+
+    store.save_ui_map("temporal", doc)
+
+    assert store.load_ui_map("temporal") == doc
 
 
 @pytest.mark.parametrize(

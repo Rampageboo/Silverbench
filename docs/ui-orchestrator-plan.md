@@ -352,6 +352,26 @@ one‑slice‑at‑a‑time habit of both repos).
   align/export for AutoHoyo's consumer; verify the coffee‑errand flow round‑trips
   and matches AutoHoyo's existing golden fixtures.
 
+Schema 1.0 milestones M0–M4 are implemented. Temporal work continues as a new
+major rather than changing their meaning:
+
+- **M5 — Temporal schema 2.0.** Normative spec, closed TypeScript types and
+  validator, four-event contract, emit-once Act suspension, structured terminal
+  evidence, coffee and farm template maps.
+- **M6 — Golden temporal traces.** Shared JSON event streams and exact traces for
+  missing frame/channel, stale result, action deadline, abort, and farm
+  settlement-only completion.
+- **M7 — Temporal authoring and preview.** Load/edit/export 2.0 documents and
+  replay ordered events in the UI without dispatching input.
+- **M8 — AutoHoyo dry-run consumer.** Neutral importer plus a separate temporal
+  interpreter; do not lower to the acyclic `ScriptExecutor`.
+- **M9 — Coffee invoke binding.** Adapt `zzz.coffee.complete` to the existing
+  bounded coffee completion action and return typed causal evidence.
+- **M10 — Coffee declarative expansion.** Replace the invoke adapter only after
+  click/logical-input bindings and cross-runtime golden parity are proven.
+- **M11 — Farm single run.** Bind `zzz.farm.run`; commit a run only after stable
+  settlement confirmation.
+
 Suggested first shippable target: **M0 → M1**, then reassess before investing in
 the flow graph.
 

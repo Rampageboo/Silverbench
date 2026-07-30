@@ -1,0 +1,241 @@
+{
+  "schemaVersion": "2.0",
+  "game": "Zenless_Zone_Zero",
+  "metadata": {
+    "notes": "One farm run. The caller may commit a run only after the settlement page is stably observed."
+  },
+  "parameters": {
+    "activityId": {
+      "type": "string",
+      "required": true
+    },
+    "stageId": {
+      "type": "string",
+      "default": ""
+    }
+  },
+  "pages": [
+    {
+      "id": "Farm.Ready",
+      "trigger": {
+        "clf": "Farm_Ready",
+        "minConfidence": 0.9
+      },
+      "guard": {
+        "require": ["start_button"]
+      },
+      "elements": {
+        "start_button": {
+          "kind": "button",
+          "detClass": "farm_start_button"
+        }
+      }
+    },
+    {
+      "id": "Farm.Settlement",
+      "trigger": {
+        "clf": "Farm_Settlement",
+        "minConfidence": 0.9
+      },
+      "guard": {
+        "require": ["settlement_panel"]
+      },
+      "elements": {
+        "settlement_panel": {
+          "kind": "container",
+          "detClass": "farm_settlement_panel"
+        }
+      }
+    }
+  ],
+  "flows": [
+    {
+      "id": "zzz.farm.single-run",
+      "nodes": [
+        {
+          "id": "start",
+          "kind": "Start"
+        },
+        {
+          "id": "observeReady",
+          "kind": "Observe",
+          "page": "Farm.Ready",
+          "timeoutMs": 1500,
+          "stability": {
+            "minConsecutiveFrames": 2,
+            "minStableMs": 100,
+            "maxFrameGapMs": 250
+          }
+        },
+        {
+          "id": "invokeRun",
+          "kind": "Act",
+          "intent": {
+            "type": "invoke",
+            "op": "zzz.farm.run",
+            "arguments": {
+              "activityId": {
+                "parameter": "activityId"
+              },
+              "stageId": {
+                "parameter": "stageId"
+              }
+            }
+          },
+          "resultTimeoutMs": 120000
+        },
+        {
+          "id": "observeSettlement",
+          "kind": "Observe",
+          "page": "Farm.Settlement",
+          "timeoutMs": 10000,
+          "stability": {
+            "minConsecutiveFrames": 2,
+            "minStableMs": 200,
+            "maxFrameGapMs": 500
+          }
+        },
+        {
+          "id": "confirmSettlement",
+          "kind": "Decide",
+          "condition": {
+            "type": "detPresent",
+            "target": {
+              "element": "settlement_panel"
+            },
+            "minConfidence": 0.9
+          }
+        },
+        {
+          "id": "settlementRecheck",
+          "kind": "Wait",
+          "durationMs": 100
+        },
+        {
+          "id": "done",
+          "kind": "End",
+          "outcome": "Completed",
+          "evidence": {
+            "source": "condition",
+            "nodeId": "confirmSettlement",
+            "outcome": "True"
+          }
+        },
+        {
+          "id": "readyTimeout",
+          "kind": "End",
+          "outcome": "Failed",
+          "evidence": {
+            "source": "timeout",
+            "nodeId": "observeReady"
+          }
+        },
+        {
+          "id": "runFailed",
+          "kind": "End",
+          "outcome": "Failed",
+          "evidence": {
+            "source": "actionResult",
+            "nodeId": "invokeRun",
+            "status": "Failed"
+          }
+        },
+        {
+          "id": "runIndeterminate",
+          "kind": "End",
+          "outcome": "Failed",
+          "evidence": {
+            "source": "actionResult",
+            "nodeId": "invokeRun",
+            "status": "Indeterminate"
+          }
+        },
+        {
+          "id": "runTimeout",
+          "kind": "End",
+          "outcome": "Failed",
+          "evidence": {
+            "source": "timeout",
+            "nodeId": "invokeRun"
+          }
+        },
+        {
+          "id": "settlementTimeout",
+          "kind": "End",
+          "outcome": "Failed",
+          "evidence": {
+            "source": "timeout",
+            "nodeId": "observeSettlement"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": "start",
+          "to": "observeReady",
+          "on": "Next"
+        },
+        {
+          "from": "observeReady",
+          "to": "invokeRun",
+          "on": "Observed"
+        },
+        {
+          "from": "observeReady",
+          "to": "readyTimeout",
+          "on": "Timeout"
+        },
+        {
+          "from": "invokeRun",
+          "to": "observeSettlement",
+          "on": "Succeeded"
+        },
+        {
+          "from": "invokeRun",
+          "to": "runFailed",
+          "on": "Failed"
+        },
+        {
+          "from": "invokeRun",
+          "to": "runIndeterminate",
+          "on": "Indeterminate"
+        },
+        {
+          "from": "invokeRun",
+          "to": "runTimeout",
+          "on": "Timeout"
+        },
+        {
+          "from": "observeSettlement",
+          "to": "confirmSettlement",
+          "on": "Observed"
+        },
+        {
+          "from": "observeSettlement",
+          "to": "settlementTimeout",
+          "on": "Timeout"
+        },
+        {
+          "from": "confirmSettlement",
+          "to": "done",
+          "on": "True"
+        },
+        {
+          "from": "confirmSettlement",
+          "to": "settlementRecheck",
+          "on": "False"
+        },
+        {
+          "from": "confirmSettlement",
+          "to": "settlementRecheck",
+          "on": "Indeterminate"
+        },
+        {
+          "from": "settlementRecheck",
+          "to": "observeSettlement",
+          "on": "Next"
+        }
+      ]
+    }
+  ]
+}

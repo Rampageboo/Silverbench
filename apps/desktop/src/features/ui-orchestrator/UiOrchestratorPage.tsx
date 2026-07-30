@@ -47,7 +47,10 @@ import {
   type Repeat,
   type UiOrchestrationDoc
 } from "./schema";
+import coffeeV2Json from "./golden/v2/coffee-completion.json";
+import { validateDocV2, type UiOrchestrationDocV2 } from "./schemaV2";
 import { FlowGraphPanel } from "./FlowGraphPanel";
+import { TemporalFlowPanel } from "./TemporalFlowPanel";
 import "./uiOrchestrator.css";
 
 type UiOrchestratorPageProps = {
@@ -149,6 +152,9 @@ function safeDownloadName(name: string) {
 
 export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPageProps) {
   const [doc, setDoc] = useState<UiOrchestrationDoc>(newDocument);
+  const [temporalDoc, setTemporalDoc] = useState<UiOrchestrationDocV2>(
+    coffeeV2Json as unknown as UiOrchestrationDocV2
+  );
   const [pageIndex, setPageIndex] = useState(0);
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState("");
@@ -164,7 +170,7 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
   const [clfModelPath, setClfModelPath] = useState("");
   const [predictions, setPredictions] = useState<Predictions | null>(null);
   const [predicting, setPredicting] = useState(false);
-  const [mode, setMode] = useState<"pages" | "flow">("pages");
+  const [mode, setMode] = useState<"pages" | "flow" | "temporal">("pages");
   const [activeFlowId, setActiveFlowId] = useState<string | null>(null);
   const [decision, setDecision] = useState<DecisionResult | null>(null);
   const [referenceBoxesByPage, setReferenceBoxesByPage] = useState<Record<string, Record<string, ImageRect>>>(
@@ -467,7 +473,8 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
 
   function acceptPrediction(det: DetBox) {
     if (!predictions) return;
-    const base = (det.class || "element").replace(/[^A-Za-z0-9_]+/g, "_").replace(/^_+|_+$/g, "") || "element";
+    const base =
+      (det.class || "element").replace(/[^A-Za-z0-9_]+/g, "_").replace(/^_+|_+$/g, "") || "element";
     const existing = new Set(entries.map((entry) => entry.name));
     let name = base;
     let suffix = 2;
@@ -654,7 +661,7 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
   }
 
   function validateForAction() {
-    const result = validateDoc(doc);
+    const result = mode === "temporal" ? validateDocV2(temporalDoc) : validateDoc(doc);
     if (result.ok) {
       setValidationErrors([]);
       return true;
@@ -669,7 +676,7 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
   async function saveMap() {
     if (!validateForAction()) return;
     try {
-      const saved = await api.saveUiMap(mapName, doc);
+      const saved = await api.saveUiMap(mapName, mode === "temporal" ? temporalDoc : doc);
       setMapName(saved.name);
       setStatus(`Saved ${saved.path}.`);
     } catch (error) {
@@ -680,6 +687,19 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
   async function loadMap() {
     try {
       const loaded = await api.loadUiMap(mapName);
+      if (loaded.schemaVersion === "2.0") {
+        const temporalResult = validateDocV2(loaded);
+        if (!temporalResult.ok) {
+          setValidationErrors(temporalResult.errors);
+          setStatus(`Loaded schema 2.0 document was rejected (${temporalResult.errors.length} errors).`);
+          return;
+        }
+        setTemporalDoc(loaded);
+        setValidationErrors([]);
+        setMode("temporal");
+        setStatus(`Loaded ${mapName} as a schema 2.0 temporal document.`);
+        return;
+      }
       const result = validateDoc(loaded);
       if (!result.ok) {
         setValidationErrors(result.errors);
@@ -699,7 +719,10 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
 
   function exportJson() {
     if (!validateForAction()) return;
-    const blob = new Blob([`${JSON.stringify(doc, null, 2)}\n`], { type: "application/json" });
+    const activeDoc = mode === "temporal" ? temporalDoc : doc;
+    const blob = new Blob([`${JSON.stringify(activeDoc, null, 2)}\n`], {
+      type: "application/json"
+    });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -788,11 +811,17 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
     <section className="ui-orchestrator-page">
       <header className="uio-header">
         <div>
-          <p className="uio-eyebrow">Pages-only authoring · schema 1.0</p>
+          <p className="uio-eyebrow">
+            {mode === "temporal"
+              ? "Cross-frame authoring · schema 2.0"
+              : "Page and single-frame authoring · schema 1.0"}
+          </p>
           <h1>UI Orchestrator</h1>
           <p className="uio-subtitle">
-            Draw reference boxes, bind workspace taxonomy classes, and export a validated UI map.
-            {doc.flows.length
+            {mode === "temporal"
+              ? "Build, validate, replay, and export a temporal state machine without dispatching input."
+              : "Draw reference boxes, bind workspace taxonomy classes, and export a validated UI map."}
+            {mode !== "temporal" && doc.flows.length
               ? ` ${doc.flows.length} loaded flow${doc.flows.length === 1 ? " is" : "s are"} preserved read-only.`
               : ""}
           </p>
@@ -816,6 +845,13 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
             >
               Flow
             </button>
+            <button
+              type="button"
+              className={mode === "temporal" ? "active" : ""}
+              onClick={() => setMode("temporal")}
+            >
+              Temporal 2.0
+            </button>
           </div>
           <label>
             <span>Map name</span>
@@ -833,447 +869,462 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
         </div>
       </header>
 
-      <div className="uio-workspace">
-        <aside className="uio-panel uio-pages-panel">
-          <div className="uio-panel-heading">
-            <div>
-              <span className="uio-panel-kicker">Document</span>
-              <strong>Pages</strong>
-            </div>
-            <button type="button" onClick={addPage}>
-              + Page
-            </button>
-          </div>
-
-          <label className="uio-field">
-            <span>Game namespace</span>
-            <input
-              value={doc.game}
-              onChange={(event) => setDoc((current) => ({ ...current, game: event.target.value }))}
-            />
-          </label>
-
-          <div className="uio-page-list">
-            {doc.pages.map((page, index) => (
-              <button
-                type="button"
-                key={`${page.id}-${index}`}
-                className={index === pageIndex ? "active" : ""}
-                onClick={() => {
-                  setPageIndex(index);
-                  setSelectedName(null);
-                }}
-              >
-                <span>{page.id || `Page ${index + 1}`}</span>
-                <small>{Object.keys(page.elements).length} root elements</small>
-              </button>
-            ))}
-          </div>
-
-          <div className="uio-section">
-            <div className="uio-section-title">
-              <strong>Page routing</strong>
-              <button type="button" className="danger-link" onClick={deleteCurrentPage}>
-                Delete
-              </button>
-            </div>
-            <label className="uio-field">
-              <span>Page id</span>
-              <input value={currentPage.id} onChange={(event) => setPageId(event.target.value)} />
-            </label>
-            <label className="uio-field">
-              <span>Classifier label(s)</span>
-              <input
-                list="uio-clf-classes"
-                value={triggerText(currentPage)}
-                placeholder="Comma-separated labels"
-                onChange={(event) =>
-                  updateCurrentPage((page) => ({
-                    ...page,
-                    trigger: { ...page.trigger, clf: parseTriggerLabels(event.target.value) }
-                  }))
-                }
-              />
-              <datalist id="uio-clf-classes">
-                {clfClasses.map((name) => (
-                  <option value={name} key={name} />
-                ))}
-              </datalist>
-            </label>
-            <label className="uio-field">
-              <span>Minimum confidence</span>
-              <input
-                type="number"
-                min="0.01"
-                max="1"
-                step="0.01"
-                value={currentPage.trigger.minConfidence}
-                onChange={(event) =>
-                  updateCurrentPage((page) => ({
-                    ...page,
-                    trigger: { ...page.trigger, minConfidence: Number(event.target.value) }
-                  }))
-                }
-              />
-            </label>
-          </div>
-
-          <div className="uio-section">
-            <strong>Guard · require</strong>
-            <div className="uio-check-list">
-              {entries.length ? (
-                entries.map((entry) => (
-                  <label key={entry.name}>
-                    <input
-                      type="checkbox"
-                      checked={currentPage.guard?.require.includes(entry.name) ?? false}
-                      onChange={(event) => toggleGuard(entry.name, event.target.checked)}
-                    />
-                    <span>{entry.name}</span>
-                  </label>
-                ))
-              ) : (
-                <small>Add elements to configure a fail-closed guard.</small>
-              )}
-            </div>
-          </div>
-        </aside>
-
-        <main className="uio-canvas-column">
-          <div className="uio-canvas-toolbar">
-            <button type="button" className="primary" onClick={() => void chooseReferenceImage()}>
-              Choose reference image
-            </button>
-            <span>{imageName || "No reference image loaded"}</span>
-            <span className="uio-canvas-hint">
-              Select an element, then drag to draw. Drag existing boxes to edit.
-            </span>
-          </div>
-          <div className="uio-canvas-stage">
-            <canvas
-              ref={canvasRef}
-              aria-label="UI element reference box editor"
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={() => setCanvasDrag(null)}
-            />
-          </div>
-          <div className="uio-status" role="status">
-            {status}
-          </div>
-
-          <div className="uio-modelassist">
-            <div className="uio-section-title">
-              <strong>Model assist</strong>
-              <button
-                type="button"
-                className="primary"
-                onClick={() => void runPredictions()}
-                disabled={predicting || !imagePath || (!detModelPath && !clfModelPath)}
-              >
-                {predicting ? "Running…" : "Run predictions"}
-              </button>
-            </div>
-            <div className="uio-model-row">
-              <button type="button" onClick={() => void chooseModel("det")}>
-                Detector .pt
-              </button>
-              <span title={detModelPath}>{detModelPath ? basename(detModelPath) : "none"}</span>
-            </div>
-            <div className="uio-model-row">
-              <button type="button" onClick={() => void chooseModel("clf")}>
-                Classifier .pt
-              </button>
-              <span title={clfModelPath}>{clfModelPath ? basename(clfModelPath) : "none"}</span>
-            </div>
-            {predictions ? (
-              <div className="uio-predictions">
-                <div className="uio-clf-readout">
-                  {predictions.clf.label
-                    ? `CLF: ${predictions.clf.label} (${(predictions.clf.conf * 100).toFixed(0)}%)`
-                    : "CLF: no confident label"}
+      <div className={`uio-workspace ${mode === "temporal" ? "temporal" : ""}`}>
+        {mode === "temporal" ? (
+          <TemporalFlowPanel
+            doc={temporalDoc}
+            onChange={setTemporalDoc}
+            status={status}
+            setStatus={setStatus}
+          />
+        ) : (
+          <>
+            <aside className="uio-panel uio-pages-panel">
+              <div className="uio-panel-heading">
+                <div>
+                  <span className="uio-panel-kicker">Document</span>
+                  <strong>Pages</strong>
                 </div>
-                <ul>
-                  {predictions.det.map((det, index) => (
-                    <li key={`${det.class}-${index}`}>
-                      <span>
-                        {det.class} · {(det.conf * 100).toFixed(0)}%
-                      </span>
-                      <button type="button" onClick={() => acceptPrediction(det)}>
-                        Accept as element
-                      </button>
-                    </li>
-                  ))}
-                  {predictions.det.length === 0 ? (
-                    <li>
-                      <small>No detections above threshold.</small>
-                    </li>
-                  ) : null}
-                </ul>
-              </div>
-            ) : (
-              <p className="uio-empty-copy">
-                Pick a detector and/or classifier .pt, then run predictions on the reference frame.
-              </p>
-            )}
-          </div>
-        </main>
-
-        {mode === "pages" ? (
-        <aside className="uio-panel uio-elements-panel">
-          <div className="uio-panel-heading">
-            <div>
-              <span className="uio-panel-kicker">Layer A</span>
-              <strong>Elements</strong>
-            </div>
-            <button type="button" onClick={addElement}>
-              + Element
-            </button>
-          </div>
-
-          <div className="uio-element-list">
-            {entries.map((entry) => (
-              <button
-                type="button"
-                key={entry.path.join("/")}
-                className={entry.name === selectedName ? "active" : ""}
-                style={{ paddingLeft: `${12 + entry.depth * 16}px` }}
-                onClick={() => setSelectedName(entry.name)}
-              >
-                <span>{entry.name}</span>
-                <small>
-                  {entry.element.kind}
-                  {entry.parentName ? ` · in ${entry.parentName}` : " · root"}
-                </small>
-              </button>
-            ))}
-            {!entries.length ? (
-              <p className="uio-empty-copy">Add an element to start authoring this page.</p>
-            ) : null}
-          </div>
-
-          {selectedEntry ? (
-            <div className="uio-inspector">
-              <div className="uio-section-title">
-                <strong>Binding</strong>
-                <button type="button" className="danger-link" onClick={deleteSelectedElement}>
-                  Delete
+                <button type="button" onClick={addPage}>
+                  + Page
                 </button>
               </div>
-              <label className="uio-field">
-                <span>Element name</span>
-                <input
-                  value={nameDraft}
-                  onChange={(event) => setNameDraft(event.target.value)}
-                  onBlur={commitElementName}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") event.currentTarget.blur();
-                  }}
-                />
-              </label>
-              <label className="uio-field">
-                <span>Kind</span>
-                <select
-                  value={selectedEntry.element.kind}
-                  onChange={(event) =>
-                    updateSelectedElement((element) =>
-                      elementWithKind(element, event.target.value as Element["kind"])
-                    )
-                  }
-                >
-                  <option value="container">container</option>
-                  <option value="button">button</option>
-                  <option value="text">text</option>
-                  <option value="marker">marker</option>
-                </select>
-              </label>
-              <label className="uio-field">
-                <span>Parent · in</span>
-                <select
-                  value={selectedEntry.parentName ?? ""}
-                  disabled={Boolean(selectedEntry.structuralParent)}
-                  title={
-                    selectedEntry.structuralParent
-                      ? "Nested children use their containing container as parent."
-                      : undefined
-                  }
-                  onChange={(event) => changeSelectedParent(event.target.value)}
-                >
-                  <option value="">Page root</option>
-                  {containerOptions.map((entry) => (
-                    <option value={entry.name} key={entry.name}>
-                      {entry.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="uio-field">
-                <span>Detection class</span>
-                <select
-                  value={selectedEntry.element.detClass ?? ""}
-                  onChange={(event) => changeSelectedDetClass(event.target.value)}
-                >
-                  <option value="">None · use relRect for child</option>
-                  {detectClasses.map((item) => (
-                    <option value={item.name} key={`${item.id}-${item.name}`}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
 
               <label className="uio-field">
-                <span>relRect</span>
+                <span>Game namespace</span>
                 <input
-                  readOnly
-                  value={selectedEntry.element.relRect?.map((value) => value.toFixed(4)).join(", ") ?? "—"}
-                  title="Computed from the drawn box relative to the resolved parent reference box."
+                  value={doc.game}
+                  onChange={(event) => setDoc((current) => ({ ...current, game: event.target.value }))}
                 />
               </label>
 
-              {selectedEntry.element.kind === "text" ? (
+              <div className="uio-page-list">
+                {doc.pages.map((page, index) => (
+                  <button
+                    type="button"
+                    key={`${page.id}-${index}`}
+                    className={index === pageIndex ? "active" : ""}
+                    onClick={() => {
+                      setPageIndex(index);
+                      setSelectedName(null);
+                    }}
+                  >
+                    <span>{page.id || `Page ${index + 1}`}</span>
+                    <small>{Object.keys(page.elements).length} root elements</small>
+                  </button>
+                ))}
+              </div>
+
+              <div className="uio-section">
+                <div className="uio-section-title">
+                  <strong>Page routing</strong>
+                  <button type="button" className="danger-link" onClick={deleteCurrentPage}>
+                    Delete
+                  </button>
+                </div>
                 <label className="uio-field">
-                  <span>Phrase table</span>
+                  <span>Page id</span>
+                  <input value={currentPage.id} onChange={(event) => setPageId(event.target.value)} />
+                </label>
+                <label className="uio-field">
+                  <span>Classifier label(s)</span>
                   <input
-                    value={selectedEntry.element.phraseTable ?? ""}
-                    placeholder="namespace/name@1"
+                    list="uio-clf-classes"
+                    value={triggerText(currentPage)}
+                    placeholder="Comma-separated labels"
                     onChange={(event) =>
-                      updateSelectedElement((element) => {
-                        if (element.kind !== "text") return element;
-                        const phraseTable = event.target.value;
-                        if (!phraseTable) {
-                          const next = { ...element };
-                          delete next.phraseTable;
-                          return next;
-                        }
-                        return { ...element, phraseTable };
-                      })
+                      updateCurrentPage((page) => ({
+                        ...page,
+                        trigger: { ...page.trigger, clf: parseTriggerLabels(event.target.value) }
+                      }))
+                    }
+                  />
+                  <datalist id="uio-clf-classes">
+                    {clfClasses.map((name) => (
+                      <option value={name} key={name} />
+                    ))}
+                  </datalist>
+                </label>
+                <label className="uio-field">
+                  <span>Minimum confidence</span>
+                  <input
+                    type="number"
+                    min="0.01"
+                    max="1"
+                    step="0.01"
+                    value={currentPage.trigger.minConfidence}
+                    onChange={(event) =>
+                      updateCurrentPage((page) => ({
+                        ...page,
+                        trigger: { ...page.trigger, minConfidence: Number(event.target.value) }
+                      }))
                     }
                   />
                 </label>
-              ) : null}
+              </div>
 
-              {selectedEntry.element.kind === "container" ? (
-                <>
-                  <label className="uio-field">
-                    <span>Repeat / reading order</span>
-                    <select
-                      value={selectedEntry.element.repeat?.control ?? ""}
-                      onChange={(event) =>
-                        changeRepeat(event.target.value as "" | NonNullable<Repeat["control"]>)
-                      }
+              <div className="uio-section">
+                <strong>Guard · require</strong>
+                <div className="uio-check-list">
+                  {entries.length ? (
+                    entries.map((entry) => (
+                      <label key={entry.name}>
+                        <input
+                          type="checkbox"
+                          checked={currentPage.guard?.require.includes(entry.name) ?? false}
+                          onChange={(event) => toggleGuard(entry.name, event.target.checked)}
+                        />
+                        <span>{entry.name}</span>
+                      </label>
+                    ))
+                  ) : (
+                    <small>Add elements to configure a fail-closed guard.</small>
+                  )}
+                </div>
+              </div>
+            </aside>
+
+            <main className="uio-canvas-column">
+              <div className="uio-canvas-toolbar">
+                <button type="button" className="primary" onClick={() => void chooseReferenceImage()}>
+                  Choose reference image
+                </button>
+                <span>{imageName || "No reference image loaded"}</span>
+                <span className="uio-canvas-hint">
+                  Select an element, then drag to draw. Drag existing boxes to edit.
+                </span>
+              </div>
+              <div className="uio-canvas-stage">
+                <canvas
+                  ref={canvasRef}
+                  aria-label="UI element reference box editor"
+                  onPointerDown={handlePointerDown}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  onPointerCancel={() => setCanvasDrag(null)}
+                />
+              </div>
+              <div className="uio-status" role="status">
+                {status}
+              </div>
+
+              <div className="uio-modelassist">
+                <div className="uio-section-title">
+                  <strong>Model assist</strong>
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => void runPredictions()}
+                    disabled={predicting || !imagePath || (!detModelPath && !clfModelPath)}
+                  >
+                    {predicting ? "Running…" : "Run predictions"}
+                  </button>
+                </div>
+                <div className="uio-model-row">
+                  <button type="button" onClick={() => void chooseModel("det")}>
+                    Detector .pt
+                  </button>
+                  <span title={detModelPath}>{detModelPath ? basename(detModelPath) : "none"}</span>
+                </div>
+                <div className="uio-model-row">
+                  <button type="button" onClick={() => void chooseModel("clf")}>
+                    Classifier .pt
+                  </button>
+                  <span title={clfModelPath}>{clfModelPath ? basename(clfModelPath) : "none"}</span>
+                </div>
+                {predictions ? (
+                  <div className="uio-predictions">
+                    <div className="uio-clf-readout">
+                      {predictions.clf.label
+                        ? `CLF: ${predictions.clf.label} (${(predictions.clf.conf * 100).toFixed(0)}%)`
+                        : "CLF: no confident label"}
+                    </div>
+                    <ul>
+                      {predictions.det.map((det, index) => (
+                        <li key={`${det.class}-${index}`}>
+                          <span>
+                            {det.class} · {(det.conf * 100).toFixed(0)}%
+                          </span>
+                          <button type="button" onClick={() => acceptPrediction(det)}>
+                            Accept as element
+                          </button>
+                        </li>
+                      ))}
+                      {predictions.det.length === 0 ? (
+                        <li>
+                          <small>No detections above threshold.</small>
+                        </li>
+                      ) : null}
+                    </ul>
+                  </div>
+                ) : (
+                  <p className="uio-empty-copy">
+                    Pick a detector and/or classifier .pt, then run predictions on the reference frame.
+                  </p>
+                )}
+              </div>
+            </main>
+
+            {mode === "pages" ? (
+              <aside className="uio-panel uio-elements-panel">
+                <div className="uio-panel-heading">
+                  <div>
+                    <span className="uio-panel-kicker">Layer A</span>
+                    <strong>Elements</strong>
+                  </div>
+                  <button type="button" onClick={addElement}>
+                    + Element
+                  </button>
+                </div>
+
+                <div className="uio-element-list">
+                  {entries.map((entry) => (
+                    <button
+                      type="button"
+                      key={entry.path.join("/")}
+                      className={entry.name === selectedName ? "active" : ""}
+                      style={{ paddingLeft: `${12 + entry.depth * 16}px` }}
+                      onClick={() => setSelectedName(entry.name)}
                     >
-                      <option value="">Not repeated</option>
-                      <option value="none">Detection order</option>
-                      <option value="horizontal_scroll">Horizontal scroll</option>
-                      <option value="vertical_scroll">Vertical scroll</option>
-                      <option value="grid">Grid</option>
-                    </select>
-                  </label>
-                  {selectedEntry.element.repeat ? (
+                      <span>{entry.name}</span>
+                      <small>
+                        {entry.element.kind}
+                        {entry.parentName ? ` · in ${entry.parentName}` : " · root"}
+                      </small>
+                    </button>
+                  ))}
+                  {!entries.length ? (
+                    <p className="uio-empty-copy">Add an element to start authoring this page.</p>
+                  ) : null}
+                </div>
+
+                {selectedEntry ? (
+                  <div className="uio-inspector">
+                    <div className="uio-section-title">
+                      <strong>Binding</strong>
+                      <button type="button" className="danger-link" onClick={deleteSelectedElement}>
+                        Delete
+                      </button>
+                    </div>
                     <label className="uio-field">
-                      <span>Maximum instances</span>
+                      <span>Element name</span>
                       <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={selectedEntry.element.repeat.maxInstances ?? ""}
-                        placeholder="No cap"
-                        onChange={(event) =>
-                          updateSelectedElement((element) => {
-                            if (element.kind !== "container" || !element.repeat) return element;
-                            const value = event.target.value;
-                            const repeat = { ...element.repeat };
-                            if (value) repeat.maxInstances = Number(value);
-                            else delete repeat.maxInstances;
-                            return { ...element, repeat };
-                          })
-                        }
+                        value={nameDraft}
+                        onChange={(event) => setNameDraft(event.target.value)}
+                        onBlur={commitElementName}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") event.currentTarget.blur();
+                        }}
                       />
                     </label>
-                  ) : null}
-                </>
-              ) : null}
-
-              {selectedEntry.element.kind === "button" &&
-              selectedEntry.parentName &&
-              selectedEntry.element.detClass ? (
-                <>
-                  <label className="uio-field">
-                    <span>Association rule</span>
-                    <select
-                      value={selectedEntry.element.associate?.rule ?? ""}
-                      onChange={(event) => changeAssociate(event.target.value as "" | Associate["rule"])}
-                    >
-                      <option value="">No explicit association</option>
-                      <option value="xColumn">xColumn</option>
-                      <option value="containment">containment</option>
-                    </select>
-                  </label>
-                  {selectedEntry.element.associate ? (
                     <label className="uio-field">
-                      <span>Vertical tolerance ratio</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={selectedEntry.element.associate.verticalToleranceRatio ?? 0}
+                      <span>Kind</span>
+                      <select
+                        value={selectedEntry.element.kind}
                         onChange={(event) =>
-                          updateSelectedElement((element) => {
-                            if (element.kind !== "button" || !element.associate) return element;
-                            return {
-                              ...element,
-                              associate: {
-                                ...element.associate,
-                                verticalToleranceRatio: Number(event.target.value)
+                          updateSelectedElement((element) =>
+                            elementWithKind(element, event.target.value as Element["kind"])
+                          )
+                        }
+                      >
+                        <option value="container">container</option>
+                        <option value="button">button</option>
+                        <option value="text">text</option>
+                        <option value="marker">marker</option>
+                      </select>
+                    </label>
+                    <label className="uio-field">
+                      <span>Parent · in</span>
+                      <select
+                        value={selectedEntry.parentName ?? ""}
+                        disabled={Boolean(selectedEntry.structuralParent)}
+                        title={
+                          selectedEntry.structuralParent
+                            ? "Nested children use their containing container as parent."
+                            : undefined
+                        }
+                        onChange={(event) => changeSelectedParent(event.target.value)}
+                      >
+                        <option value="">Page root</option>
+                        {containerOptions.map((entry) => (
+                          <option value={entry.name} key={entry.name}>
+                            {entry.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="uio-field">
+                      <span>Detection class</span>
+                      <select
+                        value={selectedEntry.element.detClass ?? ""}
+                        onChange={(event) => changeSelectedDetClass(event.target.value)}
+                      >
+                        <option value="">None · use relRect for child</option>
+                        {detectClasses.map((item) => (
+                          <option value={item.name} key={`${item.id}-${item.name}`}>
+                            {item.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="uio-field">
+                      <span>relRect</span>
+                      <input
+                        readOnly
+                        value={
+                          selectedEntry.element.relRect?.map((value) => value.toFixed(4)).join(", ") ?? "—"
+                        }
+                        title="Computed from the drawn box relative to the resolved parent reference box."
+                      />
+                    </label>
+
+                    {selectedEntry.element.kind === "text" ? (
+                      <label className="uio-field">
+                        <span>Phrase table</span>
+                        <input
+                          value={selectedEntry.element.phraseTable ?? ""}
+                          placeholder="namespace/name@1"
+                          onChange={(event) =>
+                            updateSelectedElement((element) => {
+                              if (element.kind !== "text") return element;
+                              const phraseTable = event.target.value;
+                              if (!phraseTable) {
+                                const next = { ...element };
+                                delete next.phraseTable;
+                                return next;
                               }
-                            };
-                          })
-                        }
-                      />
-                    </label>
-                  ) : null}
-                </>
-              ) : null}
-            </div>
-          ) : (
-            <p className="uio-empty-copy">Select an element to edit its binding.</p>
-          )}
+                              return { ...element, phraseTable };
+                            })
+                          }
+                        />
+                      </label>
+                    ) : null}
 
-          <div className={`uio-validation ${validationErrors.length ? "invalid" : ""}`}>
-            <div className="uio-section-title">
-              <strong>Validation</strong>
-              <button
-                type="button"
-                onClick={() => {
-                  if (validateForAction()) setStatus("Document is valid against schema 1.0.");
-                }}
-              >
-                Check
-              </button>
-            </div>
-            {validationErrors.length ? (
-              <ol>
-                {validationErrors.map((error, index) => (
-                  <li key={`${error}-${index}`}>{error}</li>
-                ))}
-              </ol>
+                    {selectedEntry.element.kind === "container" ? (
+                      <>
+                        <label className="uio-field">
+                          <span>Repeat / reading order</span>
+                          <select
+                            value={selectedEntry.element.repeat?.control ?? ""}
+                            onChange={(event) =>
+                              changeRepeat(event.target.value as "" | NonNullable<Repeat["control"]>)
+                            }
+                          >
+                            <option value="">Not repeated</option>
+                            <option value="none">Detection order</option>
+                            <option value="horizontal_scroll">Horizontal scroll</option>
+                            <option value="vertical_scroll">Vertical scroll</option>
+                            <option value="grid">Grid</option>
+                          </select>
+                        </label>
+                        {selectedEntry.element.repeat ? (
+                          <label className="uio-field">
+                            <span>Maximum instances</span>
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={selectedEntry.element.repeat.maxInstances ?? ""}
+                              placeholder="No cap"
+                              onChange={(event) =>
+                                updateSelectedElement((element) => {
+                                  if (element.kind !== "container" || !element.repeat) return element;
+                                  const value = event.target.value;
+                                  const repeat = { ...element.repeat };
+                                  if (value) repeat.maxInstances = Number(value);
+                                  else delete repeat.maxInstances;
+                                  return { ...element, repeat };
+                                })
+                              }
+                            />
+                          </label>
+                        ) : null}
+                      </>
+                    ) : null}
+
+                    {selectedEntry.element.kind === "button" &&
+                    selectedEntry.parentName &&
+                    selectedEntry.element.detClass ? (
+                      <>
+                        <label className="uio-field">
+                          <span>Association rule</span>
+                          <select
+                            value={selectedEntry.element.associate?.rule ?? ""}
+                            onChange={(event) =>
+                              changeAssociate(event.target.value as "" | Associate["rule"])
+                            }
+                          >
+                            <option value="">No explicit association</option>
+                            <option value="xColumn">xColumn</option>
+                            <option value="containment">containment</option>
+                          </select>
+                        </label>
+                        {selectedEntry.element.associate ? (
+                          <label className="uio-field">
+                            <span>Vertical tolerance ratio</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={selectedEntry.element.associate.verticalToleranceRatio ?? 0}
+                              onChange={(event) =>
+                                updateSelectedElement((element) => {
+                                  if (element.kind !== "button" || !element.associate) return element;
+                                  return {
+                                    ...element,
+                                    associate: {
+                                      ...element.associate,
+                                      verticalToleranceRatio: Number(event.target.value)
+                                    }
+                                  };
+                                })
+                              }
+                            />
+                          </label>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="uio-empty-copy">Select an element to edit its binding.</p>
+                )}
+
+                <div className={`uio-validation ${validationErrors.length ? "invalid" : ""}`}>
+                  <div className="uio-section-title">
+                    <strong>Validation</strong>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (validateForAction()) setStatus("Document is valid against schema 1.0.");
+                      }}
+                    >
+                      Check
+                    </button>
+                  </div>
+                  {validationErrors.length ? (
+                    <ol>
+                      {validationErrors.map((error, index) => (
+                        <li key={`${error}-${index}`}>{error}</li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <p>No validation errors shown.</p>
+                  )}
+                </div>
+              </aside>
             ) : (
-              <p>No validation errors shown.</p>
+              <FlowGraphPanel
+                doc={doc}
+                activeFlowId={activeFlowId}
+                predictions={predictions}
+                onChange={(updater) => setDoc(updater)}
+                onSelectFlow={setActiveFlowId}
+                onDecision={setDecision}
+                setStatus={setStatus}
+              />
             )}
-          </div>
-        </aside>
-        ) : (
-          <FlowGraphPanel
-            doc={doc}
-            activeFlowId={activeFlowId}
-            predictions={predictions}
-            onChange={(updater) => setDoc(updater)}
-            onSelectFlow={setActiveFlowId}
-            onDecision={setDecision}
-            setStatus={setStatus}
-          />
+          </>
         )}
       </div>
     </section>

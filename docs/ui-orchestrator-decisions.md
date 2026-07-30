@@ -186,3 +186,32 @@ Locked in `docs/ui-orchestrator-schema-v1.md`. Notable choices and their reasons
 - Disambiguating two element roles that share one `detClass` (e.g. featured vs
   action card) — v1.0 assumes distinct classes or reading-order index; a region
   filter is reserved.
+
+## D10 — Temporal behavior is schema 2.0, not a 1.x extension
+
+- **Decision:** Cross-frame behavior uses a new schema major (`2.0`). Schema 1.0
+  remains the legacy single-snapshot format and is not reinterpreted.
+- **Context:** Coffee completion already depends on repeated observations,
+  bounded waits, action results, and cancellation. Farm completion depends on a
+  post-action settlement observation.
+- **Rejected:** Add optional stability/retry fields to 1.x; lower the new graph
+  to AutoHoyo's acyclic `ScriptExecutor`.
+- **Why:** Optional temporal fields would create two meanings for existing v1
+  nodes. `ScriptExecutor` is intentionally a DAG and cannot represent event
+  suspension and cycles without losing semantics.
+- **Consequence:** `schemaV2.ts` and `temporalInterpreter.ts` live side-by-side
+  with v1. The normative contract is `docs/ui-orchestrator-schema-v2.md`.
+
+## D11 — One semantic authority, two interpreters, one side-effect owner
+
+- **Decision:** Schema 2.0 plus the shared JSON temporal traces are the semantic
+  authority. YoloWorkBench simulates; AutoHoyo alone executes side effects.
+- **Context:** Act cannot truthfully advance until the consumer reports a result.
+- **Rejected:** Treat Act as immediate success; embed fixed `V`/`F` key values;
+  copy conditions into End nodes; put retry/safety ceilings in exported data.
+- **Why:** Immediate success fabricates state. Fixed keys break user bindings.
+  Copied conditions and retry ceilings introduce parallel sources of truth.
+- **Consequence:** Act emits once and awaits a correlated result. Intents are
+  `click`, logical `input(command)`, or typed `invoke(op)`. End nodes reference
+  direct causal evidence. Retry remains adapter/runtime-owned. Abort is a global
+  runtime terminal.

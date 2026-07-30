@@ -1,0 +1,191 @@
+{
+  "schemaVersion": "2.0",
+  "game": "Test_Game",
+  "pages": [
+    {
+      "id": "Contract.Ready",
+      "trigger": {
+        "clf": "Contract_Ready",
+        "minConfidence": 0.9
+      },
+      "guard": {
+        "require": ["ready_panel"]
+      },
+      "elements": {
+        "ready_panel": {
+          "kind": "container",
+          "detClass": "ready_panel"
+        },
+        "status_text": {
+          "kind": "text",
+          "detClass": "status_text",
+          "phraseTable": "test/status@1"
+        }
+      }
+    }
+  ],
+  "flows": [
+    {
+      "id": "test.temporal.contract",
+      "nodes": [
+        {
+          "id": "start",
+          "kind": "Start"
+        },
+        {
+          "id": "observeReady",
+          "kind": "Observe",
+          "page": "Contract.Ready",
+          "timeoutMs": 1000,
+          "stability": {
+            "minConsecutiveFrames": 1,
+            "minStableMs": 0,
+            "maxFrameGapMs": 250
+          }
+        },
+        {
+          "id": "isReady",
+          "kind": "Decide",
+          "condition": {
+            "type": "ocrMatch",
+            "target": {
+              "element": "status_text"
+            },
+            "phraseTable": "test/status@1",
+            "phrase": "ready",
+            "minScore": 0.8
+          }
+        },
+        {
+          "id": "waitForFreshFrame",
+          "kind": "Wait",
+          "durationMs": 50
+        },
+        {
+          "id": "perform",
+          "kind": "Act",
+          "intent": {
+            "type": "invoke",
+            "op": "test.perform"
+          },
+          "resultTimeoutMs": 500
+        },
+        {
+          "id": "done",
+          "kind": "End",
+          "outcome": "Completed",
+          "evidence": {
+            "source": "actionResult",
+            "nodeId": "perform",
+            "status": "Succeeded"
+          }
+        },
+        {
+          "id": "nothing",
+          "kind": "End",
+          "outcome": "NothingToDo",
+          "evidence": {
+            "source": "condition",
+            "nodeId": "isReady",
+            "outcome": "False"
+          }
+        },
+        {
+          "id": "observeTimeout",
+          "kind": "End",
+          "outcome": "Failed",
+          "evidence": {
+            "source": "timeout",
+            "nodeId": "observeReady"
+          }
+        },
+        {
+          "id": "actionFailed",
+          "kind": "End",
+          "outcome": "Failed",
+          "evidence": {
+            "source": "actionResult",
+            "nodeId": "perform",
+            "status": "Failed"
+          }
+        },
+        {
+          "id": "actionIndeterminate",
+          "kind": "End",
+          "outcome": "Failed",
+          "evidence": {
+            "source": "actionResult",
+            "nodeId": "perform",
+            "status": "Indeterminate"
+          }
+        },
+        {
+          "id": "actionTimeout",
+          "kind": "End",
+          "outcome": "Failed",
+          "evidence": {
+            "source": "timeout",
+            "nodeId": "perform"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": "start",
+          "to": "observeReady",
+          "on": "Next"
+        },
+        {
+          "from": "observeReady",
+          "to": "isReady",
+          "on": "Observed"
+        },
+        {
+          "from": "observeReady",
+          "to": "observeTimeout",
+          "on": "Timeout"
+        },
+        {
+          "from": "isReady",
+          "to": "perform",
+          "on": "True"
+        },
+        {
+          "from": "isReady",
+          "to": "nothing",
+          "on": "False"
+        },
+        {
+          "from": "isReady",
+          "to": "waitForFreshFrame",
+          "on": "Indeterminate"
+        },
+        {
+          "from": "waitForFreshFrame",
+          "to": "observeReady",
+          "on": "Next"
+        },
+        {
+          "from": "perform",
+          "to": "done",
+          "on": "Succeeded"
+        },
+        {
+          "from": "perform",
+          "to": "actionFailed",
+          "on": "Failed"
+        },
+        {
+          "from": "perform",
+          "to": "actionIndeterminate",
+          "on": "Indeterminate"
+        },
+        {
+          "from": "perform",
+          "to": "actionTimeout",
+          "on": "Timeout"
+        }
+      ]
+    }
+  ]
+}

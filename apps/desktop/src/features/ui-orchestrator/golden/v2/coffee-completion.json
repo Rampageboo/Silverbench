@@ -1,0 +1,142 @@
+{
+  "schemaVersion": "2.0",
+  "game": "Zenless_Zone_Zero",
+  "metadata": {
+    "notes": "Phase-1 coffee completion delegates the existing bounded temporal action through a typed invoke adapter."
+  },
+  "pages": [
+    {
+      "id": "Coffee.MissionScene",
+      "trigger": {
+        "clf": "Coffee_MissionScene",
+        "minConfidence": 0.9
+      },
+      "guard": {
+        "require": ["mission_hud"]
+      },
+      "elements": {
+        "mission_hud": {
+          "kind": "container",
+          "detClass": "mission_hud"
+        }
+      }
+    }
+  ],
+  "flows": [
+    {
+      "id": "zzz.coffee.complete.phase1",
+      "nodes": [
+        {
+          "id": "start",
+          "kind": "Start"
+        },
+        {
+          "id": "observeMission",
+          "kind": "Observe",
+          "page": "Coffee.MissionScene",
+          "timeoutMs": 1000,
+          "stability": {
+            "minConsecutiveFrames": 2,
+            "minStableMs": 100,
+            "maxFrameGapMs": 250
+          }
+        },
+        {
+          "id": "invokeCompletion",
+          "kind": "Act",
+          "intent": {
+            "type": "invoke",
+            "op": "zzz.coffee.complete"
+          },
+          "resultTimeoutMs": 5000
+        },
+        {
+          "id": "done",
+          "kind": "End",
+          "outcome": "Completed",
+          "evidence": {
+            "source": "actionResult",
+            "nodeId": "invokeCompletion",
+            "status": "Succeeded",
+            "code": "coffee_dry_run_completion_confirmed"
+          }
+        },
+        {
+          "id": "missionTimeout",
+          "kind": "End",
+          "outcome": "Failed",
+          "evidence": {
+            "source": "timeout",
+            "nodeId": "observeMission"
+          }
+        },
+        {
+          "id": "actionFailed",
+          "kind": "End",
+          "outcome": "Failed",
+          "evidence": {
+            "source": "actionResult",
+            "nodeId": "invokeCompletion",
+            "status": "Failed"
+          }
+        },
+        {
+          "id": "actionIndeterminate",
+          "kind": "End",
+          "outcome": "Failed",
+          "evidence": {
+            "source": "actionResult",
+            "nodeId": "invokeCompletion",
+            "status": "Indeterminate"
+          }
+        },
+        {
+          "id": "actionTimeout",
+          "kind": "End",
+          "outcome": "Failed",
+          "evidence": {
+            "source": "timeout",
+            "nodeId": "invokeCompletion"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": "start",
+          "to": "observeMission",
+          "on": "Next"
+        },
+        {
+          "from": "observeMission",
+          "to": "invokeCompletion",
+          "on": "Observed"
+        },
+        {
+          "from": "observeMission",
+          "to": "missionTimeout",
+          "on": "Timeout"
+        },
+        {
+          "from": "invokeCompletion",
+          "to": "done",
+          "on": "Succeeded"
+        },
+        {
+          "from": "invokeCompletion",
+          "to": "actionFailed",
+          "on": "Failed"
+        },
+        {
+          "from": "invokeCompletion",
+          "to": "actionIndeterminate",
+          "on": "Indeterminate"
+        },
+        {
+          "from": "invokeCompletion",
+          "to": "actionTimeout",
+          "on": "Timeout"
+        }
+      ]
+    }
+  ]
+}
