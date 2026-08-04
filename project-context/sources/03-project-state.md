@@ -1,8 +1,8 @@
 # Project State
 
 State that the next session cannot derive from the repository or the codebase
-map. Verified 2026-08-04 against branch `main` at
-`2dcdc0cabfe58bfc1f86812eb1acca10f87033c8`.
+map. The verified revision and the map's represented revision are recorded in
+`index.yaml` and `exact-facts.yaml`; read those rather than copying one here.
 
 ## Recent direction
 

@@ -33,7 +33,7 @@ codebase_map:
   freshness_acceptor_role: integration-acceptor
   update_trigger: manual
   last_successful_update: "2026-08-04"
-  source_revision_represented: "2dcdc0cabfe58bfc1f86812eb1acca10f87033c8"
+  source_revision_represented: "1a5c6d5d70010077e3d548a1e56186ec27529699"
   health_result: "warning - 609 dangling-endpoint edges, 1 self-loop, 321 collapsed edges"
   global_map_membership: none
 research:
@@ -58,7 +58,7 @@ commands:
   - "npm run backend:dev - backend only"
   - "pytest against tests/ inside .venv"
 versions:
-  - "API_SCHEMA_VERSION = 22 (backend_api/main.py:41, verified 2026-08-04)"
+  - "API_SCHEMA_VERSION: read the live value from backend_api/main.py; it is bumped whenever /health or /api/call routing changes and moved 22 -> 24 within two weeks, so a written value goes stale faster than this file is updated"
 identifiers: []
 active_exact_constraints:
   - "Bump API_SCHEMA_VERSION whenever /health or /api/call routing changes, or dev startup keeps a stale backend."
