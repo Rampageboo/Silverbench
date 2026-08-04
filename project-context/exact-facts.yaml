@@ -1,0 +1,66 @@
+schema_version: 3
+metadata:
+  last_updated: "2026-08-04"
+  updated_by: "Claude (V2-to-V3 migration; facts re-verified against source, not copied)"
+git_environments:
+  - host: "Windows 11 workstation (D:\\MyProjects\\YoloWorkBench)"
+    client: "Claude Code"
+    git_execution_mode: claude-git
+    verified: "2026-08-04"
+workflow:
+  task_coordination_mode: owner-direct
+  execution_target: unknown
+  codex_model: unknown
+  codex_thread_id: ""
+  reasoning_effort: unknown
+  git_execution_mode: claude-git
+  review_mode: report-only
+codebase_map:
+  status: adopted
+  provider: graphify
+  provider_version: "graphifyy via uv tool (version string not exposed by package)"
+  project_map_root: "graphify-out/"
+  corpus_scope:
+    - "code only: 361 source files"
+    - "excluded: legacy/, .tmp-ui-refresh/, node_modules/, __pycache__/"
+    - "excluded: protocol files (AGENTS.md, CLAUDE.md, docs/ai-workflow/, OWNER_HANDBOOK.md)"
+    - "excluded: agent-workflows/, all images"
+    - "excluded: docs/*.md design plans - these belong to project context, not the map"
+  build_mode: "AST structural extraction only; no semantic pass, no LLM tokens"
+  data_boundary: "fully local; nothing transmitted to any external service"
+  artifact_git_policy: "graphify-out/* ignored; GRAPH_REPORT.md tracked"
+  map_maintainer_role: implementer
+  freshness_acceptor_role: integration-acceptor
+  update_trigger: manual
+  last_successful_update: "2026-08-04"
+  source_revision_represented: "2dcdc0cabfe58bfc1f86812eb1acca10f87033c8"
+  health_result: "warning - 609 dangling-endpoint edges, 1 self-loop, 321 collapsed edges"
+  global_map_membership: none
+research:
+  project_name: ""
+  project_reference: ""
+  memory_mode: unknown
+  approved_source_classes: []
+  private_content_transmission: ask-each-time
+  last_verified: ""
+paths:
+  - "backend_api/main.py - FastAPI entrypoint and /api/call dispatch"
+  - "backend/path_access.py, backend/image_safety.py, backend/pt_safety.py - load-bearing guards"
+  - "apps/desktop/ - React + TypeScript + Vite inside the Tauri shell"
+  - "logs/desktop.log, logs/backend.log - runtime logs"
+commands:
+  - "run.bat - full dev launch: creates .venv, installs requirements.txt plus ultralytics --no-deps, then npm run tauri:dev"
+  - "YoloWorkBench.vbs - silent launch"
+  - "npm run dev - Vite on 127.0.0.1:5173"
+  - "npm run build - tsc plus vite"
+  - "npm run test - vitest"
+  - "npm run lint / npm run format"
+  - "npm run backend:dev - backend only"
+  - "pytest against tests/ inside .venv"
+versions:
+  - "API_SCHEMA_VERSION = 22 (backend_api/main.py:41, verified 2026-08-04)"
+identifiers: []
+active_exact_constraints:
+  - "Bump API_SCHEMA_VERSION whenever /health or /api/call routing changes, or dev startup keeps a stale backend."
+  - "Install ultralytics with --no-deps so it cannot replace pinned torch/cv2."
+  - "Backend binds localhost only."
