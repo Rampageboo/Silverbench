@@ -1,0 +1,32 @@
+schema_version: 3
+project:
+  name: ""
+  summary: ""
+metadata:
+  last_updated: ""
+  last_verified_revision: ""
+modules:
+  - id: product-intent
+    source: sources/01-product-intent.md
+    read_when: Product behavior, scope, UX, or priority matters.
+    status: missing
+  - id: architecture-decisions
+    source: sources/02-architecture-decisions.md
+    read_when: Architecture, persistence, contracts, or dependencies change.
+    status: missing
+  - id: project-state
+    source: sources/03-project-state.md
+    read_when: A durable stage, transition, blocker, or endpoint matters.
+    status: missing
+  - id: decisions
+    source: sources/04-decisions.md
+    read_when: Work may conflict with a confirmed or pending decision.
+    status: missing
+  - id: risks-and-gotchas
+    source: sources/05-risks-and-gotchas.md
+    read_when: Work touches a recorded high-value risk.
+    status: missing
+  - id: research-policy
+    source: sources/06-research-policy.md
+    read_when: External research or a durable Research Decision matters.
+    status: missing

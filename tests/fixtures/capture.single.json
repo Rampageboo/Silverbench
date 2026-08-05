@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "mode": "single_view",
+  "fps": 30.0,
+  "looping": true,
+  "views": [
+    {
+      "id": "front",
+      "video": "private/front.mp4",
+      "yaw_degrees": 0.0
+    }
+  ],
+  "subject": {
+    "type": "anime_humanoid",
+    "approximate_height_m": 1.55
+  },
+  "output": {
+    "directory": "outputs/example"
+  }
+}

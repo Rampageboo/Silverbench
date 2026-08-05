@@ -1,0 +1,32 @@
+schema_version: 3
+project:
+  name: AniMocap Fusion
+  summary: Local-first canonical humanoid motion reconstruction for anime and game characters.
+metadata:
+  last_updated: 2026-08-06
+  last_verified_revision: uncommitted-m0
+modules:
+  - id: product-intent
+    source: sources/01-product-intent.md
+    read_when: Product behavior, scope, UX, or priority matters.
+    status: current
+  - id: architecture-decisions
+    source: sources/02-architecture-decisions.md
+    read_when: Architecture, persistence, contracts, or dependencies change.
+    status: current
+  - id: project-state
+    source: sources/03-project-state.md
+    read_when: A durable stage, transition, blocker, or endpoint matters.
+    status: current
+  - id: decisions
+    source: sources/04-decisions.md
+    read_when: Work may conflict with a confirmed or pending decision.
+    status: current
+  - id: risks-and-gotchas
+    source: sources/05-risks-and-gotchas.md
+    read_when: Work touches a recorded high-value risk.
+    status: current
+  - id: research-policy
+    source: sources/06-research-policy.md
+    read_when: External research or a durable Research Decision matters.
+    status: current

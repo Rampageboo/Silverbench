@@ -1,0 +1,23 @@
+schema_version: 3
+metadata:
+  last_updated: 2026-08-06
+  source_revision_represented: ""
+paths: []
+commands: []
+versions: []
+identifiers: []
+constraints: []
+codebase_map:
+  status: not-adopted
+  provider: ""
+  artifact_path: ""
+  corpus_and_data_boundary: ""
+  represented_revision: ""
+  freshness_or_health_limit: ""
+  maintainer: ""
+  update_trigger: on-query
+  automation_authorized: ""
+research:
+  status: adopted
+  approved_sources_and_private_data_boundary: Official specifications and upstream repositories only; no private media may be uploaded.
+  durable_validity_limit: Re-check before selecting a model checkpoint, dataset, exporter version, or commercial release.
