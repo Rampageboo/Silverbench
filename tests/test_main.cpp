@@ -2,6 +2,7 @@
 #include "animocap/fixture.hpp"
 #include "animocap/hash.hpp"
 #include "animocap/math.hpp"
+#include "animocap/multiview.hpp"
 #include "animocap/package.hpp"
 #include "animocap/pose_sequence.hpp"
 #include "animocap/skeleton.hpp"
@@ -239,6 +240,125 @@ void test_pose_reconstruction() {
 }
 
 
+animocap::PoseSequence make_directional_test_pose(
+    double yaw_degrees, std::size_t frame_count, double phase_offset,
+    double phase_rate, bool swap_sides, bool hide_reference_hand
+) {
+    const auto skeleton = animocap::make_default_skeleton();
+    const auto base = animocap::forward_kinematics(
+        skeleton, std::vector<animocap::Quat>(skeleton.bones.size()), {});
+    const auto left_hand = animocap::bone_index(skeleton, animocap::BoneSemantic::LeftHand);
+    const auto right_hand = animocap::bone_index(skeleton, animocap::BoneSemantic::RightHand);
+    const std::vector<std::pair<animocap::BoneSemantic, animocap::BoneSemantic>> semantics{
+        {animocap::BoneSemantic::LeftShoulder, animocap::BoneSemantic::RightShoulder},
+        {animocap::BoneSemantic::LeftUpperArm, animocap::BoneSemantic::RightUpperArm},
+        {animocap::BoneSemantic::LeftLowerArm, animocap::BoneSemantic::RightLowerArm},
+        {animocap::BoneSemantic::LeftHand, animocap::BoneSemantic::RightHand},
+        {animocap::BoneSemantic::LeftUpperLeg, animocap::BoneSemantic::RightUpperLeg},
+        {animocap::BoneSemantic::LeftLowerLeg, animocap::BoneSemantic::RightLowerLeg},
+        {animocap::BoneSemantic::LeftFoot, animocap::BoneSemantic::RightFoot},
+        {animocap::BoneSemantic::LeftToes, animocap::BoneSemantic::RightToes},
+    };
+    const double angle = -yaw_degrees * 3.14159265358979323846 / 180.0;
+    const double cosine = std::cos(angle), sine = std::sin(angle);
+    auto camera_space = [=](const animocap::Vec3& value) {
+        return animocap::Vec3{
+            cosine * value.x + sine * value.z, value.y,
+            -sine * value.x + cosine * value.z,
+        };
+    };
+
+    animocap::PoseSequence sequence;
+    sequence.source_video = "synthetic-directional-view.mp4";
+    sequence.backend = "synthetic-directional";
+    sequence.image_width = 640;
+    sequence.image_height = 720;
+    sequence.fps = 30.0;
+    for (std::size_t frame = 0; frame < frame_count; ++frame) {
+        const double phase_frame = std::clamp(
+            (static_cast<double>(frame) - phase_offset) / phase_rate, 0.0, 59.0);
+        const double phase = phase_frame / 59.0 * 6.283185307179586;
+        const double gesture = std::exp(-std::pow((phase_frame - 37.0) / 3.5, 2.0));
+        std::vector<animocap::Vec3> positions = base.positions_m;
+        const animocap::Vec3 root_motion{0.12 * std::sin(phase * 0.5), 0.0, 0.0};
+        positions[left_hand].x += 0.28 * std::sin(phase);
+        positions[left_hand].y += 0.18 * std::cos(phase * 1.7) + 0.38 * gesture;
+        positions[left_hand].z += 0.22 * std::sin(phase * 0.7);
+        positions[right_hand].x += 0.16 * std::cos(phase * 1.3);
+        positions[right_hand].y += 0.25 * std::sin(phase * 0.8);
+        positions[right_hand].z -= 0.19 * std::cos(phase);
+        for (auto& position : positions) position += root_motion;
+        const bool swap_frame = swap_sides && phase_frame >= 15.0 && phase_frame <= 40.0;
+        if (swap_frame) {
+            for (const auto [left_semantic, right_semantic] : semantics) {
+                std::swap(
+                    positions[animocap::bone_index(skeleton, left_semantic)],
+                    positions[animocap::bone_index(skeleton, right_semantic)]);
+            }
+        }
+        animocap::ObservedPoseFrame observed;
+        observed.time_s = static_cast<double>(frame) / sequence.fps;
+        for (std::size_t joint = 0; joint < positions.size(); ++joint) {
+            const auto camera_position = camera_space(positions[joint]);
+            bool valid = true;
+            float confidence = 0.92f;
+            if (hide_reference_hand && joint == left_hand &&
+                phase_frame >= 20.0 && phase_frame <= 30.0) {
+                valid = false;
+                confidence = 0.0f;
+            }
+            observed.joints.push_back({
+                {320.0 + 300.0 * camera_position.x,
+                 360.0 - 300.0 * camera_position.y},
+                camera_position, confidence, valid,
+            });
+        }
+        sequence.frames.push_back(std::move(observed));
+    }
+    animocap::validate_pose_sequence(sequence);
+    return sequence;
+}
+
+void test_directional_multiview() {
+    std::vector<animocap::MultiviewPoseInput> views;
+    views.push_back({"front", 0.0,
+        make_directional_test_pose(0.0, 60, 0.0, 1.0, false, true)});
+    views.push_back({"right", 90.0,
+        make_directional_test_pose(90.0, 68, 4.0, 1.05, false, false)});
+    views.push_back({"back", 180.0,
+        make_directional_test_pose(180.0, 66, 7.0, 0.95, true, false)});
+    views.push_back({"left", -90.0,
+        make_directional_test_pose(-90.0, 65, 2.0, 1.02, false, false)});
+
+    const auto result = animocap::solve_directional_multiview(views);
+    CHECK(result.fused_pose.frames.size() == 60);
+    CHECK(result.motion.cameras.size() == 4);
+    CHECK(result.diagnostics.alignments.size() == 4);
+    CHECK(result.diagnostics.recovered_observations >= 8);
+    CHECK(result.diagnostics.left_right_corrections > 0);
+    CHECK(result.diagnostics.mean_reprojection_error_m < 0.20);
+    const auto mapped = result.diagnostics.alignments[1].source_frame_at_reference[30];
+    CHECK(std::abs(mapped - (4.0 + 1.05 * 30.0)) < 2.0);
+    const auto hand = animocap::bone_index(
+        result.motion.skeleton, animocap::BoneSemantic::LeftHand);
+    CHECK(result.fused_pose.frames[25].joints[hand].valid);
+    CHECK(result.fused_pose.frames[25].joints[hand].confidence > 0.80f);
+
+    const auto diagnostics_path = test_root() / "multiview-diagnostics.json";
+    animocap::save_multiview_diagnostics(result.diagnostics, diagnostics_path);
+    const auto fused_pose_path = test_root() / "fused-pose.json";
+    animocap::save_pose_sequence_json(result.fused_pose, fused_pose_path);
+    const auto fused_roundtrip = animocap::load_pose_sequence_json(fused_pose_path);
+    CHECK(fused_roundtrip.frames.size() == result.fused_pose.frames.size());
+    CHECK(fused_roundtrip.backend == result.fused_pose.backend);
+    const auto diagnostics_roundtrip =
+        animocap::load_multiview_diagnostics(diagnostics_path);
+    CHECK(diagnostics_roundtrip.alignments.size() == 4);
+    CHECK(diagnostics_roundtrip.recovered_observations >= 8);
+    const auto diagnostics = nlohmann::json::parse(read_text(diagnostics_path));
+    CHECK(diagnostics.at("alignments").size() == 4);
+    CHECK(diagnostics.at("recovered_observations").get<std::size_t>() >= 8);
+}
 void test_package_roundtrip() {
     const auto directory = test_root() / "roundtrip.amotion";
     const auto original = animocap::make_synthetic_motion(42, 8);
@@ -310,6 +430,7 @@ int main() {
         {"fk", test_fk},
         {"motion_validation", test_motion_validation},
         {"pose_reconstruction", test_pose_reconstruction},
+        {"directional_multiview", test_directional_multiview},
         {"package_roundtrip", test_package_roundtrip},
         {"fixture_determinism", test_fixture_determinism},
         {"license_and_asset_gate", test_license_and_asset_gate},

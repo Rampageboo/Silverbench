@@ -175,6 +175,44 @@ PoseSequence load_pose_sequence_json(const std::filesystem::path& path) {
     return sequence;
 }
 
+void save_pose_sequence_json(
+    const PoseSequence& sequence,
+    const std::filesystem::path& path
+) {
+    validate_pose_sequence(sequence);
+    const auto skeleton = make_default_skeleton();
+    json document{
+        {"schema_version", sequence.schema_version},
+        {"source_video", sequence.source_video.generic_string()},
+        {"backend", sequence.backend},
+        {"image_width", sequence.image_width},
+        {"image_height", sequence.image_height},
+        {"fps", sequence.fps},
+        {"frames", json::array()},
+    };
+    for (const auto& frame : sequence.frames) {
+        json joints = json::array();
+        for (std::size_t index = 0; index < frame.joints.size(); ++index) {
+            const auto& joint = frame.joints[index];
+            joints.push_back({
+                {"semantic", to_string(skeleton.bones[index].semantic)},
+                {"image_xy", {joint.image_xy.x, joint.image_xy.y}},
+                {"position_m", {
+                    joint.position_m.x, joint.position_m.y, joint.position_m.z}},
+                {"confidence", joint.confidence},
+                {"valid", joint.valid},
+            });
+        }
+        document["frames"].push_back({
+            {"time_s", frame.time_s},
+            {"joints", std::move(joints)},
+        });
+    }
+    std::filesystem::create_directories(path.parent_path());
+    std::ofstream output(path, std::ios::binary);
+    if (!output) throw std::runtime_error("cannot write pose sequence: " + path.string());
+    output << document.dump(2) << '\n';
+}
 void validate_pose_sequence(const PoseSequence& sequence) {
     if (sequence.schema_version != kSchemaVersion) {
         throw ContractError("unsupported pose sequence schema_version");

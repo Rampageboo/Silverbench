@@ -1,5 +1,6 @@
 #include "animocap/contracts.hpp"
 #include "animocap/fixture.hpp"
+#include "animocap/multiview.hpp"
 #include "animocap/package.hpp"
 #include "animocap/pose_sequence.hpp"
 #include "animocap/video.hpp"
@@ -25,6 +26,7 @@ using json = nlohmann::json;
         "  animocap inspect-motion <motion.amotion>\n"
         "  animocap inspect-video <video-file>\n"
         "  animocap reconstruct-pose <pose_sequence.json> --output <motion.amotion>\n"
+        "  animocap fuse-multiview <capture.json> --poses <directory> --output <motion.amotion>\n"
         "  animocap generate-fixture --output <directory> [--seed <uint64>] [--frames <count>]\n");
 }
 
@@ -122,6 +124,78 @@ int reconstruct_pose(int argc, char** argv) {
     return 0;
 }
 
+int fuse_multiview(int argc, char** argv) {
+    if (argc < 7) usage_error(
+        "fuse-multiview requires a manifest, --poses directory, and --output directory");
+    const std::filesystem::path manifest_path(argv[2]);
+    std::filesystem::path pose_directory;
+    std::filesystem::path output;
+    std::filesystem::path diagnostics;
+    for (int index = 3; index < argc; ++index) {
+        const std::string_view option(argv[index]);
+        if (option == "--poses" && index + 1 < argc) {
+            pose_directory = argv[++index];
+        } else if (option == "--output" && index + 1 < argc) {
+            output = argv[++index];
+        } else if (option == "--diagnostics" && index + 1 < argc) {
+            diagnostics = argv[++index];
+        } else {
+            usage_error("unknown fuse-multiview option: " + std::string(option));
+        }
+    }
+    if (pose_directory.empty() || output.empty()) {
+        usage_error("fuse-multiview requires --poses and --output");
+    }
+    const auto manifest = animocap::load_capture_manifest(manifest_path);
+    if (manifest.mode != animocap::CaptureMode::DirectionalRepeat) {
+        usage_error("fuse-multiview currently requires directional_repeat mode");
+    }
+    std::vector<animocap::MultiviewPoseInput> views;
+    views.reserve(manifest.views.size());
+    for (const auto& view : manifest.views) {
+        if (!view.yaw_degrees) {
+            throw animocap::ContractError(
+                "directional view " + view.id + " requires yaw_degrees");
+        }
+        views.push_back({
+            view.id,
+            *view.yaw_degrees,
+            animocap::smooth_pose_sequence(animocap::load_pose_sequence_json(
+                pose_directory / view.id / "pose_sequence.json")),
+        });
+    }
+    const auto result = animocap::solve_directional_multiview(views);
+    animocap::save_motion_package(result.motion, output);
+    const auto artifact_directory = output.parent_path().empty()
+        ? std::filesystem::current_path() : output.parent_path();
+    const auto fused_pose_path = artifact_directory / "fused_pose_sequence.json";
+    animocap::save_pose_sequence_json(result.fused_pose, fused_pose_path);
+    if (diagnostics.empty()) diagnostics = artifact_directory / "multiview-diagnostics.json";
+    animocap::save_multiview_diagnostics(result.diagnostics, diagnostics);
+
+    json alignments = json::array();
+    for (const auto& alignment : result.diagnostics.alignments) {
+        alignments.push_back({
+            {"view_id", alignment.view_id},
+            {"mean_offset_s", alignment.mean_offset_s},
+            {"mean_rate", alignment.mean_rate},
+            {"normalized_cost", alignment.normalized_cost},
+        });
+    }
+    std::cout << json{
+        {"status", "generated"},
+        {"output", output.generic_string()},
+        {"fused_pose", fused_pose_path.generic_string()},
+        {"diagnostics", diagnostics.generic_string()},
+        {"view_count", views.size()},
+        {"frame_count", result.motion.motion.frame_count},
+        {"recovered_observations", result.diagnostics.recovered_observations},
+        {"left_right_corrections", result.diagnostics.left_right_corrections},
+        {"conflict_count", result.diagnostics.conflicts.size()},
+        {"alignments", std::move(alignments)},
+    }.dump(2) << '\n';
+    return 0;
+}
 int generate_fixture(int argc, char** argv) {
     std::filesystem::path output;
     std::uint64_t seed = 20260806;
@@ -165,6 +239,7 @@ void print_help() {
         "  inspect-motion <motion.amotion>\n"
         "  inspect-video <video-file>\n"
         "  reconstruct-pose <pose_sequence.json> --output <motion.amotion>\n"
+        "  fuse-multiview <capture.json> --poses <directory> --output <motion.amotion>\n"
         "  generate-fixture --output <directory> [--seed <uint64>] [--frames <count>]\n";
 }
 
@@ -186,6 +261,7 @@ int main(int argc, char** argv) {
         if (command == "inspect-motion") return inspect_motion(argc, argv);
         if (command == "inspect-video") return inspect_video(argc, argv);
         if (command == "reconstruct-pose") return reconstruct_pose(argc, argv);
+        if (command == "fuse-multiview") return fuse_multiview(argc, argv);
         if (command == "generate-fixture") return generate_fixture(argc, argv);
         usage_error("unknown command: " + std::string(command));
     } catch (const animocap::ContractError& error) {

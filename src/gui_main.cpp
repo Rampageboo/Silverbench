@@ -1,4 +1,6 @@
 #include "animocap/math.hpp"
+#include "animocap/contracts.hpp"
+#include "animocap/multiview.hpp"
 #include "animocap/package.hpp"
 #include "animocap/pose_sequence.hpp"
 #include "animocap/video.hpp"
@@ -11,8 +13,10 @@
 #include <shobjidl.h>
 #include <windowsx.h>
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
+#include <cwctype>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -29,6 +33,7 @@ constexpr int kImport = 101, kAnalyze = 102, kLoad = 103, kPlay = 104;
 constexpr int kTimeline = 105, kStatus = 106, kProgress = 107, kSetup = 108;
 constexpr int kCalibrate = 109, kPersonFrame = 110;
 constexpr int kAutoFrame = 111, kResetFrame = 112, kVlmToggle = 113, kVlmSetup = 114;
+constexpr int kMultiview = 115;
 constexpr int kHeader = 58, kSteps = 58, kScopeBar = 54, kTimelineHeight = 224;
 constexpr int kPadding = 18;
 constexpr double kPi = 3.14159265358979323846;
@@ -36,19 +41,23 @@ constexpr double kPi = 3.14159265358979323846;
 struct AnalysisResult {
     std::optional<animocap::PoseSequence> pose;
     std::optional<animocap::MotionPackage> motion;
+    std::optional<animocap::MultiviewDiagnostics> diagnostics;
     std::filesystem::path motion_path;
     std::wstring error, warning;
 };
 struct AppState {
     HWND window{}, timeline{}, status{}, progress{}, play{};
     std::filesystem::path root, video_path, motion_path;
+    std::array<std::filesystem::path,4> multiview_videos{};
     std::unique_ptr<animocap::VideoDecoder> decoder;
     animocap::VideoFrame video_frame;
     std::optional<animocap::PoseSequence> pose;
     std::optional<animocap::MotionPackage> motion;
+    std::optional<animocap::MultiviewDiagnostics> multiview_diagnostics;
     bool playing{}, analyzing{}, rotating{}, calibrating{}, scrubbing{};
     bool has_person_frame{}, selecting_person_frame{}, drawing_person_frame{};
     bool auto_person_frame{true}, manual_person_frame{}, vlm_enabled{true};
+    bool multiview_mode{};
     int dragging_anchor{-1};
     RECT person_frame{};
     POINT frame_start{}, frame_current{};
@@ -217,10 +226,13 @@ void open_video(const std::filesystem::path& path) {
         app.decoder = std::move(decoder);
         app.video_frame = std::move(frame);
         app.time_s = app.video_frame.time_s;
-        app.pose.reset(); app.motion.reset();
+        app.pose.reset(); app.motion.reset(); app.multiview_diagnostics.reset();
+        app.multiview_mode=false; app.multiview_videos={};
         app.has_person_frame=false; app.auto_person_frame=true; app.manual_person_frame=false;
         app.selecting_person_frame=false;
         app.drawing_person_frame=false;
+        EnableWindow(GetDlgItem(app.window,kPersonFrame),TRUE);
+        EnableWindow(GetDlgItem(app.window,kResetFrame),TRUE);
         const auto& info = app.decoder->info();
         set_status(L"\u89c6\u9891\u5df2\u5bfc\u5165 \u00b7 " + std::to_wstring(info.width) + L"\u00d7" +
                    std::to_wstring(info.height) + L" \u00b7 " +
@@ -249,6 +261,55 @@ int run_hidden(const std::wstring& command, const std::filesystem::path& directo
     CloseHandle(process.hThread); CloseHandle(process.hProcess);
     return static_cast<int>(code);
 }
+bool load_multiview_folder(const std::filesystem::path& folder) {
+    const std::array<std::vector<std::wstring>,4> aliases{{
+        {L"front",L"正面"},{L"right",L"右侧"},
+        {L"back",L"背面"},{L"left",L"左侧"}
+    }};
+    const std::array<std::wstring,4> labels{L"正面 front",L"右侧 right",L"背面 back",L"左侧 left"};
+    const std::array<std::wstring,6> extensions{L".mp4",L".mov",L".avi",L".mkv",L".webm",L".m4v"};
+    std::array<std::vector<std::filesystem::path>,4> matches;
+    for(const auto& entry:std::filesystem::directory_iterator(folder)) {
+        if(!entry.is_regular_file())continue;
+        std::wstring extension=entry.path().extension().wstring();
+        std::transform(extension.begin(),extension.end(),extension.begin(),::towlower);
+        if(std::find(extensions.begin(),extensions.end(),extension)==extensions.end())continue;
+        std::wstring stem=entry.path().stem().wstring();
+        std::transform(stem.begin(),stem.end(),stem.begin(),::towlower);
+        for(std::size_t direction=0;direction<aliases.size();++direction)
+            for(const auto& alias:aliases[direction])
+                if(stem.find(alias)!=std::wstring::npos) {
+                    matches[direction].push_back(entry.path()); break;
+                }
+    }
+    for(std::size_t direction=0;direction<matches.size();++direction) {
+        if(matches[direction].size()!=1) {
+            MessageBoxW(app.window,
+                (L"无法唯一识别“"+labels[direction]+L"”视频。\n"
+                 L"请将四个文件分别命名为 front、right、back、left（扩展名不限）。").c_str(),
+                L"四视角导入失败",MB_ICONWARNING);
+            return false;
+        }
+    }
+    std::array<std::filesystem::path,4> videos{
+        matches[0][0],matches[1][0],matches[2][0],matches[3][0]};
+    open_video(videos[0]);
+    if(!app.decoder||!app.decoder->is_open())return false;
+    app.multiview_videos=std::move(videos);
+    app.multiview_mode=true;
+    app.auto_person_frame=true;
+    app.manual_person_frame=false;
+    app.has_person_frame=false;
+    EnableWindow(GetDlgItem(app.window,kPersonFrame),FALSE);
+    EnableWindow(GetDlgItem(app.window,kResetFrame),FALSE);
+    set_status(L"四视角已导入 · 正面 / 右侧 / 背面 / 左侧 · 将自动相位对齐并联合求解");
+    InvalidateRect(app.window,nullptr,TRUE);
+    return true;
+}
+void import_multiview_folder() {
+    auto folder=choose(true,L"选择包含 front、right、back、left 四段视频的文件夹");
+    if(folder)load_multiview_folder(*folder);
+}
 std::filesystem::path unique_output() {
     auto stamp = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
@@ -269,9 +330,13 @@ void start_analysis() {
     EnableWindow(GetDlgItem(app.window,kAutoFrame),FALSE);
     EnableWindow(GetDlgItem(app.window,kPersonFrame),FALSE);
     EnableWindow(GetDlgItem(app.window,kResetFrame),FALSE);
+    EnableWindow(GetDlgItem(app.window,kImport),FALSE);
+    EnableWindow(GetDlgItem(app.window,kMultiview),FALSE);
     SendMessageW(app.progress,PBM_SETMARQUEE,TRUE,35);
     ShowWindow(app.progress,SW_SHOW);
-    if (app.manual_person_frame && app.has_person_frame) {
+    if (app.multiview_mode) {
+        set_status(L"四视角捕捉 · 正在逐视角提取关节，随后自动相位对齐并联合求解…");
+    } else if (app.manual_person_frame && app.has_person_frame) {
         set_status(L"正在严格使用手动框捕捉 · x="+
             std::to_wstring(app.person_frame.left)+L" y="+
             std::to_wstring(app.person_frame.top)+L" w="+
@@ -286,16 +351,46 @@ void start_analysis() {
     const bool has_person_frame=app.manual_person_frame && app.has_person_frame;
     const RECT person_frame=app.person_frame;
     const bool use_vlm=app.vlm_enabled;
+    const bool multiview_mode=app.multiview_mode;
+    const auto multiview_videos=app.multiview_videos;
+    const double capture_fps=app.decoder ? app.decoder->info().fps : 30.0;
     HWND window=app.window;
     app.worker=std::jthread([video,root,output,window,has_person_frame,
-                             person_frame,use_vlm]() {
+                             person_frame,use_vlm,multiview_mode,
+                             multiview_videos,capture_fps]() {
         auto result=std::make_unique<AnalysisResult>();
         try {
             std::filesystem::create_directories(output);
             auto python=root/".venv-mmpose/Scripts/python.exe";
             if(!std::filesystem::exists(python))python=L"python.exe";
-            auto adapter=root/"python/animocap_ml_adapters/mmpose_adapter.py";
-            auto observations=output/"pose_sequence.json";
+            if(multiview_mode) {
+                animocap::CaptureManifest manifest;
+                manifest.mode=animocap::CaptureMode::DirectionalRepeat;
+                manifest.fps=capture_fps;
+                manifest.output_directory=output.generic_string();
+                const std::array<std::string,4> ids{"front","right","back","left"};
+                const std::array<double,4> yaws{0.0,90.0,180.0,-90.0};
+                for(std::size_t index=0;index<ids.size();++index)
+                    manifest.views.push_back({
+                        ids[index],multiview_videos[index].generic_string(),yaws[index]});
+                auto manifest_path=output/"capture.multiview.json";
+                animocap::save_capture_manifest(manifest,manifest_path);
+                auto pipeline=root/"python/animocap_ml_adapters/multiview_pipeline.py";
+                std::wstring command=quote(python)+L" "+quote(pipeline)+
+                    L" --manifest "+quote(manifest_path)+L" --output "+quote(output);
+                if(!use_vlm)command+=L" --no-vlm";
+                if(run_hidden(command,root)!=0)
+                    throw std::runtime_error(
+                        "multiview pipeline failed; intermediate per-view poses were preserved");
+                result->pose=animocap::load_pose_sequence_json(
+                    output/"fused_pose_sequence.json");
+                result->motion_path=output/"motion.amotion";
+                result->motion=animocap::load_motion_package(result->motion_path);
+                result->diagnostics=animocap::load_multiview_diagnostics(
+                    output/"multiview-diagnostics.json");
+            } else {
+                auto adapter=root/"python/animocap_ml_adapters/mmpose_adapter.py";
+                auto observations=output/"pose_sequence.json";
             std::wstring command=quote(python)+L" "+quote(adapter)+
                 L" --input "+quote(video)+L" --output "+quote(observations);
             if(has_person_frame) {
@@ -337,6 +432,7 @@ void start_analysis() {
             result->motion=animocap::reconstruct_canonical_motion(*result->pose);
             result->motion_path=output/"motion.amotion";
             animocap::save_motion_package(*result->motion,result->motion_path);
+            }
         } catch(const std::exception& error) {
             result->error=widen(error.what());
         }
@@ -616,7 +712,7 @@ void draw_steps(HDC dc,RECT area) {
 void draw_issues(HDC dc,RECT area) {
     fill(dc,area,RGB(16,21,29));
     auto skeleton=animocap::make_default_skeleton();
-    struct Issue { std::wstring name; float confidence; };
+    struct Issue { std::wstring name; float confidence; std::wstring detail; };
     std::vector<Issue> issues;
     if(app.pose&&!app.pose->frames.empty()) {
         const auto& frame=app.pose->frames[pose_frame()];
@@ -625,31 +721,61 @@ void draw_issues(HDC dc,RECT area) {
             const auto& joint=frame.joints[index];
             if(!joint.valid||joint.confidence<.58f)
                 issues.push_back({issue_joint_name(skeleton.bones[index].semantic),
-                                  joint.valid?joint.confidence:0.0f});
+                                  joint.valid?joint.confidence:0.0f,L""});
         }
         std::sort(issues.begin(),issues.end(),[](const Issue& a,const Issue& b){
             return a.confidence<b.confidence;
         });
     }
-    std::wstring heading=issues.empty()?L"当前帧没有明显问题":
-        L"需要检查 · "+std::to_wstring(issues.size())+L" 个关节";
+    if(app.multiview_diagnostics&&app.pose) {
+        const auto current=pose_frame();
+        for(const auto& conflict:app.multiview_diagnostics->conflicts) {
+            if(conflict.frame_index!=current||conflict.joint_index>=skeleton.bones.size())continue;
+            const float confidence=static_cast<float>(std::clamp(
+                1.0-conflict.disagreement_m/.45,0.0,1.0));
+            issues.push_back({
+                issue_joint_name(skeleton.bones[conflict.joint_index].semantic),confidence,
+                L"跨视角差异 "+std::to_wstring(
+                    static_cast<int>(std::lround(conflict.disagreement_m*100.0)))+L" cm"
+            });
+        }
+    }
+    std::wstring heading=issues.empty()
+        ? (app.multiview_diagnostics?L"当前帧四视角一致":L"当前帧没有明显问题")
+        : L"需要检查 · "+std::to_wstring(issues.size())+L" 个关节";
     text(dc,heading,{area.left+16,area.top+8,area.right-16,area.top+38},
          issues.empty()?RGB(100,226,183):RGB(238,242,249),app.font);
+    int issue_y=area.top+42;
+    if(app.multiview_diagnostics) {
+        std::wstring alignment=L"时间对齐";
+        for(const auto& item:app.multiview_diagnostics->alignments) {
+            alignment+=L" · "+widen(item.view_id)+L" "+
+                std::to_wstring(static_cast<int>(std::lround(item.mean_offset_s*1000.0)))+L"ms";
+        }
+        text(dc,alignment,{area.left+16,area.top+34,area.right-16,area.top+64},
+             RGB(112,137,167),app.font);
+        issue_y=area.top+68;
+    }
     if(issues.empty()) {
-        text(dc,L"本地视觉纠错只会在遮挡、跳点或左右歧义时介入",
+        text(dc,app.multiview_diagnostics
+            ? L"遮挡观测已由其他视角恢复；拖动时间轴检查全段冲突"
+            : L"本地视觉纠错只会在遮挡、跳点或左右歧义时介入",
              {area.left+16,area.top+42,area.right-16,area.bottom-12},
              RGB(112,125,149),app.font,DT_LEFT|DT_TOP|DT_WORDBREAK);
         return;
     }
-    int y=area.top+42;
+    int y=issue_y;
     for(std::size_t index=0;index<std::min<std::size_t>(3,issues.size());++index) {
         RECT row{area.left+12,y,area.right-12,std::min<LONG>(area.bottom-8,y+48)};
         fill(dc,row,RGB(22,28,38));
         HBRUSH dot=CreateSolidBrush(RGB(255,184,72)); auto old=SelectObject(dc,dot);
         Ellipse(dc,row.left+12,row.top+17,row.left+22,row.top+27);
         SelectObject(dc,old);DeleteObject(dot);
-        text(dc,issues[index].name+L" · 置信度 "+
-             std::to_wstring(static_cast<int>(issues[index].confidence*100))+L"%",
+        text(dc,issues[index].name+L" · "+
+             (issues[index].detail.empty()
+                ? L"置信度 "+std::to_wstring(
+                    static_cast<int>(issues[index].confidence*100))+L"%"
+                : issues[index].detail),
              {row.left+32,row.top,row.right-90,row.bottom},RGB(224,230,240),app.font);
         text(dc,L"手动修正",{row.right-86,row.top,row.right-10,row.bottom},
              RGB(89,220,229),app.font,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
@@ -728,20 +854,24 @@ void paint(HWND window) {
     fill(dc,client,RGB(9,12,17));
     fill(dc,{0,0,client.right,kHeader},RGB(13,17,24));
     text(dc,L"AniMocap Fusion",{22,6,238,kHeader-4},RGB(240,244,250),app.title_font);
-    std::wstring pipeline=app.vlm_enabled
-        ? L"本地处理管线：HRNet → 光流 → Qwen3-VL 本地纠错  ·  就绪"
-        : L"本地处理管线：HRNet → 光流  ·  视觉纠错已关闭";
+    std::wstring pipeline=app.multiview_mode
+        ? L"四视角：逐视角观测 → 相位对齐 → 置信度加权 → 联合优化"
+        : app.vlm_enabled
+            ? L"本地处理：HRNet → 光流 → Qwen3-VL 纠错 · 就绪"
+            : L"本地处理：HRNet → 光流 · 视觉纠错已关闭";
     text(dc,pipeline,{client.right-850,6,client.right-260,kHeader-4},
-         app.vlm_enabled?RGB(122,215,191):RGB(151,160,179),app.font,
+         (app.multiview_mode||app.vlm_enabled)?RGB(122,215,191):RGB(151,160,179),app.font,
          DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
     draw_steps(dc,{0,kHeader,client.right,kHeader+kSteps});
     RECT scope{0,kHeader+kSteps,client.right,kHeader+kSteps+kScopeBar};
     fill(dc,scope,RGB(14,19,27));
-    text(dc,L"人物范围：",{22,scope.top,112,scope.bottom},
+    text(dc,app.multiview_mode?L"四视角范围：":L"人物范围：",{22,scope.top,118,scope.bottom},
          RGB(225,231,240),app.font);
-    text(dc,app.auto_person_frame
-        ? L"仅识别人体骨架，不包含翅膀、武器、宠物和 UI"
-        : app.has_person_frame?L"使用手动人物框":L"使用完整视频画面",
+    text(dc,app.multiview_mode
+        ? L"正面 / 右侧 / 背面 / 左侧分别自动识别完整人体，再联合恢复遮挡关节"
+        : app.auto_person_frame
+            ? L"仅识别人体骨架，不包含翅膀、武器、宠物和 UI"
+            : app.has_person_frame?L"使用手动人物框":L"使用完整视频画面",
         {460,scope.top,workspace_split()-12,scope.bottom},
         RGB(126,138,160),app.font);
     draw_video(dc,video_area());
@@ -756,6 +886,7 @@ void draw_owner_button(const DRAWITEMSTRUCT* item) {
     RECT rect=item->rcItem;
     const int id=GetDlgCtrlID(item->hwndItem);
     const bool pressed=(item->itemState&ODS_SELECTED)!=0;
+    const bool disabled=(item->itemState&ODS_DISABLED)!=0;
     const bool primary=id==kAnalyze;
     const bool selected=(id==kAutoFrame&&app.auto_person_frame)||
                         (id==kPersonFrame&&app.manual_person_frame)||
@@ -763,6 +894,7 @@ void draw_owner_button(const DRAWITEMSTRUCT* item) {
     COLORREF background=primary?RGB(39,185,201):
         selected?RGB(30,86,112):RGB(22,28,38);
     if(pressed)background=primary?RGB(30,151,166):RGB(31,39,52);
+    if(disabled)background=RGB(18,22,29);
     HBRUSH brush=CreateSolidBrush(background);auto old_brush=SelectObject(item->hDC,brush);
     HPEN pen=CreatePen(PS_SOLID,1,primary?RGB(72,224,231):
         selected?RGB(58,153,187):RGB(48,57,73));
@@ -772,7 +904,7 @@ void draw_owner_button(const DRAWITEMSTRUCT* item) {
     SelectObject(item->hDC,old_brush);DeleteObject(brush);
     wchar_t label[128]{};
     GetWindowTextW(item->hwndItem,label,128);
-    text(item->hDC,label,rect,primary?RGB(7,25,31):RGB(225,232,242),
+    text(item->hDC,label,rect,disabled?RGB(91,100,116):primary?RGB(7,25,31):RGB(225,232,242),
          app.font,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
 }
 HWND button(HWND parent,int id,const wchar_t* label) {
@@ -786,9 +918,10 @@ HWND button(HWND parent,int id,const wchar_t* label) {
 void layout(HWND window) {
     RECT client{};GetClientRect(window,&client);
     int header_x=248;
-    for(int id:{kImport,kLoad,kSetup,kVlmSetup}) {
-        MoveWindow(GetDlgItem(window,id),header_x,10,id==kVlmSetup?112:96,36,TRUE);
-        header_x+=id==kVlmSetup?122:106;
+    for(int id:{kImport,kMultiview,kLoad,kSetup,kVlmSetup}) {
+        const int width=(id==kMultiview||id==kVlmSetup)?104:88;
+        MoveWindow(GetDlgItem(window,id),header_x,10,width,36,TRUE);
+        header_x+=width+8;
     }
     MoveWindow(GetDlgItem(window,kVlmToggle),client.right-235,10,215,36,TRUE);
     const int scope_y=kHeader+kSteps+9;
@@ -1058,6 +1191,7 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
             OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Segoe UI");
         app.panel_brush=CreateSolidBrush(RGB(9,12,17));
         button(window,kImport,L"打开视频");
+        button(window,kMultiview,L"导入四视角");
         button(window,kLoad,L"打开动作");
         button(window,kSetup,L"推理环境");
         button(window,kVlmSetup,L"配置本地 AI");
@@ -1087,6 +1221,7 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
     case WM_COMMAND:
         switch(LOWORD(wparam)) {
         case kImport: import_video(); return 0;
+        case kMultiview: import_multiview_folder(); return 0;
         case kLoad: load_motion(); return 0;
         case kSetup: setup_mmpose(); return 0;
         case kVlmSetup: setup_local_vlm(); return 0;
@@ -1123,8 +1258,10 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
         app.analyzing=false; SendMessageW(app.progress,PBM_SETMARQUEE,FALSE,0);
         ShowWindow(app.progress,SW_HIDE); EnableWindow(GetDlgItem(window,kAnalyze),TRUE);
         EnableWindow(GetDlgItem(window,kAutoFrame),TRUE);
-        EnableWindow(GetDlgItem(window,kPersonFrame),TRUE);
-        EnableWindow(GetDlgItem(window,kResetFrame),TRUE);
+        EnableWindow(GetDlgItem(window,kPersonFrame),!app.multiview_mode);
+        EnableWindow(GetDlgItem(window,kResetFrame),!app.multiview_mode);
+        EnableWindow(GetDlgItem(window,kImport),TRUE);
+        EnableWindow(GetDlgItem(window,kMultiview),TRUE);
         if (!result->error.empty()) {
             set_status(L"\u52a8\u4f5c\u6355\u6349\u5931\u8d25 \u00b7 \u4e2d\u95f4\u4ea7\u7269\u5df2\u4fdd\u7559");
             MessageBoxW(window,result->error.c_str(),L"\u52a8\u4f5c\u6355\u6349\u5931\u8d25",MB_ICONERROR);
@@ -1132,8 +1269,15 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
             app.pose=std::move(result->pose);
             app.motion=std::move(result->motion);
             app.motion_path=std::move(result->motion_path);
+            app.multiview_diagnostics=std::move(result->diagnostics);
             if(app.auto_person_frame)apply_pose_person_frame();
-            if(!result->warning.empty())
+            if(app.multiview_diagnostics) {
+                set_status(L"四视角联合求解完成 · 恢复 "+
+                    std::to_wstring(app.multiview_diagnostics->recovered_observations)+
+                    L" 个遮挡观测 · "+
+                    std::to_wstring(app.multiview_diagnostics->conflicts.size())+
+                    L" 个跨视角冲突待检查");
+            } else if(!result->warning.empty())
                 set_status(L"捕捉完成 · "+result->warning);
             else if(app.pose&&app.pose->backend.find("qwen3-vl-local")!=std::string::npos)
                 set_status(L"捕捉完成 · HRNet、光流、本地视觉纠错和时序平滑已应用");
@@ -1221,7 +1365,9 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show) {
     int argument_count = 0;
     LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &argument_count);
     for (int index = 1; arguments && index + 1 < argument_count; ++index) {
-        if (std::wstring_view(arguments[index]) == L"--video") {
+        if (std::wstring_view(arguments[index]) == L"--multiview-folder") {
+            load_multiview_folder(std::filesystem::path(arguments[++index]));
+        } else if (std::wstring_view(arguments[index]) == L"--video") {
             open_video(std::filesystem::path(arguments[++index]));
         } else if (std::wstring_view(arguments[index]) == L"--pose") {
             try {

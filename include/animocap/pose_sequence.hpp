@@ -31,6 +31,7 @@ struct PoseSequence {
 };
 
 PoseSequence load_pose_sequence_json(const std::filesystem::path& path);
+void save_pose_sequence_json(const PoseSequence& sequence, const std::filesystem::path& path);
 void validate_pose_sequence(const PoseSequence& sequence);
 PoseSequence smooth_pose_sequence(const PoseSequence& sequence);
 MotionPackage reconstruct_canonical_motion(const PoseSequence& sequence);
