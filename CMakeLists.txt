@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 
 project(AniMocapFusion VERSION 0.1.0 LANGUAGES CXX)
 
-option(ANIMOCAP_BUILD_TESTS "Build AniMocap Fusion M0 tests" ON)
+option(ANIMOCAP_BUILD_TESTS "Build AniMocap Fusion tests" ON)
 
 add_library(animocap_core
     src/contracts.cpp
@@ -10,8 +10,10 @@ add_library(animocap_core
     src/hash.cpp
     src/math.cpp
     src/npy.cpp
+    src/pose_sequence.cpp
     src/package.cpp
     src/skeleton.cpp
+    src/video_win.cpp
 )
 
 target_compile_features(animocap_core PUBLIC cxx_std_20)
@@ -24,13 +26,32 @@ target_include_directories(animocap_core
 target_compile_definitions(animocap_core PUBLIC ANIMOCAP_VERSION="${PROJECT_VERSION}")
 
 if(MSVC)
-    target_compile_options(animocap_core PRIVATE /W4 /permissive- /EHsc)
+    target_compile_options(animocap_core PRIVATE /W4 /permissive- /EHsc /utf-8)
 else()
     target_compile_options(animocap_core PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 add_executable(animocap src/cli.cpp)
 target_link_libraries(animocap PRIVATE animocap_core)
+if(WIN32)
+    target_link_libraries(animocap PRIVATE mf mfplat mfreadwrite mfuuid ole32)
+    add_executable(animocap_studio WIN32 src/gui_main.cpp)
+    target_link_libraries(animocap_studio PRIVATE
+        animocap_core
+        comctl32
+        gdi32
+        mf
+        mfplat
+        mfreadwrite
+        mfuuid
+        ole32
+        shell32
+        user32
+    )
+    target_include_directories(animocap_studio PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
+    target_compile_options(animocap_studio PRIVATE /W4 /permissive- /EHsc /utf-8)
+    target_compile_definitions(animocap_studio PRIVATE UNICODE _UNICODE)
+endif()
 target_include_directories(animocap PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 
 if(ANIMOCAP_BUILD_TESTS)
@@ -41,5 +62,5 @@ if(ANIMOCAP_BUILD_TESTS)
     target_compile_definitions(animocap_tests PRIVATE
         ANIMOCAP_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
     )
-    add_test(NAME animocap_m0 COMMAND animocap_tests)
+    add_test(NAME animocap_core COMMAND animocap_tests)
 endif()

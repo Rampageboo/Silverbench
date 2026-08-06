@@ -3,6 +3,7 @@
 #include "animocap/hash.hpp"
 #include "animocap/math.hpp"
 #include "animocap/package.hpp"
+#include "animocap/pose_sequence.hpp"
 #include "animocap/skeleton.hpp"
 
 #include <nlohmann/json.hpp>
@@ -175,6 +176,69 @@ void test_motion_validation() {
     CHECK_THROWS(animocap::validate_motion(invalid_mask, package.skeleton));
 }
 
+void test_pose_reconstruction() {
+    const auto source = animocap::make_synthetic_motion(91, 12);
+    animocap::PoseSequence sequence;
+    sequence.source_video = "procedural-test-video.mp4";
+    sequence.backend = "synthetic-observation-test";
+    sequence.image_width = 640;
+    sequence.image_height = 720;
+    sequence.fps = source.motion.fps;
+    const animocap::Camera camera{"test", 0.0, 0.0, 300.0, {320.0, 360.0}};
+
+    for (std::size_t frame_index = 0; frame_index < source.motion.frame_count; ++frame_index) {
+        const auto begin = source.motion.local_rotations.begin() +
+            static_cast<std::ptrdiff_t>(frame_index * source.motion.joint_count);
+        const std::vector<animocap::Quat> rotations(
+            begin, begin + static_cast<std::ptrdiff_t>(source.motion.joint_count));
+        const auto fk = animocap::forward_kinematics(
+            source.skeleton,
+            rotations,
+            source.motion.scene_root_translation_m[frame_index],
+            source.motion.hips_translation_m[frame_index]);
+        animocap::ObservedPoseFrame frame;
+        frame.time_s = source.motion.time_s[frame_index];
+        for (const auto& position : fk.positions_m) {
+            frame.joints.push_back({
+                animocap::project_weak_perspective(camera, position),
+                position,
+                1.0f,
+                true,
+            });
+        }
+        sequence.frames.push_back(std::move(frame));
+    }
+
+    animocap::validate_pose_sequence(sequence);
+    auto jittered=sequence;
+    const auto head=animocap::bone_index(
+        animocap::make_default_skeleton(),animocap::BoneSemantic::Head);
+    jittered.frames[5].joints[head].image_xy.x+=120.0;
+    jittered.frames[5].joints[head].position_m.x+=0.4;
+    const double neighbor_center=(
+        jittered.frames[4].joints[head].image_xy.x+
+        jittered.frames[6].joints[head].image_xy.x)*0.5;
+    const double jitter_before=std::abs(
+        jittered.frames[5].joints[head].image_xy.x-neighbor_center);
+    const auto smoothed=animocap::smooth_pose_sequence(jittered);
+    const double jitter_after=std::abs(
+        smoothed.frames[5].joints[head].image_xy.x-neighbor_center);
+    CHECK(jitter_after<jitter_before*0.25);
+    CHECK(smoothed.backend.find("temporal-smooth5")!=std::string::npos);
+    const auto smoothed_twice=animocap::smooth_pose_sequence(smoothed);
+    CHECK(smoothed_twice.frames[5].joints[head].image_xy.x==
+          smoothed.frames[5].joints[head].image_xy.x);
+
+    const auto reconstructed = animocap::reconstruct_canonical_motion(sequence);
+    animocap::validate_motion(reconstructed.motion, reconstructed.skeleton);
+    CHECK(reconstructed.motion.frame_count == source.motion.frame_count);
+    CHECK(reconstructed.motion.joint_count == source.motion.joint_count);
+    CHECK(reconstructed.motion.time_s == source.motion.time_s);
+    CHECK(reconstructed.motion.provenance.model_id == "synthetic-observation-test");
+    CHECK(reconstructed.cameras.size() == 1);
+}
+
+
 void test_package_roundtrip() {
     const auto directory = test_root() / "roundtrip.amotion";
     const auto original = animocap::make_synthetic_motion(42, 8);
@@ -217,6 +281,7 @@ void test_license_and_asset_gate() {
     for (const auto& entry : std::filesystem::recursive_directory_iterator(root)) {
         const auto relative = std::filesystem::relative(entry.path(), root).generic_string();
         if (relative.starts_with(".git/") || relative.starts_with("build/") ||
+            relative.starts_with(".venv-mmpose/") || relative.starts_with("outputs/") ||
             relative.starts_with("private/") || relative.starts_with("reports/fixture/")) {
             continue;
         }
@@ -244,6 +309,7 @@ int main() {
         {"coordinate_roundtrip", test_coordinate_roundtrip},
         {"fk", test_fk},
         {"motion_validation", test_motion_validation},
+        {"pose_reconstruction", test_pose_reconstruction},
         {"package_roundtrip", test_package_roundtrip},
         {"fixture_determinism", test_fixture_determinism},
         {"license_and_asset_gate", test_license_and_asset_gate},
@@ -262,6 +328,6 @@ int main() {
         std::cerr << failures << " check(s) failed\n";
         return 1;
     }
-    std::cout << "All M0 checks passed\n";
+    std::cout << "All AniMocap checks passed\n";
     return 0;
 }

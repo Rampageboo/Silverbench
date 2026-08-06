@@ -6,7 +6,17 @@ paths: []
 commands: []
 versions: []
 identifiers: []
-constraints: []
+constraints:
+  - id: target_inference_hardware
+    gpu: NVIDIA RTX 5070 Ti Laptop GPU
+    vram_gb: 12
+    workload: offline batch inference
+    authority: Owner-confirmed project specification v0.2
+    confirmed_on: 2026-08-06
+  - id: development_validation_hardware
+    gpu: NVIDIA RTX 2060
+    role: development compatibility check only; must not constrain target architecture
+    observed_on: 2026-08-06
 codebase_map:
   status: not-adopted
   provider: ""

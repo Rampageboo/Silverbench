@@ -1,6 +1,8 @@
 #include "animocap/contracts.hpp"
 #include "animocap/fixture.hpp"
 #include "animocap/package.hpp"
+#include "animocap/pose_sequence.hpp"
+#include "animocap/video.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -21,6 +23,8 @@ using json = nlohmann::json;
         "\nusage:\n"
         "  animocap validate-manifest <capture.json>\n"
         "  animocap inspect-motion <motion.amotion>\n"
+        "  animocap inspect-video <video-file>\n"
+        "  animocap reconstruct-pose <pose_sequence.json> --output <motion.amotion>\n"
         "  animocap generate-fixture --output <directory> [--seed <uint64>] [--frames <count>]\n");
 }
 
@@ -74,6 +78,50 @@ int inspect_motion(int argc, char** argv) {
     return 0;
 }
 
+int inspect_video(int argc, char** argv) {
+    if (argc != 3) usage_error("inspect-video requires exactly one video file");
+    animocap::VideoDecoder decoder;
+    decoder.open(std::filesystem::path(argv[2]));
+    animocap::VideoFrame frame;
+    if (!decoder.read_frame(frame)) {
+        throw std::runtime_error("video contains no decodable frames");
+    }
+    const auto& info = decoder.info();
+    const json result{
+        {"status", "valid"},
+        {"width", info.width},
+        {"height", info.height},
+        {"fps", info.fps},
+        {"duration_s", info.duration_s},
+        {"estimated_frame_count", info.estimated_frame_count},
+        {"first_frame_time_s", frame.time_s},
+        {"decoded_bytes", frame.bgra.size()},
+    };
+    std::cout << result.dump(2) << '\n';
+    return 0;
+}
+
+int reconstruct_pose(int argc, char** argv) {
+    if (argc != 5 || std::string_view(argv[3]) != "--output") {
+        usage_error("reconstruct-pose requires an input and --output directory");
+    }
+    const auto sequence = animocap::smooth_pose_sequence(
+        animocap::load_pose_sequence_json(argv[2]));
+    const auto package = animocap::reconstruct_canonical_motion(sequence);
+    const std::filesystem::path output(argv[4]);
+    animocap::save_motion_package(package, output);
+    const json result{
+        {"status", "generated"},
+        {"output", output.generic_string()},
+        {"frame_count", package.motion.frame_count},
+        {"joint_count", package.motion.joint_count},
+        {"fps", package.motion.fps},
+        {"backend", sequence.backend},
+    };
+    std::cout << result.dump(2) << '\n';
+    return 0;
+}
+
 int generate_fixture(int argc, char** argv) {
     std::filesystem::path output;
     std::uint64_t seed = 20260806;
@@ -112,9 +160,11 @@ int generate_fixture(int argc, char** argv) {
 
 void print_help() {
     std::cout <<
-        "AniMocap Fusion M0 contract tools\n"
+        "AniMocap Fusion tools\n"
         "  validate-manifest <capture.json>\n"
         "  inspect-motion <motion.amotion>\n"
+        "  inspect-video <video-file>\n"
+        "  reconstruct-pose <pose_sequence.json> --output <motion.amotion>\n"
         "  generate-fixture --output <directory> [--seed <uint64>] [--frames <count>]\n";
 }
 
@@ -134,6 +184,8 @@ int main(int argc, char** argv) {
         }
         if (command == "validate-manifest") return validate_manifest(argc, argv);
         if (command == "inspect-motion") return inspect_motion(argc, argv);
+        if (command == "inspect-video") return inspect_video(argc, argv);
+        if (command == "reconstruct-pose") return reconstruct_pose(argc, argv);
         if (command == "generate-fixture") return generate_fixture(argc, argv);
         usage_error("unknown command: " + std::string(command));
     } catch (const animocap::ContractError& error) {

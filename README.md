@@ -1,58 +1,57 @@
 # AniMocap Fusion
 
-AniMocap Fusion is a local-first motion reconstruction project for anime and
-game humanoids. Its source of truth is a versioned Canonical Humanoid Motion
-package; Blender rigs, VRMA, BVH, glTF, FBX, and ML models are adapters around
-that representation.
+AniMocap Fusion 是一个本地运行的单目视频动作捕捉工具，面向动漫与游戏类人角色。核心、视频解码、动作数据合同和桌面 GUI 使用 C++20；MMPose、HRNet 与 MotionBERT 作为独立 Python 推理进程运行。
 
-The core is C++20. Python is reserved for future ML adapters such as
-MMPose/RTMPose when their ecosystem makes Python the pragmatic boundary.
+目标运行硬件为 RTX 5070 Ti Laptop（12 GB VRAM），采用离线批处理；当前 RTX 2060 开发机只用于兼容性验证。
 
-This repository currently implements **M0 only**: contracts, coordinate
-conventions, deterministic synthetic fixtures, validation, and license gates.
-It intentionally contains no model inference, downloaded weights, proprietary
-assets, production retargeting, or full Blender UI.
+## 打开软件
 
-## Build and test
+在资源管理器中双击根目录的 `AniMocap Fusion.cmd`。
 
-Requires Visual Studio C++ Build Tools on Windows. The wrapper initializes the
-MSVC environment, configures CMake/Ninja, builds, and runs CTest.
+首次使用：
+
+1. 点击“推理环境”，等待 PowerShell 完成安装。
+2. 点击“打开视频”并选择本地视频。
+3. 优先保留“自动识别”：首次捕捉会根据整段人体关节自动得到包含头、双手和双脚的人物范围，并排除武器、翅膀、宠物和 UI。只有自动结果不正确时才点“手动框选”；手动模式会严格使用你拖出的范围，不复用或扩张自动框。
+4. 点击“开始捕捉”。首次运行会下载上游模型，耗时取决于显卡和视频长度。
+5. 左侧查看原视频与 2D 关键点，右侧查看可拖动视角的观测 2.5D 骨架，底部播放或拖动时间轴。
+
+## 稀疏锚点校准
+
+自动捕捉完成后点击“手动修正”。只拖动错位的头、肩、肘、腕、髋、膝或踝；一次拖动的关节偏移会传播到整段视频，并重新生成内存中的规范动作，不需要逐帧调整。
+
+## 时序稳定
+
+加载捕捉结果时会自动执行三帧中值去跳点和五帧对称时序平滑，同时处理 2D 锚点与 2.5D 关节。滤波使用前后帧，主要抑制高频抖动而不引入明显播放延迟；已经带有 temporal-smooth5 标记的数据不会重复滤波。 推理阶段还会用 LK 光流延续上一帧关节，并用保守的 GrabCut 前景掩码拒绝背景、武器和 UI 上的跟踪点；HRNet 置信度较高时仍以当前帧测量为主。
+
+## 本地视觉纠错
+
+界面默认启用“本地视觉纠错”。它只在低置信度、轨迹突跳、遮挡或左右肢体混淆的候选帧调用本机 Qwen3-VL，不会逐帧占用显存；HRNet 与光流仍负责连续跟踪。所有视频帧只在本机处理，不上传云端。
+
+在目标 RTX 5070 Ti Laptop（12 GB VRAM）上，点击“配置本地 AI”会安装 Ollama 并拉取 qwen3-vl:4b。本地模型未启动时，捕捉会继续使用 HRNet、光流和时序平滑，并在状态栏明确提示纠错阶段不可用。
+
+## 单目深度说明
+
+单方向视频不能唯一确定人体前后深度，动漫角色也超出常见真人训练集分布。软件会检测 MotionBERT 深度是否符合人体尺度；深度异常时明确回退为 `mmpose-hrnet-motionbert+2.5d-fallback`，以真实 HRNet 2D 关节点为准，将深度限制在小范围内。这样优先保证四肢拓扑和画面对齐，不把错误深度伪装成可靠 3D。
+
+## 构建与测试
+
+需要 Windows、Visual Studio C++ Build Tools 和 CMake/Ninja：
 
 ```powershell
 .\tools\build_msvc.ps1
-.\build\windows-ninja\animocap.exe generate-fixture --output reports\fixture
-.\build\windows-ninja\animocap.exe validate-manifest tests\fixtures\capture.single.json
-.\build\windows-ninja\animocap.exe inspect-motion reports\fixture\motion.amotion
+.\build\windows-ninja\animocap_tests.exe
 ```
 
-## M0 contracts
-
-- Canonical coordinates: right-handed, Y-up, +Z forward, meters.
-- Reference pose: T-pose facing +Z.
-- Rotations: parent-local quaternions in `[w, x, y, z]` order.
-- Translation: `sceneRoot` world motion plus local `hips` motion.
-- Canonical skeleton: the 23 semantics explicitly enumerated by specification
-  v0.2. The prose says 24, but lists only 23; the enumerated contract is used
-  until the M0 architecture review resolves the discrepancy.
-- Validation is fail-closed: unknown fields and semantics, malformed arrays,
-  duplicate bones, invalid quaternions, and non-monotonic time are rejected.
-- Fixture generation is deterministic and contains no proprietary assets.
-
-## Repository map
+主要目录：
 
 ```text
-configs/                    Versioned skeleton and solver configuration
-include/animocap/            Public C++ contracts and math API
-src/                         C++ implementation and CLI
-tests/                       Contract, math, package, determinism, and asset gates
-blender_addon/               Deferred Blender adapter boundary (M3+)
-python/                      Deferred ML adapter boundary (M1+)
-tools/synthetic_dataset/     M0 procedural fixture entrypoint
-experiments/                 Research-only work; never a runtime dependency
-reports/                     Generated reports and M0 completion evidence
-project-context/             Durable product decisions and boundaries
-third_party/                 Audited vendored source dependencies
+include/animocap/            C++ 公共接口
+src/                         C++ 核心、Media Foundation 解码、CLI 与 Win32 GUI
+python/animocap_ml_adapters/ MMPose 独立进程适配器
+tools/                       构建、环境安装与启动脚本
+outputs/                     本地推理产物（Git 忽略）
+project-context/             持久项目决策与边界
 ```
 
-See `PROJECTCONTEXT.md` for the durable-context compatibility entrypoint and
-`reports/m0-completion.md` for M0 evidence.
+规范坐标为右手系、Y 向上、+Z 向前、单位米；规范骨架包含规格 v0.2 明确列出的 23 个语义关节。模型权重、测试视频和专有游戏素材不会提交到仓库。
