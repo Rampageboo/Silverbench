@@ -9,6 +9,7 @@ add_library(animocap_core
     src/fixture.cpp
     src/hash.cpp
     src/math.cpp
+    src/multiview.cpp
     src/npy.cpp
     src/pose_sequence.cpp
     src/package.cpp
