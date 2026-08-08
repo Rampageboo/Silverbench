@@ -50,7 +50,7 @@ Applicability outside this project has to be re-established, not inherited.
 | Target-state visibility | **Shared mutable workspace**, observed. Uncommitted state is visible across agents, and so are mid-run changes. |
 | Creating a session with a chosen model | **Reliable, and available to an agent.** Model, reasoning effort, and the opening task are set together at creation. |
 | Changing model or effort mid-session | **Not available.** Both are fixed when the session is created. |
-| Live contact between sessions | **Reported, unprobed.** Do not depend on it for correctness; coordination is the coordinator and the task directory. |
+| Cross-session handoff and continuation | `path-B`: **Owner-confirmed on 2026-08-08.** Sessions create, assign, hand off, and continue work across conversations. The task record stores durable evidence and continuity. |
 | Runtime enforcement of assigned identity | `path-A`: not enforced. `path-B`: unrecorded. |
 
 Session creation is the route the protocol uses, and this is why: model,
