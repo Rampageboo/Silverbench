@@ -1,4 +1,6 @@
 #include "animocap/contracts.hpp"
+#include "animocap/character_profile.hpp"
+#include "animocap/export.hpp"
 #include "animocap/fixture.hpp"
 #include "animocap/hash.hpp"
 #include "animocap/math.hpp"
@@ -12,6 +14,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -99,6 +102,22 @@ void test_manifest_contract() {
     duplicate.views.push_back(duplicate.views.front());
     CHECK_THROWS(animocap::validate_capture_manifest(duplicate));
 
+    auto synchronized = manifest;
+    synchronized.mode = animocap::CaptureMode::SynchronizedMultiview;
+    synchronized.calibration_file = "calibration.json";
+    auto second_view = synchronized.views.front();
+    second_view.id = "camera_b";
+    second_view.video = "camera_b.mp4";
+    second_view.time_offset_s = 0.004;
+    synchronized.views.push_back(second_view);
+    animocap::validate_capture_manifest(synchronized);
+    const auto synchronized_path = test_root() / "capture-synchronized.json";
+    animocap::save_capture_manifest(synchronized, synchronized_path);
+    const auto synchronized_loaded = animocap::load_capture_manifest(
+        synchronized_path);
+    CHECK(synchronized_loaded.calibration_file == synchronized.calibration_file);
+    CHECK(synchronized_loaded.views[1].time_offset_s == 0.004);
+
     auto json = nlohmann::json::parse(read_text(path));
     json["unexpected"] = true;
     const auto unknown_path = test_root() / "capture-unknown.json";
@@ -160,6 +179,70 @@ void test_fk() {
     CHECK_NEAR(left_hand.y, 1.37, 1e-12);
 }
 
+void test_character_profile_import() {
+    const auto directory=test_root()/"character-profile";
+    std::filesystem::create_directories(directory);
+    auto skeleton=animocap::make_default_skeleton();
+    skeleton.skeleton_id="profile_import_test_v1";
+    const auto skeleton_path=directory/"skeleton.json";
+    animocap::save_skeleton_json(skeleton,skeleton_path);
+
+    const auto direct=animocap::load_character_profile(skeleton_path);
+    CHECK(direct.skeleton.skeleton_id==skeleton.skeleton_id);
+    CHECK(direct.skeleton_path==std::filesystem::absolute(skeleton_path).lexically_normal());
+    CHECK_NEAR(direct.optimization_options.low_confidence_threshold,0.55,1e-12);
+
+    const auto profile_path=directory/"profile.json";
+    const nlohmann::json profile{
+        {"schema_version",animocap::kSchemaVersion},
+        {"profile_id",skeleton.skeleton_id},
+        {"canonical_skeleton","skeleton.json"},
+        {"constraint_policy",{
+            {"mode","low_confidence_bone_length"},
+            {"low_confidence_threshold",0.42},
+            {"preserve_high_confidence_observations",true},
+        }},
+    };
+    write_text(profile_path,profile.dump(2));
+    const auto imported=animocap::load_character_profile(profile_path);
+    CHECK(imported.skeleton.skeleton_id==skeleton.skeleton_id);
+    CHECK(imported.skeleton_path==std::filesystem::absolute(skeleton_path).lexically_normal());
+    CHECK_NEAR(imported.optimization_options.low_confidence_threshold,0.42,1e-12);
+
+    auto invalid=profile;
+    invalid["constraint_policy"]["low_confidence_threshold"]=1.5;
+    const auto invalid_path=directory/"profile-invalid.json";
+    write_text(invalid_path,invalid.dump(2));
+    CHECK_THROWS(animocap::load_character_profile(invalid_path));
+}
+
+std::vector<std::uint8_t> read_bytes(const std::filesystem::path& path) {
+    std::ifstream input(path,std::ios::binary);
+    return {std::istreambuf_iterator<char>(input),std::istreambuf_iterator<char>()};
+}
+
+std::uint32_t read_u32(const std::vector<std::uint8_t>& bytes,std::size_t offset) {
+    if(offset+4>bytes.size())throw std::runtime_error("truncated uint32");
+    return static_cast<std::uint32_t>(bytes[offset])|
+        (static_cast<std::uint32_t>(bytes[offset+1])<<8U)|
+        (static_cast<std::uint32_t>(bytes[offset+2])<<16U)|
+        (static_cast<std::uint32_t>(bytes[offset+3])<<24U);
+}
+
+void test_fk_scene_root_rotation() {
+    const auto skeleton = animocap::make_default_skeleton();
+    const std::vector<animocap::Quat> rotations(skeleton.bones.size());
+    const auto quarter_turn = animocap::from_axis_angle(
+        {0.0, 1.0, 0.0}, 3.14159265358979323846 * 0.5);
+    const auto result = animocap::forward_kinematics(
+        skeleton, rotations, {}, quarter_turn);
+    const auto left_hand = result.positions_m[
+        animocap::bone_index(skeleton, animocap::BoneSemantic::LeftHand)];
+    CHECK_NEAR(left_hand.x, 0.0, 1e-12);
+    CHECK_NEAR(left_hand.y, 1.37, 1e-12);
+    CHECK_NEAR(left_hand.z, -0.74, 1e-12);
+}
+
 void test_motion_validation() {
     const auto package = animocap::make_synthetic_motion(7, 5);
     animocap::validate_motion(package.motion, package.skeleton);
@@ -196,6 +279,7 @@ void test_pose_reconstruction() {
             source.skeleton,
             rotations,
             source.motion.scene_root_translation_m[frame_index],
+            source.motion.scene_root_rotation[frame_index],
             source.motion.hips_translation_m[frame_index]);
         animocap::ObservedPoseFrame frame;
         frame.time_s = source.motion.time_s[frame_index];
@@ -230,6 +314,78 @@ void test_pose_reconstruction() {
     CHECK(smoothed_twice.frames[5].joints[head].image_xy.x==
           smoothed.frames[5].joints[head].image_xy.x);
 
+    auto optimization_input=sequence;
+    const auto neck=animocap::bone_index(
+        animocap::make_default_skeleton(),animocap::BoneSemantic::Neck);
+    optimization_input.frames[5].joints[head].position_m.x+=0.32;
+    optimization_input.frames[5].joints[head].confidence=0.15f;
+    const auto before_vector=optimization_input.frames[5].joints[head].position_m-
+        optimization_input.frames[5].joints[neck].position_m;
+    const auto reference_vector=sequence.frames[5].joints[head].position_m-
+        sequence.frames[5].joints[neck].position_m;
+    const auto vector_length=[](const animocap::Vec3& value) {
+        return std::sqrt(value.x*value.x+value.y*value.y+value.z*value.z);
+    };
+    const double bone_error_before=std::abs(
+        vector_length(before_vector)-vector_length(reference_vector));
+    const auto optimized=animocap::optimize_pose_sequence(optimization_input);
+    const auto after_vector=optimized.frames[5].joints[head].position_m-
+        optimized.frames[5].joints[neck].position_m;
+    const double bone_error_after=std::abs(
+        vector_length(after_vector)-vector_length(reference_vector));
+    CHECK(bone_error_after<bone_error_before*0.50);
+    CHECK(optimized.frames[5].joints[head].image_xy==
+          optimization_input.frames[5].joints[head].image_xy);
+    CHECK(optimized.backend.find("kinematic-opt-v1")!=std::string::npos);
+    const auto optimized_twice=animocap::optimize_pose_sequence(optimized);
+    CHECK(optimized_twice.frames[5].joints[head].position_m==
+          optimized.frames[5].joints[head].position_m);
+
+    auto character_skeleton=animocap::make_default_skeleton();
+    character_skeleton.skeleton_id="test_character_profile_v1";
+    auto& character_head_offset=character_skeleton.bones[head].rest_offset_m;
+    character_head_offset.x*=1.60;
+    character_head_offset.y*=1.60;
+    character_head_offset.z*=1.60;
+    animocap::PoseOptimizationOptions profile_options;
+    profile_options.iterations=16;
+    profile_options.temporal_weight=0.0;
+    profile_options.observation_weight=0.0;
+    profile_options.maximum_frame_correction_m=0.05;
+
+    auto high_confidence_profile_input=sequence;
+    for(auto& frame:high_confidence_profile_input.frames)
+        for(auto& joint:frame.joints)joint.confidence=1.0f;
+    const auto high_confidence_profile_result=animocap::optimize_pose_sequence(
+        high_confidence_profile_input,profile_options,&character_skeleton);
+    CHECK(high_confidence_profile_result.frames[5].joints[head].position_m==
+          high_confidence_profile_input.frames[5].joints[head].position_m);
+
+    auto low_confidence_profile_input=high_confidence_profile_input;
+    for(auto& frame:low_confidence_profile_input.frames)
+        frame.joints[head].confidence=0.10f;
+    const double character_head_length=vector_length(character_head_offset);
+    const auto low_profile_before_vector=
+        low_confidence_profile_input.frames[5].joints[head].position_m-
+        low_confidence_profile_input.frames[5].joints[neck].position_m;
+    const double low_profile_error_before=std::abs(
+        vector_length(low_profile_before_vector)-character_head_length);
+    const auto low_confidence_profile_result=animocap::optimize_pose_sequence(
+        low_confidence_profile_input,profile_options,&character_skeleton);
+    const auto low_profile_after_vector=
+        low_confidence_profile_result.frames[5].joints[head].position_m-
+        low_confidence_profile_result.frames[5].joints[neck].position_m;
+    const double low_profile_error_after=std::abs(
+        vector_length(low_profile_after_vector)-character_head_length);
+    CHECK(low_profile_error_after<low_profile_error_before*0.10);
+    CHECK(low_confidence_profile_result.backend.find(
+        "character-kinematic-opt-v1[test_character_profile_v1]")!=std::string::npos);
+    const auto profiled_motion=animocap::reconstruct_canonical_motion(
+        low_confidence_profile_result,&character_skeleton);
+    CHECK(profiled_motion.skeleton.skeleton_id==character_skeleton.skeleton_id);
+    CHECK(profiled_motion.motion.skeleton_id==character_skeleton.skeleton_id);
+    CHECK(profiled_motion.skeleton.bones[head].rest_offset_m==character_head_offset);
+
     const auto reconstructed = animocap::reconstruct_canonical_motion(sequence);
     animocap::validate_motion(reconstructed.motion, reconstructed.skeleton);
     CHECK(reconstructed.motion.frame_count == source.motion.frame_count);
@@ -237,6 +393,15 @@ void test_pose_reconstruction() {
     CHECK(reconstructed.motion.time_s == source.motion.time_s);
     CHECK(reconstructed.motion.provenance.model_id == "synthetic-observation-test");
     CHECK(reconstructed.cameras.size() == 1);
+    const auto contact_count = std::count(
+        reconstructed.motion.foot_contacts.begin(),
+        reconstructed.motion.foot_contacts.end(),
+        static_cast<std::uint8_t>(1));
+    CHECK(contact_count > reconstructed.motion.frame_count);
+    CHECK(std::all_of(
+        reconstructed.motion.foot_contacts.begin(),
+        reconstructed.motion.foot_contacts.end(),
+        [](std::uint8_t value) { return value == 0U || value == 1U; }));
 }
 
 
@@ -376,6 +541,88 @@ void test_package_roundtrip() {
     CHECK(loaded.motion.foot_contacts == original.motion.foot_contacts);
     CHECK(loaded.motion.provenance.config_sha256 == original.motion.provenance.config_sha256);
     CHECK(loaded.cameras == original.cameras);
+    const auto diagnostics=nlohmann::json::parse(read_text(directory/"diagnostics.json"));
+    CHECK(diagnostics.at("status")=="canonical_motion_validated");
+    CHECK(diagnostics.at("invalid_observations")==0);
+    CHECK(diagnostics.at("foot_contacts").at("left_frames")==original.motion.frame_count);
+    CHECK(diagnostics.at("foot_contacts").at("right_frames")==original.motion.frame_count);
+    CHECK(diagnostics.at("foot_contacts").at("left_ratio")==1.0);
+    CHECK(diagnostics.at("foot_contacts").at("right_ratio")==1.0);
+    const auto alignment=nlohmann::json::parse(read_text(directory/"alignment.json"));
+    CHECK(alignment.at("mode")=="external_or_not_required");
+}
+
+void test_motion_clip() {
+    const auto source=animocap::make_synthetic_motion(20260808,20);
+    const auto clip=animocap::clip_motion_package(source,4,12);
+    CHECK(clip.motion.frame_count==9);
+    CHECK(clip.motion.time_s.front()==0.0);
+    CHECK(std::abs(clip.motion.time_s.back()-8.0/source.motion.fps)<1e-12);
+    CHECK(clip.motion.scene_root_translation_m.front()==
+          source.motion.scene_root_translation_m[4]);
+    CHECK(clip.motion.local_rotations.front()==
+          source.motion.local_rotations[4*source.motion.joint_count]);
+    CHECK(clip.motion.confidence.size()==9*source.motion.joint_count);
+    CHECK(clip.motion.valid_mask.size()==9*source.motion.joint_count);
+    CHECK(clip.motion.foot_contacts.size()==18);
+    CHECK(clip.motion.provenance.config_sha256!=source.motion.provenance.config_sha256);
+    CHECK(clip.cameras==source.cameras);
+    animocap::validate_motion(clip.motion,clip.skeleton);
+    CHECK_THROWS(animocap::clip_motion_package(source,12,4));
+    CHECK_THROWS(animocap::clip_motion_package(source,0,20));
+}
+
+void test_bvh_export() {
+    const auto package = animocap::make_synthetic_motion(20260808, 7);
+    const auto output = test_root() / "synthetic.bvh";
+    animocap::export_bvh(package, output);
+    const auto text = read_text(output);
+    CHECK(text.starts_with("HIERARCHY\nROOT Hips\n"));
+    CHECK(text.find("CHANNELS 6 Xposition Yposition Zposition Zrotation Xrotation Yrotation") !=
+          std::string::npos);
+    CHECK(text.find("JOINT LeftUpperArm") != std::string::npos);
+    CHECK(text.find("MOTION\nFrames: 7\nFrame Time: 0.033333") != std::string::npos);
+    CHECK(text.find("nan") == std::string::npos);
+    CHECK_THROWS(animocap::export_bvh(package, output));
+    animocap::export_bvh(package, output, {animocap::BvhUnit::Meters, true});
+    CHECK(read_text(output).find("Frames: 7") != std::string::npos);
+}
+
+void test_vrma_export() {
+    const auto package=animocap::make_synthetic_motion(20260808,9);
+    const auto output=test_root()/"synthetic.vrma";
+    animocap::export_vrma(package,output);
+    const auto bytes=read_bytes(output);
+    CHECK(read_u32(bytes,0)==0x46546c67U);
+    CHECK(read_u32(bytes,4)==2U);
+    CHECK(read_u32(bytes,8)==bytes.size());
+    const auto json_length=read_u32(bytes,12);
+    CHECK(read_u32(bytes,16)==0x4e4f534aU);
+    CHECK(20U+json_length+8U<=bytes.size());
+    const std::string document_text(
+        bytes.begin()+20,bytes.begin()+20+static_cast<std::ptrdiff_t>(json_length));
+    const auto document=nlohmann::json::parse(document_text);
+    CHECK(document.at("asset").at("version")=="2.0");
+    CHECK(document.at("extensionsRequired").at(0)=="VRMC_vrm_animation");
+    const auto& extension=document.at("extensions").at("VRMC_vrm_animation");
+    CHECK(extension.at("specVersion")=="1.0");
+    const auto& human_bones=extension.at("humanoid").at("humanBones");
+    CHECK(human_bones.size()==22);
+    CHECK(human_bones.contains("hips"));
+    CHECK(human_bones.contains("leftHand"));
+    const auto& animation=document.at("animations").at(0);
+    CHECK(animation.at("channels").size()==23);
+    CHECK(animation.at("samplers").size()==23);
+    std::size_t translation_channels=0;
+    for(const auto& channel:animation.at("channels")) {
+        if(channel.at("target").at("path")=="translation")++translation_channels;
+    }
+    CHECK(translation_channels==1);
+    const auto binary_header=20U+json_length;
+    CHECK(read_u32(bytes,binary_header)==document.at("buffers").at(0).at("byteLength"));
+    CHECK(read_u32(bytes,binary_header+4)==0x004e4942U);
+    CHECK_THROWS(animocap::export_vrma(package,output));
+    animocap::export_vrma(package,output,{true});
 }
 
 void test_fixture_determinism() {
@@ -402,7 +649,8 @@ void test_license_and_asset_gate() {
         const auto relative = std::filesystem::relative(entry.path(), root).generic_string();
         if (relative.starts_with(".git/") || relative.starts_with("build/") ||
             relative.starts_with(".venv-mmpose/") || relative.starts_with("outputs/") ||
-            relative.starts_with("private/") || relative.starts_with("reports/fixture/")) {
+            relative.starts_with("private/") || relative.starts_with("reports/fixture/") ||
+            relative.starts_with("animocap-m0-test-output/")) {
             continue;
         }
         if (entry.is_regular_file()) {
@@ -424,14 +672,19 @@ int main() {
     const std::vector<std::pair<std::string, std::function<void()>>> tests{
         {"sha256", test_sha256},
         {"skeleton_contract", test_skeleton_contract},
+        {"character_profile_import",test_character_profile_import},
         {"manifest_contract", test_manifest_contract},
         {"keypoint_contract", test_keypoint_contract},
         {"coordinate_roundtrip", test_coordinate_roundtrip},
         {"fk", test_fk},
+        {"fk_scene_root_rotation", test_fk_scene_root_rotation},
         {"motion_validation", test_motion_validation},
         {"pose_reconstruction", test_pose_reconstruction},
         {"directional_multiview", test_directional_multiview},
         {"package_roundtrip", test_package_roundtrip},
+        {"motion_clip", test_motion_clip},
+        {"bvh_export", test_bvh_export},
+        {"vrma_export", test_vrma_export},
         {"fixture_determinism", test_fixture_determinism},
         {"license_and_asset_gate", test_license_and_asset_gate},
     };

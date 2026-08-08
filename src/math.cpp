@@ -86,6 +86,7 @@ FKResult forward_kinematics(
     const Skeleton& skeleton,
     const std::vector<Quat>& local_rotations,
     const Vec3& scene_root_translation_m,
+    const Quat& scene_root_rotation,
     const Vec3& hips_translation_m
 ) {
     validate_skeleton(skeleton);
@@ -101,7 +102,7 @@ FKResult forward_kinematics(
         const auto local = normalize(local_rotations[index]);
         if (bone.parent < 0) {
             result.positions_m[index] = scene_root_translation_m + bone.rest_offset_m;
-            result.global_rotations[index] = local;
+            result.global_rotations[index] = normalize(multiply(scene_root_rotation, local));
             continue;
         }
         const auto parent = static_cast<std::size_t>(bone.parent);

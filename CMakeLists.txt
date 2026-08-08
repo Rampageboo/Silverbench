@@ -5,7 +5,10 @@ project(AniMocapFusion VERSION 0.1.0 LANGUAGES CXX)
 option(ANIMOCAP_BUILD_TESTS "Build AniMocap Fusion tests" ON)
 
 add_library(animocap_core
+    src/character_profile.cpp
     src/contracts.cpp
+    src/export_bvh.cpp
+    src/export_vrma.cpp
     src/fixture.cpp
     src/hash.cpp
     src/math.cpp

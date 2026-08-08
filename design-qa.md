@@ -1,46 +1,44 @@
 # AniMocap Fusion Design QA
 
-- source visual truth path: `build/animocap-ui-target-v1.png`
-- implementation screenshot path: `build/ui-implemented-v3.png`
-- combined comparison: `build/ui-design-comparison-v3.png` (1:1) and `build/ui-design-comparison-v3-small.png` (overview)
-- viewport: native Windows outer window, 1487 × 1058 px
-- source pixels: 1487 × 1058; implementation pixels: 1487 × 1058
-- density normalization: none; exact pixel dimensions were matched before comparison
-- state: user test video loaded with 367-frame smoothed 2.5D pose and reconstructed motion; automatic person range active; local VLM correction enabled
+- source visual truth: `build/animocap-ui-target-v2.png`
+- implementation screenshot: `build/ui-implemented-v4.png`
+- 1:1 side-by-side comparison: `build/ui-design-comparison-v4.png`
+- concept viewport: 1488 × 1057 px
+- implementation viewport: native Windows outer window, 1487 × 1058 px
+- implementation state: local test video, 367-frame smoothed 2.5D pose, reconstructed motion, automatic person range, local visual correction enabled
+- capture method: a temporary in-process Win32 `PrintWindow` QA path; the path was removed before the final build
 
-**Findings**
+## Result
 
-No actionable P0, P1, or P2 differences remain.
+Passed. No actionable P0, P1, or P2 visual differences remain.
 
-- Fonts and typography: target and native implementation use the same compact Windows desktop hierarchy. The implementation uses Segoe UI/ClearType; weights and wrapping remain readable at the matched viewport.
-- Spacing and layout rhythm: the implementation preserves the target's dominant video area, upper-right skeleton monitor, lower-right issue list, top workflow, and bottom diagnostic timeline. Persistent controls remain visible without overflow.
-- Colors and visual tokens: near-black surfaces, cyan primary actions/status, violet tracking curves, amber uncertainty, and subdued borders map consistently to the target.
-- Image quality and asset fidelity: the implementation renders the original decoded video at high quality with no extra vertical flip. The full character, head, hands, and feet are visible. Joint overlays and the 2.5D skeleton are native diagnostic rendering rather than substituted imagery.
-- Copy and content: labels describe the actual local pipeline, automatic/manual person range, actionable joint issues, and capture action. No prompt or mockup-only product language leaks into the interface.
+- Layout and hierarchy: the implementation preserves the concept's grouped command bar, five-step workflow, person-scope row, dominant video canvas, upper-right skeleton viewport, lower-right issue rail, diagnostic timeline, status footer, and single primary capture action. The native workspace uses a 64/36 split, within the concept's intended 70/30 visual balance while keeping issue text readable.
+- Visual system: true graphite backgrounds, three surface elevations, cool gray borders, cyan primary/selection states, violet motion data, amber confidence and diagnostics, green valid joints, and red error-only accents remain consistent across every surface.
+- Typography: Segoe UI handles titles, sections, controls, and body copy; Cascadia Mono handles time values. Control typography is explicit and no browser/default text sizing is involved.
+- Media and diagnostic fidelity: the implementation uses the real decoded test video without tinting or reframing, native 2D observations, the real 2.5D skeleton, real low-confidence issues, confidence/ambiguity curves, foot-contact bars, and the actual playhead. The final skeleton scaling keeps the complete figure visible.
+- States: active, selected, disabled, pressed, hover, toggle, and primary actions have distinct treatments. The loaded screenshot intentionally shows workflow step 5 active; the concept shows step 1 active.
+- Native framing: Windows 11 dark title-bar, border, caption, and rounded-corner attributes match the application palette. A 1320 × 860 minimum window size prevents control collisions and unreadable diagnostic panels.
 
-P3 follow-up polish: the target shows thumbnail filmstrips and more transport controls. The native implementation currently provides play plus direct click/drag scrubbing and a compact video track; this is functionally complete but visually less rich.
+## Fidelity ledger
 
-**Full-view comparison evidence**
+1. **Command bar:** all required labels are present and ordered by open/import, motion/save, export, environment/setup, then local visual correction. Compact code-native controls replace the concept's decorative toolbar icons.
+2. **Workflow:** the five labels and chevron anatomy match; completed steps use subdued borders and only the active step receives the cyan fill.
+3. **Workspace:** the video remains the dominant surface, with the skeleton and issue rail aligned to a single right column. No extra cards, navigation, or metrics were introduced.
+4. **Palette and type:** background, surfaces, borders, text hierarchy, accent colors, and monospaced timing closely match the concept.
+5. **Skeleton viewport:** the perspective grid, XYZ axes, violet bones, semantic confidence colors, and rotation hint are present. A first-pass head crop was fixed by recalibrating projection scale.
+6. **Timeline:** confidence, ambiguity, contact track, selection handles, current marker, start/end timecodes, playback, range, and loop controls are all present and data-driven.
+7. **Copy:** above-the-fold functional labels match the supplied inventory. The scope helper retains the product-accurate wording about excluding wings, weapons, pets, and game UI instead of the concept's illustrative sentence.
 
-The 1:1 combined comparison confirms the same major region proportions and workflow hierarchy. The implementation intentionally uses the supplied Honkai: Star Rail capture rather than the generated reference character.
+## Intentional deviations
 
-**Focused region comparison evidence**
+- The concept's illustrative school scene is replaced by the authorized local test capture; this verifies real product rendering rather than a mock asset.
+- The concept shows a thumbnail filmstrip and a second media transport row. The implementation keeps one functional transport surface and does not manufacture thumbnails from a single decoded frame.
+- Toolbar symbols remain text-first because the native app has no established icon asset family; only the play/capture glyphs are code-drawn. This avoids inconsistent approximations and preserves legibility at the compact desktop density.
 
-The standalone 1487 × 1058 implementation capture was inspected at original resolution for the header, person-range toolbar, video/2D overlay, 2.5D skeleton, issue rows, timeline, and primary action. No additional crop was needed because all labels and controls were legible at original resolution.
+## Verification
 
-**Comparison history**
-
-1. Initial capture: blocked by an unquoted video path in the QA launch command, header/control overlap, pipeline/toggle overlap, and a desktop notification overlay. Fixed the native header layout, constrained the pipeline label, quoted the test paths, and replaced the bright system trackbar with the native self-drawn scrubber.
-2. Second capture: video, full-body framing, pose overlay, issue list, and diagnostics loaded correctly. Comparison remained blocked because the maximized viewport did not match the target and a desktop notification obscured the 3D panel.
-3. Final capture: used PrintWindow and an exact 1487 × 1058 window. No external overlay, overflow, or actionable P0/P1/P2 mismatch remained.
-
-**Primary interactions tested**
-
-- test video opens without inversion or quality loss
-- automatic full-body range keeps head, hands, and feet
-- 2D observations and 2.5D preview load together
-- issue list populates from low-confidence joints
-- custom timeline renders confidence and ambiguity state and supports direct scrubbing
-- local VLM unavailability falls back without aborting the capture pipeline
-
-final result: passed
+- Final native build: passed.
+- `animocap_core` CTest: 1/1 passed in 4.69 seconds.
+- Existing CLI load paths successfully loaded the local video, pose sequence, and reconstructed motion used by the screenshot.
+- Primary state-dependent controls were visibly verified in loaded/disabled states. Capture, correction, range, save, and export handlers were not changed by this visual pass.
+- Browser verification was not applicable to this native Win32 UI. The Windows control plugin failed during initialization with a window-enumeration path error, so native `PrintWindow` capture was used instead.

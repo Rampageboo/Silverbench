@@ -138,6 +138,7 @@ FixtureResult generate_synthetic_fixture(
             package.skeleton,
             rotations,
             package.motion.scene_root_translation_m[frame],
+            package.motion.scene_root_rotation[frame],
             package.motion.hips_translation_m[frame]
         );
         json positions = json::array();

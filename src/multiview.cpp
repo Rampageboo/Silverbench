@@ -715,6 +715,7 @@ MultiviewSolveResult solve_directional_multiview(
         ? reprojection_error_sum / static_cast<double>(reprojection_error_samples)
         : 0.0;
     validate_pose_sequence(result.fused_pose);
+    result.fused_pose = optimize_pose_sequence(result.fused_pose);
     result.motion = reconstruct_canonical_motion(result.fused_pose);
     result.motion.cameras.clear();
     for (const auto& view : views) {

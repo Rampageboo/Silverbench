@@ -26,17 +26,21 @@ def emit(event: str, **values: Any) -> None:
 
 def load_manifest(path: Path) -> dict[str, Any]:
     document = json.loads(path.read_text(encoding="utf-8"))
-    if document.get("mode") != "directional_repeat":
-        raise RuntimeError("multiview pipeline requires directional_repeat mode")
+    mode = document.get("mode")
+    if mode not in ("directional_repeat", "synchronized_multiview"):
+        raise RuntimeError("multiview pipeline requires a supported multiview mode")
     views = document.get("views")
     if not isinstance(views, list) or not 2 <= len(views) <= 4:
-        raise RuntimeError("directional_repeat requires two to four views")
+        raise RuntimeError("multiview capture requires two to four views")
     ids = [view.get("id") for view in views]
     if len(ids) != len(set(ids)) or any(not value for value in ids):
         raise RuntimeError("view ids must be present and unique")
-    for view in views:
-        if view.get("yaw_degrees") is None:
-            raise RuntimeError(f"view {view.get('id')} requires yaw_degrees")
+    if mode == "directional_repeat":
+        for view in views:
+            if view.get("yaw_degrees") is None:
+                raise RuntimeError(f"view {view.get('id')} requires yaw_degrees")
+    elif not document.get("calibration_file"):
+        raise RuntimeError("synchronized_multiview requires calibration_file")
     return document
 
 
@@ -107,6 +111,10 @@ def load_rois(path: Path | None) -> dict[str, list[int]]:
 
 
 def run_pipeline(args: argparse.Namespace) -> int:
+    if bool(args.anime_pose_config) != bool(args.anime_pose_weights):
+        raise RuntimeError(
+            "--anime-pose-config and --anime-pose-weights must be provided together"
+        )
     root = Path(__file__).resolve().parents[2]
     manifest_path = args.manifest.resolve()
     manifest = load_manifest(manifest_path)
@@ -138,9 +146,18 @@ def run_pipeline(args: argparse.Namespace) -> int:
                 str(video),
                 "--output",
                 str(pose_path),
+                "--quality",
+                args.quality,
+                "--segmentation",
+                args.segmentation,
             ]
             if view_id in rois:
                 command.extend(["--roi", *(str(value) for value in rois[view_id])])
+            if args.anime_pose_config and args.anime_pose_weights:
+                command.extend([
+                    "--anime-pose-config", str(args.anime_pose_config),
+                    "--anime-pose-weights", str(args.anime_pose_weights),
+                ])
             if run_streaming(command, root, view_id, "pose_2d_25d") != 0:
                 raise RuntimeError(f"pose inference failed for {view_id}")
             if not args.no_vlm:
@@ -177,25 +194,47 @@ def run_pipeline(args: argparse.Namespace) -> int:
     animocap = find_animocap(root, args.animocap)
     motion_output = output / "motion.amotion"
     diagnostics = output / "multiview-diagnostics.json"
-    command = [
-        str(animocap),
-        "fuse-multiview",
-        str(manifest_path),
-        "--poses",
-        str(pose_directory),
-        "--output",
-        str(motion_output),
-        "--diagnostics",
-        str(diagnostics),
-    ]
-    if run_streaming(command, root, "all", "phase_align_and_joint_solve") != 0:
-        raise RuntimeError("multiview joint solve failed")
+    fused_pose = output / "fused_pose_sequence.json"
+    if manifest["mode"] == "synchronized_multiview":
+        calibration = args.calibration
+        if calibration is None:
+            calibration = Path(str(manifest["calibration_file"]))
+            if not calibration.is_absolute():
+                calibration = manifest_path.parent / calibration
+        solver = root / "python/animocap_ml_adapters/calibrated_multiview.py"
+        command = [
+            sys.executable, str(solver), "--manifest", str(manifest_path),
+            "--poses", str(pose_directory), "--calibration", str(calibration),
+            "--output", str(fused_pose), "--diagnostics", str(diagnostics),
+        ]
+        if run_streaming(command, root, "all", "calibrated_triangulation") != 0:
+            raise RuntimeError("calibrated multiview triangulation failed")
+        command = [
+            str(animocap), "reconstruct-pose", str(fused_pose),
+            "--output", str(motion_output),
+        ]
+        if run_streaming(command, root, "all", "kinematic_reconstruction") != 0:
+            raise RuntimeError("calibrated motion reconstruction failed")
+    else:
+        command = [
+            str(animocap),
+            "fuse-multiview",
+            str(manifest_path),
+            "--poses",
+            str(pose_directory),
+            "--output",
+            str(motion_output),
+            "--diagnostics",
+            str(diagnostics),
+        ]
+        if run_streaming(command, root, "all", "phase_align_and_joint_solve") != 0:
+            raise RuntimeError("multiview joint solve failed")
     emit(
         "complete",
         output=str(output),
         motion=str(motion_output),
         diagnostics=str(diagnostics),
-        fused_pose=str(output / "fused_pose_sequence.json"),
+        fused_pose=str(fused_pose),
     )
     return 0
 
@@ -206,7 +245,16 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--roi-file", type=Path)
     parser.add_argument("--animocap", type=Path)
+    parser.add_argument("--calibration", type=Path)
+    parser.add_argument("--anime-pose-config", type=Path)
+    parser.add_argument("--anime-pose-weights", type=Path)
     parser.add_argument("--vlm-model", default="qwen3-vl:4b")
+    parser.add_argument(
+        "--quality", choices=("fast", "balanced", "maximum"), default="balanced"
+    )
+    parser.add_argument(
+        "--segmentation", choices=("auto", "grabcut", "sam2"), default="auto"
+    )
     parser.add_argument("--no-vlm", action="store_true")
     parser.add_argument("--skip-inference", action="store_true")
     args = parser.parse_args()

@@ -29,6 +29,7 @@ FKResult forward_kinematics(
     const Skeleton& skeleton,
     const std::vector<Quat>& local_rotations,
     const Vec3& scene_root_translation_m,
+    const Quat& scene_root_rotation = {},
     const Vec3& hips_translation_m = {}
 );
 

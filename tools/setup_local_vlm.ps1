@@ -6,26 +6,41 @@ $ErrorActionPreference = "Stop"
 Write-Host "AniMocap Fusion - local visual recovery setup" -ForegroundColor Cyan
 Write-Host "Target: RTX 5070 Ti Laptop, 12 GB VRAM; offline inference only."
 
-$ollama = Get-Command ollama.exe -ErrorAction SilentlyContinue
-if (-not $ollama) {
+function Resolve-OllamaPath {
+    $command = Get-Command ollama.exe -ErrorAction SilentlyContinue
+    if ($command) {
+        return $command.Source
+    }
+
+    $candidate = Join-Path $env:LOCALAPPDATA "Programs\Ollama\ollama.exe"
+    if (Test-Path -LiteralPath $candidate) {
+        return (Resolve-Path -LiteralPath $candidate).Path
+    }
+
+    return $null
+}
+
+$ollamaPath = Resolve-OllamaPath
+if (-not $ollamaPath) {
     $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
     if (-not $winget) {
         throw "Ollama is not installed and winget is unavailable. Install from https://ollama.com/download/windows"
     }
     Write-Host "Installing Ollama..."
     & $winget.Source install --id Ollama.Ollama --exact --accept-package-agreements --accept-source-agreements
-    if ($LASTEXITCODE -ne 0) { throw "Ollama installation failed with exit code $LASTEXITCODE." }
-    $candidate = Join-Path $env:LOCALAPPDATA "Programs\Ollama\ollama.exe"
-    if (Test-Path -LiteralPath $candidate) {
-        $ollama = Get-Item -LiteralPath $candidate
-    } else {
-        $ollama = Get-Command ollama.exe -ErrorAction SilentlyContinue
+    $installExitCode = $LASTEXITCODE
+    $ollamaPath = Resolve-OllamaPath
+    if (-not $ollamaPath) {
+        throw "Ollama installation failed with exit code $installExitCode."
+    }
+    if ($installExitCode -ne 0) {
+        Write-Warning "winget returned exit code $installExitCode, but Ollama is available at $ollamaPath. Continuing."
     }
 }
-if (-not $ollama) { throw "Ollama executable was not found after installation." }
+if (-not $ollamaPath) { throw "Ollama executable was not found after installation." }
 
 Write-Host "Downloading $Model. This is stored locally and no video is uploaded..."
-& $ollama.Source pull $Model
+& $ollamaPath pull $Model
 if ($LASTEXITCODE -ne 0) { throw "Model download failed with exit code $LASTEXITCODE." }
 
 Write-Host ""

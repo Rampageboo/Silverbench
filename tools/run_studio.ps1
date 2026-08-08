@@ -1,5 +1,6 @@
 param(
-    [switch]$Rebuild
+    [switch]$Rebuild,
+    [string]$CharacterProfile
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,5 +19,15 @@ if ($Rebuild -or -not (Test-Path -LiteralPath $executable)) {
     $executable = $ninjaExecutable
 }
 
-Start-Process -FilePath $executable -WorkingDirectory $projectRoot
+$launchArguments = @()
+if ($CharacterProfile) {
+    $resolvedCharacterProfile = (Resolve-Path -LiteralPath $CharacterProfile).Path
+    $launchArguments = @("--character-profile", ('"{0}"' -f $resolvedCharacterProfile))
+}
+
+if ($launchArguments.Count -gt 0) {
+    Start-Process -FilePath $executable -WorkingDirectory $projectRoot -ArgumentList $launchArguments
+} else {
+    Start-Process -FilePath $executable -WorkingDirectory $projectRoot
+}
 

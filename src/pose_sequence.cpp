@@ -6,8 +6,10 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <fstream>
+#include <limits>
 #include <set>
 #include <span>
 #include <stdexcept>
@@ -66,6 +68,14 @@ Vec3 subtract(const Vec3& a, const Vec3& b) {
     return {a.x - b.x, a.y - b.y, a.z - b.z};
 }
 
+Vec3 add(const Vec3& a, const Vec3& b) {
+    return {a.x + b.x, a.y + b.y, a.z + b.z};
+}
+
+Vec3 scale(const Vec3& value, double amount) {
+    return {value.x * amount, value.y * amount, value.z * amount};
+}
+
 double length(const Vec3& value) {
     return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
 }
@@ -117,6 +127,178 @@ std::vector<int> primary_children(const Skeleton& skeleton) {
 
 std::vector<unsigned char> text_bytes(std::string_view text) {
     return {text.begin(), text.end()};
+}
+
+Vec3 clamp_length(const Vec3& value, double maximum) {
+    const double size = length(value);
+    if (size <= maximum || size < kEpsilon) return value;
+    return scale(value, maximum / size);
+}
+
+struct FootObservation {
+    Vec3 center_m{};
+    double lowest_y_m{};
+    bool valid{};
+};
+
+std::vector<std::uint8_t> infer_foot_contacts(
+    const PoseSequence& sequence,
+    const Skeleton& skeleton
+) {
+    const std::array<std::array<std::size_t, 2>, 2> feet{{
+        {bone_index(skeleton, BoneSemantic::LeftFoot),
+         bone_index(skeleton, BoneSemantic::LeftToes)},
+        {bone_index(skeleton, BoneSemantic::RightFoot),
+         bone_index(skeleton, BoneSemantic::RightToes)},
+    }};
+    const std::size_t frame_count = sequence.frames.size();
+    std::array<std::vector<FootObservation>, 2> observations;
+    std::vector<double> ground_samples;
+    ground_samples.reserve(frame_count * 2);
+
+    for (std::size_t side = 0; side < feet.size(); ++side) {
+        observations[side].reserve(frame_count);
+        for (const auto& frame : sequence.frames) {
+            FootObservation sample;
+            std::size_t valid_points = 0;
+            sample.lowest_y_m = std::numeric_limits<double>::infinity();
+            for (const auto joint_index : feet[side]) {
+                const auto& joint = frame.joints[joint_index];
+                if (!joint.valid) continue;
+                sample.center_m.x += joint.position_m.x;
+                sample.center_m.y += joint.position_m.y;
+                sample.center_m.z += joint.position_m.z;
+                sample.lowest_y_m = std::min(sample.lowest_y_m, joint.position_m.y);
+                ++valid_points;
+            }
+            sample.valid = valid_points > 0;
+            if (sample.valid) {
+                const auto denominator = static_cast<double>(valid_points);
+                sample.center_m.x /= denominator;
+                sample.center_m.y /= denominator;
+                sample.center_m.z /= denominator;
+                ground_samples.push_back(sample.lowest_y_m);
+            }
+            observations[side].push_back(sample);
+        }
+    }
+
+    std::vector<std::uint8_t> contacts(frame_count * 2, 0U);
+    if (ground_samples.empty()) return contacts;
+    std::sort(ground_samples.begin(), ground_samples.end());
+    const auto ground_index = static_cast<std::size_t>(
+        std::floor(0.10 * static_cast<double>(ground_samples.size() - 1)));
+    const double ground_y_m = ground_samples[ground_index];
+
+    constexpr double kEnterHeightM = 0.065;
+    constexpr double kHoldHeightM = 0.095;
+    constexpr double kEnterSpeedMps = 0.32;
+    constexpr double kHoldSpeedMps = 0.48;
+    for (std::size_t side = 0; side < observations.size(); ++side) {
+        bool in_contact = false;
+        for (std::size_t frame = 0; frame < frame_count; ++frame) {
+            const auto& sample = observations[side][frame];
+            double speed_mps = std::numeric_limits<double>::infinity();
+            if (sample.valid && frame_count == 1) {
+                speed_mps = 0.0;
+            } else if (sample.valid) {
+                const auto before = frame == 0 ? frame : frame - 1;
+                const auto after = frame + 1 < frame_count ? frame + 1 : frame;
+                const auto& first = observations[side][before];
+                const auto& last = observations[side][after];
+                const double elapsed = sequence.frames[after].time_s -
+                    sequence.frames[before].time_s;
+                if (first.valid && last.valid && elapsed > kEpsilon) {
+                    speed_mps = length(subtract(last.center_m, first.center_m)) / elapsed;
+                }
+            }
+
+            const double height_m = sample.lowest_y_m - ground_y_m;
+            if (!sample.valid) {
+                in_contact = false;
+            } else if (in_contact) {
+                in_contact = height_m <= kHoldHeightM && speed_mps <= kHoldSpeedMps;
+            } else {
+                in_contact = height_m <= kEnterHeightM && speed_mps <= kEnterSpeedMps;
+            }
+            contacts[frame * 2 + side] = in_contact ? 1U : 0U;
+        }
+
+        if (frame_count >= 3) {
+            auto filtered = contacts;
+            for (std::size_t frame = 1; frame + 1 < frame_count; ++frame) {
+                const auto previous = contacts[(frame - 1) * 2 + side];
+                const auto current = contacts[frame * 2 + side];
+                const auto next = contacts[(frame + 1) * 2 + side];
+                if (previous == next && current != previous && observations[side][frame].valid) {
+                    filtered[frame * 2 + side] = previous;
+                }
+            }
+            for (std::size_t frame = 0; frame < frame_count; ++frame) {
+                contacts[frame * 2 + side] = filtered[frame * 2 + side];
+            }
+        }
+    }
+    return contacts;
+}
+
+
+void stabilize_contact_feet(CanonicalMotion& motion, const Skeleton& skeleton) {
+    if (motion.frame_count < 2 || motion.foot_contacts.size() != motion.frame_count * 2) {
+        return;
+    }
+    const std::array<std::array<std::size_t, 2>, 2> feet{{
+        {bone_index(skeleton, BoneSemantic::LeftFoot),
+         bone_index(skeleton, BoneSemantic::LeftToes)},
+        {bone_index(skeleton, BoneSemantic::RightFoot),
+         bone_index(skeleton, BoneSemantic::RightToes)},
+    }};
+    std::array<Vec3, 2> anchors{};
+    std::array<bool, 2> anchored{};
+    Vec3 previous_correction{};
+    for (std::size_t frame = 0; frame < motion.frame_count; ++frame) {
+        const auto begin = motion.local_rotations.begin() +
+            static_cast<std::ptrdiff_t>(frame * motion.joint_count);
+        const std::vector<Quat> rotations(
+            begin, begin + static_cast<std::ptrdiff_t>(motion.joint_count));
+        const auto fk = forward_kinematics(
+            skeleton, rotations, motion.scene_root_translation_m[frame],
+            motion.scene_root_rotation[frame], motion.hips_translation_m[frame]);
+        Vec3 correction{};
+        std::size_t contributors = 0;
+        for (std::size_t side = 0; side < feet.size(); ++side) {
+            const bool contact = motion.foot_contacts[frame * 2 + side] != 0;
+            if (!contact) {
+                anchored[side] = false;
+                continue;
+            }
+            const auto center = scale(add(
+                fk.positions_m[feet[side][0]], fk.positions_m[feet[side][1]]), 0.5);
+            if (!anchored[side]) {
+                anchors[side] = center;
+                anchored[side] = true;
+                continue;
+            }
+            auto delta = subtract(anchors[side], center);
+            delta.y = 0.0;
+            if (length(delta) <= 0.18) {
+                correction = add(correction, delta);
+                ++contributors;
+            } else {
+                anchors[side] = center;
+            }
+        }
+        if (contributors == 0) {
+            previous_correction = {};
+            continue;
+        }
+        correction = scale(correction, 1.0 / static_cast<double>(contributors));
+        correction = add(scale(previous_correction, 0.35), scale(correction, 0.65));
+        correction = clamp_length(correction, 0.08);
+        motion.scene_root_translation_m[frame] = add(
+            motion.scene_root_translation_m[frame], correction);
+        previous_correction = correction;
+    }
 }
 
 }  // namespace
@@ -323,10 +505,159 @@ PoseSequence smooth_pose_sequence(const PoseSequence& sequence) {
     return result;
 }
 
-MotionPackage reconstruct_canonical_motion(const PoseSequence& sequence) {
+PoseSequence optimize_pose_sequence(
+    const PoseSequence& sequence,
+    const PoseOptimizationOptions& options,
+    const Skeleton* character_skeleton
+) {
     validate_pose_sequence(sequence);
+    if (character_skeleton) validate_skeleton(*character_skeleton);
+    const std::string optimization_tag = character_skeleton
+        ? "character-kinematic-opt-v1[" + character_skeleton->skeleton_id + "]"
+        : "kinematic-opt-v1";
+    if (sequence.backend.find(optimization_tag) != std::string::npos ||
+        sequence.frames.size() < 2 || options.iterations == 0) {
+        return sequence;
+    }
+    if (!std::isfinite(options.temporal_weight) || options.temporal_weight < 0.0 ||
+        !std::isfinite(options.bone_length_weight) || options.bone_length_weight < 0.0 ||
+        !std::isfinite(options.observation_weight) || options.observation_weight < 0.0 ||
+        !std::isfinite(options.maximum_frame_correction_m) ||
+        options.maximum_frame_correction_m <= 0.0 ||
+        !std::isfinite(options.low_confidence_threshold) ||
+        options.low_confidence_threshold <= 0.0 ||
+        options.low_confidence_threshold > 1.0) {
+        throw ContractError(
+            "pose optimization options must be finite; weights non-negative; "
+            "correction positive; confidence threshold in (0, 1]");
+    }
+
+    const auto skeleton = character_skeleton
+        ? *character_skeleton : make_default_skeleton();
+    const std::size_t frame_count = sequence.frames.size();
+    const std::size_t joint_count = skeleton.bones.size();
+    std::vector<double> target_lengths(joint_count, 0.0);
+    for (std::size_t child = 2; child < joint_count; ++child) {
+        const auto parent = static_cast<std::size_t>(skeleton.bones[child].parent);
+        const double rest = length(skeleton.bones[child].rest_offset_m);
+        if (character_skeleton) {
+            target_lengths[child] = rest;
+            continue;
+        }
+        std::vector<double> samples;
+        samples.reserve(frame_count);
+        for (const auto& frame : sequence.frames) {
+            if (!frame.joints[parent].valid || !frame.joints[child].valid) continue;
+            const double sample = length(subtract(
+                frame.joints[child].position_m, frame.joints[parent].position_m));
+            if (std::isfinite(sample) && sample > kEpsilon) samples.push_back(sample);
+        }
+        if (samples.empty()) {
+            target_lengths[child] = rest;
+            continue;
+        }
+        const auto middle = samples.begin() + static_cast<std::ptrdiff_t>(samples.size() / 2);
+        std::nth_element(samples.begin(), middle, samples.end());
+        target_lengths[child] = std::clamp(*middle, rest * 0.50, rest * 1.80);
+    }
+
+    PoseSequence result = sequence;
+    const auto original = sequence;
+    for (std::size_t iteration = 0; iteration < options.iterations; ++iteration) {
+        const auto previous = result;
+        if (frame_count >= 3 && options.temporal_weight > 0.0) {
+            for (std::size_t frame = 1; frame + 1 < frame_count; ++frame) {
+                for (std::size_t joint = 0; joint < joint_count; ++joint) {
+                    const auto& before = previous.frames[frame - 1].joints[joint];
+                    const auto& center = previous.frames[frame].joints[joint];
+                    const auto& after = previous.frames[frame + 1].joints[joint];
+                    if (!before.valid || !center.valid || !after.valid) continue;
+                    const auto predicted = scale(add(before.position_m, after.position_m), 0.5);
+                    const double freedom = 1.0 - 0.72 * static_cast<double>(center.confidence);
+                    const auto delta = clamp_length(scale(
+                        subtract(predicted, center.position_m),
+                        options.temporal_weight * freedom),
+                        options.maximum_frame_correction_m);
+                    result.frames[frame].joints[joint].position_m = add(
+                        result.frames[frame].joints[joint].position_m, delta);
+                }
+            }
+        }
+
+        if (options.bone_length_weight > 0.0) {
+            for (std::size_t frame = 0; frame < frame_count; ++frame) {
+                for (std::size_t child = 2; child < joint_count; ++child) {
+                    const auto parent = static_cast<std::size_t>(skeleton.bones[child].parent);
+                    auto& parent_joint = result.frames[frame].joints[parent];
+                    auto& child_joint = result.frames[frame].joints[child];
+                    if (!parent_joint.valid || !child_joint.valid || target_lengths[child] <= 0.0) {
+                        continue;
+                    }
+                    double profile_gate = 1.0;
+                    if (character_skeleton) {
+                        const double endpoint_confidence = std::min(
+                            static_cast<double>(parent_joint.confidence),
+                            static_cast<double>(child_joint.confidence));
+                        profile_gate = std::clamp(
+                            (options.low_confidence_threshold - endpoint_confidence) /
+                                options.low_confidence_threshold,
+                            0.0, 1.0);
+                        if (profile_gate <= 0.0) continue;
+                    }
+                    const auto direction = subtract(child_joint.position_m, parent_joint.position_m);
+                    const double current_length = length(direction);
+                    if (current_length < kEpsilon) continue;
+                    const auto error = scale(
+                        direction,
+                        (current_length - target_lengths[child]) / current_length);
+                    const double parent_freedom = 0.15 +
+                        0.85 * (1.0 - static_cast<double>(parent_joint.confidence));
+                    const double child_freedom = 0.15 +
+                        0.85 * (1.0 - static_cast<double>(child_joint.confidence));
+                    const double total = parent_freedom + child_freedom;
+                    const auto parent_delta = clamp_length(scale(
+                        error, options.bone_length_weight * profile_gate *
+                            parent_freedom / total),
+                        options.maximum_frame_correction_m);
+                    const auto child_delta = clamp_length(scale(
+                        error, -options.bone_length_weight * profile_gate *
+                            child_freedom / total),
+                        options.maximum_frame_correction_m);
+                    parent_joint.position_m = add(parent_joint.position_m, parent_delta);
+                    child_joint.position_m = add(child_joint.position_m, child_delta);
+                }
+            }
+        }
+
+        if (options.observation_weight > 0.0) {
+            for (std::size_t frame = 0; frame < frame_count; ++frame) {
+                for (std::size_t joint = 0; joint < joint_count; ++joint) {
+                    auto& current = result.frames[frame].joints[joint];
+                    if (!current.valid) continue;
+                    const auto& observed = original.frames[frame].joints[joint];
+                    const double anchor = options.observation_weight *
+                        (0.25 + 0.75 * static_cast<double>(observed.confidence));
+                    current.position_m = add(current.position_m, clamp_length(scale(
+                        subtract(observed.position_m, current.position_m), anchor),
+                        options.maximum_frame_correction_m));
+                }
+            }
+        }
+    }
+    result.backend += "+" + optimization_tag;
+    validate_pose_sequence(result);
+    return result;
+}
+
+MotionPackage reconstruct_canonical_motion(
+    const PoseSequence& sequence,
+    const Skeleton* character_skeleton
+) {
+    validate_pose_sequence(sequence);
+    if (character_skeleton) validate_skeleton(*character_skeleton);
     MotionPackage package;
-    package.skeleton = make_default_skeleton();
+    package.skeleton = character_skeleton
+        ? *character_skeleton : make_default_skeleton();
     package.cameras = {{
         "source_view",
         0.0,
@@ -337,6 +668,7 @@ MotionPackage reconstruct_canonical_motion(const PoseSequence& sequence) {
     }};
 
     auto& motion = package.motion;
+    motion.skeleton_id = package.skeleton.skeleton_id;
     const std::size_t frames = sequence.frames.size();
     const std::size_t joints = package.skeleton.bones.size();
     motion.fps = sequence.fps;
@@ -406,6 +738,8 @@ MotionPackage reconstruct_canonical_motion(const PoseSequence& sequence) {
             motion.local_rotations[frame * joints + joint] = per_joint[joint][frame];
         }
     }
+    motion.foot_contacts = infer_foot_contacts(sequence, package.skeleton);
+    stabilize_contact_feet(motion, package.skeleton);
 
     const auto config_text = sequence.backend + ":pose-sequence-v1";
     std::vector<std::string> sources;

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Blender Mocap Character Export"
+  short_description: "Separate character effects and build mocap priors"
+  default_prompt: "Use $blender-character-mocap-export to export a rigged Blender character as separate body and effects assets with a mocap profile."

@@ -16,5 +16,10 @@ struct MotionPackage {
 
 void save_motion_package(const MotionPackage& package, const std::filesystem::path& directory);
 MotionPackage load_motion_package(const std::filesystem::path& directory);
+MotionPackage clip_motion_package(
+    const MotionPackage& package,
+    std::size_t first_frame,
+    std::size_t last_frame
+);
 
 }  // namespace animocap

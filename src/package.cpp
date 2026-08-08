@@ -1,12 +1,15 @@
 #include "animocap/package.hpp"
 
+#include "animocap/hash.hpp"
 #include "animocap/npy.hpp"
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <array>
 #include <fstream>
 #include <set>
+#include <type_traits>
 
 namespace animocap {
 namespace {
@@ -209,10 +212,38 @@ void save_motion_package(const MotionPackage& package, const std::filesystem::pa
         cameras.push_back(camera_json(camera));
     }
     write_json(directory / "cameras.json", {{"schema_version", kSchemaVersion}, {"cameras", cameras}});
-    write_json(directory / "alignment.json", {{"schema_version", kSchemaVersion}, {"mode", "synthetic_ground_truth"}});
+    write_json(directory / "alignment.json", {
+        {"schema_version", kSchemaVersion},
+        {"mode", "external_or_not_required"},
+        {"camera_count", package.cameras.size()},
+    });
+    float minimum_confidence=1.0f,maximum_confidence=0.0f;
+    std::size_t invalid_observations=0;
+    std::array<std::size_t,2> foot_contact_frames{};
+    for(std::size_t index=0;index<package.motion.confidence.size();++index) {
+        minimum_confidence=std::min(minimum_confidence,package.motion.confidence[index]);
+        maximum_confidence=std::max(maximum_confidence,package.motion.confidence[index]);
+        if(package.motion.valid_mask[index]==0)++invalid_observations;
+    }
+    for(std::size_t frame=0;frame<frames;++frame) {
+        for(std::size_t side=0;side<foot_contact_frames.size();++side) {
+            foot_contact_frames[side]+=package.motion.foot_contacts[frame*2+side]!=0 ? 1U : 0U;
+        }
+    }
     write_json(directory / "diagnostics.json", {
         {"schema_version", kSchemaVersion},
-        {"status", "m0_fixture"},
+        {"status", "canonical_motion_validated"},
+        {"confidence", {
+            {"minimum", minimum_confidence},
+            {"maximum", maximum_confidence},
+        }},
+        {"invalid_observations", invalid_observations},
+        {"foot_contacts", {
+            {"left_frames", foot_contact_frames[0]},
+            {"right_frames", foot_contact_frames[1]},
+            {"left_ratio", static_cast<double>(foot_contact_frames[0])/static_cast<double>(frames)},
+            {"right_ratio", static_cast<double>(foot_contact_frames[1])/static_cast<double>(frames)},
+        }},
         {"unsupported_export_fields", {"confidence", "valid_mask", "provenance", "source_support"}},
     });
 }
@@ -309,6 +340,50 @@ MotionPackage load_motion_package(const std::filesystem::path& directory) {
     }
 
     validate_motion(motion, result.skeleton);
+    return result;
+}
+
+MotionPackage clip_motion_package(
+    const MotionPackage& package,
+    std::size_t first_frame,
+    std::size_t last_frame
+) {
+    validate_motion(package.motion,package.skeleton);
+    if(first_frame>last_frame||last_frame>=package.motion.frame_count) {
+        throw ContractError("motion clip frame range is invalid");
+    }
+    MotionPackage result=package;
+    auto& target=result.motion;
+    const auto& source=package.motion;
+    const std::size_t frame_count=last_frame-first_frame+1;
+    const std::size_t joints=source.joint_count;
+    auto slice_frames=[first_frame,last_frame](const auto& values) {
+        using Vector=std::decay_t<decltype(values)>;
+        return Vector(values.begin()+static_cast<std::ptrdiff_t>(first_frame),
+                      values.begin()+static_cast<std::ptrdiff_t>(last_frame+1));
+    };
+    auto slice_rows=[first_frame,last_frame](const auto& values,std::size_t width) {
+        using Vector=std::decay_t<decltype(values)>;
+        return Vector(values.begin()+static_cast<std::ptrdiff_t>(first_frame*width),
+                      values.begin()+static_cast<std::ptrdiff_t>((last_frame+1)*width));
+    };
+    target.frame_count=frame_count;
+    target.time_s=slice_frames(source.time_s);
+    const double origin_time=target.time_s.front();
+    for(auto& time:target.time_s)time-=origin_time;
+    target.scene_root_translation_m=slice_frames(source.scene_root_translation_m);
+    target.scene_root_rotation=slice_frames(source.scene_root_rotation);
+    target.local_rotations=slice_rows(source.local_rotations,joints);
+    target.hips_translation_m=slice_frames(source.hips_translation_m);
+    target.confidence=slice_rows(source.confidence,joints);
+    target.valid_mask=slice_rows(source.valid_mask,joints);
+    target.foot_contacts=slice_rows(source.foot_contacts,2);
+    const auto clip_identity=source.provenance.config_sha256+":clip:"+
+        std::to_string(first_frame)+":"+std::to_string(last_frame);
+    target.provenance.config_sha256=sha256_bytes(
+        std::span<const unsigned char>(
+            reinterpret_cast<const unsigned char*>(clip_identity.data()),clip_identity.size()));
+    validate_motion(target,result.skeleton);
     return result;
 }
 

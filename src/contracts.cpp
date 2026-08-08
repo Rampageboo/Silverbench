@@ -26,6 +26,29 @@ void require_exact_keys(const json& value, std::initializer_list<std::string_vie
     if (actual != expected) throw ContractError(std::string(label) + " has missing or unknown fields");
 }
 
+void require_keys(
+    const json& value,
+    std::initializer_list<std::string_view> required,
+    std::initializer_list<std::string_view> optional,
+    std::string_view label
+) {
+    if (!value.is_object()) throw ContractError(std::string(label) + " must be an object");
+    std::set<std::string> allowed;
+    for (const auto key : required) allowed.emplace(key);
+    for (const auto key : optional) allowed.emplace(key);
+    for (const auto key : required) {
+        if (!value.contains(key)) {
+            throw ContractError(std::string(label) + " has missing fields");
+        }
+    }
+    for (const auto& [key, unused] : value.items()) {
+        (void)unused;
+        if (!allowed.contains(key)) {
+            throw ContractError(std::string(label) + " has unknown fields");
+        }
+    }
+}
+
 bool is_sha256(std::string_view value) {
     return value.size() == 64 && std::all_of(value.begin(), value.end(), [](char character) {
         return (character >= '0' && character <= '9') ||
@@ -86,6 +109,10 @@ void validate_capture_manifest(const CaptureManifest& manifest) {
         (!std::isfinite(*manifest.approximate_height_m) || *manifest.approximate_height_m <= 0.0)) {
         throw ContractError("approximate height must be finite and positive");
     }
+    if (manifest.mode == CaptureMode::SynchronizedMultiview &&
+        (!manifest.calibration_file || manifest.calibration_file->empty())) {
+        throw ContractError("synchronized_multiview requires calibration_file");
+    }
 
     const std::size_t count = manifest.views.size();
     if (manifest.mode == CaptureMode::SingleView && count != 1) {
@@ -102,6 +129,7 @@ void validate_capture_manifest(const CaptureManifest& manifest) {
         if (!ids.insert(view.id).second) throw ContractError("duplicate view id");
         if (!videos.insert(view.video).second) throw ContractError("duplicate view video");
         if (view.yaw_degrees && !std::isfinite(*view.yaw_degrees)) throw ContractError("view yaw must be finite");
+        if (!std::isfinite(view.time_offset_s)) throw ContractError("view time_offset_s must be finite");
     }
 }
 
@@ -110,7 +138,9 @@ CaptureManifest load_capture_manifest(const std::filesystem::path& path) {
     if (!input) throw std::runtime_error("cannot read capture manifest: " + path.string());
     json value;
     input >> value;
-    require_exact_keys(value, {"version", "mode", "fps", "looping", "views", "subject", "output"}, "capture manifest");
+    require_keys(value,
+        {"version", "mode", "fps", "looping", "views", "subject", "output"},
+        {"calibration_file"}, "capture manifest");
     require_exact_keys(value.at("subject"), {"type", "approximate_height_m"}, "subject");
     require_exact_keys(value.at("output"), {"directory"}, "output");
 
@@ -124,14 +154,20 @@ CaptureManifest load_capture_manifest(const std::filesystem::path& path) {
         result.approximate_height_m = value.at("subject").at("approximate_height_m").get<double>();
     }
     result.output_directory = value.at("output").at("directory").get<std::string>();
+    if (value.contains("calibration_file") && !value.at("calibration_file").is_null()) {
+        result.calibration_file = value.at("calibration_file").get<std::string>();
+    }
 
     if (!value.at("views").is_array()) throw ContractError("views must be an array");
     for (const auto& view_value : value.at("views")) {
-        require_exact_keys(view_value, {"id", "video", "yaw_degrees"}, "view");
+        require_keys(view_value, {"id", "video", "yaw_degrees"}, {"time_offset_s"}, "view");
         CaptureView view;
         view.id = view_value.at("id").get<std::string>();
         view.video = view_value.at("video").get<std::string>();
         if (!view_value.at("yaw_degrees").is_null()) view.yaw_degrees = view_value.at("yaw_degrees").get<double>();
+        if (view_value.contains("time_offset_s")) {
+            view.time_offset_s = view_value.at("time_offset_s").get<double>();
+        }
         result.views.push_back(std::move(view));
     }
     validate_capture_manifest(result);
@@ -151,12 +187,15 @@ void save_capture_manifest(const CaptureManifest& manifest, const std::filesyste
             {"approximate_height_m", manifest.approximate_height_m ? json(*manifest.approximate_height_m) : json(nullptr)}
         }},
         {"output", {{"directory", manifest.output_directory}}},
+        {"calibration_file", manifest.calibration_file
+            ? json(*manifest.calibration_file) : json(nullptr)},
     };
     for (const auto& view : manifest.views) {
         value["views"].push_back({
             {"id", view.id},
             {"video", view.video},
             {"yaw_degrees", view.yaw_degrees ? json(*view.yaw_degrees) : json(nullptr)},
+            {"time_offset_s", view.time_offset_s},
         });
     }
     std::ofstream output(path, std::ios::binary);

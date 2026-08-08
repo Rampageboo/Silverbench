@@ -19,6 +19,7 @@ struct CaptureView {
     std::string id;
     std::string video;
     std::optional<double> yaw_degrees;
+    double time_offset_s{};
 };
 
 struct CaptureManifest {
@@ -30,6 +31,7 @@ struct CaptureManifest {
     std::string subject_type{"anime_humanoid"};
     std::optional<double> approximate_height_m;
     std::string output_directory;
+    std::optional<std::string> calibration_file;
 };
 
 struct KeypointFrame {

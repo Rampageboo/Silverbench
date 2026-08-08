@@ -16,10 +16,19 @@ import os
 import sys
 import tempfile
 import types
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
 SCHEMA_VERSION = "1.0.0"
+RTMW_CONFIG = (
+    "configs/wholebody_2d_keypoint/rtmpose/cocktail14/"
+    "rtmw-x_8xb320-270e_cocktail14-384x288.py"
+)
+RTMW_WEIGHTS = (
+    "https://download.openmmlab.com/mmpose/v1/projects/rtmw/"
+    "rtmw-x_simcc-cocktail14_pt-ucoco_270e-384x288-f840f204_20231122.pth"
+)
 SEMANTICS = [
     "sceneRoot", "hips", "spine", "chest", "upperChest", "neck", "head",
     "leftShoulder", "leftUpperArm", "leftLowerArm", "leftHand",
@@ -27,6 +36,15 @@ SEMANTICS = [
     "leftUpperLeg", "leftLowerLeg", "leftFoot", "leftToes",
     "rightUpperLeg", "rightLowerLeg", "rightFoot", "rightToes",
 ]
+
+SAM2_CONFIG = "configs/sam2.1/sam2.1_hiera_s.yaml"
+
+
+def _mask_ratio_is_valid(mask: Any, np_module: Any) -> bool:
+    if mask is None or getattr(mask, "size", 0) == 0:
+        return False
+    ratio = float(np_module.count_nonzero(mask)) / float(mask.size)
+    return 0.08 <= ratio <= 0.96
 
 
 def _lerp(a: list[float], b: list[float], t: float) -> list[float]:
@@ -108,6 +126,53 @@ def _coco_to_h36m(
         _score(scores, 6), _score(scores, 8), _score(scores, 10),
     ]
     return mapped, mapped_scores
+
+
+def _needs_high_accuracy_pass(
+    scores: list[float], frame_index: int, quality: str
+) -> bool:
+    if quality == "maximum":
+        return True
+    if quality == "fast":
+        return False
+    important = [5, 6, 7, 8, 9, 10, 13, 14, 15, 16]
+    lowest = min(
+        (float(scores[index]) for index in important if index < len(scores)),
+        default=0.0,
+    )
+    return lowest < 0.62 or frame_index % 15 == 0
+
+
+def _fuse_coco_observations(
+    base_points: list[list[float]],
+    base_scores: list[float],
+    refined_points: list[list[float]],
+    refined_scores: list[float],
+    image_diagonal: float,
+) -> tuple[list[list[float]], list[float]]:
+    """Fuse independent 2D estimates without averaging incompatible limbs."""
+    points = [[float(value[0]), float(value[1])] for value in base_points[:17]]
+    scores = [float(value) for value in base_scores[:17]]
+    while len(scores) < len(points):
+        scores.append(0.0)
+    for index in range(min(17, len(refined_points), len(refined_scores), len(points))):
+        refined_score = float(refined_scores[index])
+        base_score = scores[index]
+        refined = [float(refined_points[index][0]), float(refined_points[index][1])]
+        disagreement = math.dist(points[index], refined)
+        if refined_score >= max(0.20, base_score + 0.04):
+            points[index] = refined
+            scores[index] = refined_score
+        elif refined_score >= 0.35 and base_score >= 0.35 and disagreement <= image_diagonal * 0.035:
+            total = refined_score + base_score
+            points[index] = [
+                (points[index][axis] * base_score + refined[axis] * refined_score) / total
+                for axis in range(2)
+            ]
+            scores[index] = min(1.0, max(base_score, refined_score) + 0.04)
+        elif disagreement > image_diagonal * 0.10:
+            scores[index] = min(base_score, refined_score) * 0.75
+    return points, scores
 
 
 def _map_h36m(
@@ -209,6 +274,102 @@ def _map_h36m(
     return joints, used_planar_fallback
 
 
+class _Sam2VideoMaskProvider:
+    """Lazy SAM 2.1 video-object mask stream prompted by the person ROI."""
+
+    def __init__(
+        self,
+        input_path: Path,
+        checkpoint: Path,
+        device: str | None,
+        cv2_module: Any,
+        np_module: Any,
+    ) -> None:
+        if not checkpoint.is_file():
+            raise RuntimeError(f"SAM 2.1 checkpoint is unavailable: {checkpoint}")
+        import torch
+        from sam2.build_sam import build_sam2_video_predictor
+
+        self.torch = torch
+        self.cv2 = cv2_module
+        self.np = np_module
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.predictor = build_sam2_video_predictor(
+            SAM2_CONFIG,
+            str(checkpoint),
+            device=self.device,
+            apply_postprocessing=False,
+        )
+        self.input_path = input_path
+        self.state: Any = None
+        self.iterator: Any = None
+        self.cache: dict[int, Any] = {}
+        self.exhausted = False
+        self.used = False
+
+    def _precision_context(self) -> Any:
+        if str(self.device).startswith("cuda"):
+            return self.torch.autocast("cuda", dtype=self.torch.bfloat16)
+        return nullcontext()
+
+    def ensure_started(self, roi: tuple[int, int, int, int]) -> None:
+        if self.state is not None:
+            return
+        x, y, width, height = roi
+        box = self.np.asarray(
+            [x, y, x + width - 1, y + height - 1], dtype=self.np.float32
+        )
+        with self.torch.inference_mode(), self._precision_context():
+            self.state = self.predictor.init_state(
+                video_path=str(self.input_path),
+                offload_video_to_cpu=True,
+                offload_state_to_cpu=True,
+            )
+            self.predictor.add_new_points_or_box(
+                inference_state=self.state,
+                frame_idx=0,
+                obj_id=1,
+                box=box,
+            )
+            self.iterator = iter(self.predictor.propagate_in_video(self.state))
+
+    def _advance(self, target_frame: int) -> None:
+        while not self.exhausted and target_frame not in self.cache:
+            try:
+                with self.torch.inference_mode(), self._precision_context():
+                    frame_index, object_ids, mask_logits = next(self.iterator)
+            except StopIteration:
+                self.exhausted = True
+                break
+            if len(object_ids) == 0:
+                continue
+            mask = (mask_logits[0, 0] > 0.0).to("cpu").numpy()
+            self.cache[int(frame_index)] = (mask.astype(self.np.uint8) * 255)
+
+    def mask_for_frame(
+        self,
+        frame_index: int,
+        roi: tuple[int, int, int, int],
+    ) -> Any:
+        self.ensure_started(roi)
+        self._advance(frame_index)
+        full_mask = self.cache.pop(frame_index, None)
+        if full_mask is None:
+            return None
+        x, y, width, height = roi
+        cropped = full_mask[y:y + height, x:x + width]
+        if not _mask_ratio_is_valid(cropped, self.np):
+            return None
+        kernel_size = max(3, int(min(width, height) * 0.012))
+        if kernel_size % 2 == 0:
+            kernel_size += 1
+        kernel = self.cv2.getStructuringElement(
+            self.cv2.MORPH_ELLIPSE, (kernel_size, kernel_size)
+        )
+        self.used = True
+        return self.cv2.morphologyEx(cropped, self.cv2.MORPH_CLOSE, kernel)
+
+
 class _TemporalFusion:
     """Fuse pose heatmaps with optical flow under a conservative foreground mask."""
 
@@ -217,6 +378,7 @@ class _TemporalFusion:
         cv2_module: Any,
         np_module: Any,
         roi: tuple[int, int, int, int],
+        mask_provider: Any = None,
     ) -> None:
         self.cv2 = cv2_module
         self.np = np_module
@@ -225,6 +387,8 @@ class _TemporalFusion:
         self.previous_points: Any = None
         self.foreground_mask: Any = None
         self.frame_index = 0
+        self.mask_provider = mask_provider
+        self.mask_provider_error = ""
 
     def update_roi(self, roi: tuple[int, int, int, int]) -> None:
         if roi == self.roi:
@@ -273,8 +437,7 @@ class _TemporalFusion:
             )
             mask = self.cv2.morphologyEx(mask, self.cv2.MORPH_CLOSE, kernel)
             mask = self.cv2.dilate(mask, kernel, iterations=1)
-            ratio = float(self.np.count_nonzero(mask)) / float(mask.size)
-            return mask if 0.08 <= ratio <= 0.96 else fallback
+            return mask if _mask_ratio_is_valid(mask, self.np) else fallback
         except self.cv2.error:
             return fallback
 
@@ -289,7 +452,18 @@ class _TemporalFusion:
         if crop.size == 0:
             return measured_points
         gray = self.cv2.cvtColor(crop, self.cv2.COLOR_BGR2GRAY)
-        if self.foreground_mask is None or self.frame_index % 5 == 0:
+        provider_mask = None
+        if self.mask_provider is not None:
+            try:
+                provider_mask = self.mask_provider.mask_for_frame(
+                    self.frame_index, self.roi
+                )
+            except Exception as error:
+                self.mask_provider_error = str(error)
+                self.mask_provider = None
+        if provider_mask is not None:
+            self.foreground_mask = provider_mask
+        elif self.foreground_mask is None or self.frame_index % 5 == 0:
             self.foreground_mask = self._segment(crop)
 
         measured = self.np.asarray(measured_points, dtype=self.np.float32)
@@ -439,6 +613,102 @@ def _load_inferencer() -> Any:
     return MMPoseInferencer
 
 
+def _load_high_accuracy_refiner(
+    inferencer_type: Any, device: str | None
+) -> Any:
+    import mmpose
+
+    config = Path(mmpose.__file__).resolve().parent / ".mim" / RTMW_CONFIG
+    if not config.is_file():
+        raise RuntimeError(f"RTMW config is unavailable: {config}")
+    return inferencer_type(
+        pose2d=str(config),
+        pose2d_weights=RTMW_WEIGHTS,
+        det_model="whole_image",
+        device=device,
+    )
+
+
+def _prepare_offline_models(device: str | None = "cpu") -> None:
+    """Resolve and cache every checkpoint needed by the offline quality path."""
+    inferencer_type = _load_inferencer()
+    base = inferencer_type(
+        pose3d="human3d",
+        pose2d="td-hm_hrnet-w32_8xb64-210e_coco-256x192",
+        det_model="whole_image",
+        device=device,
+    )
+    del base
+    refiner = _load_high_accuracy_refiner(inferencer_type, device)
+    del refiner
+
+
+def _resolve_anime_pose_model(
+    config: Path | None,
+    weights: Path | None,
+) -> tuple[Path | None, Path | None]:
+    if (config is None) != (weights is None):
+        raise RuntimeError("anime pose config and weights must be provided together")
+    if config is None:
+        activated = Path(__file__).resolve().parents[2] / "private" / "models" / "anime-pose"
+        candidate_config = activated / "config.py"
+        candidate_weights = activated / "checkpoint.pth"
+        if candidate_config.is_file() and candidate_weights.is_file():
+            config, weights = candidate_config, candidate_weights
+    if config is not None and (not config.is_file() or not weights or not weights.is_file()):
+        raise RuntimeError("activated anime pose config/checkpoint is incomplete")
+    return config, weights
+
+
+def _refine_frame_2d(
+    refiner: Any,
+    frame: Any,
+    roi: tuple[int, int, int, int],
+) -> tuple[list[list[float]], list[float]] | None:
+    x, y, width, height = roi
+    crop = frame[y:y + height, x:x + width]
+    if crop.size == 0:
+        return None
+    try:
+        result = next(refiner(crop, return_vis=False, show=False))
+        prediction = _prediction(result)
+        keypoints = prediction.get("keypoints")
+        scores = prediction.get("keypoint_scores")
+        if keypoints is None or scores is None:
+            return None
+        if hasattr(keypoints, "tolist"):
+            keypoints = keypoints.tolist()
+        if hasattr(scores, "tolist"):
+            scores = scores.tolist()
+        if keypoints and isinstance(keypoints[0][0], list):
+            keypoints = keypoints[0]
+        if scores and isinstance(scores[0], list):
+            scores = scores[0]
+        points = [
+            [float(point[0]) + x, float(point[1]) + y]
+            for point in keypoints
+        ]
+        return points, [float(score) for score in scores]
+    except (RuntimeError, StopIteration, KeyError, TypeError, ValueError):
+        return None
+
+
+def _probe_cuda(torch: Any) -> bool:
+    if not torch.cuda.is_available():
+        return False
+    try:
+        probe = torch.zeros(1, device="cuda")
+        probe.add_(1)
+        torch.cuda.synchronize()
+    except RuntimeError as error:
+        raise RuntimeError(
+            "PyTorch can see CUDA but cannot execute a GPU kernel. "
+            "Install the CUDA build matching the target GPU (RTX 50-series "
+            "requires a Blackwell-capable build): " + str(error)
+        ) from error
+    return True
+
+
 _ACTIVE_CROP_ROI: tuple[int, int, int, int] | None = None
 
 
@@ -510,6 +780,11 @@ def run_mmpose(
     output_path: Path,
     device: str | None,
     roi: tuple[int, int, int, int] | None = None,
+    quality: str = "balanced",
+    segmentation: str = "auto",
+    sam2_checkpoint: Path | None = None,
+    anime_pose_config: Path | None = None,
+    anime_pose_weights: Path | None = None,
 ) -> None:
     try:
         import cv2
@@ -559,15 +834,62 @@ def run_mmpose(
 
     _enable_center_crop(effective_roi)
     flow_capture = cv2.VideoCapture(str(input_path))
-    temporal_fusion = _TemporalFusion(cv2, np, effective_roi)
-    inferencer = MMPoseInferencer(
+    mask_provider = None
+    sam2_error = ""
+    if segmentation != "grabcut":
+        checkpoint = sam2_checkpoint or (
+            Path(__file__).resolve().parents[2]
+            / "private" / "models" / "sam2" / "sam2.1_hiera_small.pt"
+        )
+        try:
+            mask_provider = _Sam2VideoMaskProvider(
+                input_path, checkpoint, device, cv2, np
+            )
+        except Exception as error:
+            sam2_error = str(error)
+            if segmentation == "sam2":
+                raise RuntimeError(
+                    f"SAM 2.1 segmentation was required but could not start: {error}"
+                ) from error
+            print(json.dumps({
+                "event": "warning",
+                "stage": "sam2_mask",
+                "message": sam2_error,
+            }), flush=True)
+    temporal_fusion = _TemporalFusion(cv2, np, effective_roi, mask_provider)
+    anime_pose_config, anime_pose_weights = _resolve_anime_pose_model(
+        anime_pose_config, anime_pose_weights
+    )
+    inferencer_arguments: dict[str, Any] = dict(
         pose3d="human3d",
-        pose2d="td-hm_hrnet-w32_8xb64-210e_coco-256x192",
+        pose2d=(
+            str(anime_pose_config)
+            if anime_pose_config is not None
+            else "td-hm_hrnet-w32_8xb64-210e_coco-256x192"
+        ),
         det_model="whole_image",
         device=device,
     )
+    if anime_pose_weights is not None:
+        inferencer_arguments["pose2d_weights"] = str(anime_pose_weights)
+    inferencer = MMPoseInferencer(**inferencer_arguments)
+    high_accuracy_refiner = None
+    high_accuracy_error = ""
+    if quality != "fast":
+        try:
+            high_accuracy_refiner = _load_high_accuracy_refiner(
+                MMPoseInferencer, device
+            )
+        except Exception as error:
+            high_accuracy_error = str(error)
+            print(json.dumps({
+                "event": "warning",
+                "stage": "rtmw_refiner",
+                "message": high_accuracy_error,
+            }), flush=True)
     frames = []
     planar_fallback_frames = 0
+    high_accuracy_frames = 0
     generator = inferencer(
         str(input_path),
         return_vis=False,
@@ -623,6 +945,24 @@ def run_mmpose(
                     effective_roi = body_roi
                     _set_active_crop(body_roi)
                     temporal_fusion.update_roi(body_roi)
+            if (
+                high_accuracy_refiner is not None
+                and flow_frame_ok
+                and _needs_high_accuracy_pass(coco_scores, frame_index, quality)
+            ):
+                refined = _refine_frame_2d(
+                    high_accuracy_refiner, flow_frame, effective_roi
+                )
+                if refined is not None:
+                    refined_points, refined_scores = refined
+                    coco_points, coco_scores = _fuse_coco_observations(
+                        coco_points,
+                        coco_scores,
+                        refined_points,
+                        refined_scores,
+                        math.hypot(width, height),
+                    )
+                    high_accuracy_frames += 1
             if flow_frame_ok:
                 coco_points = temporal_fusion.fuse(
                     flow_frame, coco_points, coco_scores
@@ -657,7 +997,26 @@ def run_mmpose(
                 if planar_fallback_frames
                 else "mmpose-hrnet-motionbert"
             )
-            + "+lk-flow+grabcut"
+            + "+lk-flow"
+            + (
+                "+sam2.1-mask"
+                if mask_provider is not None and mask_provider.used
+                else "+grabcut+sam2-unavailable"
+                if segmentation != "grabcut" and (
+                    sam2_error or temporal_fusion.mask_provider_error
+                )
+                else "+grabcut"
+            )
+            + (
+                "+rtmw-x-384-adaptive"
+                if high_accuracy_frames and quality == "balanced"
+                else "+rtmw-x-384-full"
+                if high_accuracy_frames
+                else "+rtmw-unavailable"
+                if quality != "fast" and high_accuracy_error
+                else ""
+            )
+            + ("+anime-finetuned-hrnet" if anime_pose_weights is not None else "")
             + ("+user-roi" if roi is not None else "+auto-body-roi")
         ),
         "image_width": width,
@@ -673,7 +1032,17 @@ def main() -> int:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--device", default=None)
     parser.add_argument("--roi", nargs=4, type=int, metavar=("X", "Y", "WIDTH", "HEIGHT"))
+    parser.add_argument(
+        "--quality", choices=("fast", "balanced", "maximum"), default="balanced"
+    )
+    parser.add_argument(
+        "--segmentation", choices=("auto", "grabcut", "sam2"), default="auto"
+    )
+    parser.add_argument("--sam2-checkpoint", type=Path, default=None)
+    parser.add_argument("--anime-pose-config", type=Path, default=None)
+    parser.add_argument("--anime-pose-weights", type=Path, default=None)
     parser.add_argument("--check", action="store_true")
+    parser.add_argument("--prepare-models", action="store_true")
     args = parser.parse_args()
     try:
         if args.check:
@@ -683,17 +1052,37 @@ def main() -> int:
             import mmengine
             import mmpose
             import torch
+            cuda_ready = _probe_cuda(torch)
             print(json.dumps({
                 "event": "ready", "mmpose": mmpose.__version__,
                 "mmcv": mmcv.__version__, "mmengine": mmengine.__version__,
                 "torch": torch.__version__, "opencv": cv2.__version__,
-                "cuda": torch.cuda.is_available(),
+                "cuda": cuda_ready,
+            }), flush=True)
+            return 0
+        if args.prepare_models:
+            _prepare_offline_models(args.device or "cpu")
+            print(json.dumps({
+                "event": "models_ready",
+                "models": ["hrnet-w32-coco", "motionbert-human3d", "rtmw-x-384"],
             }), flush=True)
             return 0
         if args.input is None or args.output is None:
-            parser.error("--input and --output are required unless --check is used")
+            parser.error(
+                "--input and --output are required unless --check or --prepare-models is used"
+            )
         roi = tuple(args.roi) if args.roi is not None else None
-        run_mmpose(args.input, args.output, args.device, roi)
+        run_mmpose(
+            args.input,
+            args.output,
+            args.device,
+            roi,
+            args.quality,
+            args.segmentation,
+            args.sam2_checkpoint,
+            args.anime_pose_config,
+            args.anime_pose_weights,
+        )
         print(json.dumps({"event": "complete", "output": str(args.output)}), flush=True)
         return 0
     except Exception as error:  # adapter boundary reports a concise process error

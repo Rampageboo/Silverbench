@@ -1,5 +1,6 @@
 param(
-    [switch]$CpuOnly
+    [switch]$CpuOnly,
+    [switch]$SkipSam2
 )
 
 $ErrorActionPreference = "Stop"
@@ -32,10 +33,15 @@ if (-not (Test-Path -LiteralPath (Join-Path $environmentPath "Scripts\python.exe
 $venvPython = Join-Path $environmentPath "Scripts\python.exe"
 & $venvPython -m pip install --upgrade "pip==26.0.1" "setuptools==80.9.0" wheel
 
+# PyTorch 2.6/cu124 can report CUDA as available on RTX 50-series GPUs while
+# lacking usable Blackwell (sm_120) kernels. PyTorch 2.7.1/cu128 is the first
+# stable Windows wheel in this compatibility range with Blackwell support.
+$torchVersion = "2.7.1"
+$torchvisionVersion = "0.22.1"
 if ($CpuOnly) {
-    & $venvPython -m pip install "torch==2.6.0" "torchvision==0.21.0" --index-url https://download.pytorch.org/whl/cpu
+    & $venvPython -m pip install "torch==$torchVersion" "torchvision==$torchvisionVersion" --index-url https://download.pytorch.org/whl/cpu
 } else {
-    & $venvPython -m pip install "torch==2.6.0" "torchvision==0.21.0" --index-url https://download.pytorch.org/whl/cu124
+    & $venvPython -m pip install "torch==$torchVersion" "torchvision==$torchvisionVersion" --index-url https://download.pytorch.org/whl/cu128
 }
 if ($LASTEXITCODE -ne 0) { throw "PyTorch installation failed." }
 
@@ -59,6 +65,18 @@ if ($LASTEXITCODE -ne 0) { throw "MMPose installation failed." }
 
 & $venvPython (Join-Path $projectRoot "python\animocap_ml_adapters\mmpose_adapter.py") --check
 if ($LASTEXITCODE -ne 0) { throw "MMPose verification failed." }
+Write-Host "Caching HRNet, MotionBERT and RTMW checkpoints for offline inference..." -ForegroundColor Cyan
+& $venvPython (Join-Path $projectRoot "python\animocap_ml_adapters\mmpose_adapter.py") `
+    --prepare-models --device cpu
+if ($LASTEXITCODE -ne 0) { throw "Offline model checkpoint preparation failed." }
+
+if (-not $SkipSam2) {
+    try {
+        & (Join-Path $PSScriptRoot "setup_sam2.ps1") -EnvironmentPath $environmentPath
+    } catch {
+        Write-Warning "SAM 2.1 setup did not complete. MMPose remains usable with GrabCut fallback."
+    }
+}
 
 Write-Host ""
 Write-Host "Environment ready: $environmentPath" -ForegroundColor Green
