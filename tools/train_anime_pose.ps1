@@ -13,7 +13,7 @@ if (-not (Test-Path -LiteralPath $python)) {
     throw "MMPose environment is missing. Run tools/setup_mmpose.ps1 first."
 }
 if (-not $Dataset) {
-    $Dataset = Join-Path $projectRoot "private\training\anime-keypoints"
+    $Dataset = Join-Path $projectRoot "private\training\animation-character-keypoints"
 }
 if (-not $WorkDirectory) {
     $WorkDirectory = Join-Path $projectRoot "private\training\anime-hrnet-w32"

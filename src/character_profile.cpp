@@ -7,11 +7,13 @@
 #include <cmath>
 #include <fstream>
 #include <string>
+#include <string_view>
 
 namespace animocap {
 namespace {
 
 using json = nlohmann::json;
+constexpr std::string_view kCharacterProfileSchemaVersion = "1.1.0";
 
 json read_json(const std::filesystem::path& path) {
     std::ifstream input(path, std::ios::binary);
@@ -38,16 +40,35 @@ CharacterProfile load_character_profile(const std::filesystem::path& path) {
     if (!value.contains("canonical_skeleton")) {
         result.skeleton_path = result.source_path;
         result.skeleton = load_skeleton_json(result.skeleton_path);
+        result.profile_id = result.skeleton.skeleton_id;
         return result;
     }
 
-    if (value.at("schema_version") != kSchemaVersion) {
+    result.schema_version = value.at("schema_version").get<std::string>();
+    if (result.schema_version != kSchemaVersion &&
+        result.schema_version != kCharacterProfileSchemaVersion) {
         throw ContractError("unsupported character profile schema_version");
     }
     const auto profile_id = value.at("profile_id").get<std::string>();
     const auto skeleton_value = value.at("canonical_skeleton").get<std::string>();
     if (profile_id.empty() || skeleton_value.empty()) {
         throw ContractError("character profile identifiers must not be empty");
+    }
+    result.profile_id = profile_id;
+    if (result.schema_version == kCharacterProfileSchemaVersion) {
+        result.role = value.at("role").get<std::string>();
+        if (result.role != "source_character_reference") {
+            throw ContractError(
+                "character profile role must be source_character_reference");
+        }
+        const auto policy = value.at("proportion_policy").get<std::string>();
+        if (policy == "similar_reference") {
+            result.proportion_policy = ProportionPolicy::SimilarReference;
+        } else if (policy == "exact_reference") {
+            result.proportion_policy = ProportionPolicy::ExactReference;
+        } else {
+            throw ContractError("unsupported character profile proportion_policy");
+        }
     }
     auto skeleton_path = std::filesystem::path(skeleton_value);
     if (skeleton_path.is_relative()) {

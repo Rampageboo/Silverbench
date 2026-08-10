@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import gc
 import importlib
+import importlib.util
 import json
 import math
 import os
@@ -29,12 +31,30 @@ RTMW_WEIGHTS = (
     "https://download.openmmlab.com/mmpose/v1/projects/rtmw/"
     "rtmw-x_simcc-cocktail14_pt-ucoco_270e-384x288-f840f204_20231122.pth"
 )
+HUMANART_CONFIG = (
+    "configs/body_2d_keypoint/topdown_heatmap/humanart/"
+    "td-hm_ViTPose-large_8xb64-210e_humanart-256x192.py"
+)
+HUMANART_WEIGHTS = (
+    "https://download.openmmlab.com/mmpose/v1/body_2d_keypoint/"
+    "topdown_heatmap/human_art/"
+    "td-hm_ViTPose-large_8xb64-210e_humanart-256x192-9aba9345_20230614.pth"
+)
+DEFAULT_CONFIDENCE_CALIBRATION = (
+    "private/calibration/pose_confidence.json"
+)
 SEMANTICS = [
     "sceneRoot", "hips", "spine", "chest", "upperChest", "neck", "head",
     "leftShoulder", "leftUpperArm", "leftLowerArm", "leftHand",
     "rightShoulder", "rightUpperArm", "rightLowerArm", "rightHand",
     "leftUpperLeg", "leftLowerLeg", "leftFoot", "leftToes",
     "rightUpperLeg", "rightLowerLeg", "rightFoot", "rightToes",
+]
+COCO_JOINTS = [
+    "nose", "left_eye", "right_eye", "left_ear", "right_ear",
+    "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
+    "left_wrist", "right_wrist", "left_hip", "right_hip", "left_knee",
+    "right_knee", "left_ankle", "right_ankle",
 ]
 
 SAM2_CONFIG = "configs/sam2.1/sam2.1_hiera_s.yaml"
@@ -143,6 +163,326 @@ def _needs_high_accuracy_pass(
     return lowest < 0.62 or frame_index % 15 == 0
 
 
+def _needs_humanart_pass(
+    scores: list[float], frame_index: int, quality: str
+) -> bool:
+    """Schedule the animation-domain expert without changing fast mode."""
+    if quality == "maximum":
+        return True
+    if quality == "fast":
+        return False
+    important = [5, 6, 7, 8, 9, 10, 13, 14, 15, 16]
+    lowest = min(
+        (float(scores[index]) for index in important if index < len(scores)),
+        default=0.0,
+    )
+    return lowest < 0.70 or frame_index % 15 == 0
+
+
+def _number(value: Any, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise RuntimeError(f"{label} must be a finite number")
+    result = float(value)
+    if not math.isfinite(result):
+        raise RuntimeError(f"{label} must be a finite number")
+    return result
+
+
+class _ConfidenceCalibration:
+    """Validated, deterministic raw-confidence calibration curves."""
+
+    def __init__(
+        self,
+        curves: dict[str, dict[str, list[tuple[float, float]]]] | None = None,
+        status: str = "identity",
+        source: Path | None = None,
+    ) -> None:
+        self.curves = curves or {}
+        self.status = status
+        self.source = source
+
+    def _curve(
+        self, model: str, joint_index: int
+    ) -> list[tuple[float, float]] | None:
+        model_keys = [model]
+        if model == "character-hrnet":
+            model_keys.append("hrnet")
+        elif model == "vitpose-humanart":
+            model_keys.extend(["vitpose", "humanart"])
+        elif model == "rtmw":
+            model_keys.append("rtmw-x")
+        joint_keys = (COCO_JOINTS[joint_index], str(joint_index))
+        for model_key in model_keys:
+            joints = self.curves.get(model_key)
+            if joints is None:
+                continue
+            for joint_key in joint_keys:
+                if joint_key in joints:
+                    return joints[joint_key]
+        return None
+
+    def calibrate(self, model: str, joint_index: int, raw: float) -> float:
+        raw_value = max(0.0, min(1.0, float(raw)))
+        curve = self._curve(model, joint_index)
+        if not curve:
+            return raw_value
+        if raw_value <= curve[0][0]:
+            return curve[0][1]
+        if raw_value >= curve[-1][0]:
+            return curve[-1][1]
+        for (left_x, left_y), (right_x, right_y) in zip(curve, curve[1:]):
+            if raw_value <= right_x:
+                fraction = (raw_value - left_x) / (right_x - left_x)
+                return left_y + fraction * (right_y - left_y)
+        return curve[-1][1]
+
+
+def _load_confidence_calibration(path: Path) -> _ConfidenceCalibration:
+    """Load and strictly validate a local calibration profile."""
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"cannot read confidence calibration {path}: {error}") from error
+    if not isinstance(document, dict) or document.get("schema_version") != "1.0.0":
+        raise RuntimeError("confidence calibration schema_version must be 1.0.0")
+    models = document.get("models")
+    if not isinstance(models, dict) or not models:
+        raise RuntimeError("confidence calibration models must be a non-empty object")
+    curves: dict[str, dict[str, list[tuple[float, float]]]] = {}
+    for model, model_value in models.items():
+        if not isinstance(model, str) or not model:
+            raise RuntimeError("confidence calibration model names must be non-empty strings")
+        if not isinstance(model_value, dict):
+            raise RuntimeError(f"confidence calibration model {model} must be an object")
+        joints = model_value.get("joints")
+        if not isinstance(joints, dict) or not joints:
+            raise RuntimeError(f"confidence calibration model {model} needs a joints object")
+        curves[model] = {}
+        for joint, points in joints.items():
+            if joint not in COCO_JOINTS and not (
+                joint.isdigit() and 0 <= int(joint) < len(COCO_JOINTS)
+            ):
+                raise RuntimeError(f"unknown confidence calibration joint {model}/{joint}")
+            if not isinstance(points, list) or len(points) < 2:
+                raise RuntimeError(f"confidence calibration curve {model}/{joint} needs two points")
+            validated: list[tuple[float, float]] = []
+            previous_raw = -1.0
+            previous_support = -1.0
+            for point_index, point in enumerate(points):
+                if not isinstance(point, list) or len(point) != 2:
+                    raise RuntimeError(
+                        f"confidence calibration point {model}/{joint}/{point_index} "
+                        "must be [raw, support]"
+                    )
+                raw = _number(point[0], f"confidence calibration raw {model}/{joint}")
+                support = _number(
+                    point[1], f"confidence calibration support {model}/{joint}"
+                )
+                if not 0.0 <= raw <= 1.0 or not 0.0 <= support <= 1.0:
+                    raise RuntimeError(
+                        f"confidence calibration values {model}/{joint} must be in [0,1]"
+                    )
+                if raw <= previous_raw:
+                    raise RuntimeError(
+                        f"confidence calibration raw points must be strictly increasing "
+                        f"for {model}/{joint}"
+                    )
+                if support < previous_support:
+                    raise RuntimeError(
+                        f"confidence calibration support points must be monotonic for "
+                        f"{model}/{joint}"
+                    )
+                validated.append((raw, support))
+                previous_raw = raw
+                previous_support = support
+            curves[model][joint] = validated
+    # Structural validation succeeds here; the profile itself is not evidence
+    # that a held-out calibration study was performed.
+    return _ConfidenceCalibration(curves, "profile", path.resolve())
+
+
+def _resolve_confidence_calibration(
+    path: Path | None,
+) -> _ConfidenceCalibration:
+    project_root = Path(__file__).resolve().parents[2]
+    candidate = path
+    if candidate is None:
+        candidate = project_root / DEFAULT_CONFIDENCE_CALIBRATION
+        if not candidate.is_file():
+            return _ConfidenceCalibration()
+    try:
+        return _load_confidence_calibration(candidate)
+    except RuntimeError as error:
+        if path is not None:
+            raise
+        print(json.dumps({
+            "event": "warning",
+            "stage": "confidence_calibration",
+            "message": str(error),
+        }), flush=True)
+        return _ConfidenceCalibration(status="identity-auto-rejected", source=candidate)
+
+
+def _roi_diagonal(
+    roi: tuple[int, int, int, int] | None,
+    fallback: float | None = None,
+) -> float:
+    if roi is not None:
+        return max(1.0, math.hypot(float(roi[2]), float(roi[3])))
+    return max(1.0, float(fallback or 1.0))
+
+
+def _fuse_coco_hypotheses(
+    hypotheses: dict[
+        str,
+        tuple[list[list[float]], list[float]] | None,
+    ],
+    roi: tuple[int, int, int, int] | None = None,
+    calibration: _ConfidenceCalibration | None = None,
+    image_diagonal: float | None = None,
+) -> tuple[list[list[float]], list[float], dict[str, int]]:
+    """Fuse compatible per-model joint hypotheses without inventing limbs."""
+    calibration = calibration or _ConfidenceCalibration()
+    reference_diagonal = _roi_diagonal(roi, image_diagonal)
+    compatibility_threshold = max(6.0, reference_diagonal * 0.035)
+    priority = {
+        "character-hrnet": 0,
+        "hrnet": 0,
+        "vitpose-humanart": 1,
+        "rtmw": 2,
+    }
+    candidates_by_joint: list[list[dict[str, Any]]] = [
+        [] for _ in range(len(COCO_JOINTS))
+    ]
+    fallback_points = [[0.0, 0.0] for _ in COCO_JOINTS]
+    for model, value in hypotheses.items():
+        if value is None:
+            continue
+        points, raw_scores = value
+        if points:
+            for index, point in enumerate(points[:len(COCO_JOINTS)]):
+                if isinstance(point, list) and len(point) >= 2:
+                    fallback_points[index] = [float(point[0]), float(point[1])]
+        for index in range(min(len(points), len(raw_scores), len(COCO_JOINTS))):
+            point = points[index]
+            if not isinstance(point, list) or len(point) < 2:
+                continue
+            raw_score = max(0.0, min(1.0, float(raw_scores[index])))
+            score = calibration.calibrate(model, index, raw_score)
+            if score <= 0.0:
+                continue
+            candidates_by_joint[index].append({
+                "model": model,
+                "point": [float(point[0]), float(point[1])],
+                "raw_score": raw_score,
+                "score": score,
+            })
+
+    fused_points: list[list[float]] = []
+    fused_scores: list[float] = []
+    diagnostics = {
+        "fused_joints": 0,
+        "agreement_joints": 0,
+        "conflict_joints": 0,
+        "missing_joints": 0,
+    }
+    base_models = {"hrnet", "character-hrnet"}
+    for index, candidates in enumerate(candidates_by_joint):
+        if not candidates:
+            fused_points.append(fallback_points[index])
+            fused_scores.append(0.0)
+            diagnostics["missing_joints"] += 1
+            continue
+
+        clusters: list[list[dict[str, Any]]] = []
+        ordered = sorted(
+            candidates,
+            key=lambda item: (
+                priority.get(str(item["model"]), 9),
+                -float(item["score"]),
+                str(item["model"]),
+            ),
+        )
+        for candidate in ordered:
+            compatible = [
+                cluster for cluster in clusters
+                if all(
+                    math.dist(candidate["point"], member["point"])
+                    <= compatibility_threshold
+                    for member in cluster
+                )
+            ]
+            if not compatible:
+                clusters.append([candidate])
+            else:
+                selected = max(
+                    compatible,
+                    key=lambda cluster: (
+                        sum(float(item["score"]) for item in cluster),
+                        len(cluster),
+                    ),
+                )
+                selected.append(candidate)
+
+        def cluster_key(cluster: list[dict[str, Any]]) -> tuple[float, int, float]:
+            return (
+                sum(float(item["score"]) for item in cluster),
+                len(cluster),
+                max(float(item["score"]) for item in cluster),
+            )
+
+        clusters.sort(key=cluster_key, reverse=True)
+        top = clusters[0]
+        second = clusters[1] if len(clusters) > 1 else None
+        top_support = cluster_key(top)[0]
+        second_support = cluster_key(second)[0] if second else 0.0
+        clear_winner = second is None or (
+            top_support >= second_support + 0.18
+            and top_support >= second_support * 1.15
+        )
+        conflict = second is not None and not clear_winner
+        if conflict:
+            diagnostics["conflict_joints"] += 1
+            base_candidate = next(
+                (
+                    item for item in candidates
+                    if str(item["model"]) in base_models
+                ),
+                None,
+            )
+            chosen = base_candidate or max(
+                candidates, key=lambda item: float(item["score"])
+            )
+            fused_points.append(list(chosen["point"]))
+            fused_scores.append(max(0.0, min(1.0, float(chosen["score"]) * 0.55)))
+            continue
+
+        strongest = max(top, key=lambda item: float(item["score"]))
+        runner_up_score = max(
+            (float(item["score"]) for item in top if item is not strongest),
+            default=0.0,
+        )
+        if len(top) == 1 or float(strongest["score"]) >= runner_up_score + 0.20:
+            fused_points.append(list(strongest["point"]))
+            fused_scores.append(float(strongest["score"]))
+        else:
+            weights = [max(0.05, float(item["score"])) for item in top]
+            total = sum(weights)
+            fused_points.append([
+                sum(item["point"][axis] * weight for item, weight in zip(top, weights))
+                / total
+                for axis in range(2)
+            ])
+            fused_scores.append(min(
+                1.0,
+                max(float(item["score"]) for item in top) + 0.05 * (len(top) - 1),
+            ))
+            diagnostics["agreement_joints"] += 1
+        diagnostics["fused_joints"] += 1
+
+    return fused_points, fused_scores, diagnostics
+
+
 def _fuse_coco_observations(
     base_points: list[list[float]],
     base_scores: list[float],
@@ -150,28 +490,14 @@ def _fuse_coco_observations(
     refined_scores: list[float],
     image_diagonal: float,
 ) -> tuple[list[list[float]], list[float]]:
-    """Fuse independent 2D estimates without averaging incompatible limbs."""
-    points = [[float(value[0]), float(value[1])] for value in base_points[:17]]
-    scores = [float(value) for value in base_scores[:17]]
-    while len(scores) < len(points):
-        scores.append(0.0)
-    for index in range(min(17, len(refined_points), len(refined_scores), len(points))):
-        refined_score = float(refined_scores[index])
-        base_score = scores[index]
-        refined = [float(refined_points[index][0]), float(refined_points[index][1])]
-        disagreement = math.dist(points[index], refined)
-        if refined_score >= max(0.20, base_score + 0.04):
-            points[index] = refined
-            scores[index] = refined_score
-        elif refined_score >= 0.35 and base_score >= 0.35 and disagreement <= image_diagonal * 0.035:
-            total = refined_score + base_score
-            points[index] = [
-                (points[index][axis] * base_score + refined[axis] * refined_score) / total
-                for axis in range(2)
-            ]
-            scores[index] = min(1.0, max(base_score, refined_score) + 0.04)
-        elif disagreement > image_diagonal * 0.10:
-            scores[index] = min(base_score, refined_score) * 0.75
+    """Backward-compatible two-expert wrapper around joint hypothesis fusion."""
+    points, scores, _diagnostics = _fuse_coco_hypotheses(
+        {
+            "hrnet": (base_points, base_scores),
+            "rtmw": (refined_points, refined_scores),
+        },
+        image_diagonal=image_diagonal,
+    )
     return points, scores
 
 
@@ -274,6 +600,24 @@ def _map_h36m(
     return joints, used_planar_fallback
 
 
+def _load_sam2_predictor(
+    checkpoint: Path, device: str | None
+) -> tuple[Any, Any, str]:
+    if not checkpoint.is_file():
+        raise RuntimeError(f"SAM 2.1 checkpoint is unavailable: {checkpoint}")
+    import torch
+    from sam2.build_sam import build_sam2_video_predictor
+
+    resolved_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    predictor = build_sam2_video_predictor(
+        SAM2_CONFIG,
+        str(checkpoint),
+        device=resolved_device,
+        apply_postprocessing=False,
+    )
+    return predictor, torch, resolved_device
+
+
 class _Sam2VideoMaskProvider:
     """Lazy SAM 2.1 video-object mask stream prompted by the person ROI."""
 
@@ -284,22 +628,24 @@ class _Sam2VideoMaskProvider:
         device: str | None,
         cv2_module: Any,
         np_module: Any,
+        predictor: Any = None,
+        torch_module: Any = None,
+        resolved_device: str | None = None,
     ) -> None:
         if not checkpoint.is_file():
             raise RuntimeError(f"SAM 2.1 checkpoint is unavailable: {checkpoint}")
-        import torch
-        from sam2.build_sam import build_sam2_video_predictor
-
-        self.torch = torch
         self.cv2 = cv2_module
         self.np = np_module
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.predictor = build_sam2_video_predictor(
-            SAM2_CONFIG,
-            str(checkpoint),
-            device=self.device,
-            apply_postprocessing=False,
-        )
+        if predictor is None:
+            self.predictor, self.torch, self.device = _load_sam2_predictor(
+                checkpoint, device
+            )
+        else:
+            if torch_module is None:
+                raise RuntimeError("shared SAM 2.1 predictor requires its torch runtime")
+            self.torch = torch_module
+            self.device = resolved_device or device or "cpu"
+            self.predictor = predictor
         self.input_path = input_path
         self.state: Any = None
         self.iterator: Any = None
@@ -368,6 +714,16 @@ class _Sam2VideoMaskProvider:
         )
         self.used = True
         return self.cv2.morphologyEx(cropped, self.cv2.MORPH_CLOSE, kernel)
+
+    def close(self) -> None:
+        if self.state is not None:
+            try:
+                self.predictor.reset_state(self.state)
+            except Exception:  # noqa: BLE001 - best-effort GPU state cleanup
+                pass
+        self.state = None
+        self.iterator = None
+        self.cache.clear()
 
 
 class _TemporalFusion:
@@ -629,6 +985,28 @@ def _load_high_accuracy_refiner(
     )
 
 
+def _load_humanart_expert(
+    inferencer_type: Any, device: str | None
+) -> Any:
+    """Load the independent Human-Art ViTPose-L animation expert."""
+    if importlib.util.find_spec("mmpretrain") is None:
+        raise RuntimeError(
+            "mmpretrain is unavailable; install the guided MMPose dependencies "
+            "to enable Human-Art ViTPose-L"
+        )
+    import mmpose
+
+    config = Path(mmpose.__file__).resolve().parent / ".mim" / HUMANART_CONFIG
+    if not config.is_file():
+        raise RuntimeError(f"Human-Art ViTPose-L config is unavailable: {config}")
+    return inferencer_type(
+        pose2d=str(config),
+        pose2d_weights=HUMANART_WEIGHTS,
+        det_model="whole_image",
+        device=device,
+    )
+
+
 def _prepare_offline_models(device: str | None = "cpu") -> None:
     """Resolve and cache every checkpoint needed by the offline quality path."""
     inferencer_type = _load_inferencer()
@@ -641,6 +1019,17 @@ def _prepare_offline_models(device: str | None = "cpu") -> None:
     del base
     refiner = _load_high_accuracy_refiner(inferencer_type, device)
     del refiner
+    try:
+        humanart = _load_humanart_expert(inferencer_type, device)
+        del humanart
+    except Exception as error:
+        # Fast/base-only operation remains usable when the optional expert cannot
+        # be cached, while setup still exposes the exact dependency failure.
+        print(json.dumps({
+            "event": "warning",
+            "stage": "vitpose_humanart",
+            "message": str(error),
+        }), flush=True)
 
 
 def _resolve_anime_pose_model(
@@ -660,6 +1049,10 @@ def _resolve_anime_pose_model(
     return config, weights
 
 
+def _base_model_name(anime_pose_weights: Path | None) -> str:
+    return "character-hrnet" if anime_pose_weights is not None else "hrnet"
+
+
 def _refine_frame_2d(
     refiner: Any,
     frame: Any,
@@ -669,6 +1062,11 @@ def _refine_frame_2d(
     crop = frame[y:y + height, x:x + width]
     if crop.size == 0:
         return None
+    # The top-level video inferencer uses the mutable crop hook, but this
+    # helper already passes a cropped ndarray to each independent 2D expert.
+    # Disable the hook for the nested call so the ROI is not applied twice.
+    previous_crop = _ACTIVE_CROP_ROI
+    _set_active_crop(None)
     try:
         result = next(refiner(crop, return_vis=False, show=False))
         prediction = _prediction(result)
@@ -691,6 +1089,8 @@ def _refine_frame_2d(
         return points, [float(score) for score in scores]
     except (RuntimeError, StopIteration, KeyError, TypeError, ValueError):
         return None
+    finally:
+        _set_active_crop(previous_crop)
 
 
 def _probe_cuda(torch: Any) -> bool:
@@ -707,6 +1107,141 @@ def _probe_cuda(torch: Any) -> bool:
             "requires a Blackwell-capable build): " + str(error)
         ) from error
     return True
+
+
+class MMPoseSession:
+    """One reusable GPU model set for a sequence of video views."""
+
+    def __init__(
+        self,
+        device: str | None = None,
+        quality: str = "balanced",
+        segmentation: str = "auto",
+        sam2_checkpoint: Path | None = None,
+        anime_pose_config: Path | None = None,
+        anime_pose_weights: Path | None = None,
+        confidence_calibration: Path | None = None,
+    ) -> None:
+        try:
+            import cv2
+            import numpy as np
+            inferencer_type = _load_inferencer()
+        except ImportError as error:
+            raise RuntimeError(
+                f"MMPose adapter import failed: {error}. Run tools/setup_mmpose.ps1."
+            ) from error
+
+        self.cv2 = cv2
+        self.np = np
+        self.device = device
+        self.quality = quality
+        self.segmentation = segmentation
+        self.anime_pose_config, self.anime_pose_weights = _resolve_anime_pose_model(
+            anime_pose_config, anime_pose_weights
+        )
+        self.calibration = _resolve_confidence_calibration(confidence_calibration)
+        self.base_model = _base_model_name(self.anime_pose_weights)
+        inferencer_arguments: dict[str, Any] = dict(
+            pose3d="human3d",
+            pose2d=(
+                str(self.anime_pose_config)
+                if self.anime_pose_config is not None
+                else "td-hm_hrnet-w32_8xb64-210e_coco-256x192"
+            ),
+            det_model="whole_image",
+            device=device,
+        )
+        if self.anime_pose_weights is not None:
+            inferencer_arguments["pose2d_weights"] = str(self.anime_pose_weights)
+        self.inferencer = inferencer_type(**inferencer_arguments)
+
+        self.high_accuracy_refiner = None
+        self.high_accuracy_error = ""
+        self.humanart_expert = None
+        self.humanart_error = ""
+        if quality != "fast":
+            try:
+                self.high_accuracy_refiner = _load_high_accuracy_refiner(
+                    inferencer_type, device
+                )
+            except Exception as error:  # noqa: BLE001 - optional model boundary
+                self.high_accuracy_error = str(error)
+            try:
+                self.humanart_expert = _load_humanart_expert(
+                    inferencer_type, device
+                )
+            except Exception as error:  # noqa: BLE001 - optional model boundary
+                self.humanart_error = str(error)
+
+        self.sam2_checkpoint = sam2_checkpoint or (
+            Path(__file__).resolve().parents[2]
+            / "private" / "models" / "sam2" / "sam2.1_hiera_small.pt"
+        )
+        self.sam2_predictor = None
+        self.sam2_torch = None
+        self.sam2_device = device or "cpu"
+        self.sam2_error = ""
+        if segmentation != "grabcut":
+            try:
+                (
+                    self.sam2_predictor,
+                    self.sam2_torch,
+                    self.sam2_device,
+                ) = _load_sam2_predictor(self.sam2_checkpoint, device)
+            except Exception as error:  # noqa: BLE001 - optional model boundary
+                self.sam2_error = str(error)
+                if segmentation == "sam2":
+                    raise RuntimeError(
+                        f"SAM 2.1 segmentation was required but could not start: {error}"
+                    ) from error
+
+    def mask_provider(self, input_path: Path) -> _Sam2VideoMaskProvider | None:
+        if self.sam2_predictor is None:
+            return None
+        return _Sam2VideoMaskProvider(
+            input_path,
+            self.sam2_checkpoint,
+            self.device,
+            self.cv2,
+            self.np,
+            predictor=self.sam2_predictor,
+            torch_module=self.sam2_torch,
+            resolved_device=self.sam2_device,
+        )
+
+    def reset_video_state(self) -> None:
+        for wrapper in (
+            self.inferencer,
+            self.high_accuracy_refiner,
+            self.humanart_expert,
+        ):
+            inner = getattr(wrapper, "inferencer", None)
+            buffer = getattr(inner, "_buffer", None)
+            if hasattr(buffer, "clear"):
+                buffer.clear()
+
+    def run(
+        self,
+        input_path: Path,
+        output_path: Path,
+        roi: tuple[int, int, int, int] | None = None,
+    ) -> None:
+        try:
+            _run_mmpose_with_session(self, input_path, output_path, roi)
+        finally:
+            self.reset_video_state()
+
+    def close(self) -> None:
+        self.reset_video_state()
+        self.inferencer = None
+        self.high_accuracy_refiner = None
+        self.humanart_expert = None
+        self.sam2_predictor = None
+        gc.collect()
+        torch_module = self.sam2_torch or sys.modules.get("torch")
+        if torch_module is not None and torch_module.cuda.is_available():
+            torch_module.cuda.empty_cache()
+        self.sam2_torch = None
 
 
 _ACTIVE_CROP_ROI: tuple[int, int, int, int] | None = None
@@ -775,25 +1310,19 @@ def _body_roi_from_points(
         return None
     return left, top, right - left, bottom - top
 
-def run_mmpose(
+def _run_mmpose_with_session(
+    session: MMPoseSession,
     input_path: Path,
     output_path: Path,
-    device: str | None,
     roi: tuple[int, int, int, int] | None = None,
-    quality: str = "balanced",
-    segmentation: str = "auto",
-    sam2_checkpoint: Path | None = None,
-    anime_pose_config: Path | None = None,
-    anime_pose_weights: Path | None = None,
 ) -> None:
-    try:
-        import cv2
-        import numpy as np
-        MMPoseInferencer = _load_inferencer()
-    except ImportError as error:
-        raise RuntimeError(
-            f"MMPose adapter import failed: {error}. Run tools/setup_mmpose.ps1."
-        ) from error
+    cv2 = session.cv2
+    np = session.np
+    quality = session.quality
+    segmentation = session.segmentation
+    anime_pose_weights = session.anime_pose_weights
+    calibration = session.calibration
+    base_model = session.base_model
 
     capture = cv2.VideoCapture(str(input_path))
     if not capture.isOpened():
@@ -834,62 +1363,42 @@ def run_mmpose(
 
     _enable_center_crop(effective_roi)
     flow_capture = cv2.VideoCapture(str(input_path))
-    mask_provider = None
-    sam2_error = ""
-    if segmentation != "grabcut":
-        checkpoint = sam2_checkpoint or (
-            Path(__file__).resolve().parents[2]
-            / "private" / "models" / "sam2" / "sam2.1_hiera_small.pt"
-        )
-        try:
-            mask_provider = _Sam2VideoMaskProvider(
-                input_path, checkpoint, device, cv2, np
-            )
-        except Exception as error:
-            sam2_error = str(error)
-            if segmentation == "sam2":
-                raise RuntimeError(
-                    f"SAM 2.1 segmentation was required but could not start: {error}"
-                ) from error
-            print(json.dumps({
-                "event": "warning",
-                "stage": "sam2_mask",
-                "message": sam2_error,
-            }), flush=True)
+    mask_provider = session.mask_provider(input_path)
+    sam2_error = session.sam2_error
+    if sam2_error:
+        print(json.dumps({
+            "event": "warning",
+            "stage": "sam2_mask",
+            "message": sam2_error,
+        }), flush=True)
     temporal_fusion = _TemporalFusion(cv2, np, effective_roi, mask_provider)
-    anime_pose_config, anime_pose_weights = _resolve_anime_pose_model(
-        anime_pose_config, anime_pose_weights
-    )
-    inferencer_arguments: dict[str, Any] = dict(
-        pose3d="human3d",
-        pose2d=(
-            str(anime_pose_config)
-            if anime_pose_config is not None
-            else "td-hm_hrnet-w32_8xb64-210e_coco-256x192"
-        ),
-        det_model="whole_image",
-        device=device,
-    )
-    if anime_pose_weights is not None:
-        inferencer_arguments["pose2d_weights"] = str(anime_pose_weights)
-    inferencer = MMPoseInferencer(**inferencer_arguments)
-    high_accuracy_refiner = None
-    high_accuracy_error = ""
-    if quality != "fast":
-        try:
-            high_accuracy_refiner = _load_high_accuracy_refiner(
-                MMPoseInferencer, device
-            )
-        except Exception as error:
-            high_accuracy_error = str(error)
-            print(json.dumps({
-                "event": "warning",
-                "stage": "rtmw_refiner",
-                "message": high_accuracy_error,
-            }), flush=True)
+    inferencer = session.inferencer
+    high_accuracy_refiner = session.high_accuracy_refiner
+    high_accuracy_error = session.high_accuracy_error
+    if high_accuracy_error:
+        print(json.dumps({
+            "event": "warning",
+            "stage": "rtmw_refiner",
+            "message": high_accuracy_error,
+        }), flush=True)
+    humanart_expert = session.humanart_expert
+    humanart_error = session.humanart_error
+    if humanart_error:
+        print(json.dumps({
+            "event": "warning",
+            "stage": "vitpose_humanart",
+            "message": humanart_error,
+        }), flush=True)
     frames = []
     planar_fallback_frames = 0
     high_accuracy_frames = 0
+    humanart_frames = 0
+    fusion_totals = {
+        "fused_joints": 0,
+        "agreement_joints": 0,
+        "conflict_joints": 0,
+        "missing_joints": 0,
+    }
     generator = inferencer(
         str(input_path),
         return_vis=False,
@@ -945,28 +1454,49 @@ def run_mmpose(
                     effective_roi = body_roi
                     _set_active_crop(body_roi)
                     temporal_fusion.update_roi(body_roi)
+            if flow_frame_ok:
+                coco_points = temporal_fusion.fuse(
+                    flow_frame, coco_points, coco_scores
+                )
+            refined_hypothesis = None
             if (
                 high_accuracy_refiner is not None
                 and flow_frame_ok
                 and _needs_high_accuracy_pass(coco_scores, frame_index, quality)
             ):
-                refined = _refine_frame_2d(
+                refined_hypothesis = _refine_frame_2d(
                     high_accuracy_refiner, flow_frame, effective_roi
                 )
-                if refined is not None:
-                    refined_points, refined_scores = refined
-                    coco_points, coco_scores = _fuse_coco_observations(
-                        coco_points,
-                        coco_scores,
-                        refined_points,
-                        refined_scores,
-                        math.hypot(width, height),
-                    )
+                if refined_hypothesis is not None:
                     high_accuracy_frames += 1
-            if flow_frame_ok:
-                coco_points = temporal_fusion.fuse(
-                    flow_frame, coco_points, coco_scores
+
+            humanart_hypothesis = None
+            if (
+                humanart_expert is not None
+                and flow_frame_ok
+                and _needs_humanart_pass(coco_scores, frame_index, quality)
+            ):
+                humanart_hypothesis = _refine_frame_2d(
+                    humanart_expert, flow_frame, effective_roi
                 )
+                if humanart_hypothesis is not None:
+                    humanart_frames += 1
+
+            hypotheses: dict[
+                str,
+                tuple[list[list[float]], list[float]] | None,
+            ] = {
+                base_model: (coco_points, coco_scores),
+                "vitpose-humanart": humanart_hypothesis,
+                "rtmw": refined_hypothesis,
+            }
+            coco_points, coco_scores, fusion_diagnostics = _fuse_coco_hypotheses(
+                hypotheses,
+                roi=effective_roi,
+                calibration=calibration,
+            )
+            for key, value in fusion_diagnostics.items():
+                fusion_totals[key] += value
             points2d, scores = _coco_to_h36m(coco_points, coco_scores)
 
         joints, used_planar_fallback = _map_h36m(
@@ -984,8 +1514,16 @@ def run_mmpose(
         }), flush=True)
 
     flow_capture.release()
+    if mask_provider is not None:
+        mask_provider.close()
     if not frames:
         raise RuntimeError("MMPose produced no frames")
+
+    print(json.dumps({
+        "event": "fusion_diagnostics",
+        **fusion_totals,
+        "calibration": calibration.status,
+    }), flush=True)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps({
@@ -1016,6 +1554,28 @@ def run_mmpose(
                 if quality != "fast" and high_accuracy_error
                 else ""
             )
+            + (
+                "+vitpose-humanart-adaptive"
+                if humanart_frames and quality == "balanced"
+                else "+vitpose-humanart-full"
+                if humanart_frames
+                else "+vitpose-humanart-unavailable"
+                if quality != "fast" and (
+                    humanart_error or (humanart_expert is not None and not humanart_frames)
+                )
+                else ""
+            )
+            + "+joint-hypothesis-fusion"
+            + (
+                "+uncertain-joint-conflicts"
+                if fusion_totals["conflict_joints"]
+                else ""
+            )
+            + (
+                "+confidence-calibration-profile"
+                if calibration.status == "profile"
+                else "+confidence-calibration-identity"
+            )
             + ("+anime-finetuned-hrnet" if anime_pose_weights is not None else "")
             + ("+user-roi" if roi is not None else "+auto-body-roi")
         ),
@@ -1024,6 +1584,33 @@ def run_mmpose(
         "fps": fps,
         "frames": frames,
     }, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+
+
+def run_mmpose(
+    input_path: Path,
+    output_path: Path,
+    device: str | None,
+    roi: tuple[int, int, int, int] | None = None,
+    quality: str = "balanced",
+    segmentation: str = "auto",
+    sam2_checkpoint: Path | None = None,
+    anime_pose_config: Path | None = None,
+    anime_pose_weights: Path | None = None,
+    confidence_calibration: Path | None = None,
+) -> None:
+    session = MMPoseSession(
+        device,
+        quality,
+        segmentation,
+        sam2_checkpoint,
+        anime_pose_config,
+        anime_pose_weights,
+        confidence_calibration,
+    )
+    try:
+        session.run(input_path, output_path, roi)
+    finally:
+        session.close()
 
 
 def main() -> int:
@@ -1041,6 +1628,7 @@ def main() -> int:
     parser.add_argument("--sam2-checkpoint", type=Path, default=None)
     parser.add_argument("--anime-pose-config", type=Path, default=None)
     parser.add_argument("--anime-pose-weights", type=Path, default=None)
+    parser.add_argument("--confidence-calibration", type=Path, default=None)
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--prepare-models", action="store_true")
     args = parser.parse_args()
@@ -1053,18 +1641,29 @@ def main() -> int:
             import mmpose
             import torch
             cuda_ready = _probe_cuda(torch)
+            try:
+                import mmpretrain
+                mmpretrain_version = mmpretrain.__version__
+            except ImportError:
+                mmpretrain_version = None
             print(json.dumps({
                 "event": "ready", "mmpose": mmpose.__version__,
                 "mmcv": mmcv.__version__, "mmengine": mmengine.__version__,
                 "torch": torch.__version__, "opencv": cv2.__version__,
-                "cuda": cuda_ready,
+                "cuda": cuda_ready, "mmpretrain": mmpretrain_version,
+                "vitpose_humanart": (
+                    "dependency-ready" if mmpretrain_version else "dependency-missing"
+                ),
             }), flush=True)
             return 0
         if args.prepare_models:
             _prepare_offline_models(args.device or "cpu")
             print(json.dumps({
                 "event": "models_ready",
-                "models": ["hrnet-w32-coco", "motionbert-human3d", "rtmw-x-384"],
+                "models": [
+                    "hrnet-w32-coco", "motionbert-human3d", "rtmw-x-384",
+                    "vitpose-humanart-large",
+                ],
             }), flush=True)
             return 0
         if args.input is None or args.output is None:
@@ -1082,6 +1681,7 @@ def main() -> int:
             args.sam2_checkpoint,
             args.anime_pose_config,
             args.anime_pose_weights,
+            args.confidence_calibration,
         )
         print(json.dumps({"event": "complete", "output": str(args.output)}), flush=True)
         return 0

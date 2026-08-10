@@ -508,16 +508,35 @@ PoseSequence smooth_pose_sequence(const PoseSequence& sequence) {
 PoseSequence optimize_pose_sequence(
     const PoseSequence& sequence,
     const PoseOptimizationOptions& options,
-    const Skeleton* character_skeleton
+    const Skeleton* character_skeleton,
+    ProportionPolicy proportion_policy
+) {
+    return optimize_pose_sequence_detailed(
+        sequence, options, character_skeleton, proportion_policy).sequence;
+}
+
+PoseOptimizationResult optimize_pose_sequence_detailed(
+    const PoseSequence& sequence,
+    const PoseOptimizationOptions& options,
+    const Skeleton* character_skeleton,
+    ProportionPolicy proportion_policy
 ) {
     validate_pose_sequence(sequence);
     if (character_skeleton) validate_skeleton(*character_skeleton);
+    PoseOptimizationResult output;
+    output.diagnostics.profile_id = character_skeleton
+        ? character_skeleton->skeleton_id : std::string{};
+    output.diagnostics.proportion_policy = proportion_policy;
+    const std::string policy_tag = proportion_policy == ProportionPolicy::SimilarReference
+        ? "similar" : "exact";
     const std::string optimization_tag = character_skeleton
-        ? "character-kinematic-opt-v1[" + character_skeleton->skeleton_id + "]"
-        : "kinematic-opt-v1";
+        ? "character-kinematic-opt-v2[" + character_skeleton->skeleton_id +
+            ":" + policy_tag + "]"
+        : "kinematic-opt-v2";
     if (sequence.backend.find(optimization_tag) != std::string::npos ||
         sequence.frames.size() < 2 || options.iterations == 0) {
-        return sequence;
+        output.sequence = sequence;
+        return output;
     }
     if (!std::isfinite(options.temporal_weight) || options.temporal_weight < 0.0 ||
         !std::isfinite(options.bone_length_weight) || options.bone_length_weight < 0.0 ||
@@ -536,29 +555,49 @@ PoseSequence optimize_pose_sequence(
         ? *character_skeleton : make_default_skeleton();
     const std::size_t frame_count = sequence.frames.size();
     const std::size_t joint_count = skeleton.bones.size();
+    const std::size_t minimum_supported_samples = std::max<std::size_t>(
+        10, static_cast<std::size_t>(std::ceil(frame_count * 0.05)));
     std::vector<double> target_lengths(joint_count, 0.0);
     for (std::size_t child = 2; child < joint_count; ++child) {
         const auto parent = static_cast<std::size_t>(skeleton.bones[child].parent);
         const double rest = length(skeleton.bones[child].rest_offset_m);
-        if (character_skeleton) {
+        if (character_skeleton && proportion_policy == ProportionPolicy::ExactReference) {
             target_lengths[child] = rest;
+            ++output.diagnostics.profile_supported_bones;
             continue;
         }
         std::vector<double> samples;
         samples.reserve(frame_count);
         for (const auto& frame : sequence.frames) {
             if (!frame.joints[parent].valid || !frame.joints[child].valid) continue;
+            if (character_skeleton &&
+                (frame.joints[parent].confidence < options.low_confidence_threshold ||
+                 frame.joints[child].confidence < options.low_confidence_threshold)) {
+                continue;
+            }
             const double sample = length(subtract(
                 frame.joints[child].position_m, frame.joints[parent].position_m));
             if (std::isfinite(sample) && sample > kEpsilon) samples.push_back(sample);
         }
         if (samples.empty()) {
             target_lengths[child] = rest;
+            if (character_skeleton) ++output.diagnostics.profile_supported_bones;
             continue;
         }
         const auto middle = samples.begin() + static_cast<std::ptrdiff_t>(samples.size() / 2);
         std::nth_element(samples.begin(), middle, samples.end());
-        target_lengths[child] = std::clamp(*middle, rest * 0.50, rest * 1.80);
+        const double observed = std::clamp(*middle, rest * 0.50, rest * 1.80);
+        if (!character_skeleton || samples.size() >= minimum_supported_samples) {
+            target_lengths[child] = observed;
+            if (character_skeleton) ++output.diagnostics.well_supported_bones;
+        } else {
+            const double support = std::clamp(
+                static_cast<double>(samples.size()) /
+                    static_cast<double>(minimum_supported_samples),
+                0.0, 1.0);
+            target_lengths[child] = observed * support + rest * (1.0 - support);
+            ++output.diagnostics.profile_supported_bones;
+        }
     }
 
     PoseSequence result = sequence;
@@ -572,6 +611,10 @@ PoseSequence optimize_pose_sequence(
                     const auto& center = previous.frames[frame].joints[joint];
                     const auto& after = previous.frames[frame + 1].joints[joint];
                     if (!before.valid || !center.valid || !after.valid) continue;
+                    if (character_skeleton &&
+                        center.confidence >= options.low_confidence_threshold) {
+                        continue;
+                    }
                     const auto predicted = scale(add(before.position_m, after.position_m), 0.5);
                     const double freedom = 1.0 - 0.72 * static_cast<double>(center.confidence);
                     const auto delta = clamp_length(scale(
@@ -594,13 +637,21 @@ PoseSequence optimize_pose_sequence(
                         continue;
                     }
                     double profile_gate = 1.0;
+                    double parent_freedom = 0.15 +
+                        0.85 * (1.0 - static_cast<double>(parent_joint.confidence));
+                    double child_freedom = 0.15 +
+                        0.85 * (1.0 - static_cast<double>(child_joint.confidence));
                     if (character_skeleton) {
-                        const double endpoint_confidence = std::min(
-                            static_cast<double>(parent_joint.confidence),
-                            static_cast<double>(child_joint.confidence));
-                        profile_gate = std::clamp(
-                            (options.low_confidence_threshold - endpoint_confidence) /
+                        parent_freedom = std::clamp(
+                            (options.low_confidence_threshold - parent_joint.confidence) /
                                 options.low_confidence_threshold,
+                            0.0, 1.0);
+                        child_freedom = std::clamp(
+                            (options.low_confidence_threshold - child_joint.confidence) /
+                                options.low_confidence_threshold,
+                            0.0, 1.0);
+                        profile_gate = std::clamp(
+                            std::max(parent_freedom, child_freedom),
                             0.0, 1.0);
                         if (profile_gate <= 0.0) continue;
                     }
@@ -610,11 +661,8 @@ PoseSequence optimize_pose_sequence(
                     const auto error = scale(
                         direction,
                         (current_length - target_lengths[child]) / current_length);
-                    const double parent_freedom = 0.15 +
-                        0.85 * (1.0 - static_cast<double>(parent_joint.confidence));
-                    const double child_freedom = 0.15 +
-                        0.85 * (1.0 - static_cast<double>(child_joint.confidence));
                     const double total = parent_freedom + child_freedom;
+                    if (total <= kEpsilon) continue;
                     const auto parent_delta = clamp_length(scale(
                         error, options.bone_length_weight * profile_gate *
                             parent_freedom / total),
@@ -644,7 +692,73 @@ PoseSequence optimize_pose_sequence(
             }
         }
     }
+    if (character_skeleton) {
+        for (std::size_t frame = 0; frame < frame_count; ++frame) {
+            for (std::size_t joint = 0; joint < joint_count; ++joint) {
+                auto& refined = result.frames[frame].joints[joint];
+                const auto& observed = original.frames[frame].joints[joint];
+                if (!refined.valid || !observed.valid ||
+                    observed.confidence >= options.low_confidence_threshold) {
+                    continue;
+                }
+                refined.position_m = add(observed.position_m, clamp_length(
+                    subtract(refined.position_m, observed.position_m),
+                    options.maximum_frame_correction_m));
+            }
+        }
+    }
     result.backend += "+" + optimization_tag;
+    validate_pose_sequence(result);
+    for (std::size_t frame = 0; frame < frame_count; ++frame) {
+        for (std::size_t joint = 0; joint < joint_count; ++joint) {
+            const auto& observed = original.frames[frame].joints[joint];
+            const auto& refined = result.frames[frame].joints[joint];
+            if (!observed.valid || !refined.valid) continue;
+            const double correction = length(subtract(
+                refined.position_m, observed.position_m));
+            if (correction <= kEpsilon) continue;
+            if (character_skeleton &&
+                observed.confidence >= options.low_confidence_threshold) {
+                ++output.diagnostics.high_confidence_move_attempts;
+                continue;
+            }
+            ++output.diagnostics.corrected_joint_samples;
+            output.diagnostics.mean_correction_m += correction;
+            output.diagnostics.maximum_correction_m = std::max(
+                output.diagnostics.maximum_correction_m, correction);
+        }
+    }
+    if (output.diagnostics.corrected_joint_samples > 0) {
+        output.diagnostics.mean_correction_m /=
+            static_cast<double>(output.diagnostics.corrected_joint_samples);
+    }
+    output.sequence = std::move(result);
+    return output;
+}
+
+PoseSequence apply_manual_pose_corrections(
+    const PoseSequence& refined_sequence,
+    const ManualPoseCorrections& corrections
+) {
+    validate_pose_sequence(refined_sequence);
+    auto result = refined_sequence;
+    for (const auto& correction : corrections) {
+        if (correction.position_deltas_m.size() != result.frames.size()) {
+            throw ContractError(
+                "manual correction frame count does not match pose sequence");
+        }
+        for (std::size_t frame = 0; frame < result.frames.size(); ++frame) {
+            if (correction.joint_index >= result.frames[frame].joints.size()) {
+                throw ContractError(
+                    "manual correction joint index is outside the pose schema");
+            }
+            auto& joint = result.frames[frame].joints[correction.joint_index];
+            const auto& delta = correction.position_deltas_m[frame];
+            joint.image_xy.x += correction.image_delta.x;
+            joint.image_xy.y += correction.image_delta.y;
+            joint.position_m += delta;
+        }
+    }
     validate_pose_sequence(result);
     return result;
 }

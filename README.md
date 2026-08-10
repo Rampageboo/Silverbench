@@ -66,6 +66,10 @@ GUI 默认使用最高精度模式：HRNet/MotionBERT 生成基础观测，RTMW-
 
 单方向视频不能唯一确定人体前后深度，动漫角色也超出常见真人训练集分布。软件会检测 MotionBERT 深度是否符合人体尺度；深度异常时明确回退为 `mmpose-hrnet-motionbert+2.5d-fallback`，以真实 HRNet 2D 关节点为准，将深度限制在小范围内。这样优先保证四肢拓扑和画面对齐，不把错误深度伪装成可靠 3D。
 
+## 骨架预设
+
+“导入骨架预设”读取角色导出的 `profile.json` 或 `skeleton.json`，用于提供该角色的规范骨长、静止骨架比例和低置信度修正阈值。它会约束下一次捕捉，也可以按该骨架重建当前动作；它不会导入角色模型、贴图、服装或特效。
+
 ## 构建与测试
 
 需要 Windows、Visual Studio C++ Build Tools 和 CMake/Ninja：
@@ -90,9 +94,9 @@ project-context/             持久项目决策与边界
 
 ## 四视角捕捉
 
-将同一段动作从四个固定方向各录制一次，四个视频不要求同时开始，也不要求长度和动作速度完全一致。把视频放进同一文件夹，并让文件名分别包含 `front`、`right`、`back`、`left`（也识别“正面”“右侧”“背面”“左侧”）；每个方向必须恰好一个文件。软件支持 MP4、MOV、AVI、MKV、WebM 和 M4V。
+将同一段动作从四个固定方向各录制一次，四个视频不要求同时开始，也不要求长度和动作速度完全一致。让文件名分别包含 `front`、`right`、`back`、`left`（也识别“正面”“右侧”“背面”“左侧”）；每个方向必须恰好一个文件。软件支持 MP4、MOV、AVI、MKV、WebM 和 M4V，四个文件可以位于不同文件夹。
 
-在软件中点击“导入四视角”，选择该文件夹，然后点击“开始捕捉”。处理顺序是：逐视角提取 2D 关节与置信度 → 自动动作相位/速度对齐 → 跨视角左右肢体纠错 → 按置信度和对齐质量进行正交多视角三角化 → 时间与骨长约束。某一路被遮挡的关节会由其他有效视角恢复；视角间误差超过阈值时会作为冲突显示在右侧问题面板和时间轴。
+在软件中点击“导入四视角”，一次多选这四个视频。成功后主 viewport 会显示带方向和文件名的 2×2 四路预览，按钮会显示“4 视角已导入”，底部状态栏也会按方向列出四个文件名；确认无误后点击“开始捕捉”。处理顺序是：一次加载共享姿态模型 → 逐视角提取 2D 关节与置信度 → 自动动作相位/速度对齐 → 跨视角左右肢体纠错 → 按置信度和对齐质量进行正交多视角三角化 → 时间与骨长约束。每个视角结束后会清空时序缓冲，避免不同视频互相污染。某一路被遮挡的关节会由其他有效视角恢复；视角间误差超过阈值时会作为冲突显示在右侧问题面板和时间轴。
 
 最终动作不是四份单视角动作的平均值。四路视频只分别生成观测，随后共同求解同一副三维骨架。结果目录包含 `motion.amotion`、`fused_pose_sequence.json` 和 `multiview-diagnostics.json`。目前默认方向角为正面 0°、右侧 90°、背面 180°、左侧 -90°；相机应尽量保持相近高度和画面尺度。
 
@@ -115,21 +119,71 @@ project-context/             持久项目决策与边界
 Copy-Item private\calibration\calibration.json private\take-01\calibration.json
 ```
 
-然后在 GUI 点“导入四视角”，选择 `private\take-01`。程序会识别其中的 `capture.json`，逐机推理后执行镜头畸变校正、置信度加权透视三角化和像素重投影离群剔除。校准求解不会用单目深度填充失败点；少于两个有效相机的关节保持无效，交给问题面板和手工修正。
+然后在 GUI 点“导入四视角”，选择 `private\take-01\capture.json`。程序会读取清单，逐机推理后执行镜头畸变校正、置信度加权透视三角化和像素重投影离群剔除。校准求解不会用单目深度填充失败点；少于两个有效相机的关节保持无效，交给问题面板和手工修正。
 
-## 动漫域数据与本地微调
+## 动画角色参考、合成数据与本地微调
 
-手工修正过的 pose sequence 可连同原视频导出为私有 COCO 17 点数据集。脸部缺少的眼/耳点不参与监督；默认至少需要 8 个高置信身体关节。数据和训练权重都保存在 Git 忽略的 `private/`。
+角色参考用于提高动画/游戏画面的捕捉稳定性，不是输出目标绑定。输入必须是已保存且可映射 23 个身体关节的 `.blend`；导出器不会保存或修改源文件。默认 `similar_reference` 只用模型比例辅助低置信观察：同一骨骼两端在至少 10 帧且至少全片 5% 的帧中达到阈值时，视频比例优先。高置信端点、无效观察和手工修正不会被角色先验覆盖。
+
+```powershell
+# 从 Blender/MMD 角色制作本地 v1.1 参考包并在干净 Blender 中重导验证
+.\tools\prepare_character_reference.ps1 `
+  -CharacterBlend private\characters\character.blend `
+  -Config private\characters\profile-config.json `
+  -OutputDirectory private\character_profiles\character
+
+# 从训练动作生成配对 RGB、人体掩码和精确 COCO 关键点；特效只作为无标签干扰
+.\tools\generate_character_dataset.ps1 `
+  -Profile private\character_profiles\character\profile.json `
+  -Motions private\motions\train-01.amotion `
+  -MotionIds train-01 `
+  -HeldOutMotions private\motions\holdout-01.amotion `
+  -HeldOutMotionIds holdout-01 -IncludeEffects
+```
+
+`character.glb`、可选 `effects.glb`、`mocap_mask.glb`、`skeleton.json` 和 `profile.json` 全部写入 Git 忽略的 `private/`。多网格、显式骨骼覆盖和无特效角色均受支持；物理、辅助、面部、布料、头发、武器和翅膀骨不进入 23 关节映射。
+
+手工修正过的 pose sequence 可连同原视频导出为私有 COCO 17 点数据集。脸部缺少的眼/耳点不参与监督；默认至少需要 8 个高置信身体关节。必须先按源动作划分训练/留出集，再提取帧；同一动作的不同机位不能作为唯一留出。用于激活证据的真人训练集和留出集都必须用 `-SourceMotion` 绑定 `.amotion` 内容哈希，并用稳定的 `-SourceMotionId` 标记动作本身；同一动作的所有机位必须使用同一 ID。合成渲染也必须传入对应 `MotionIds`/`HeldOutMotionIds`。合成样本最多为修正真人样本的两倍；允许纯合成训练，但其 checkpoint 不具备激活资格。
 
 ```powershell
 .\tools\export_anime_dataset.ps1 `
-  -Video private\source.mp4 -Pose outputs\take\fused_pose_sequence.json
+  -Video private\source.mp4 -Pose outputs\take\fused_pose_sequence.json `
+  -SourceMotion private\motions\train-01.amotion -SourceMotionId train-01
+
+.\tools\assemble_character_dataset.ps1 `
+  -CorrectedRealTraining private\datasets\real-train `
+  -Synthetic private\training\character\synthetic `
+  -HeldOut private\datasets\distinct-motion-holdout
 
 .\tools\train_anime_pose.ps1 -Epochs 40 -BatchSize 4
 
-# 验证满意后才显式启用某个 checkpoint
+# 对独立动作评估；侧对侧检查不得出现新增滑脚或更多手工修正
+.\tools\evaluate_character_capture.ps1 `
+  -GroundTruth private\evaluation\corrected.json `
+  -Baseline private\evaluation\baseline.json `
+  -Candidate private\evaluation\candidate.json `
+  -CandidateCheckpoint private\training\anime-hrnet-w32\best.pth `
+  -CandidateConfig private\training\anime-hrnet-w32\anime_hrnet_w32_256x192.py `
+  -Profile private\character_profiles\character\profile.json `
+  -DatasetManifest private\training\animation-character-keypoints\dataset.json `
+  -Output private\evaluation\candidate-report.json -VisualReviewAccepted
+
+# 仅接受哈希匹配的通过报告；旧活动模型会进入可回滚历史
 .\tools\activate_anime_pose.ps1 `
-  -Checkpoint private\training\anime-hrnet-w32\best_coco_AP_epoch_40.pth
+  -Checkpoint private\training\anime-hrnet-w32\best.pth `
+  -EvaluationReport private\evaluation\candidate-report.json
+
+.\tools\rollback_anime_pose.ps1
 ```
 
-训练配置使用 HRNet-W32、AMP、梯度裁剪和小批量，面向 12 GB VRAM。它需要本机缓存中的 HRNet 初始权重；也可通过 `-PretrainedCheckpoint` 显式指定。新权重不会自动替换正式推理模型，需先在独立验证集上比较关键点误差和失败帧，再用 `activate_anime_pose.ps1` 启用；启用后 GUI 和多机管线会自动发现它，RTMW 仍作为独立二次校验器。
+训练配置使用 HRNet-W32、AMP、梯度裁剪和小批量，面向 12 GB VRAM。激活门槛为边界框对角线归一化身体关节中位误差至少相对下降 10%，无无效/低置信率或左右互换增加，高置信关节的角色先验移动为零，并通过人工并排检查。新权重永不自动替换活动模型；RTMW 保持独立置信度复核器，本地 VLM 仍只处理稀疏恢复帧。
+
+## Animation-domain expert fusion
+
+The maximum offline path now keeps MotionBERT as the only production 3D lifter and runs three independent 17-joint 2D hypotheses where available: the active base HRNet (or the activated character-HRNet checkpoint), Human-Art ViTPose-L, and RTMW-x 384. Hypotheses are clustered per COCO joint using the active person ROI/body box. Compatible evidence may be combined; incompatible limbs are never averaged. An unresolved conflict keeps an observed hypothesis with reduced confidence, and missing predictions remain invalid.
+
+Quality scheduling is deliberate: `fast` is base-only, `balanced` invokes ViTPose-L and RTMW adaptively, and `maximum` invokes both experts on every usable frame. If `mmpretrain`, the config, or a local checkpoint is unavailable, the adapter records a warning and continues with the available path.
+
+Optional held-out confidence calibration is a local JSON profile. Pass it explicitly with `--confidence-calibration private\calibration\pose_confidence.json`, or place it at that ignored conventional path for auto-discovery. The profile uses schema `1.0.0` and monotonic piecewise-linear `[raw, support]` points per model and COCO joint. Malformed or non-monotonic profiles are rejected; absent profiles use identity calibration and the output backend records that distinction. The same option is forwarded by `multiview_pipeline.py`.
+
+The official Human-Art ViTPose-L config/checkpoint and the required MMPreTrain dependency are installed/cached only by `tools\setup_mmpose.ps1`; weights and calibration remain under ignored `private\` and are never bundled.

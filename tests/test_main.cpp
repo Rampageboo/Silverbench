@@ -208,10 +208,26 @@ void test_character_profile_import() {
     CHECK(imported.skeleton.skeleton_id==skeleton.skeleton_id);
     CHECK(imported.skeleton_path==std::filesystem::absolute(skeleton_path).lexically_normal());
     CHECK_NEAR(imported.optimization_options.low_confidence_threshold,0.42,1e-12);
+    CHECK(imported.proportion_policy==animocap::ProportionPolicy::ExactReference);
+
+    auto profile_v11=profile;
+    profile_v11["schema_version"]="1.1.0";
+    profile_v11["role"]="source_character_reference";
+    profile_v11["proportion_policy"]="similar_reference";
+    const auto profile_v11_path=directory/"profile-v1.1.json";
+    write_text(profile_v11_path,profile_v11.dump(2));
+    const auto imported_v11=animocap::load_character_profile(profile_v11_path);
+    CHECK(imported_v11.profile_id==skeleton.skeleton_id);
+    CHECK(imported_v11.role=="source_character_reference");
+    CHECK(imported_v11.proportion_policy==animocap::ProportionPolicy::SimilarReference);
 
     auto invalid=profile;
     invalid["constraint_policy"]["low_confidence_threshold"]=1.5;
     const auto invalid_path=directory/"profile-invalid.json";
+    write_text(invalid_path,invalid.dump(2));
+    CHECK_THROWS(animocap::load_character_profile(invalid_path));
+    invalid=profile_v11;
+    invalid["role"]="target_rig";
     write_text(invalid_path,invalid.dump(2));
     CHECK_THROWS(animocap::load_character_profile(invalid_path));
 }
@@ -336,7 +352,7 @@ void test_pose_reconstruction() {
     CHECK(bone_error_after<bone_error_before*0.50);
     CHECK(optimized.frames[5].joints[head].image_xy==
           optimization_input.frames[5].joints[head].image_xy);
-    CHECK(optimized.backend.find("kinematic-opt-v1")!=std::string::npos);
+    CHECK(optimized.backend.find("kinematic-opt-v2")!=std::string::npos);
     const auto optimized_twice=animocap::optimize_pose_sequence(optimized);
     CHECK(optimized_twice.frames[5].joints[head].position_m==
           optimized.frames[5].joints[head].position_m);
@@ -377,9 +393,78 @@ void test_pose_reconstruction() {
         low_confidence_profile_result.frames[5].joints[neck].position_m;
     const double low_profile_error_after=std::abs(
         vector_length(low_profile_after_vector)-character_head_length);
-    CHECK(low_profile_error_after<low_profile_error_before*0.10);
+    CHECK(low_profile_error_after<low_profile_error_before*0.55);
     CHECK(low_confidence_profile_result.backend.find(
-        "character-kinematic-opt-v1[test_character_profile_v1]")!=std::string::npos);
+        "character-kinematic-opt-v2[test_character_profile_v1:exact]")!=std::string::npos);
+    const auto exact_detailed=animocap::optimize_pose_sequence_detailed(
+        low_confidence_profile_input,profile_options,&character_skeleton,
+        animocap::ProportionPolicy::ExactReference);
+    CHECK(exact_detailed.diagnostics.corrected_joint_samples>0);
+    CHECK(exact_detailed.diagnostics.high_confidence_move_attempts==0);
+    CHECK(exact_detailed.diagnostics.maximum_correction_m<=
+          profile_options.maximum_frame_correction_m+1e-12);
+    const auto exact_recomputed=animocap::optimize_pose_sequence(
+        low_confidence_profile_input,profile_options,&character_skeleton,
+        animocap::ProportionPolicy::ExactReference);
+    CHECK(exact_recomputed.frames[5].joints[head].position_m==
+          exact_detailed.sequence.frames[5].joints[head].position_m);
+
+    auto similar_input=high_confidence_profile_input;
+    similar_input.frames[5].joints[head].confidence=0.10f;
+    similar_input.frames[5].joints[head].position_m.x+=0.30;
+    const auto similar_result=animocap::optimize_pose_sequence(
+        similar_input,profile_options,&character_skeleton,
+        animocap::ProportionPolicy::SimilarReference);
+    const auto similar_vector=similar_result.frames[5].joints[head].position_m-
+        similar_result.frames[5].joints[neck].position_m;
+    CHECK(std::abs(vector_length(similar_vector)-vector_length(reference_vector))<
+          std::abs(vector_length(similar_input.frames[5].joints[head].position_m-
+              similar_input.frames[5].joints[neck].position_m)-vector_length(reference_vector)));
+    CHECK(similar_result.frames[5].joints[neck].position_m==
+          similar_input.frames[5].joints[neck].position_m);
+    for(std::size_t frame=0;frame<similar_input.frames.size();++frame) {
+        for(std::size_t joint=0;joint<similar_input.frames[frame].joints.size();++joint) {
+            const auto& observed=similar_input.frames[frame].joints[joint];
+            if(observed.valid&&observed.confidence>=profile_options.low_confidence_threshold) {
+                CHECK(similar_result.frames[frame].joints[joint].position_m==
+                      observed.position_m);
+            }
+        }
+    }
+
+    animocap::ManualPoseCorrection manual;
+    manual.joint_index=head;
+    manual.image_delta={4.0,-3.0};
+    manual.position_deltas_m.assign(similar_input.frames.size(),{0.01,-0.02,0.0});
+    const animocap::ManualPoseCorrections manual_state{manual};
+    const auto manually_corrected_similar=animocap::apply_manual_pose_corrections(
+        similar_result,manual_state);
+    const auto manually_corrected_exact=animocap::apply_manual_pose_corrections(
+        exact_detailed.sequence,manual_state);
+    const auto similar_manual_delta=
+        manually_corrected_similar.frames[5].joints[head].position_m-
+        similar_result.frames[5].joints[head].position_m;
+    const auto exact_manual_delta=
+        manually_corrected_exact.frames[5].joints[head].position_m-
+        exact_detailed.sequence.frames[5].joints[head].position_m;
+    CHECK_NEAR(similar_manual_delta.x,manual.position_deltas_m[5].x,1e-12);
+    CHECK_NEAR(similar_manual_delta.y,manual.position_deltas_m[5].y,1e-12);
+    CHECK_NEAR(exact_manual_delta.x,manual.position_deltas_m[5].x,1e-12);
+    CHECK_NEAR(exact_manual_delta.y,manual.position_deltas_m[5].y,1e-12);
+    CHECK(manually_corrected_similar.frames[5].joints[head].image_xy.x==
+          similar_result.frames[5].joints[head].image_xy.x+4.0);
+    auto malformed_manual=manual;
+    malformed_manual.position_deltas_m.pop_back();
+    CHECK_THROWS(animocap::apply_manual_pose_corrections(
+        similar_result,{malformed_manual}));
+
+    auto missing_input=low_confidence_profile_input;
+    missing_input.frames[5].joints[head].valid=false;
+    missing_input.frames[5].joints[head].confidence=0.0f;
+    const auto missing_result=animocap::optimize_pose_sequence(
+        missing_input,profile_options,&character_skeleton);
+    CHECK(!missing_result.frames[5].joints[head].valid);
+    CHECK(missing_result.frames[5].joints[head].confidence==0.0f);
     const auto profiled_motion=animocap::reconstruct_canonical_motion(
         low_confidence_profile_result,&character_skeleton);
     CHECK(profiled_motion.skeleton.skeleton_id==character_skeleton.skeleton_id);

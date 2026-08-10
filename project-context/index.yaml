@@ -3,8 +3,8 @@ project:
   name: AniMocap Fusion
   summary: Local-first canonical humanoid motion reconstruction for anime and game characters.
 metadata:
-  last_updated: 2026-08-08
-  last_verified_revision: uncommitted-m0
+  last_updated: 2026-08-10
+  last_verified_revision: uncommitted-animation-first-character-reference
 modules:
   - id: product-intent
     source: sources/01-product-intent.md

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 
-LAYER_FILES = ("character.glb", "effects.glb", "mocap_mask.glb")
+REQUIRED_LAYERS = ("character", "mocap_mask")
 
 
 def _blender_args() -> list[str]:
@@ -29,8 +29,22 @@ def _clear_scene(bpy: Any) -> None:
 def validate_layers(input_dir: Path) -> dict[str, Any]:
     import bpy  # type: ignore
 
+    profile_path = input_dir / "profile.json"
+    if not profile_path.is_file():
+        raise RuntimeError(f"missing profile: {profile_path}")
+    profile = json.loads(profile_path.read_text(encoding="utf-8"))
+    bone_map = profile.get("bone_map", {})
+    if len(bone_map) != 23:
+        raise RuntimeError("profile must map exactly 23 canonical bones")
+    exports = profile.get("exports", {})
+    for layer in REQUIRED_LAYERS:
+        if not exports.get(layer):
+            raise RuntimeError(f"profile is missing required {layer} export")
+    layer_files = [exports[layer] for layer in REQUIRED_LAYERS]
+    if exports.get("effects"):
+        layer_files.insert(1, exports["effects"])
     result: dict[str, Any] = {"status": "ok", "layers": {}}
-    for filename in LAYER_FILES:
+    for filename in layer_files:
         path = input_dir / filename
         if not path.is_file() or path.stat().st_size == 0:
             raise RuntimeError(f"missing or empty GLB: {path}")
@@ -55,8 +69,20 @@ def validate_layers(input_dir: Path) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input-dir", type=Path, required=True)
+    parser.add_argument("--report", type=Path)
     args = parser.parse_args(_blender_args())
-    print(json.dumps(validate_layers(args.input_dir.resolve()), ensure_ascii=False))
+    result = validate_layers(args.input_dir.resolve())
+    if args.report:
+        args.report.parent.mkdir(parents=True, exist_ok=True)
+        args.report.write_text(
+            json.dumps({
+                "schema_version": "1.0.0",
+                "kind": "animocap.character_glb_validation",
+                **result,
+            }, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    print(json.dumps(result, ensure_ascii=False))
     return 0
 
 

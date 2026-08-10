@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,24 @@ SKELETON = [
     [16, 14], [14, 12], [17, 15], [15, 13], [12, 13],
     [6, 12], [7, 13], [6, 7], [6, 8], [7, 9], [8, 10], [9, 11],
 ]
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _sha256_motion(path: Path) -> str:
+    if not path.is_dir() or not (path / "manifest.json").is_file():
+        raise RuntimeError(f"source motion is not an .amotion package: {path}")
+    digest = hashlib.sha256()
+    for file_path in sorted(item for item in path.rglob("*") if item.is_file()):
+        digest.update(file_path.relative_to(path).as_posix().encode("utf-8"))
+        digest.update(bytes.fromhex(_sha256_file(file_path)))
+    return digest.hexdigest()
 
 
 def _joint_lookup(frame: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -109,6 +128,8 @@ def export_dataset(
     stride: int,
     minimum_confidence: float,
     jpeg_quality: int,
+    source_motion: Path | None = None,
+    source_motion_id: str | None = None,
 ) -> tuple[int, int]:
     try:
         import cv2
@@ -188,7 +209,13 @@ def export_dataset(
     (output / "dataset.json").write_text(json.dumps({
         "schema_version": "1.0.0",
         "source_video": str(video.resolve()),
+        "source_video_sha256": _sha256_file(video.resolve()),
         "source_pose": str(pose_path.resolve()),
+        "source_pose_sha256": _sha256_file(pose_path.resolve()),
+        "source_motion": str(source_motion.resolve()) if source_motion else None,
+        "source_motion_sha256": _sha256_motion(source_motion.resolve())
+            if source_motion else None,
+        "source_motion_id": source_motion_id or None,
         "backend": pose.get("backend", "unknown"),
         "train_images": len(train_images),
         "validation_images": len(val_images),
@@ -207,11 +234,15 @@ def main() -> int:
     parser.add_argument("--stride", type=int, default=3)
     parser.add_argument("--minimum-confidence", type=float, default=0.55)
     parser.add_argument("--jpeg-quality", type=int, default=94)
+    parser.add_argument("--source-motion", type=Path)
+    parser.add_argument("--source-motion-id")
     args = parser.parse_args()
     try:
         train_count, validation_count = export_dataset(
             args.video, args.pose, args.output, args.stride,
             args.minimum_confidence, max(70, min(100, args.jpeg_quality)),
+            args.source_motion,
+            args.source_motion_id,
         )
         print(json.dumps({
             "event": "complete",

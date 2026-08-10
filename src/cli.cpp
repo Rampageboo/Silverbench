@@ -151,9 +151,14 @@ int reconstruct_pose(int argc, char** argv) {
     const auto* profile=character_profile?&character_profile->skeleton:nullptr;
     const auto options=character_profile
         ? character_profile->optimization_options:animocap::PoseOptimizationOptions{};
-    const auto sequence = animocap::optimize_pose_sequence(
+    auto optimization = animocap::optimize_pose_sequence_detailed(
         animocap::smooth_pose_sequence(
-            animocap::load_pose_sequence_json(argv[2])),options,profile);
+            animocap::load_pose_sequence_json(argv[2])),options,profile,
+        character_profile ? character_profile->proportion_policy
+                          : animocap::ProportionPolicy::ExactReference);
+    if(character_profile)
+        optimization.diagnostics.profile_id=character_profile->profile_id;
+    const auto& sequence = optimization.sequence;
     const auto package = animocap::reconstruct_canonical_motion(sequence,profile);
     animocap::save_motion_package(package, output);
     const json result{
@@ -164,6 +169,19 @@ int reconstruct_pose(int argc, char** argv) {
         {"fps", package.motion.fps},
         {"backend", sequence.backend},
         {"skeleton_id", package.skeleton.skeleton_id},
+        {"profile_corrected_samples",
+         optimization.diagnostics.corrected_joint_samples},
+        {"profile_high_confidence_move_attempts",
+         optimization.diagnostics.high_confidence_move_attempts},
+        {"profile_well_supported_bones",
+         optimization.diagnostics.well_supported_bones},
+        {"profile_supported_bones",
+         optimization.diagnostics.profile_supported_bones},
+        {"profile_mean_correction_m",
+         optimization.diagnostics.mean_correction_m},
+        {"profile_maximum_correction_m",
+         optimization.diagnostics.maximum_correction_m},
+        {"profile_id", optimization.diagnostics.profile_id},
     };
     std::cout << result.dump(2) << '\n';
     return 0;
@@ -222,7 +240,8 @@ int fuse_multiview(int argc, char** argv) {
     auto result = animocap::solve_directional_multiview(views);
     if(profile) {
         result.fused_pose=animocap::optimize_pose_sequence(
-            result.fused_pose,options,profile);
+            result.fused_pose,options,profile,
+            character_profile->proportion_policy);
         const auto cameras=result.motion.cameras;
         result.motion=animocap::reconstruct_canonical_motion(
             result.fused_pose,profile);

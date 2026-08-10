@@ -16,6 +16,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
+try:
+    from . import mmpose_adapter
+except ImportError:  # Script entry point from this directory.
+    import mmpose_adapter  # type: ignore[no-redef]
+
 
 VIEW_IDS = ("front", "right", "back", "left")
 
@@ -122,45 +127,80 @@ def run_pipeline(args: argparse.Namespace) -> int:
     pose_directory = output / "poses"
     pose_directory.mkdir(parents=True, exist_ok=True)
     rois = load_rois(args.roi_file)
-    mmpose_adapter = root / "python/animocap_ml_adapters/mmpose_adapter.py"
     vlm_adapter = root / "python/animocap_ml_adapters/local_vlm_adapter.py"
 
+    jobs: list[tuple[int, str, Path, Path, Path]] = []
     for view_index, view in enumerate(manifest["views"]):
         view_id = str(view["id"])
         video = resolve_video(manifest_path, str(view["video"]))
         view_output = pose_directory / view_id
         view_output.mkdir(parents=True, exist_ok=True)
         pose_path = view_output / "pose_sequence.json"
-        emit(
-            "view_started",
-            view=view_id,
-            index=view_index + 1,
-            total=len(manifest["views"]),
-            video=str(video),
-        )
-        if not args.skip_inference:
-            command = [
-                sys.executable,
-                str(mmpose_adapter),
-                "--input",
-                str(video),
-                "--output",
-                str(pose_path),
-                "--quality",
-                args.quality,
-                "--segmentation",
-                args.segmentation,
-            ]
-            if view_id in rois:
-                command.extend(["--roi", *(str(value) for value in rois[view_id])])
-            if args.anime_pose_config and args.anime_pose_weights:
-                command.extend([
-                    "--anime-pose-config", str(args.anime_pose_config),
-                    "--anime-pose-weights", str(args.anime_pose_weights),
-                ])
-            if run_streaming(command, root, view_id, "pose_2d_25d") != 0:
-                raise RuntimeError(f"pose inference failed for {view_id}")
-            if not args.no_vlm:
+        jobs.append((view_index, view_id, video, view_output, pose_path))
+
+    if args.skip_inference:
+        for view_index, view_id, video, _view_output, pose_path in jobs:
+            emit(
+                "view_started",
+                view=view_id,
+                index=view_index + 1,
+                total=len(jobs),
+                video=str(video),
+            )
+            if not pose_path.is_file():
+                raise RuntimeError(f"missing precomputed pose for {view_id}: {pose_path}")
+            emit("view_finished", view=view_id, pose=str(pose_path))
+    else:
+        session: mmpose_adapter.MMPoseSession | None = None
+        emit("stage_started", view="all", stage="load_shared_pose_models")
+        try:
+            session = mmpose_adapter.MMPoseSession(
+                quality=args.quality,
+                segmentation=args.segmentation,
+                anime_pose_config=args.anime_pose_config,
+                anime_pose_weights=args.anime_pose_weights,
+                confidence_calibration=getattr(args, "confidence_calibration", None),
+            )
+            emit(
+                "stage_finished",
+                view="all",
+                stage="load_shared_pose_models",
+                return_code=0,
+            )
+            for view_index, view_id, video, _view_output, pose_path in jobs:
+                emit(
+                    "view_started",
+                    view=view_id,
+                    index=view_index + 1,
+                    total=len(jobs),
+                    video=str(video),
+                )
+                emit("stage_started", view=view_id, stage="pose_2d_25d")
+                try:
+                    roi = tuple(rois[view_id]) if view_id in rois else None
+                    session.run(video, pose_path, roi)
+                except Exception:
+                    emit(
+                        "stage_finished",
+                        view=view_id,
+                        stage="pose_2d_25d",
+                        return_code=1,
+                    )
+                    raise
+                emit(
+                    "stage_finished",
+                    view=view_id,
+                    stage="pose_2d_25d",
+                    return_code=0,
+                )
+        finally:
+            if session is not None:
+                session.close()
+
+        # Release the shared pose models before the optional local VLM starts;
+        # both stages are sized to use the same 12 GB GPU sequentially.
+        if not args.no_vlm:
+            for _view_index, view_id, video, view_output, pose_path in jobs:
                 corrected = view_output / "pose_sequence-vlm.json"
                 issues = view_output / "visual-recovery-issues.json"
                 command = [
@@ -187,9 +227,9 @@ def run_pipeline(args: argparse.Namespace) -> int:
                         view=view_id,
                         message="local VLM unavailable; retaining HRNet + flow observations",
                     )
-        elif not pose_path.is_file():
-            raise RuntimeError(f"missing precomputed pose for {view_id}: {pose_path}")
-        emit("view_finished", view=view_id, pose=str(pose_path))
+
+        for _view_index, view_id, _video, _view_output, pose_path in jobs:
+            emit("view_finished", view=view_id, pose=str(pose_path))
 
     animocap = find_animocap(root, args.animocap)
     motion_output = output / "motion.amotion"
@@ -248,6 +288,7 @@ def main() -> int:
     parser.add_argument("--calibration", type=Path)
     parser.add_argument("--anime-pose-config", type=Path)
     parser.add_argument("--anime-pose-weights", type=Path)
+    parser.add_argument("--confidence-calibration", type=Path)
     parser.add_argument("--vlm-model", default="qwen3-vl:4b")
     parser.add_argument(
         "--quality", choices=("fast", "balanced", "maximum"), default="balanced"

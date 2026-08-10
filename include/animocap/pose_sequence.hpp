@@ -39,6 +39,34 @@ struct PoseOptimizationOptions {
     double low_confidence_threshold{0.55};
 };
 
+enum class ProportionPolicy {
+    SimilarReference,
+    ExactReference,
+};
+
+struct PoseOptimizationDiagnostics {
+    std::string profile_id;
+    ProportionPolicy proportion_policy{ProportionPolicy::ExactReference};
+    std::size_t well_supported_bones{};
+    std::size_t profile_supported_bones{};
+    std::size_t corrected_joint_samples{};
+    std::size_t high_confidence_move_attempts{};
+    double mean_correction_m{};
+    double maximum_correction_m{};
+};
+
+struct PoseOptimizationResult {
+    PoseSequence sequence;
+    PoseOptimizationDiagnostics diagnostics;
+};
+
+struct ManualPoseCorrection {
+    std::size_t joint_index{};
+    Vec2 image_delta{};
+    std::vector<Vec3> position_deltas_m;
+};
+using ManualPoseCorrections = std::vector<ManualPoseCorrection>;
+
 PoseSequence load_pose_sequence_json(const std::filesystem::path& path);
 void save_pose_sequence_json(const PoseSequence& sequence, const std::filesystem::path& path);
 void validate_pose_sequence(const PoseSequence& sequence);
@@ -46,7 +74,18 @@ PoseSequence smooth_pose_sequence(const PoseSequence& sequence);
 PoseSequence optimize_pose_sequence(
     const PoseSequence& sequence,
     const PoseOptimizationOptions& options = {},
-    const Skeleton* character_skeleton = nullptr
+    const Skeleton* character_skeleton = nullptr,
+    ProportionPolicy proportion_policy = ProportionPolicy::ExactReference
+);
+PoseOptimizationResult optimize_pose_sequence_detailed(
+    const PoseSequence& sequence,
+    const PoseOptimizationOptions& options = {},
+    const Skeleton* character_skeleton = nullptr,
+    ProportionPolicy proportion_policy = ProportionPolicy::ExactReference
+);
+PoseSequence apply_manual_pose_corrections(
+    const PoseSequence& refined_sequence,
+    const ManualPoseCorrections& corrections
 );
 MotionPackage reconstruct_canonical_motion(
     const PoseSequence& sequence,

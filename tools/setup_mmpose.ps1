@@ -60,12 +60,13 @@ if ($LASTEXITCODE -ne 0) { throw "xtcocotools compatibility installation failed.
     "mmengine>=0.9.0,<1.0.0" `
     "mmcv-lite>=2.0.1,<2.2.0" `
     "mmdet==3.3.0" `
-    "mmpose==1.3.2"
+    "mmpose==1.3.2" `
+    "mmpretrain==1.2.0"
 if ($LASTEXITCODE -ne 0) { throw "MMPose installation failed." }
 
 & $venvPython (Join-Path $projectRoot "python\animocap_ml_adapters\mmpose_adapter.py") --check
 if ($LASTEXITCODE -ne 0) { throw "MMPose verification failed." }
-Write-Host "Caching HRNet, MotionBERT and RTMW checkpoints for offline inference..." -ForegroundColor Cyan
+Write-Host "Caching HRNet, MotionBERT, RTMW and Human-Art ViTPose-L checkpoints for offline inference..." -ForegroundColor Cyan
 & $venvPython (Join-Path $projectRoot "python\animocap_ml_adapters\mmpose_adapter.py") `
     --prepare-models --device cpu
 if ($LASTEXITCODE -ne 0) { throw "Offline model checkpoint preparation failed." }

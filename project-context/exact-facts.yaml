@@ -1,9 +1,15 @@
 schema_version: 3
 metadata:
-  last_updated: 2026-08-06
+  last_updated: 2026-08-10
   source_revision_represented: ""
 paths: []
-commands: []
+commands:
+  - id: prepare_character_reference
+    command: tools/prepare_character_reference.ps1
+    purpose: Export and clean-reimport a private character-reference v1.1 package without modifying the source blend.
+  - id: generate_character_dataset
+    command: tools/generate_character_dataset.ps1
+    purpose: Render private paired character RGB, anatomy masks, and exact projected COCO keypoints from Canonical Motion.
 versions: []
 identifiers: []
 constraints:

@@ -1,5 +1,10 @@
 # Blender adapter boundary
 
-Implementation is deferred until M3. M0 keeps this directory to make the
-process boundary explicit: Blender will inspect rigs, preview, correct, retarget,
-and bake; it will not own Canonical Motion or run long optimization jobs.
+The headless source-character preparation and synthetic-render adapters are
+implemented under `tools/` and `python/animocap_ml_adapters/`. They inspect a
+saved Blender/MMD rig, export private GLB analysis layers, and render local
+training pairs without saving the source `.blend`.
+
+A native interactive Blender add-on, target-rig playback, arbitrary retargeting,
+and baking remain deferred. Blender does not own Canonical Motion and does not
+run the capture optimizer.

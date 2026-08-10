@@ -71,8 +71,12 @@ constexpr COLORREF green=RGB(88,214,168);
 constexpr COLORREF red=RGB(255,91,105);
 }
 
+using ManualCorrectionState=animocap::ManualPoseCorrections;
+
 struct AnalysisResult {
+    std::optional<animocap::PoseSequence> pose_baseline;
     std::optional<animocap::PoseSequence> pose;
+    std::optional<animocap::PoseOptimizationDiagnostics> optimization_diagnostics;
     std::optional<animocap::MotionPackage> motion;
     std::optional<animocap::MultiviewDiagnostics> diagnostics;
     std::filesystem::path motion_path;
@@ -86,12 +90,17 @@ struct AppState {
     HWND window{}, timeline{}, status{}, progress{}, play{};
     std::filesystem::path root, video_path, motion_path;
     std::array<std::filesystem::path,4> multiview_videos{};
+    std::array<animocap::VideoFrame,4> multiview_preview_frames{};
     std::filesystem::path multiview_manifest;
     std::unique_ptr<animocap::VideoDecoder> decoder;
     animocap::VideoFrame video_frame;
+    std::optional<animocap::PoseSequence> pose_baseline;
+    std::optional<animocap::PoseSequence> profile_refined_pose;
     std::optional<animocap::PoseSequence> pose;
+    std::optional<animocap::PoseOptimizationDiagnostics> optimization_diagnostics;
     std::optional<animocap::PoseSequence> anchor_drag_snapshot;
-    std::vector<animocap::PoseSequence> correction_undo, correction_redo;
+    ManualCorrectionState manual_corrections;
+    std::vector<ManualCorrectionState> correction_undo, correction_redo;
     std::optional<animocap::MotionPackage> motion;
     std::optional<animocap::CharacterProfile> character_profile;
     std::optional<animocap::MultiviewDiagnostics> multiview_diagnostics;
@@ -129,8 +138,8 @@ void update_correction_controls();
 bool confirm_replace_dirty_motion() {
     if(!app.motion_dirty)return true;
     return MessageBoxW(app.window,
-        L"当前手动修正尚未保存。请先保存动作，或确认放弃这些修正。",
-        L"未保存的修正",MB_YESNO|MB_ICONWARNING)==IDYES;
+        L"当前手动修正尚未保存。\n\n是否放弃这些修正并继续？\n选择“否”可返回后点击“保存动作”。",
+        L"放弃未保存的修正？",MB_YESNO|MB_ICONWARNING)==IDYES;
 }
 
 std::filesystem::path find_root() {
@@ -199,6 +208,43 @@ std::optional<std::filesystem::path> choose(
     }
     dialog->Release();
     return result;
+}
+std::vector<std::filesystem::path> choose_multiple(
+    const wchar_t* title,
+    const COMDLG_FILTERSPEC* filters,
+    UINT filter_count
+) {
+    IFileOpenDialog* dialog{};
+    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&dialog)))) return {};
+    dialog->SetTitle(title);
+    dialog->SetFileTypes(filter_count,filters);
+    DWORD options{};
+    dialog->GetOptions(&options);
+    dialog->SetOptions(options|FOS_FORCEFILESYSTEM|FOS_FILEMUSTEXIST|FOS_ALLOWMULTISELECT);
+
+    std::vector<std::filesystem::path> results;
+    if (SUCCEEDED(dialog->Show(app.window))) {
+        IShellItemArray* items{};
+        if (SUCCEEDED(dialog->GetResults(&items))) {
+            DWORD count{};
+            items->GetCount(&count);
+            results.reserve(count);
+            for (DWORD index=0;index<count;++index) {
+                IShellItem* item{};
+                if (FAILED(items->GetItemAt(index,&item))) continue;
+                PWSTR path{};
+                if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH,&path))) {
+                    results.emplace_back(path);
+                    CoTaskMemFree(path);
+                }
+                item->Release();
+            }
+            items->Release();
+        }
+    }
+    dialog->Release();
+    return results;
 }
 std::optional<std::filesystem::path> choose_export_output(
     const wchar_t* title,
@@ -319,9 +365,9 @@ RECT video_source_rect() {
     return {0,0,static_cast<LONG>(app.video_frame.width),
            static_cast<LONG>(app.video_frame.height)};
 }
-RECT video_destination(RECT area) {
-    if (app.video_frame.width==0 || app.video_frame.height==0) return area;
-    RECT source=video_source_rect();
+RECT frame_destination(RECT area,const animocap::VideoFrame& frame) {
+    if(frame.width==0||frame.height==0)return area;
+    RECT source{0,0,static_cast<LONG>(frame.width),static_cast<LONG>(frame.height)};
     double source_aspect=static_cast<double>(source.right-source.left)/
                          std::max<LONG>(1,source.bottom-source.top);
     double target_aspect=static_cast<double>(area.right-area.left)/(area.bottom-area.top);
@@ -336,6 +382,9 @@ RECT video_destination(RECT area) {
         destination.right=destination.left+width;
     }
     return destination;
+}
+RECT video_destination(RECT area) {
+    return frame_destination(area,app.video_frame);
 }
 void update_timeline() {
     const auto range=timeline_range();
@@ -385,7 +434,7 @@ std::optional<double> timeline_time_from_point(POINT point) {
         std::max<LONG>(1,track.right-track.left);
     return range->start+(range->end-range->start)*std::clamp(ratio,0.0,1.0);
 }
-void open_video(const std::filesystem::path& path) {
+bool open_video(const std::filesystem::path& path) {
     try {
         auto decoder = std::make_unique<animocap::VideoDecoder>();
         decoder->open(path);
@@ -395,9 +444,11 @@ void open_video(const std::filesystem::path& path) {
         app.decoder = std::move(decoder);
         app.video_frame = std::move(frame);
         app.time_s = app.video_frame.time_s;
-        app.pose.reset(); app.motion.reset(); app.multiview_diagnostics.reset();
+        app.pose_baseline.reset(); app.profile_refined_pose.reset(); app.pose.reset();
+        app.motion.reset(); app.multiview_diagnostics.reset();
         reset_range_selection();
         app.anchor_drag_snapshot.reset();
+        app.manual_corrections.clear();
         app.correction_undo.clear(); app.correction_redo.clear();
         EnableWindow(GetDlgItem(app.window,kUndoCorrection),FALSE);
         EnableWindow(GetDlgItem(app.window,kRedoCorrection),FALSE);
@@ -407,6 +458,8 @@ void open_video(const std::filesystem::path& path) {
         app.motion_dirty=false;
         app.multiview_mode=false; app.calibrated_multiview=false;
         app.multiview_videos={}; app.multiview_manifest.clear();
+        app.multiview_preview_frames={};
+        SetWindowTextW(GetDlgItem(app.window,kMultiview),L"导入四视角");
         app.has_person_frame=false; app.auto_person_frame=true; app.manual_person_frame=false;
         app.selecting_person_frame=false;
         app.drawing_person_frame=false;
@@ -418,9 +471,37 @@ void open_video(const std::filesystem::path& path) {
                    std::to_wstring(static_cast<int>(std::round(info.fps))) + L" FPS");
         update_timeline();
         InvalidateRect(app.window, nullptr, TRUE);
+        return true;
     } catch (const std::exception& error) {
         MessageBoxW(app.window, widen(error.what()).c_str(), L"\u89c6\u9891\u5bfc\u5165\u5931\u8d25", MB_ICONERROR);
+        return false;
     }
+}
+bool open_multiview_previews(const std::array<std::filesystem::path,4>& videos) {
+    if(videos[0].empty()) {
+        MessageBoxW(app.window,L"四视角预览缺少正面视频。",L"四视角导入失败",MB_ICONWARNING);
+        return false;
+    }
+    const std::array<std::wstring,4> labels{L"正面",L"右侧",L"背面",L"左侧"};
+    std::array<animocap::VideoFrame,4> frames{};
+    for(std::size_t index=0;index<videos.size();++index) {
+        if(videos[index].empty())continue;
+        try {
+            animocap::VideoDecoder decoder;
+            decoder.open(videos[index]);
+            if(!decoder.read_frame(frames[index]))
+                throw std::runtime_error("video contains no decodable frames");
+        } catch(const std::exception& error) {
+            const auto message=labels[index]+L"视频无法预览："+
+                videos[index].filename().wstring()+L"\n"+widen(error.what());
+            MessageBoxW(app.window,message.c_str(),L"四视角导入失败",MB_ICONERROR);
+            return false;
+        }
+    }
+    if(!open_video(videos[0]))return false;
+    frames[0]=app.video_frame;
+    app.multiview_preview_frames=std::move(frames);
+    return true;
 }
 void import_video() {
     if(!confirm_replace_dirty_motion())return;
@@ -428,25 +509,33 @@ void import_video() {
     if (!path) return;
     open_video(*path);
 }
+
 void import_character_profile() {
     if(app.analyzing)return;
     const COMDLG_FILTERSPEC filters[] = {
         {L"\u89d2\u8272\u9884\u8bbe JSON",L"*.json"},
         {L"\u6240\u6709\u6587\u4ef6",L"*.*"},
     };
-    const auto path=choose(false,L"\u5bfc\u5165\u89d2\u8272\u9884\u8bbe\uff08profile.json \u6216 skeleton.json\uff09",
+    const auto path=choose(false,L"\u5bfc\u5165\u89d2\u8272\u9aa8\u67b6\u9884\u8bbe\uff08profile.json \u6216 skeleton.json\uff09",
         filters,static_cast<UINT>(std::size(filters)));
     if(!path)return;
     try {
         auto loaded=animocap::load_character_profile(*path);
         std::optional<animocap::PoseSequence> updated_pose;
         std::optional<animocap::MotionPackage> updated_motion;
+        std::optional<animocap::PoseOptimizationDiagnostics> updated_diagnostics;
         if(app.pose) {
-            updated_pose=*app.pose;
-            if(!app.motion_dirty) {
-                updated_pose=animocap::optimize_pose_sequence(
-                    *updated_pose,loaded.optimization_options,&loaded.skeleton);
-            }
+            const auto baseline=app.pose_baseline.value_or(*app.pose);
+            auto refinement=animocap::optimize_pose_sequence_detailed(
+                baseline,loaded.optimization_options,&loaded.skeleton,
+                loaded.proportion_policy);
+            refinement.diagnostics.profile_id=loaded.profile_id;
+            auto new_refined=std::move(refinement.sequence);
+            updated_diagnostics=std::move(refinement.diagnostics);
+            updated_pose=animocap::apply_manual_pose_corrections(
+                new_refined,app.manual_corrections);
+            app.pose_baseline=baseline;
+            app.profile_refined_pose=new_refined;
             updated_motion=animocap::reconstruct_canonical_motion(
                 *updated_pose,&loaded.skeleton);
             if(app.motion&&!app.motion->cameras.empty())
@@ -454,6 +543,7 @@ void import_character_profile() {
         }
 
         app.character_profile=std::move(loaded);
+        app.optimization_diagnostics=updated_diagnostics;
         if(updated_pose)app.pose=std::move(updated_pose);
         if(updated_motion) {
             app.motion=std::move(updated_motion);
@@ -464,12 +554,21 @@ void import_character_profile() {
             update_timeline();
         }
         SetWindowTextW(GetDlgItem(app.window,kCharacterProfile),
-            L"\u89d2\u8272\u9884\u8bbe \u00b7 \u5df2\u5bfc\u5165");
+            L"\u52a8\u753b\u89d2\u8272\u53c2\u8003 \u00b7 \u5df2\u542f\u7528");
         const int confidence_percent=static_cast<int>(std::round(
             app.character_profile->optimization_options.low_confidence_threshold*100.0));
-        set_status(L"\u89d2\u8272\u9884\u8bbe\u5df2\u5bfc\u5165 \u00b7 "+
+        const auto policy=app.character_profile->proportion_policy==
+            animocap::ProportionPolicy::SimilarReference
+            ?L"\u76f8\u4f3c\u6bd4\u4f8b":L"\u7cbe\u786e\u6bd4\u4f8b";
+        set_status(L"\u52a8\u753b\u89d2\u8272\u53c2\u8003\u5df2\u5bfc\u5165 \u00b7 "+
             widen(app.character_profile->skeleton.skeleton_id)+L" \u00b7 \u4f4e\u7f6e\u4fe1\u5ea6\u9608\u503c "+
-            std::to_wstring(confidence_percent)+L"%"+
+            std::to_wstring(confidence_percent)+L"% \u00b7 "+policy+
+            (updated_diagnostics
+                ?L" \u00b7 \u4fee\u6b63 "+std::to_wstring(
+                    updated_diagnostics->corrected_joint_samples)+L" \u4e2a\u4f4e\u7f6e\u4fe1\u5ea6\u6837\u672c \u00b7 \u6700\u5927 "+
+                    std::to_wstring(static_cast<int>(std::round(
+                        updated_diagnostics->maximum_correction_m*1000.0)))+L" mm"
+                :L"")+
             (updated_motion?L" \u00b7 \u5df2\u91cd\u5efa\u5f53\u524d\u52a8\u4f5c":
                 L" \u00b7 \u5c06\u5e94\u7528\u4e8e\u4e0b\u6b21\u6355\u6349"));
         InvalidateRect(app.window,nullptr,TRUE);
@@ -567,8 +666,7 @@ bool load_multiview_folder(const std::filesystem::path& folder) {
                         throw std::runtime_error("synchronized view video is missing");
                     videos[index]=std::filesystem::weakly_canonical(path);
                 }
-                open_video(videos[0]);
-                if(!app.decoder||!app.decoder->is_open())return false;
+                if(!open_multiview_previews(videos))return false;
                 app.multiview_videos=std::move(videos);
                 app.multiview_manifest=synchronized_manifest;
                 app.multiview_mode=true;
@@ -577,6 +675,7 @@ bool load_multiview_folder(const std::filesystem::path& folder) {
                 app.has_person_frame=false;
                 EnableWindow(GetDlgItem(app.window,kPersonFrame),FALSE);
                 EnableWindow(GetDlgItem(app.window,kResetFrame),FALSE);
+                SetWindowTextW(GetDlgItem(app.window,kMultiview),L"4 视角已导入");
                 set_status(L"同步标定多机已导入 · 将逐机提取关键点并执行透视三角化");
                 InvalidateRect(app.window,nullptr,TRUE);
                 return true;
@@ -618,8 +717,11 @@ bool load_multiview_folder(const std::filesystem::path& folder) {
     }
     std::array<std::filesystem::path,4> videos{
         matches[0][0],matches[1][0],matches[2][0],matches[3][0]};
-    open_video(videos[0]);
-    if(!app.decoder||!app.decoder->is_open())return false;
+    if(!open_multiview_previews(videos))return false;
+    const auto imported_status=L"四视角已导入 · 正面 "+videos[0].filename().wstring()+
+        L" / 右侧 "+videos[1].filename().wstring()+
+        L" / 背面 "+videos[2].filename().wstring()+
+        L" / 左侧 "+videos[3].filename().wstring();
     app.multiview_videos=std::move(videos);
     app.multiview_manifest.clear();
     app.multiview_mode=true;
@@ -629,13 +731,103 @@ bool load_multiview_folder(const std::filesystem::path& folder) {
     app.has_person_frame=false;
     EnableWindow(GetDlgItem(app.window,kPersonFrame),FALSE);
     EnableWindow(GetDlgItem(app.window,kResetFrame),FALSE);
-    set_status(L"四视角已导入 · 正面 / 右侧 / 背面 / 左侧 · 将自动相位对齐并联合求解");
+    SetWindowTextW(GetDlgItem(app.window,kMultiview),L"4 视角已导入");
+    set_status(imported_status);
     InvalidateRect(app.window,nullptr,TRUE);
     return true;
 }
-void import_multiview_folder() {
-    auto folder=choose(true,L"选择同步 capture.json 文件夹，或包含 front/right/back/left 的文件夹");
-    if(folder)load_multiview_folder(*folder);
+bool load_multiview_videos(const std::vector<std::filesystem::path>& selected) {
+    if(selected.size()!=4) {
+        MessageBoxW(app.window,L"请一次选择 4 个视频文件。\n文件名需分别包含 front、right、back、left（也支持正面、右侧、背面、左侧）。",
+            L"四视角导入失败",MB_ICONWARNING);
+        return false;
+    }
+    if(!confirm_replace_dirty_motion())return false;
+
+    const std::array<std::vector<std::wstring>,4> aliases{{
+        {L"front",L"正面"},{L"right",L"右侧"},
+        {L"back",L"背面"},{L"left",L"左侧"}
+    }};
+    const std::array<std::wstring,4> labels{L"正面 front",L"右侧 right",L"背面 back",L"左侧 left"};
+    std::array<std::vector<std::filesystem::path>,4> matches;
+    for(const auto& path:selected) {
+        std::wstring stem=path.stem().wstring();
+        std::transform(stem.begin(),stem.end(),stem.begin(),::towlower);
+        std::optional<std::size_t> matched_direction;
+        for(std::size_t direction=0;direction<aliases.size();++direction) {
+            bool direction_matches=false;
+            for(const auto& alias:aliases[direction])
+                if(stem.find(alias)!=std::wstring::npos) {
+                    direction_matches=true;
+                    break;
+                }
+            if(!direction_matches)continue;
+            if(matched_direction&&*matched_direction!=direction) {
+                MessageBoxW(app.window,
+                    (L"文件“"+path.filename().wstring()+L"”包含多个方向词。\n"
+                     L"每个文件名只能表示 front、right、back、left 中的一个方向。").c_str(),
+                    L"四视角导入失败",MB_ICONWARNING);
+                return false;
+            }
+            matched_direction=direction;
+        }
+        if(!matched_direction) {
+            MessageBoxW(app.window,
+                (L"无法识别文件“"+path.filename().wstring()+L"”的拍摄方向。\n"
+                 L"请在文件名中加入 front、right、back 或 left。").c_str(),
+                L"四视角导入失败",MB_ICONWARNING);
+            return false;
+        }
+        matches[*matched_direction].push_back(path);
+    }
+    for(std::size_t direction=0;direction<matches.size();++direction) {
+        if(matches[direction].size()!=1) {
+            MessageBoxW(app.window,
+                (L"无法唯一识别“"+labels[direction]+L"”视频。\n"
+                 L"请让每个文件名仅包含一个对应方向词：front、right、back、left。").c_str(),
+                L"四视角导入失败",MB_ICONWARNING);
+            return false;
+        }
+    }
+
+    std::array<std::filesystem::path,4> videos{
+        std::filesystem::weakly_canonical(matches[0][0]),
+        std::filesystem::weakly_canonical(matches[1][0]),
+        std::filesystem::weakly_canonical(matches[2][0]),
+        std::filesystem::weakly_canonical(matches[3][0])};
+    if(!open_multiview_previews(videos))return false;
+    const auto imported_status=L"四视角已导入 · 正面 "+videos[0].filename().wstring()+
+        L" / 右侧 "+videos[1].filename().wstring()+
+        L" / 背面 "+videos[2].filename().wstring()+
+        L" / 左侧 "+videos[3].filename().wstring();
+    app.multiview_videos=std::move(videos);
+    app.multiview_manifest.clear();
+    app.multiview_mode=true;
+    app.calibrated_multiview=false;
+    app.auto_person_frame=true;
+    app.manual_person_frame=false;
+    app.has_person_frame=false;
+    EnableWindow(GetDlgItem(app.window,kPersonFrame),FALSE);
+    EnableWindow(GetDlgItem(app.window,kResetFrame),FALSE);
+    SetWindowTextW(GetDlgItem(app.window,kMultiview),L"4 视角已导入");
+    set_status(imported_status);
+    InvalidateRect(app.window,nullptr,TRUE);
+    return true;
+}
+void import_multiview() {
+    const COMDLG_FILTERSPEC filters[] = {
+        {L"四视角视频（请选择 4 个）",L"*.mp4;*.mov;*.avi;*.mkv;*.webm;*.m4v"},
+        {L"同步采集清单",L"capture.json"}
+    };
+    auto selected=choose_multiple(
+        L"选择 4 个方向视频（front / right / back / left），或选择 capture.json",
+        filters,2);
+    if(selected.empty())return;
+    if(selected.size()==1&&_wcsicmp(selected[0].filename().c_str(),L"capture.json")==0) {
+        load_multiview_folder(selected[0].parent_path());
+        return;
+    }
+    load_multiview_videos(selected);
 }
 std::optional<std::string> log_event_name(const std::string& line) {
     const auto key=line.find("\"event\"");
@@ -828,6 +1020,9 @@ void start_analysis() {
             const auto optimization_options=character_profile?
                 character_profile->optimization_options:
                 animocap::PoseOptimizationOptions{};
+            const auto proportion_policy=character_profile?
+                character_profile->proportion_policy:
+                animocap::ProportionPolicy::ExactReference;
             auto throw_if_cancelled=[&stop]() {
                 if(stop.stop_requested())throw AnalysisCancelled{};
             };
@@ -861,9 +1056,15 @@ void start_analysis() {
                     throw std::runtime_error(
                         "multiview pipeline failed; intermediate per-view poses were preserved");
                 throw_if_cancelled();
-                result->pose=animocap::optimize_pose_sequence(
-                    animocap::load_pose_sequence_json(
-                        output/"fused_pose_sequence.json"),optimization_options,profile);
+                result->pose_baseline=animocap::load_pose_sequence_json(
+                    output/"fused_pose_sequence.json");
+                auto refinement=animocap::optimize_pose_sequence_detailed(
+                    *result->pose_baseline,optimization_options,profile,
+                    proportion_policy);
+                if(character_profile)
+                    refinement.diagnostics.profile_id=character_profile->profile_id;
+                result->pose=std::move(refinement.sequence);
+                result->optimization_diagnostics=std::move(refinement.diagnostics);
                 result->motion_path=output/"motion.amotion";
                 auto generated_motion=animocap::load_motion_package(result->motion_path);
                 if(profile) {
@@ -926,10 +1127,15 @@ void start_analysis() {
                         L"本地视觉纠错未运行；已保留 HRNet + 光流结果。请配置 Qwen3-VL。";
             }
             throw_if_cancelled();
-            result->pose=animocap::optimize_pose_sequence(
-                animocap::smooth_pose_sequence(
-                    animocap::load_pose_sequence_json(final_observations)),
-                optimization_options,profile);
+            result->pose_baseline=animocap::smooth_pose_sequence(
+                animocap::load_pose_sequence_json(final_observations));
+            auto refinement=animocap::optimize_pose_sequence_detailed(
+                *result->pose_baseline,optimization_options,profile,
+                proportion_policy);
+            if(character_profile)
+                refinement.diagnostics.profile_id=character_profile->profile_id;
+            result->pose=std::move(refinement.sequence);
+            result->optimization_diagnostics=std::move(refinement.diagnostics);
             result->motion=animocap::reconstruct_canonical_motion(
                 *result->pose,profile);
             result->motion_path=output/"motion.amotion";
@@ -974,8 +1180,11 @@ void load_motion() {
     try {
         app.motion = animocap::load_motion_package(*path);
         app.pose.reset();
+        app.pose_baseline.reset();
+        app.profile_refined_pose.reset();
         app.multiview_diagnostics.reset();
         app.anchor_drag_snapshot.reset();
+        app.manual_corrections.clear();
         app.correction_undo.clear(); app.correction_redo.clear();
         update_correction_controls();
         app.motion_path = *path;
@@ -1167,6 +1376,149 @@ void draw_person_frame_box(HDC dc, RECT destination, RECT source) {
     SelectObject(dc,old_pen);
     DeleteObject(pen);
 }
+bool draw_frame_bitmap(HDC dc,RECT area,const animocap::VideoFrame& frame) {
+    if(frame.bgra.empty()||frame.width==0||frame.height==0)return false;
+    const RECT destination=frame_destination(area,frame);
+    BITMAPINFO bitmap{};bitmap.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
+    bitmap.bmiHeader.biWidth=static_cast<LONG>(frame.width);
+    bitmap.bmiHeader.biHeight=-static_cast<LONG>(frame.height);
+    bitmap.bmiHeader.biPlanes=1;bitmap.bmiHeader.biBitCount=32;
+    bitmap.bmiHeader.biCompression=BI_RGB;
+    POINT old_origin{};
+    const int old_stretch_mode=SetStretchBltMode(dc,HALFTONE);
+    SetBrushOrgEx(dc,destination.left,destination.top,&old_origin);
+    StretchDIBits(dc,destination.left,destination.top,
+        destination.right-destination.left,destination.bottom-destination.top,
+        0,0,static_cast<int>(frame.width),static_cast<int>(frame.height),
+        frame.bgra.data(),&bitmap,DIB_RGB_COLORS,SRCCOPY);
+    SetBrushOrgEx(dc,old_origin.x,old_origin.y,nullptr);
+    SetStretchBltMode(dc,old_stretch_mode);
+    return true;
+}
+void draw_multiview_preview(HDC dc,RECT area) {
+    panel_box(dc,area,RGB(7,12,18),theme::border,8);
+    const RECT inner=inset(area,8);
+    constexpr int gap=8;
+    const int middle_x=(inner.left+inner.right)/2;
+    const int middle_y=(inner.top+inner.bottom)/2;
+    const std::array<RECT,4> cells{{
+        {inner.left,inner.top,middle_x-gap/2,middle_y-gap/2},
+        {middle_x+gap/2,inner.top,inner.right,middle_y-gap/2},
+        {inner.left,middle_y+gap/2,middle_x-gap/2,inner.bottom},
+        {middle_x+gap/2,middle_y+gap/2,inner.right,inner.bottom}
+    }};
+    const std::array<std::wstring,4> labels{L"正面 · FRONT",L"右侧 · RIGHT",
+        L"背面 · BACK",L"左侧 · LEFT"};
+    const std::array<COLORREF,4> accents{theme::accent,theme::violet,theme::amber,theme::green};
+    for(std::size_t index=0;index<cells.size();++index) {
+        const RECT cell=cells[index];
+        panel_box(dc,cell,RGB(10,16,23),theme::border_soft,6);
+        RECT header{cell.left+1,cell.top+1,cell.right-1,cell.top+31};
+        fill(dc,header,theme::surface_raised);
+        fill(dc,{header.left,header.top,header.left+4,header.bottom},accents[index]);
+        std::wstring title=labels[index];
+        if(!app.multiview_videos[index].empty())
+            title+=L"  ·  "+app.multiview_videos[index].filename().wstring();
+        text(dc,title,{header.left+12,header.top,header.right-8,header.bottom},
+             theme::text,app.small_font,DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS);
+        RECT preview{cell.left+5,header.bottom+4,cell.right-5,cell.bottom-5};
+        fill(dc,preview,RGB(4,8,12));
+        if(!draw_frame_bitmap(dc,preview,app.multiview_preview_frames[index])) {
+            text(dc,app.multiview_videos[index].empty()?L"未提供此视角":L"预览不可用",
+                 preview,theme::text_muted,app.font,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+        }
+        rounded_outline(dc,cell,theme::border,6);
+    }
+}
+std::wstring joint_display_name(animocap::BoneSemantic semantic) {
+    using S=animocap::BoneSemantic;
+    switch(semantic) {
+    case S::SceneRoot:return L"根节点";
+    case S::Hips:return L"骨盆";
+    case S::Spine:return L"脊柱";
+    case S::Chest:return L"胸部";
+    case S::UpperChest:return L"上胸";
+    case S::Neck:return L"颈部";
+    case S::Head:return L"头部";
+    case S::LeftShoulder:return L"左锁骨";
+    case S::LeftUpperArm:return L"左肩";
+    case S::LeftLowerArm:return L"左肘";
+    case S::LeftHand:return L"左手";
+    case S::RightShoulder:return L"右锁骨";
+    case S::RightUpperArm:return L"右肩";
+    case S::RightLowerArm:return L"右肘";
+    case S::RightHand:return L"右手";
+    case S::LeftUpperLeg:return L"左髋";
+    case S::LeftLowerLeg:return L"左膝";
+    case S::LeftFoot:return L"左踝";
+    case S::LeftToes:return L"左脚尖";
+    case S::RightUpperLeg:return L"右髋";
+    case S::RightLowerLeg:return L"右膝";
+    case S::RightFoot:return L"右踝";
+    case S::RightToes:return L"右脚尖";
+    }
+    return L"关节";
+}
+struct JointOverlayLabel {
+    POINT joint{};
+    RECT box{};
+    std::wstring name;
+    COLORREF color{};
+    bool left_column{};
+};
+void layout_joint_label_column(std::vector<JointOverlayLabel>& labels,
+                               std::vector<std::size_t> indices,
+                               RECT bounds,bool left_column) {
+    if(indices.empty())return;
+    std::sort(indices.begin(),indices.end(),[&labels](std::size_t a,std::size_t b) {
+        return labels[a].joint.y<labels[b].joint.y;
+    });
+    constexpr int label_width=58,label_height=18,gap=2;
+    const int top=static_cast<int>(bounds.top)+6;
+    const int bottom=static_cast<int>(bounds.bottom)-6;
+    const int x=left_column?static_cast<int>(bounds.left)+6:
+        static_cast<int>(bounds.right)-6-label_width;
+    std::vector<int> positions(indices.size());
+    for(std::size_t rank=0;rank<indices.size();++rank) {
+        const int desired=std::clamp(
+            static_cast<int>(labels[indices[rank]].joint.y)-label_height/2,
+            top,bottom-label_height);
+        positions[rank]=rank==0?desired:
+            std::max(desired,positions[rank-1]+label_height+gap);
+    }
+    if(positions.back()+label_height>bottom) {
+        positions.back()=bottom-label_height;
+        for(std::size_t rank=indices.size()-1;rank>0;--rank)
+            positions[rank-1]=std::min(
+                positions[rank-1],positions[rank]-label_height-gap);
+    }
+    if(positions.front()<top) {
+        positions.front()=top;
+        for(std::size_t rank=1;rank<indices.size();++rank)
+            positions[rank]=std::max(
+                positions[rank],positions[rank-1]+label_height+gap);
+    }
+    for(std::size_t rank=0;rank<indices.size();++rank)
+        labels[indices[rank]].box={x,positions[rank],x+label_width,
+                                  positions[rank]+label_height};
+}
+void draw_joint_labels(HDC dc,RECT bounds,std::vector<JointOverlayLabel> labels) {
+    std::vector<std::size_t> left,right;
+    for(std::size_t index=0;index<labels.size();++index)
+        (labels[index].left_column?left:right).push_back(index);
+    layout_joint_label_column(labels,std::move(left),bounds,true);
+    layout_joint_label_column(labels,std::move(right),bounds,false);
+    for(const auto& label:labels) {
+        const POINT edge{label.left_column?label.box.right:label.box.left,
+                         (label.box.top+label.box.bottom)/2};
+        stroke(dc,label.joint,edge,theme::text_faint,1);
+    }
+    for(const auto& label:labels) {
+        rounded_box(dc,label.box,RGB(7,13,20),label.color,6);
+        text(dc,label.name,label.box,theme::text,app.small_font,
+             DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+    }
+}
 void draw_video(HDC dc, RECT area) {
     panel_box(dc,area,RGB(7,12,18),theme::border,8);
     if (app.video_frame.bgra.empty()) {
@@ -1226,6 +1578,9 @@ void draw_video(HDC dc, RECT area) {
         auto a=point(parent), b=point(i); MoveToEx(dc,a.x,a.y,nullptr); LineTo(dc,b.x,b.y);
     }
     SelectObject(dc,old_pen); DeleteObject(pen);
+    std::vector<JointOverlayLabel> labels;
+    labels.reserve(skeleton.bones.size());
+    const int video_center=(destination.left+destination.right)/2;
     for (std::size_t i=0; i<skeleton.bones.size(); ++i) {
         if (!frame.joints[i].valid) continue;
         auto p=point(i); float confidence=frame.joints[i].confidence;
@@ -1236,7 +1591,12 @@ void draw_video(HDC dc, RECT area) {
         HBRUSH brush=CreateSolidBrush(color); auto old=SelectObject(dc,brush);
         Ellipse(dc,p.x-radius,p.y-radius,p.x+radius+1,p.y+radius+1);
         SelectObject(dc,old); DeleteObject(brush);
+        bool left_column=p.x<video_center;
+        if(std::abs(p.x-video_center)<14)left_column=(i%2)==0;
+        labels.push_back({p,{},joint_display_name(skeleton.bones[i].semantic),
+                          color,left_column});
     }
+    draw_joint_labels(dc,destination,std::move(labels));
     RestoreDC(dc,saved_dc);
     rounded_outline(dc,area,theme::border,8);
 }
@@ -1330,22 +1690,7 @@ void draw_motion(HDC dc, RECT area) {
     text(dc,L"拖动旋转视角",hint,theme::text_faint,app.small_font);
 }
 std::wstring issue_joint_name(animocap::BoneSemantic semantic) {
-    using S=animocap::BoneSemantic;
-    switch(semantic) {
-    case S::LeftUpperArm: return L"左上臂";
-    case S::LeftLowerArm: return L"左前臂";
-    case S::LeftHand: return L"左手";
-    case S::RightUpperArm: return L"右上臂";
-    case S::RightLowerArm: return L"右前臂";
-    case S::RightHand: return L"右手";
-    case S::LeftUpperLeg: return L"左大腿";
-    case S::LeftLowerLeg: return L"左小腿";
-    case S::LeftFoot: return L"左脚";
-    case S::RightUpperLeg: return L"右大腿";
-    case S::RightLowerLeg: return L"右小腿";
-    case S::RightFoot: return L"右脚";
-    default: return L"人体关节";
-    }
+    return joint_display_name(semantic);
 }
 bool is_limb(animocap::BoneSemantic semantic) {
     using S=animocap::BoneSemantic;
@@ -1607,7 +1952,10 @@ void paint(HWND window) {
             : app.has_person_frame?L"使用手动人物框":L"使用完整视频画面",
         {548,scope.top,workspace_split()-12,scope.bottom},
         theme::text_muted,app.small_font);
-    draw_video(dc,video_area());
+    if(app.multiview_mode&&!app.pose&&!app.motion)
+        draw_multiview_preview(dc,video_area());
+    else
+        draw_video(dc,video_area());
     draw_motion(dc,motion_area());
     draw_issues(dc,issues_area());
     draw_timeline_panel(dc,timeline_area());
@@ -2000,8 +2348,8 @@ void rebuild_corrected_motion() {
     app.motion=std::move(corrected);
 }
 void push_correction_history(
-    std::vector<animocap::PoseSequence>& history,
-    animocap::PoseSequence value
+    std::vector<ManualCorrectionState>& history,
+    ManualCorrectionState value
 ) {
     constexpr std::size_t kMaximumCorrectionHistory=12;
     if(history.size()==kMaximumCorrectionHistory)history.erase(history.begin());
@@ -2019,13 +2367,17 @@ void finish_anchor_drag() {
         app.pose=std::move(before);
         return;
     }
+    const auto before_corrections=app.manual_corrections;
     try {
-        app.pose=before;
         auto skeleton=animocap::make_default_skeleton();
         const auto head=animocap::bone_index(skeleton,animocap::BoneSemantic::Head);
         const auto left_foot=animocap::bone_index(skeleton,animocap::BoneSemantic::LeftFoot);
         const auto right_foot=animocap::bone_index(skeleton,animocap::BoneSemantic::RightFoot);
-        for(auto& frame:app.pose->frames) {
+        animocap::ManualPoseCorrection correction;
+        correction.joint_index=selected;
+        correction.image_delta={app.anchor_drag_delta_u,app.anchor_drag_delta_v};
+        correction.position_deltas_m.reserve(before.frames.size());
+        for(const auto& frame:before.frames) {
             const auto head_xy=frame.joints[head].image_xy;
             const auto left_xy=frame.joints[left_foot].image_xy;
             const auto right_xy=frame.joints[right_foot].image_xy;
@@ -2034,14 +2386,20 @@ void finish_anchor_drag() {
             const double body_pixels=std::max(1.0,
                 std::hypot(head_xy.x-foot_x,head_xy.y-foot_y));
             const double meters_per_pixel=1.55/body_pixels;
-            auto& joint=frame.joints[selected];
-            joint.image_xy.x+=app.anchor_drag_delta_u;
-            joint.image_xy.y+=app.anchor_drag_delta_v;
-            joint.position_m.x-=app.anchor_drag_delta_u*meters_per_pixel;
-            joint.position_m.y-=app.anchor_drag_delta_v*meters_per_pixel;
+            correction.position_deltas_m.push_back({
+                -app.anchor_drag_delta_u*meters_per_pixel,
+                -app.anchor_drag_delta_v*meters_per_pixel,
+                0.0,
+            });
         }
+        app.manual_corrections.push_back(std::move(correction));
+        const auto* refined=app.profile_refined_pose
+            ?&*app.profile_refined_pose
+            :(app.pose_baseline?&*app.pose_baseline:&before);
+        app.pose=animocap::apply_manual_pose_corrections(
+            *refined,app.manual_corrections);
         rebuild_corrected_motion();
-        push_correction_history(app.correction_undo,std::move(before));
+        push_correction_history(app.correction_undo,before_corrections);
         app.correction_redo.clear();
         app.motion_dirty=true;
         EnableWindow(GetDlgItem(app.window,kSaveMotion),TRUE);
@@ -2050,6 +2408,7 @@ void finish_anchor_drag() {
         update_correction_controls();
         set_status(L"锚点修正已传播到全部帧 · 尚未保存");
     } catch (const std::exception& error) {
+        app.manual_corrections=before_corrections;
         app.pose=std::move(before);
         set_status(L"锚点修正失败 · 已恢复拖动前状态");
         MessageBoxW(app.window,widen(error.what()).c_str(),L"校准失败",MB_ICONERROR);
@@ -2061,17 +2420,24 @@ void restore_correction(bool redo) {
     auto& source=redo?app.correction_redo:app.correction_undo;
     auto& destination=redo?app.correction_undo:app.correction_redo;
     if(source.empty())return;
-    auto current=*app.pose;
+    auto current_pose=*app.pose;
+    auto current=app.manual_corrections;
     auto target=std::move(source.back());
     source.pop_back();
-    app.pose=target;
+    app.manual_corrections=target;
     try {
+        const auto* refined=app.profile_refined_pose
+            ?&*app.profile_refined_pose
+            :(app.pose_baseline?&*app.pose_baseline:&current_pose);
+        app.pose=animocap::apply_manual_pose_corrections(
+            *refined,app.manual_corrections);
         rebuild_corrected_motion();
         push_correction_history(destination,std::move(current));
         app.motion_dirty=true;
         set_status(redo?L"已重做锚点修正 · 尚未保存":L"已撤销锚点修正 · 尚未保存");
     } catch(const std::exception& error) {
-        app.pose=std::move(current);
+        app.pose=std::move(current_pose);
+        app.manual_corrections=std::move(current);
         source.push_back(std::move(target));
         MessageBoxW(app.window,widen(error.what()).c_str(),L"恢复修正失败",MB_ICONERROR);
     }
@@ -2084,15 +2450,25 @@ void toggle_calibration() {
                     L"锚点校准",MB_ICONINFORMATION);
         return;
     }
+    const bool finishing=app.calibrating;
+    const bool saving_on_finish=finishing&&app.motion_dirty;
+    if(saving_on_finish&&!save_motion_copy()) {
+        set_status(L"修正仍未保存 · 继续处于手动修正模式");
+        return;
+    }
     app.calibrating=!app.calibrating;
     app.playing=false;
     KillTimer(app.window,kTimerPlayback);
     SetWindowTextW(app.play,L"播放");
     SetWindowTextW(GetDlgItem(app.window,kCalibrate),
-        app.calibrating ? L"完成修正" : L"手动修正");
-    set_status(app.calibrating
-        ? L"锚点校准 · 拖动错位关节，偏移自动应用到整段视频"
-        : L"校准已应用 · 不需要逐帧调整");
+        app.calibrating ? L"保存并完成" : L"手动修正");
+    if(app.calibrating) {
+        set_status(L"锚点校准 · 拖动错位关节，偏移自动应用到整段视频");
+    } else if(saving_on_finish) {
+        set_status(L"修正已保存并完成 · "+app.motion_path.wstring());
+    } else {
+        set_status(L"已退出手动修正 · 当前动作没有未保存改动");
+    }
     InvalidateRect(app.window,nullptr,FALSE);
 }
 LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lparam) {
@@ -2127,7 +2503,7 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
         button(window,kResetFrame,L"重置");
         button(window,kUndoCorrection,L"撤销修正");
         button(window,kRedoCorrection,L"重做修正");
-        button(window,kCharacterProfile,L"\u5bfc\u5165\u89d2\u8272\u9884\u8bbe");
+        button(window,kCharacterProfile,L"\u5bfc\u5165\u52a8\u753b\u89d2\u8272\u53c2\u8003");
         EnableWindow(GetDlgItem(window,kUndoCorrection),FALSE);
         EnableWindow(GetDlgItem(window,kRedoCorrection),FALSE);
         button(window,kCalibrate,L"手动修正");
@@ -2161,9 +2537,10 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
         draw_owner_button(reinterpret_cast<const DRAWITEMSTRUCT*>(lparam));
         return TRUE;
     case WM_COMMAND:
+        if(lparam!=0&&HIWORD(wparam)!=BN_CLICKED)return 0;
         switch(LOWORD(wparam)) {
         case kImport: import_video(); return 0;
-        case kMultiview: import_multiview_folder(); return 0;
+        case kMultiview: import_multiview(); return 0;
         case kLoad: load_motion(); return 0;
         case kSaveMotion: save_motion_copy(); return 0;
         case kExportBvh: export_bvh_file(); return 0;
@@ -2279,8 +2656,12 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
             MessageBoxW(window,result->error.c_str(),L"\u52a8\u4f5c\u6355\u6349\u5931\u8d25",MB_ICONERROR);
         } else {
             reset_range_selection();
+            app.pose_baseline=std::move(result->pose_baseline);
             app.pose=std::move(result->pose);
+            app.profile_refined_pose=app.pose;
+            app.optimization_diagnostics=std::move(result->optimization_diagnostics);
             app.anchor_drag_snapshot.reset();
+            app.manual_corrections.clear();
             app.correction_undo.clear(); app.correction_redo.clear();
             update_correction_controls();
             app.motion=std::move(result->motion);
@@ -2298,6 +2679,11 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
                       L" 个跨视角冲突待检查");
               } else if(!result->warning.empty())
                   set_status(L"捕捉完成 · "+result->warning);
+            else if(app.character_profile&&app.optimization_diagnostics)
+                set_status(L"\u6355\u6349\u5b8c\u6210 \u00b7 \u52a8\u753b\u89d2\u8272\u53c2\u8003\u4fee\u6b63 "+
+                    std::to_wstring(app.optimization_diagnostics->corrected_joint_samples)+
+                    L" \u4e2a\u4f4e\u7f6e\u4fe1\u5ea6\u6837\u672c \u00b7 \u9ad8\u7f6e\u4fe1\u5ea6\u79fb\u52a8尝试 "+
+                    std::to_wstring(app.optimization_diagnostics->high_confidence_move_attempts));
             else if(app.pose&&app.pose->backend.find("qwen3-vl-local")!=std::string::npos)
                 set_status(L"捕捉完成 · HRNet、光流、本地视觉纠错和时序平滑已应用");
             else
@@ -2430,8 +2816,8 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show) {
                 app.character_profile=animocap::load_character_profile(
                     std::filesystem::path(arguments[++index]));
                 SetWindowTextW(GetDlgItem(window,kCharacterProfile),
-                    L"\u89d2\u8272\u9884\u8bbe \u00b7 \u5df2\u5bfc\u5165");
-                set_status(L"角色骨架预设已加载 · "+
+                    L"\u52a8\u753b\u89d2\u8272\u53c2\u8003 \u00b7 \u5df2\u542f\u7528");
+                set_status(L"动画角色骨架参考已加载 · "+
                     widen(app.character_profile->skeleton.skeleton_id));
             } catch(const std::exception& error) {
                 MessageBoxW(window,widen(error.what()).c_str(),
@@ -2448,16 +2834,26 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show) {
             open_video(std::filesystem::path(arguments[++index]));
         } else if (std::wstring_view(arguments[index]) == L"--pose") {
             try {
-                app.pose = animocap::optimize_pose_sequence(
-                    animocap::smooth_pose_sequence(
-                        animocap::load_pose_sequence_json(
-                            std::filesystem::path(arguments[++index]))),
+                app.pose_baseline=animocap::smooth_pose_sequence(
+                    animocap::load_pose_sequence_json(
+                        std::filesystem::path(arguments[++index])));
+                auto refinement=animocap::optimize_pose_sequence_detailed(
+                    *app.pose_baseline,
                     app.character_profile?
                         app.character_profile->optimization_options:
                         animocap::PoseOptimizationOptions{},
                     app.character_profile?
-                        &app.character_profile->skeleton:nullptr);
+                        &app.character_profile->skeleton:nullptr,
+                    app.character_profile?
+                        app.character_profile->proportion_policy:
+                        animocap::ProportionPolicy::ExactReference);
+                if(app.character_profile)
+                    refinement.diagnostics.profile_id=app.character_profile->profile_id;
+                app.pose=std::move(refinement.sequence);
+                app.optimization_diagnostics=std::move(refinement.diagnostics);
+                app.profile_refined_pose=app.pose;
                 app.anchor_drag_snapshot.reset();
+                app.manual_corrections.clear();
                 app.correction_undo.clear(); app.correction_redo.clear();
                 update_correction_controls();
                 set_status(L"\u89c2\u6d4b\u5df2\u52a0\u8f7d \u00b7 " +

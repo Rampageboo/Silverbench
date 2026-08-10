@@ -12,9 +12,19 @@
 - Research models are optional, removable adapters and never define storage.
 
 - Windows Media Foundation owns native video decoding; decoded RGB32 rows are already top-down in the selected path and must not be flipped again.
-- The Python adapter uses center-cropped HRNet 2D observations as the image-plane authority. MotionBERT depth is accepted only when anatomically plausible; otherwise bounded 2.5D is recorded in provenance.
+- The Python adapter treats base HRNet or the activated character-HRNet specialist, Human-Art ViTPose-L, and RTMW-x 384 as independent per-joint 2D hypotheses. Hypotheses are compared in the active person ROI/body box: compatible ROI-normalized hypotheses may combine, incompatible hypotheses are never averaged, and unresolved conflict retains an observed hypothesis with downgraded confidence. Optional per-model/per-joint monotonic confidence calibration is a structural input and uses identity mapping when absent. MotionBERT remains the sole production 3D lifter; character rig/profile support is limited to low-confidence observations. MotionBERT depth is accepted only when anatomically plausible; otherwise bounded 2.5D is recorded in provenance.
 - The GUI renders observed joint positions when observations exist. Canonical FK remains an export representation and must not replace the capture preview.
 - Sparse manual anchor offsets apply across the full sequence and rebuild in-memory Canonical Motion; users are not asked to correct every frame.
+
+- Source-character profile v1.1 is an observation-refinement adapter, not a
+  target-rig contract. Similar references yield to well-supported video
+  proportions; exact references enforce rig lengths only through low-confidence
+  endpoints. Profile changes recompute from immutable smoothed observations and
+  then reapply sparse manual corrections.
+- Character-specific synthetic data is rendered locally from Canonical Motion.
+  Dataset isolation is by source motion before frame extraction; effects may be
+  RGB distractors but never anatomy labels. Candidate checkpoints remain
+  separate until a hash-bound evaluation report passes explicit activation.
 
 - The Windows preview uses a double-buffered paint pass and HALFTONE downscaling. A user-selected person ROI is shared by preview transforms, anchor hit-testing, and the Python inference crop so image coordinates remain in the original video space.
 
