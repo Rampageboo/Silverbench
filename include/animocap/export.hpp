@@ -29,4 +29,7 @@ void export_vrma(
     const VrmaExportOptions& options = {}
 );
 
+MotionPackage import_bvh(const std::filesystem::path& input);
+MotionPackage import_vrma(const std::filesystem::path& input);
+
 }  // namespace animocap

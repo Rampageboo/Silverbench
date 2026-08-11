@@ -1,6 +1,7 @@
 param(
     [switch]$CpuOnly,
-    [switch]$SkipSam2
+    [switch]$SkipSam2,
+    [switch]$SkipNpu
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,6 +77,15 @@ if (-not $SkipSam2) {
         & (Join-Path $PSScriptRoot "setup_sam2.ps1") -EnvironmentPath $environmentPath
     } catch {
         Write-Warning "SAM 2.1 setup did not complete. MMPose remains usable with GrabCut fallback."
+    }
+}
+
+if (-not $SkipNpu -and -not $CpuOnly) {
+    try {
+        & (Join-Path $PSScriptRoot "setup_openvino_npu.ps1") `
+            -EnvironmentPath $environmentPath
+    } catch {
+        Write-Warning "Intel NPU setup did not complete. CUDA mocap remains usable. $($_.Exception.Message)"
     }
 }
 

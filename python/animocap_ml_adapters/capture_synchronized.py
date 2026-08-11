@@ -1,4 +1,4 @@
-"""Record two to four cameras with grouped grab/retrieve synchronization."""
+"""Record two to eight cameras with grouped grab/retrieve synchronization."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from pathlib import Path
 def capture(args: argparse.Namespace) -> None:
     import cv2
 
-    if not 2 <= len(args.cameras) <= 4:
-        raise RuntimeError("two to four camera indices are required")
+    if not 2 <= len(args.cameras) <= 8:
+        raise RuntimeError("two to eight camera indices are required")
     names = args.names or [f"camera_{index}" for index in args.cameras]
     if len(names) != len(args.cameras) or len(set(names)) != len(names):
         raise RuntimeError("--names must be unique and match --cameras")

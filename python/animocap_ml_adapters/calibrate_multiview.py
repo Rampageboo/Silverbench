@@ -22,8 +22,8 @@ def calibrate(args: argparse.Namespace) -> dict[str, Any]:
     if manifest.get("mode") != "synchronized_multiview":
         raise RuntimeError("calibration requires a synchronized_multiview manifest")
     views = manifest.get("views", [])
-    if not 2 <= len(views) <= 4:
-        raise RuntimeError("calibration requires two to four views")
+    if not 2 <= len(views) <= 8:
+        raise RuntimeError("calibration requires two to eight views")
     board_size = (args.columns, args.rows)
     object_template = np.zeros((args.rows * args.columns, 3), np.float32)
     object_template[:, :2] = (

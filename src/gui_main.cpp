@@ -7,6 +7,8 @@
 #include "animocap/pose_sequence.hpp"
 #include "animocap/video.hpp"
 
+#include <nlohmann/json.hpp>
+
 #ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
@@ -23,6 +25,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -44,9 +47,11 @@ constexpr int kUndoCorrection = 118, kRedoCorrection = 119;
 constexpr int kExportVrma = 120;
 constexpr int kRangeStart = 121, kRangeEnd = 122, kRangeClear = 123, kLoopRange = 124;
 constexpr int kCharacterProfile = 125;
+constexpr int kDeleteKeyframe = 126;
 constexpr int kHeader = 66, kSteps = 52, kScopeBar = 56, kTimelineHeight = 244;
 constexpr int kTimelineLabelWidth = 124;
 constexpr int kPadding = 16;
+constexpr std::size_t kMaximumMultiviewViews = 8;
 constexpr double kPi = 3.14159265358979323846;
 
 namespace theme {
@@ -73,15 +78,26 @@ constexpr COLORREF red=RGB(255,91,105);
 
 using ManualCorrectionState=animocap::ManualPoseCorrections;
 
+struct NpuReviewIssue {
+    std::size_t view_index{}, frame_index{};
+    double source_time_s{}, reference_time_s{}, mean_normalized_error{};
+    std::size_t invalid_joints{}, left_right_swaps{};
+    std::wstring detail;
+};
+
 struct AnalysisResult {
     std::optional<animocap::PoseSequence> pose_baseline;
     std::optional<animocap::PoseSequence> pose;
     std::optional<animocap::PoseOptimizationDiagnostics> optimization_diagnostics;
     std::optional<animocap::MotionPackage> motion;
     std::optional<animocap::MultiviewDiagnostics> diagnostics;
+    std::array<std::optional<animocap::PoseSequence>,kMaximumMultiviewViews>
+        per_view_poses{};
     std::filesystem::path motion_path;
     std::wstring error, warning;
-    bool cancelled{};
+    std::vector<NpuReviewIssue> npu_review_issues;
+    std::size_t npu_sampled_frames{},npu_total_frames{};
+    bool cancelled{}, motion_dirty{}, recovered_motion{}, npu_shadow_active{};
 };
 struct AnalysisCancelled final : std::exception {
     const char* what() const noexcept override { return "analysis cancelled"; }
@@ -89,8 +105,13 @@ struct AnalysisCancelled final : std::exception {
 struct AppState {
     HWND window{}, timeline{}, status{}, progress{}, play{};
     std::filesystem::path root, video_path, motion_path;
-    std::array<std::filesystem::path,4> multiview_videos{};
-    std::array<animocap::VideoFrame,4> multiview_preview_frames{};
+    std::array<std::filesystem::path,kMaximumMultiviewViews> multiview_videos{};
+    std::array<animocap::VideoFrame,kMaximumMultiviewViews> multiview_preview_frames{};
+    std::array<std::string,kMaximumMultiviewViews> multiview_view_ids{};
+    std::array<double,kMaximumMultiviewViews> multiview_view_yaws{};
+    std::array<std::wstring,kMaximumMultiviewViews> multiview_view_labels{};
+    std::array<std::optional<animocap::PoseSequence>,kMaximumMultiviewViews>
+        multiview_poses{};
     std::filesystem::path multiview_manifest;
     std::unique_ptr<animocap::VideoDecoder> decoder;
     animocap::VideoFrame video_frame;
@@ -104,11 +125,13 @@ struct AppState {
     std::optional<animocap::MotionPackage> motion;
     std::optional<animocap::CharacterProfile> character_profile;
     std::optional<animocap::MultiviewDiagnostics> multiview_diagnostics;
+    std::vector<NpuReviewIssue> npu_review_issues;
     bool playing{}, analyzing{}, cancel_requested{}, close_after_analysis{};
-    bool rotating{}, calibrating{}, scrubbing{};
+    bool rotating{}, calibrating{}, scrubbing{}, video_eof{};
     bool has_person_frame{}, selecting_person_frame{}, drawing_person_frame{};
     bool auto_person_frame{true}, manual_person_frame{}, vlm_enabled{true};
-    bool multiview_mode{}, calibrated_multiview{};
+    bool multiview_mode{}, calibrated_multiview{}, multiview_overview{};
+    std::size_t multiview_review_view{};
     bool motion_dirty{};
     bool loop_range{};
     std::optional<double> range_start,range_end;
@@ -134,6 +157,13 @@ std::wstring widen(const std::string& value) {
 }
 std::wstring quote(const std::filesystem::path& path) { return L"\"" + path.wstring() + L"\""; }
 void set_status(const std::wstring& value) { SetWindowTextW(app.status, value.c_str()); }
+void append_status(const std::wstring& suffix) {
+    const int length=GetWindowTextLengthW(app.status);
+    std::wstring value(static_cast<std::size_t>(std::max(0,length))+1,L'\0');
+    GetWindowTextW(app.status,value.data(),static_cast<int>(value.size()));
+    value.resize(static_cast<std::size_t>(std::max(0,length)));
+    set_status(value+suffix);
+}
 void update_correction_controls();
 bool confirm_replace_dirty_motion() {
     if(!app.motion_dirty)return true;
@@ -208,6 +238,19 @@ std::optional<std::filesystem::path> choose(
     }
     dialog->Release();
     return result;
+}
+enum class MotionOpenSource { Cancelled, AniMocapPackage, ExchangeFile };
+MotionOpenSource choose_motion_open_source() {
+    const int selected=MessageBoxW(
+        app.window,
+        L"\u8bf7\u9009\u62e9\u52a8\u4f5c\u6765\u6e90\uff1a\n\n"
+        L"\u662f  = AniMocap \u52a8\u4f5c\u5305\uff08\u9009\u62e9 .amotion \u6587\u4ef6\u5939\uff09\n"
+        L"\u5426  = BVH / VRMA \u52a8\u4f5c\uff08\u9009\u62e9 .bvh \u6216 .vrma \u6587\u4ef6\uff09",
+        L"\u6253\u5f00\u52a8\u4f5c",
+        MB_YESNOCANCEL|MB_ICONQUESTION);
+    if(selected==IDYES)return MotionOpenSource::AniMocapPackage;
+    if(selected==IDNO)return MotionOpenSource::ExchangeFile;
+    return MotionOpenSource::Cancelled;
 }
 std::vector<std::filesystem::path> choose_multiple(
     const wchar_t* title,
@@ -318,8 +361,100 @@ RECT timeline_track() {
     return {area.left+kTimelineLabelWidth,area.top+148,
             area.right-12,area.bottom-4};
 }
+RECT timeline_hit_area() {
+    RECT area=timeline_area();
+    return {area.left+kTimelineLabelWidth,area.top+46,
+            area.right-12,area.bottom-4};
+}
 struct TimelineRange { double start{}, end{}; };
+std::size_t multiview_reference_view() {
+    std::size_t best=0;
+    double best_yaw=std::numeric_limits<double>::infinity();
+    for(std::size_t index=0;index<kMaximumMultiviewViews;++index) {
+        if(app.multiview_videos[index].empty())continue;
+        const double yaw=std::abs(app.multiview_view_yaws[index]);
+        if(yaw<best_yaw) { best=index; best_yaw=yaw; }
+    }
+    return best;
+}
+bool has_multiview_review() {
+    return app.multiview_mode && app.multiview_review_view<kMaximumMultiviewViews &&
+        app.multiview_poses[app.multiview_review_view].has_value();
+}
+double review_source_time(double reference_time) {
+    if(!has_multiview_review() || !app.pose || app.pose->frames.empty() ||
+       !app.multiview_diagnostics ||
+       app.multiview_review_view>=app.multiview_diagnostics->alignments.size())
+        return reference_time;
+    const auto& reference=*app.pose;
+    const auto& alignment=
+        app.multiview_diagnostics->alignments[app.multiview_review_view];
+    if(alignment.source_frame_at_reference.empty())return reference_time;
+    auto found=std::lower_bound(reference.frames.begin(),reference.frames.end(),reference_time,
+        [](const animocap::ObservedPoseFrame& frame,double time) {
+            return frame.time_s<time;
+        });
+    std::size_t reference_frame=found==reference.frames.end()
+        ?reference.frames.size()-1:static_cast<std::size_t>(found-reference.frames.begin());
+    reference_frame=std::min(reference_frame,
+        alignment.source_frame_at_reference.size()-1);
+    const auto& source=*app.multiview_poses[app.multiview_review_view];
+    if(source.frames.empty())return reference_time;
+    const double source_frame=std::clamp(
+        alignment.source_frame_at_reference[reference_frame],0.0,
+        static_cast<double>(source.frames.size()-1));
+    const auto before=static_cast<std::size_t>(std::floor(source_frame));
+    const auto after=std::min(before+1,source.frames.size()-1);
+    const double fraction=source_frame-static_cast<double>(before);
+    return source.frames[before].time_s+
+        (source.frames[after].time_s-source.frames[before].time_s)*fraction;
+}
+double reference_time_from_source_frame(std::size_t view_index,double source_frame) {
+    if(!app.pose||app.pose->frames.empty()||!app.multiview_diagnostics||
+       view_index>=app.multiview_diagnostics->alignments.size())
+        return source_frame/std::max(1.0,app.pose?app.pose->fps:30.0);
+    const auto& mapping=app.multiview_diagnostics->alignments[view_index]
+        .source_frame_at_reference;
+    if(mapping.empty())return source_frame/std::max(1.0,app.pose->fps);
+    const auto mapped_count=std::min(mapping.size(),app.pose->frames.size());
+    if(mapped_count==0)return source_frame/std::max(1.0,app.pose->fps);
+    auto after=std::lower_bound(mapping.begin(),mapping.begin()+
+        static_cast<std::ptrdiff_t>(mapped_count),source_frame);
+    if(after==mapping.begin())return app.pose->frames.front().time_s;
+    if(after==mapping.begin()+static_cast<std::ptrdiff_t>(mapped_count))
+        return app.pose->frames[mapped_count-1].time_s;
+    const auto after_index=static_cast<std::size_t>(after-mapping.begin());
+    const auto before_index=after_index-1;
+    const double span=mapping[after_index]-mapping[before_index];
+    const double fraction=span>1e-9
+        ?std::clamp((source_frame-mapping[before_index])/span,0.0,1.0):0.0;
+    return app.pose->frames[before_index].time_s+
+        (app.pose->frames[after_index].time_s-app.pose->frames[before_index].time_s)*fraction;
+}
+double review_reference_time(double source_time) {
+    if(!has_multiview_review())return source_time;
+    const auto& source=*app.multiview_poses[app.multiview_review_view];
+    if(source.frames.empty())return source_time;
+    auto after=std::lower_bound(source.frames.begin(),source.frames.end(),source_time,
+        [](const animocap::ObservedPoseFrame& frame,double time){return frame.time_s<time;});
+    double source_frame=0.0;
+    if(after==source.frames.end())source_frame=static_cast<double>(source.frames.size()-1);
+    else if(after==source.frames.begin())source_frame=0.0;
+    else {
+        const auto after_index=static_cast<std::size_t>(after-source.frames.begin());
+        const auto before_index=after_index-1;
+        const double span=source.frames[after_index].time_s-source.frames[before_index].time_s;
+        const double fraction=span>1e-9
+            ?std::clamp((source_time-source.frames[before_index].time_s)/span,0.0,1.0):0.0;
+        source_frame=static_cast<double>(before_index)+fraction;
+    }
+    return reference_time_from_source_frame(app.multiview_review_view,source_frame);
+}
 std::optional<TimelineRange> timeline_range() {
+    if(app.multiview_mode&&app.motion&&!app.motion->motion.time_s.empty()) {
+        const auto& times=app.motion->motion.time_s;
+        return TimelineRange{times.front(),std::max(times.front()+0.001,times.back())};
+    }
     if(app.decoder&&app.decoder->is_open()) {
         return TimelineRange{0.0,std::max(0.001,app.decoder->info().duration_s)};
     }
@@ -393,6 +528,7 @@ void update_timeline() {
     SendMessageW(app.timeline, TBM_SETPOS, TRUE,
                  static_cast<int>(std::clamp(
                      (app.time_s-range->start)/duration*10000.0,0.0,10000.0)));
+    update_correction_controls();
 }
 void stop_playback(const std::wstring& status = {}) {
     app.playing=false;
@@ -403,10 +539,19 @@ void stop_playback(const std::wstring& status = {}) {
 void decode_at(double time_s) {
     if (!app.decoder || !app.decoder->is_open()) return;
     try {
-        const auto& info=app.decoder->info();
+        const auto info=app.decoder->info();
         const double frame_step=1.0/std::max(1.0,info.fps);
+        const double source_time=review_source_time(time_s);
         const double target=std::clamp(
-            time_s,0.0,std::max(0.0,info.duration_s-frame_step));
+            source_time,0.0,std::max(0.0,info.duration_s-frame_step));
+        // Media Foundation can leave the source reader exhausted after an
+        // end-of-stream result. Recreate it before the first seek back so a
+        // completed playback never makes the timeline appear permanently stuck.
+        if(app.video_eof&&!app.video_path.empty()) {
+            auto decoder=std::make_unique<animocap::VideoDecoder>();
+            decoder->open(app.video_path);
+            app.decoder=std::move(decoder);
+        }
         app.decoder->seek(target);
         animocap::VideoFrame candidate;
         bool decoded=false;
@@ -416,9 +561,12 @@ void decode_at(double time_s) {
             if (app.video_frame.time_s>=target) break;
         }
         if (decoded) {
-            app.time_s=app.video_frame.time_s;
+            app.video_eof=false;
+            app.time_s=has_multiview_review()?time_s:app.video_frame.time_s;
             update_timeline();
             InvalidateRect(app.window,nullptr,FALSE);
+        } else {
+            throw std::runtime_error("video seek reached end of stream");
         }
     } catch (const std::exception& error) {
         stop_playback(L"视频定位失败 · " + widen(error.what()));
@@ -427,9 +575,10 @@ void decode_at(double time_s) {
 std::optional<double> timeline_time_from_point(POINT point) {
     const auto range=timeline_range();
     if(!range)return {};
+    RECT hit=timeline_hit_area();
+    if (point.x<hit.left || point.x>hit.right ||
+        point.y<hit.top || point.y>hit.bottom) return {};
     RECT track=timeline_track();
-    if (point.x<track.left || point.x>track.right ||
-        point.y<track.top || point.y>track.bottom) return {};
     const double ratio=static_cast<double>(point.x-track.left)/
         std::max<LONG>(1,track.right-track.left);
     return range->start+(range->end-range->start)*std::clamp(ratio,0.0,1.0);
@@ -443,6 +592,7 @@ bool open_video(const std::filesystem::path& path) {
         app.video_path = path;
         app.decoder = std::move(decoder);
         app.video_frame = std::move(frame);
+        app.video_eof=false;
         app.time_s = app.video_frame.time_s;
         app.pose_baseline.reset(); app.profile_refined_pose.reset(); app.pose.reset();
         app.motion.reset(); app.multiview_diagnostics.reset();
@@ -457,9 +607,15 @@ bool open_video(const std::filesystem::path& path) {
         EnableWindow(GetDlgItem(app.window,kSaveMotion),FALSE);
         app.motion_dirty=false;
         app.multiview_mode=false; app.calibrated_multiview=false;
+        app.multiview_overview=false;
         app.multiview_videos={}; app.multiview_manifest.clear();
         app.multiview_preview_frames={};
-        SetWindowTextW(GetDlgItem(app.window,kMultiview),L"导入四视角");
+        app.multiview_view_ids={}; app.multiview_view_yaws={};
+        app.multiview_view_labels={};
+        app.multiview_poses={}; app.multiview_review_view=0;
+        app.npu_review_issues.clear();
+        SetWindowTextW(GetDlgItem(app.window,kResetFrame),L"重置");
+        SetWindowTextW(GetDlgItem(app.window,kMultiview),L"导入多视角");
         app.has_person_frame=false; app.auto_person_frame=true; app.manual_person_frame=false;
         app.selecting_person_frame=false;
         app.drawing_person_frame=false;
@@ -477,13 +633,19 @@ bool open_video(const std::filesystem::path& path) {
         return false;
     }
 }
-bool open_multiview_previews(const std::array<std::filesystem::path,4>& videos) {
-    if(videos[0].empty()) {
-        MessageBoxW(app.window,L"四视角预览缺少正面视频。",L"四视角导入失败",MB_ICONWARNING);
+bool open_multiview_previews(
+    const std::array<std::filesystem::path,kMaximumMultiviewViews>& videos,
+    const std::array<std::wstring,kMaximumMultiviewViews>& labels
+) {
+    std::size_t first_view = kMaximumMultiviewViews;
+    for(std::size_t index=0;index<videos.size();++index) {
+        if(!videos[index].empty()) { first_view=index; break; }
+    }
+    if(first_view==kMaximumMultiviewViews) {
+        MessageBoxW(app.window,L"多视角预览至少需要一个视频。",L"多视角导入失败",MB_ICONWARNING);
         return false;
     }
-    const std::array<std::wstring,4> labels{L"正面",L"右侧",L"背面",L"左侧"};
-    std::array<animocap::VideoFrame,4> frames{};
+    std::array<animocap::VideoFrame,kMaximumMultiviewViews> frames{};
     for(std::size_t index=0;index<videos.size();++index) {
         if(videos[index].empty())continue;
         try {
@@ -492,16 +654,79 @@ bool open_multiview_previews(const std::array<std::filesystem::path,4>& videos) 
             if(!decoder.read_frame(frames[index]))
                 throw std::runtime_error("video contains no decodable frames");
         } catch(const std::exception& error) {
-            const auto message=labels[index]+L"视频无法预览："+
+            std::wstring label=labels[index];
+            if(label.empty())label=L"view "+std::to_wstring(index+1);
+            const auto message=label+L"视频无法预览："+
                 videos[index].filename().wstring()+L"\n"+widen(error.what());
-            MessageBoxW(app.window,message.c_str(),L"四视角导入失败",MB_ICONERROR);
+            MessageBoxW(app.window,message.c_str(),L"多视角导入失败",MB_ICONERROR);
             return false;
         }
     }
-    if(!open_video(videos[0]))return false;
-    frames[0]=app.video_frame;
+    if(!open_video(videos[first_view]))return false;
+    frames[first_view]=app.video_frame;
     app.multiview_preview_frames=std::move(frames);
     return true;
+}
+bool open_multiview_previews(
+    const std::array<std::filesystem::path,kMaximumMultiviewViews>& videos
+) {
+    std::array<std::wstring,kMaximumMultiviewViews> labels{};
+    for(std::size_t index=0;index<labels.size();++index)
+        labels[index]=L"view "+std::to_wstring(index+1);
+    return open_multiview_previews(videos,labels);
+}
+bool select_multiview_review(std::size_t requested) {
+    if(!app.multiview_mode)return false;
+    for(std::size_t offset=0;offset<kMaximumMultiviewViews;++offset) {
+        const auto index=(requested+offset)%kMaximumMultiviewViews;
+        if(app.multiview_videos[index].empty()||!app.multiview_poses[index])continue;
+        try {
+            stop_playback();
+            auto decoder=std::make_unique<animocap::VideoDecoder>();
+            decoder->open(app.multiview_videos[index]);
+            animocap::VideoFrame frame;
+            if(!decoder->read_frame(frame))
+                throw std::runtime_error("video contains no decodable frames");
+            app.decoder=std::move(decoder);
+            app.video_frame=std::move(frame);
+            app.video_path=app.multiview_videos[index];
+            app.multiview_review_view=index;
+            app.multiview_overview=false;
+            app.video_eof=false;
+            decode_at(app.time_s);
+            SetWindowTextW(GetDlgItem(app.window,kResetFrame),L"多视角总览");
+            const auto label=app.multiview_view_labels[index].empty()
+                ?L"view "+std::to_wstring(index+1)
+                :app.multiview_view_labels[index];
+            set_status(L"同步视角检查 · "+label+
+                (index==multiview_reference_view()
+                    ?L" · 可进行手动修正"
+                    :L" · 只读；其他视角仅辅助深度和遮挡恢复"));
+            InvalidateRect(app.window,nullptr,TRUE);
+            return true;
+        } catch(const std::exception& error) {
+            MessageBoxW(app.window,widen(error.what()).c_str(),
+                L"切换检查视角失败",MB_ICONERROR);
+            return false;
+        }
+    }
+    return false;
+}
+void cycle_multiview_review() {
+    if(!select_multiview_review(
+        (app.multiview_review_view+1)%kMaximumMultiviewViews))
+        set_status(L"没有可用的逐视角姿势结果");
+}
+void toggle_multiview_overview() {
+    if(!app.multiview_mode||!has_multiview_review())return;
+    stop_playback();
+    app.multiview_overview=!app.multiview_overview;
+    SetWindowTextW(GetDlgItem(app.window,kResetFrame),
+        app.multiview_overview?L"返回当前视角":L"多视角总览");
+    set_status(app.multiview_overview
+        ?L"捕捉后多视角总览 · 点击任一画面进入同步检查"
+        :L"已返回当前同步视角");
+    InvalidateRect(app.window,nullptr,TRUE);
 }
 void import_video() {
     if(!confirm_replace_dirty_motion())return;
@@ -651,32 +876,174 @@ int run_hidden(const std::wstring& command, const std::filesystem::path& directo
     if(job)CloseHandle(job);
     return cancelled ? static_cast<int>(ERROR_CANCELLED) : static_cast<int>(code);
 }
+enum class DirectViewKind { FanLeft, Front, FanRight, Right, Back, Left };
+struct DirectMultiviewSelection {
+    std::array<std::filesystem::path,kMaximumMultiviewViews> videos{};
+    std::array<std::string,kMaximumMultiviewViews> ids{};
+    std::array<double,kMaximumMultiviewViews> yaws{};
+    std::array<std::wstring,kMaximumMultiviewViews> labels{};
+    std::size_t count{};
+};
+bool has_delimited_alias(const std::wstring& value,std::wstring_view alias) {
+    const auto is_word=[](wchar_t character) { return std::iswalnum(character)!=0; };
+    std::size_t position=value.find(alias);
+    while(position!=std::wstring::npos) {
+        const bool left_boundary=position==0||!is_word(value[position-1]);
+        const auto end=position+alias.size();
+        const bool right_boundary=end>=value.size()||!is_word(value[end]);
+        if(left_boundary&&right_boundary)return true;
+        position=value.find(alias,position+1);
+    }
+    return false;
+}
+std::optional<DirectViewKind> classify_direct_view(const std::filesystem::path& path) {
+    std::wstring stem=path.stem().wstring();
+    std::transform(stem.begin(),stem.end(),stem.begin(),::towlower);
+    // Compound aliases are checked before the exact front token so that
+    // front_left/front_right never also match front.
+    if(has_delimited_alias(stem,L"front_left")||
+       has_delimited_alias(stem,L"front-left")||
+       has_delimited_alias(stem,L"frontleft")||
+       stem.find(L"左前")!=std::wstring::npos||stem.find(L"前左")!=std::wstring::npos)
+        return DirectViewKind::FanLeft;
+    if(has_delimited_alias(stem,L"front_right")||
+       has_delimited_alias(stem,L"front-right")||
+       has_delimited_alias(stem,L"frontright")||
+       stem.find(L"右前")!=std::wstring::npos||stem.find(L"前右")!=std::wstring::npos)
+        return DirectViewKind::FanRight;
+    if(has_delimited_alias(stem,L"front")||stem.find(L"正面")!=std::wstring::npos)
+        return DirectViewKind::Front;
+    if(has_delimited_alias(stem,L"right")||stem.find(L"右侧")!=std::wstring::npos)
+        return DirectViewKind::Right;
+    if(has_delimited_alias(stem,L"back")||stem.find(L"背面")!=std::wstring::npos)
+        return DirectViewKind::Back;
+    if(has_delimited_alias(stem,L"left")||stem.find(L"左侧")!=std::wstring::npos)
+        return DirectViewKind::Left;
+    return {};
+}
+std::optional<DirectMultiviewSelection> select_direct_multiview(
+    const std::vector<std::filesystem::path>& candidates,bool strict_count
+) {
+    std::array<std::vector<std::filesystem::path>,3> fan;
+    std::array<std::vector<std::filesystem::path>,4> cardinal;
+    for(const auto& path:candidates) {
+        const auto kind=classify_direct_view(path);
+        if(!kind) { if(strict_count)return {}; else continue; }
+        switch(*kind) {
+        case DirectViewKind::FanLeft:fan[0].push_back(path);break;
+        case DirectViewKind::Front:fan[1].push_back(path);cardinal[0].push_back(path);break;
+        case DirectViewKind::FanRight:fan[2].push_back(path);break;
+        case DirectViewKind::Right:cardinal[1].push_back(path);break;
+        case DirectViewKind::Back:cardinal[2].push_back(path);break;
+        case DirectViewKind::Left:cardinal[3].push_back(path);break;
+        }
+    }
+    const bool fan_complete=std::all_of(fan.begin(),fan.end(),
+        [](const auto& matches){return matches.size()==1;})&&
+        (!strict_count||candidates.size()==3);
+    const bool cardinal_complete=std::all_of(cardinal.begin(),cardinal.end(),
+        [](const auto& matches){return matches.size()==1;})&&
+        (!strict_count||candidates.size()==4);
+    if(!fan_complete&&!cardinal_complete)return {};
+    DirectMultiviewSelection selection;
+    if(fan_complete) {
+        selection.count=3;
+        selection.videos[0]=std::filesystem::weakly_canonical(fan[0][0]);
+        selection.videos[1]=std::filesystem::weakly_canonical(fan[1][0]);
+        selection.videos[2]=std::filesystem::weakly_canonical(fan[2][0]);
+        selection.ids[0]="front_left"; selection.ids[1]="front";
+        selection.ids[2]="front_right";
+        selection.yaws[0]=-45.0; selection.yaws[1]=0.0; selection.yaws[2]=45.0;
+        selection.labels[0]=L"front-left -45°";
+        selection.labels[1]=L"front 0°";
+        selection.labels[2]=L"front-right +45°";
+    } else {
+        selection.count=4;
+        for(std::size_t index=0;index<cardinal.size();++index)
+            selection.videos[index]=std::filesystem::weakly_canonical(cardinal[index][0]);
+        selection.ids={"front","right","back","left","","","",""};
+        selection.yaws={0.0,90.0,180.0,-90.0,0.0,0.0,0.0,0.0};
+        selection.labels={L"front 0°",L"right +90°",L"back +180°",L"left -90°",
+                          L"",L"",L"",L""};
+    }
+    return selection;
+}
+std::wstring direct_view_summary(const DirectMultiviewSelection& selection) {
+    std::wstring result=std::to_wstring(selection.count)+L" views · ";
+    for(std::size_t index=0;index<selection.count;++index) {
+        if(index)result+=L" / ";
+        result+=selection.labels[index]+L" "+selection.videos[index].filename().wstring();
+    }
+    return result;
+}
+std::wstring manifest_view_label(const animocap::CaptureView& view) {
+    std::wstring result=widen(view.id);
+    if(view.yaw_degrees)
+        result+=L" "+std::to_wstring(static_cast<int>(std::lround(*view.yaw_degrees)))+L"°";
+    return result;
+}
+std::wstring manifest_view_summary(
+    const std::array<std::wstring,kMaximumMultiviewViews>& labels,
+    std::size_t count
+) {
+    std::wstring result=std::to_wstring(count)+L" views";
+    for(std::size_t index=0;index<count;++index) {
+        result+=index==0?L" · ":L" / ";
+        result+=labels[index];
+    }
+    return result;
+}
+void apply_multiview_selection(const DirectMultiviewSelection& selection) {
+    app.multiview_videos=selection.videos;
+    app.multiview_view_ids=selection.ids;
+    app.multiview_view_yaws=selection.yaws;
+    app.multiview_view_labels=selection.labels;
+}
 bool load_multiview_folder(const std::filesystem::path& folder) {
     if(!confirm_replace_dirty_motion())return false;
     const auto synchronized_manifest=folder/"capture.json";
     if(std::filesystem::is_regular_file(synchronized_manifest)) {
         try {
             const auto manifest=animocap::load_capture_manifest(synchronized_manifest);
-            if(manifest.mode==animocap::CaptureMode::SynchronizedMultiview) {
-                std::array<std::filesystem::path,4> videos{};
+            if(manifest.mode==animocap::CaptureMode::SynchronizedMultiview||
+               manifest.mode==animocap::CaptureMode::DirectionalRepeat) {
+                std::array<std::filesystem::path,kMaximumMultiviewViews> videos{};
+                std::array<std::string,kMaximumMultiviewViews> ids{};
+                std::array<double,kMaximumMultiviewViews> yaws{};
+                std::array<std::wstring,kMaximumMultiviewViews> labels{};
                 for(std::size_t index=0;index<manifest.views.size();++index) {
-                    auto path=std::filesystem::path(manifest.views[index].video);
+                    const auto& view=manifest.views[index];
+                    if(manifest.mode==animocap::CaptureMode::DirectionalRepeat&&
+                       !view.yaw_degrees)
+                        throw animocap::ContractError(
+                            "directional capture view requires an explicit yaw");
+                    auto path=std::filesystem::path(view.video);
                     if(path.is_relative())path=folder/path;
                     if(!std::filesystem::is_regular_file(path))
-                        throw std::runtime_error("synchronized view video is missing");
+                        throw std::runtime_error("multiview view video is missing");
                     videos[index]=std::filesystem::weakly_canonical(path);
+                    ids[index]=view.id;
+                    if(view.yaw_degrees)yaws[index]=*view.yaw_degrees;
+                    labels[index]=manifest_view_label(view);
                 }
-                if(!open_multiview_previews(videos))return false;
-                app.multiview_videos=std::move(videos);
+                if(!open_multiview_previews(videos,labels))return false;
+                app.multiview_videos=videos;
+                app.multiview_view_ids=ids;
+                app.multiview_view_yaws=yaws;
+                app.multiview_view_labels=labels;
                 app.multiview_manifest=synchronized_manifest;
                 app.multiview_mode=true;
-                app.calibrated_multiview=true;
+                app.calibrated_multiview=
+                    manifest.mode==animocap::CaptureMode::SynchronizedMultiview;
                 app.auto_person_frame=true; app.manual_person_frame=false;
                 app.has_person_frame=false;
                 EnableWindow(GetDlgItem(app.window,kPersonFrame),FALSE);
                 EnableWindow(GetDlgItem(app.window,kResetFrame),FALSE);
-                SetWindowTextW(GetDlgItem(app.window,kMultiview),L"4 视角已导入");
-                set_status(L"同步标定多机已导入 · 将逐机提取关键点并执行透视三角化");
+                SetWindowTextW(GetDlgItem(app.window,kMultiview),L"多视角已导入");
+                set_status(app.calibrated_multiview
+                    ? L"同步标定多机已导入 · 将逐机提取关键点并执行透视三角化"
+                    : L"方向重复多视角已导入 · "+
+                      manifest_view_summary(labels,manifest.views.size()));
                 InvalidateRect(app.window,nullptr,TRUE);
                 return true;
             }
@@ -686,43 +1053,27 @@ bool load_multiview_folder(const std::filesystem::path& folder) {
             return false;
         }
     }
-    const std::array<std::vector<std::wstring>,4> aliases{{
-        {L"front",L"正面"},{L"right",L"右侧"},
-        {L"back",L"背面"},{L"left",L"左侧"}
-    }};
-    const std::array<std::wstring,4> labels{L"正面 front",L"右侧 right",L"背面 back",L"左侧 left"};
-    const std::array<std::wstring,6> extensions{L".mp4",L".mov",L".avi",L".mkv",L".webm",L".m4v"};
-    std::array<std::vector<std::filesystem::path>,4> matches;
+    const std::array<std::wstring,6> extensions{
+        L".mp4",L".mov",L".avi",L".mkv",L".webm",L".m4v"};
+    std::vector<std::filesystem::path> candidates;
     for(const auto& entry:std::filesystem::directory_iterator(folder)) {
         if(!entry.is_regular_file())continue;
         std::wstring extension=entry.path().extension().wstring();
-        std::transform(extension.begin(),extension.end(),extension.begin(),::towlower);
-        if(std::find(extensions.begin(),extensions.end(),extension)==extensions.end())continue;
-        std::wstring stem=entry.path().stem().wstring();
-        std::transform(stem.begin(),stem.end(),stem.begin(),::towlower);
-        for(std::size_t direction=0;direction<aliases.size();++direction)
-            for(const auto& alias:aliases[direction])
-                if(stem.find(alias)!=std::wstring::npos) {
-                    matches[direction].push_back(entry.path()); break;
-                }
+        std::transform(extension.begin(),extension.end(),extension.begin(),
+            [](wchar_t value){return static_cast<wchar_t>(std::towlower(value));});
+        if(std::find(extensions.begin(),extensions.end(),extension)!=extensions.end())
+            candidates.push_back(entry.path());
     }
-    for(std::size_t direction=0;direction<matches.size();++direction) {
-        if(matches[direction].size()!=1) {
-            MessageBoxW(app.window,
-                (L"无法唯一识别“"+labels[direction]+L"”视频。\n"
-                 L"请将四个文件分别命名为 front、right、back、left（扩展名不限）。").c_str(),
-                L"四视角导入失败",MB_ICONWARNING);
-            return false;
-        }
+    const auto selection=select_direct_multiview(candidates,false);
+    if(!selection) {
+        MessageBoxW(app.window,
+            L"未找到可识别的三视角 fan（front_left / front / front_right）或传统四视角（front / right / back / left）。\n"
+            L"任意角度或 2–8 视角请使用带明确 yaw_degrees 的 capture.json。",
+            L"多视角导入失败",MB_ICONWARNING);
+        return false;
     }
-    std::array<std::filesystem::path,4> videos{
-        matches[0][0],matches[1][0],matches[2][0],matches[3][0]};
-    if(!open_multiview_previews(videos))return false;
-    const auto imported_status=L"四视角已导入 · 正面 "+videos[0].filename().wstring()+
-        L" / 右侧 "+videos[1].filename().wstring()+
-        L" / 背面 "+videos[2].filename().wstring()+
-        L" / 左侧 "+videos[3].filename().wstring();
-    app.multiview_videos=std::move(videos);
+    if(!open_multiview_previews(selection->videos,selection->labels))return false;
+    apply_multiview_selection(*selection);
     app.multiview_manifest.clear();
     app.multiview_mode=true;
     app.calibrated_multiview=false;
@@ -731,76 +1082,29 @@ bool load_multiview_folder(const std::filesystem::path& folder) {
     app.has_person_frame=false;
     EnableWindow(GetDlgItem(app.window,kPersonFrame),FALSE);
     EnableWindow(GetDlgItem(app.window,kResetFrame),FALSE);
-    SetWindowTextW(GetDlgItem(app.window,kMultiview),L"4 视角已导入");
-    set_status(imported_status);
+    SetWindowTextW(GetDlgItem(app.window,kMultiview),L"多视角已导入");
+    set_status(L"原始视频已导入 · "+direct_view_summary(*selection));
     InvalidateRect(app.window,nullptr,TRUE);
     return true;
 }
 bool load_multiview_videos(const std::vector<std::filesystem::path>& selected) {
-    if(selected.size()!=4) {
-        MessageBoxW(app.window,L"请一次选择 4 个视频文件。\n文件名需分别包含 front、right、back、left（也支持正面、右侧、背面、左侧）。",
-            L"四视角导入失败",MB_ICONWARNING);
+    if(selected.size()!=3&&selected.size()!=4) {
+        MessageBoxW(app.window,L"请一次选择 3 个 fan 视频或 4 个传统方向视频。\n"
+            L"推荐 front_left、front、front_right；任意角度请使用 capture.json。",
+            L"多视角导入失败",MB_ICONWARNING);
         return false;
     }
     if(!confirm_replace_dirty_motion())return false;
-
-    const std::array<std::vector<std::wstring>,4> aliases{{
-        {L"front",L"正面"},{L"right",L"右侧"},
-        {L"back",L"背面"},{L"left",L"左侧"}
-    }};
-    const std::array<std::wstring,4> labels{L"正面 front",L"右侧 right",L"背面 back",L"左侧 left"};
-    std::array<std::vector<std::filesystem::path>,4> matches;
-    for(const auto& path:selected) {
-        std::wstring stem=path.stem().wstring();
-        std::transform(stem.begin(),stem.end(),stem.begin(),::towlower);
-        std::optional<std::size_t> matched_direction;
-        for(std::size_t direction=0;direction<aliases.size();++direction) {
-            bool direction_matches=false;
-            for(const auto& alias:aliases[direction])
-                if(stem.find(alias)!=std::wstring::npos) {
-                    direction_matches=true;
-                    break;
-                }
-            if(!direction_matches)continue;
-            if(matched_direction&&*matched_direction!=direction) {
-                MessageBoxW(app.window,
-                    (L"文件“"+path.filename().wstring()+L"”包含多个方向词。\n"
-                     L"每个文件名只能表示 front、right、back、left 中的一个方向。").c_str(),
-                    L"四视角导入失败",MB_ICONWARNING);
-                return false;
-            }
-            matched_direction=direction;
-        }
-        if(!matched_direction) {
-            MessageBoxW(app.window,
-                (L"无法识别文件“"+path.filename().wstring()+L"”的拍摄方向。\n"
-                 L"请在文件名中加入 front、right、back 或 left。").c_str(),
-                L"四视角导入失败",MB_ICONWARNING);
-            return false;
-        }
-        matches[*matched_direction].push_back(path);
+    const auto selection=select_direct_multiview(selected,true);
+    if(!selection) {
+        MessageBoxW(app.window,
+            L"请选择完整的三视角 fan（front_left / front / front_right）或传统四视角（front / right / back / left）。\n"
+            L"front_left 与 front_right 是独立标签；任意角度请改用带 yaw_degrees 的 capture.json。",
+            L"多视角导入失败",MB_ICONWARNING);
+        return false;
     }
-    for(std::size_t direction=0;direction<matches.size();++direction) {
-        if(matches[direction].size()!=1) {
-            MessageBoxW(app.window,
-                (L"无法唯一识别“"+labels[direction]+L"”视频。\n"
-                 L"请让每个文件名仅包含一个对应方向词：front、right、back、left。").c_str(),
-                L"四视角导入失败",MB_ICONWARNING);
-            return false;
-        }
-    }
-
-    std::array<std::filesystem::path,4> videos{
-        std::filesystem::weakly_canonical(matches[0][0]),
-        std::filesystem::weakly_canonical(matches[1][0]),
-        std::filesystem::weakly_canonical(matches[2][0]),
-        std::filesystem::weakly_canonical(matches[3][0])};
-    if(!open_multiview_previews(videos))return false;
-    const auto imported_status=L"四视角已导入 · 正面 "+videos[0].filename().wstring()+
-        L" / 右侧 "+videos[1].filename().wstring()+
-        L" / 背面 "+videos[2].filename().wstring()+
-        L" / 左侧 "+videos[3].filename().wstring();
-    app.multiview_videos=std::move(videos);
+    if(!open_multiview_previews(selection->videos,selection->labels))return false;
+    apply_multiview_selection(*selection);
     app.multiview_manifest.clear();
     app.multiview_mode=true;
     app.calibrated_multiview=false;
@@ -809,18 +1113,19 @@ bool load_multiview_videos(const std::vector<std::filesystem::path>& selected) {
     app.has_person_frame=false;
     EnableWindow(GetDlgItem(app.window,kPersonFrame),FALSE);
     EnableWindow(GetDlgItem(app.window,kResetFrame),FALSE);
-    SetWindowTextW(GetDlgItem(app.window,kMultiview),L"4 视角已导入");
-    set_status(imported_status);
+    SetWindowTextW(GetDlgItem(app.window,kMultiview),L"多视角已导入");
+    set_status(L"原始视频已导入 · "+direct_view_summary(*selection));
     InvalidateRect(app.window,nullptr,TRUE);
     return true;
 }
 void import_multiview() {
     const COMDLG_FILTERSPEC filters[] = {
-        {L"四视角视频（请选择 4 个）",L"*.mp4;*.mov;*.avi;*.mkv;*.webm;*.m4v"},
+        {L"动画优先多视角视频（请选择 3 或 4 个）",L"*.mp4;*.mov;*.avi;*.mkv;*.webm;*.m4v"},
         {L"同步采集清单",L"capture.json"}
     };
     auto selected=choose_multiple(
-        L"选择 4 个方向视频（front / right / back / left），或选择 capture.json",
+        L"选择推荐 fan：front_left -45° / front 0° / front_right +45°；\n"
+        L"也支持传统四方向，或使用带明确 yaw_degrees 的 2–8 视角 capture.json",
         filters,2);
     if(selected.empty())return;
     if(selected.size()==1&&_wcsicmp(selected[0].filename().c_str(),L"capture.json")==0) {
@@ -840,6 +1145,22 @@ std::optional<std::string> log_event_name(const std::string& line) {
     if(end==std::string::npos)return {};
     return line.substr(quote+1,end-quote-1);
 }
+std::optional<std::string> log_string(const std::string& line,const char* key) {
+    const auto marker=std::string("\"")+key+"\"";
+    const auto position=line.find(marker);
+    if(position==std::string::npos)return {};
+    const auto colon=line.find(':',position+marker.size());
+    if(colon==std::string::npos)return {};
+    const auto quote=line.find('"',colon+1);
+    if(quote==std::string::npos)return {};
+    std::string value;
+    for(std::size_t cursor=quote+1;cursor<line.size();++cursor) {
+        if(line[cursor]=='"')return value;
+        if(line[cursor]=='\\'&&cursor+1<line.size())++cursor;
+        value.push_back(line[cursor]);
+    }
+    return {};
+}
 std::optional<std::size_t> log_integer(const std::string& line,const char* key) {
     const auto marker=std::string("\"")+key+"\"";
     const auto position=line.find(marker);
@@ -856,8 +1177,9 @@ std::optional<std::size_t> log_integer(const std::string& line,const char* key) 
 }
 struct AnalysisLogState {
     bool found{};
-    std::string event;
+    std::string event,view,stage;
     std::size_t item{}, total{};
+    std::size_t view_index{},view_total{};
 };
 AnalysisLogState read_analysis_log(const std::filesystem::path& path) {
     AnalysisLogState state;
@@ -869,9 +1191,25 @@ AnalysisLogState read_analysis_log(const std::filesystem::path& path) {
         if(!event)continue;
         state.found=true;
         state.event=*event;
-        if(const auto value=log_integer(line,"frame"))state.item=*value;
-        if(const auto value=log_integer(line,"item"))state.item=*value;
-        if(const auto value=log_integer(line,"total"))state.total=*value;
+        if(*event=="view_started") {
+            state.view=log_string(line,"view").value_or("");
+            state.stage="pose_2d_25d";
+            state.view_index=log_integer(line,"index").value_or(0U);
+            state.view_total=log_integer(line,"total").value_or(0U);
+            state.item=0;state.total=0;
+        } else if(*event=="progress") {
+            if(const auto value=log_integer(line,"frame"))state.item=*value;
+            if(const auto value=log_integer(line,"item"))state.item=*value;
+            if(const auto value=log_integer(line,"total"))state.total=*value;
+        } else if(*event=="stage_started"||*event=="stage_output"||
+                  *event=="stage_finished") {
+            if(const auto value=log_string(line,"view"))state.view=*value;
+            if(const auto value=log_string(line,"stage"))state.stage=*value;
+        } else if(*event=="view_finished") {
+            if(const auto value=log_string(line,"view"))state.view=*value;
+        } else if(*event=="complete") {
+            state.view="all";state.stage="complete";
+        }
     }
     return state;
 }
@@ -896,6 +1234,75 @@ void update_analysis_progress() {
     const auto stage_ratio=[](std::size_t item,std::size_t total) {
         return total?std::clamp(static_cast<double>(item)/total,0.0,1.0):0.0;
     };
+    if(app.multiview_mode) {
+        std::size_t view_count=0,view_position=0;
+        std::wstring view_label=widen(mmpose.view);
+        for(std::size_t index=0;index<app.multiview_videos.size();++index) {
+            if(app.multiview_videos[index].empty())continue;
+            ++view_count;
+            if(app.multiview_view_ids[index]==mmpose.view) {
+                view_position=view_count;
+                if(!app.multiview_view_labels[index].empty())
+                    view_label=app.multiview_view_labels[index];
+            }
+        }
+        if(!view_count)view_count=mmpose.view_total;
+        if(!view_position)view_position=mmpose.view_index;
+
+        double fraction=.01;
+        std::wstring stage=L"\u6b63\u5728\u52a0\u8f7d\u5171\u4eab GPU \u6a21\u578b";
+        bool show_frames=false;
+        if(mmpose.stage=="pose_2d_25d"||mmpose.event=="progress") {
+            const double current=stage_ratio(mmpose.item,mmpose.total);
+            const double completed=view_position>0?static_cast<double>(view_position-1):0.0;
+            fraction=.02+.78*std::clamp(
+                (completed+current)/std::max<std::size_t>(1,view_count),0.0,1.0);
+            stage=L"\u9010\u89c6\u89d2\u63d0\u53d6\u5173\u8282";
+            show_frames=mmpose.total>0;
+        } else if(mmpose.stage=="local_visual_recovery") {
+            const bool finished=mmpose.event=="stage_finished"||
+                mmpose.event=="view_finished";
+            const double completed=view_position>0?
+                static_cast<double>(view_position-1)+(finished?1.0:0.08):0.0;
+            fraction=.80+.14*std::clamp(
+                completed/std::max<std::size_t>(1,view_count),0.0,1.0);
+            stage=L"\u9010\u89c6\u89d2\u672c\u5730\u89c6\u89c9\u7ea0\u9519";
+        } else if(mmpose.stage=="phase_align_and_joint_solve") {
+            fraction=.96;stage=L"\u76f8\u4f4d\u5bf9\u9f50\u4e0e\u591a\u89c6\u89d2\u8054\u5408\u6c42\u89e3";
+        } else if(mmpose.stage=="calibrated_triangulation") {
+            fraction=.96;stage=L"\u6807\u5b9a\u900f\u89c6\u4e09\u89d2\u5316";
+        } else if(mmpose.stage=="kinematic_reconstruction") {
+            fraction=.985;stage=L"\u8fd0\u52a8\u5b66\u91cd\u5efa";
+        } else if(mmpose.event=="complete") {
+            fraction=.995;stage=L"\u6b63\u5728\u6574\u7406\u591a\u89c6\u89d2\u7ed3\u679c";
+        } else if(mmpose.event=="error") {
+            fraction=.02;stage=L"\u6b63\u5728\u6574\u7406\u5931\u8d25\u4fe1\u606f";
+        }
+
+        const int percent=static_cast<int>(std::lround(
+            std::clamp(fraction,0.0,1.0)*100.0));
+        SendMessageW(app.progress,PBM_SETPOS,percent,0);
+        const double elapsed=std::chrono::duration<double>(
+            std::chrono::steady_clock::now()-app.analysis_started).count();
+        std::wstring message=L"\u591a\u89c6\u89d2 Mocap \u00b7 "+stage;
+        if(view_position&&view_count&&mmpose.view!="all") {
+            message+=L" \u00b7 "+view_label+L" \u00b7 \u89c6\u89d2 "+
+                std::to_wstring(view_position)+L"/"+std::to_wstring(view_count);
+        }
+        if(show_frames)
+            message+=L" \u00b7 \u5e27 "+std::to_wstring(mmpose.item)+L"/"+
+                std::to_wstring(mmpose.total);
+        message+=L" \u00b7 "+std::to_wstring(percent)+L"% \u00b7 \u5df2\u7528 "+
+            format_elapsed(elapsed);
+        if(fraction>.04&&fraction<.94) {
+            const double remaining=elapsed*(1.0/fraction-1.0);
+            message+=L" \u00b7 \u9884\u8ba1\u5269\u4f59 "+format_elapsed(remaining);
+        } else if(fraction<.94) {
+            message+=L" \u00b7 \u6b63\u5728\u4f30\u7b97\u5269\u4f59\u65f6\u95f4";
+        }
+        set_status(message);
+        return;
+    }
     double fraction=0.0;
     std::wstring stage=L"正在加载 MMPose 模型";
     std::size_t item=0,total=0;
@@ -974,18 +1381,16 @@ void start_analysis() {
     EnableWindow(GetDlgItem(app.window,kExportBvh),FALSE);
     EnableWindow(GetDlgItem(app.window,kExportVrma),FALSE);
     EnableWindow(GetDlgItem(app.window,kSaveMotion),FALSE);
+    SendMessageW(app.progress,PBM_SETMARQUEE,FALSE,0);
+    SendMessageW(app.progress,PBM_SETRANGE32,0,100);
+    SendMessageW(app.progress,PBM_SETPOS,0,0);
+    ShowWindow(app.progress,SW_SHOW);
+    SetTimer(app.window,kTimerAnalysisProgress,250,nullptr);
     if (app.multiview_mode) {
-        SendMessageW(app.progress,PBM_SETMARQUEE,TRUE,35);
-        ShowWindow(app.progress,SW_SHOW);
         set_status(app.calibrated_multiview
             ? L"同步多机捕捉 · 正在逐机提取关节，随后执行标定透视三角化…"
-            : L"四视角捕捉 · 正在逐视角提取关节，随后自动相位对齐并联合求解…");
+            : L"方向重复多视角捕捉 · 正在逐视角提取关节，随后自动相位对齐并联合求解…");
     } else {
-        SendMessageW(app.progress,PBM_SETMARQUEE,FALSE,0);
-        SendMessageW(app.progress,PBM_SETRANGE32,0,100);
-        SendMessageW(app.progress,PBM_SETPOS,0,0);
-        ShowWindow(app.progress,SW_SHOW);
-        SetTimer(app.window,kTimerAnalysisProgress,250,nullptr);
         if (app.manual_person_frame && app.has_person_frame) {
         set_status(L"正在严格使用手动框捕捉 · x="+
             std::to_wstring(app.person_frame.left)+L" y="+
@@ -1005,13 +1410,16 @@ void start_analysis() {
     const bool calibrated_multiview=app.calibrated_multiview;
     const auto multiview_manifest=app.multiview_manifest;
     const auto multiview_videos=app.multiview_videos;
+    const auto multiview_view_ids=app.multiview_view_ids;
+    const auto multiview_view_yaws=app.multiview_view_yaws;
     const auto character_profile=app.character_profile;
     const double capture_fps=app.decoder ? app.decoder->info().fps : 30.0;
     HWND window=app.window;
     app.worker=std::jthread([video,root,output,mmpose_log,vlm_log,window,has_person_frame,
                              person_frame,use_vlm,multiview_mode,
                              calibrated_multiview,multiview_manifest,
-                             multiview_videos,capture_fps,
+                             multiview_videos,multiview_view_ids,
+                             multiview_view_yaws,capture_fps,
                              character_profile](std::stop_token stop) {
         auto result=std::make_unique<AnalysisResult>();
         try {
@@ -1037,51 +1445,130 @@ void start_analysis() {
                     manifest.mode=animocap::CaptureMode::DirectionalRepeat;
                     manifest.fps=capture_fps;
                     manifest.output_directory=output.generic_string();
-                    const std::array<std::string,4> ids{"front","right","back","left"};
-                    const std::array<double,4> yaws{0.0,90.0,180.0,-90.0};
-                    for(std::size_t index=0;index<ids.size();++index)
+                    for(std::size_t index=0;index<multiview_videos.size();++index) {
+                        if(multiview_videos[index].empty())continue;
+                        const auto id=multiview_view_ids[index].empty()
+                            ? "view_"+std::to_string(index+1)
+                            : multiview_view_ids[index];
                         manifest.views.push_back({
-                            ids[index],multiview_videos[index].generic_string(),yaws[index]});
+                            id,multiview_videos[index].generic_string(),
+                            multiview_view_yaws[index]});
+                    }
                     manifest_path=output/"capture.multiview.json";
                     animocap::save_capture_manifest(manifest,manifest_path);
                 }
                 auto pipeline=root/"python/animocap_ml_adapters/multiview_pipeline.py";
                 std::wstring command=quote(python)+L" "+quote(pipeline)+
                     L" --manifest "+quote(manifest_path)+L" --output "+quote(output)+
-                    L" --quality maximum --segmentation auto";
+                    L" --quality maximum --segmentation auto --npu-mode shadow";
                 if(!use_vlm)command+=L" --no-vlm";
-                const auto pipeline_exit=run_hidden(command,root,{},stop);
+                const auto pipeline_exit=run_hidden(command,root,mmpose_log,stop);
                 if(pipeline_exit==static_cast<int>(ERROR_CANCELLED))throw AnalysisCancelled{};
-                if(pipeline_exit!=0)
-                    throw std::runtime_error(
-                        "multiview pipeline failed; intermediate per-view poses were preserved");
+                if(pipeline_exit!=0) {
+                    auto message=std::string(
+                        "multiview pipeline failed with exit code ")+
+                        std::to_string(pipeline_exit)+
+                        "; intermediate per-view poses were preserved. See "+
+                        mmpose_log.string()+".";
+                    const auto details=read_log_tail(mmpose_log);
+                    if(!details.empty())message+="\n"+details;
+                    throw std::runtime_error(message);
+                }
+                const auto pipeline_log_tail=read_log_tail(mmpose_log);
+                result->npu_shadow_active=
+                    pipeline_log_tail.find("npu_shadow_diagnostics")!=std::string::npos&&
+                    pipeline_log_tail.find("\"status\": \"active\"")!=std::string::npos;
                 throw_if_cancelled();
                 result->pose_baseline=animocap::load_pose_sequence_json(
                     output/"fused_pose_sequence.json");
-                auto refinement=animocap::optimize_pose_sequence_detailed(
-                    *result->pose_baseline,optimization_options,profile,
-                    proportion_policy);
-                if(character_profile)
+                if(character_profile) {
+                    auto refinement=animocap::optimize_pose_sequence_detailed(
+                        *result->pose_baseline,optimization_options,profile,
+                        proportion_policy);
                     refinement.diagnostics.profile_id=character_profile->profile_id;
-                result->pose=std::move(refinement.sequence);
-                result->optimization_diagnostics=std::move(refinement.diagnostics);
+                    result->pose=std::move(refinement.sequence);
+                    result->optimization_diagnostics=std::move(refinement.diagnostics);
+                } else {
+                    // The CLI already stabilized, optimized, and reference-plane
+                    // pinned this fused sequence. A second generic pass here moves
+                    // 3D joints away from the accurate front-view observations.
+                    result->pose=*result->pose_baseline;
+                }
                 result->motion_path=output/"motion.amotion";
                 auto generated_motion=animocap::load_motion_package(result->motion_path);
                 if(profile) {
                     result->motion=animocap::reconstruct_canonical_motion(
                         *result->pose,profile);
                     result->motion->cameras=std::move(generated_motion.cameras);
-                    animocap::save_motion_package(*result->motion,result->motion_path);
+                    // The pipeline has already persisted the immutable raw package.
+                    // Keep the profile-refined variant in memory and let Save Motion
+                    // create an explicit corrected copy instead of overwriting raw.
+                    result->motion_dirty=true;
                 } else result->motion=std::move(generated_motion);
                 if(!calibrated_multiview)
                     result->diagnostics=animocap::load_multiview_diagnostics(
                         output/"multiview-diagnostics.json");
+                for(std::size_t index=0;index<multiview_videos.size();++index) {
+                    if(multiview_videos[index].empty())continue;
+                    const auto id=multiview_view_ids[index].empty()
+                        ?"view_"+std::to_string(index+1)
+                        :multiview_view_ids[index];
+                    const auto view_output=output/"poses"/id;
+                    const auto pose_path=view_output/"pose_sequence.json";
+                    if(std::filesystem::exists(pose_path))
+                        result->per_view_poses[index]=
+                            animocap::load_pose_sequence_json(pose_path);
+                    const auto npu_path=view_output/"npu-shadow-diagnostics.json";
+                    if(std::filesystem::exists(npu_path)) {
+                        try {
+                            std::ifstream input(npu_path,std::ios::binary);
+                            nlohmann::json value; input>>value;
+                            result->npu_sampled_frames+=value.value(
+                                "sampled_frames",std::size_t{});
+                            result->npu_total_frames+=value.value(
+                                "total_frames",result->per_view_poses[index]
+                                    ?result->per_view_poses[index]->frames.size()
+                                    :std::size_t{});
+                            if(value.contains("review_frames")&&
+                               value["review_frames"].is_array()) {
+                                for(const auto& review:value["review_frames"]) {
+                                    NpuReviewIssue issue;
+                                    issue.view_index=index;
+                                    issue.frame_index=review.value("frame_index",std::size_t{});
+                                    issue.source_time_s=review.value("time_s",0.0);
+                                    issue.invalid_joints=review.value("invalid_joints",std::size_t{});
+                                    issue.left_right_swaps=review.value("left_right_swaps",std::size_t{});
+                                    if(review.contains("mean_normalized_error")&&
+                                       review["mean_normalized_error"].is_number())
+                                        issue.mean_normalized_error=
+                                            review["mean_normalized_error"].get<double>();
+                                    std::vector<std::wstring> reasons;
+                                    if(review.contains("reasons")&&review["reasons"].is_array())
+                                        for(const auto& reason:review["reasons"]) {
+                                            const auto code=reason.get<std::string>();
+                                            if(code=="left_right_swap")reasons.push_back(L"左右交换");
+                                            else if(code=="missing_joints")reasons.push_back(L"关节缺失");
+                                            else if(code=="gpu_npu_disagreement")reasons.push_back(L"双设备分歧");
+                                        }
+                                    for(std::size_t reason=0;reason<reasons.size();++reason) {
+                                        if(reason)issue.detail+=L" · ";
+                                        issue.detail+=reasons[reason];
+                                    }
+                                    result->npu_review_issues.push_back(std::move(issue));
+                                }
+                            }
+                        } catch(...) {
+                            // NPU shadow diagnostics never decide capture success.
+                        }
+                    }
+                }
+                result->npu_shadow_active=result->npu_sampled_frames>0;
             } else {
                 auto adapter=root/"python/animocap_ml_adapters/mmpose_adapter.py";
                 auto observations=output/"pose_sequence.json";
             std::wstring command=quote(python)+L" "+quote(adapter)+
                 L" --input "+quote(video)+L" --output "+quote(observations)+
-                L" --quality maximum --segmentation auto";
+                L" --quality maximum --segmentation auto --npu-mode shadow";
             if(has_person_frame) {
                 command+=L" --roi "+std::to_wstring(person_frame.left)+L" "+
                     std::to_wstring(person_frame.top)+L" "+
@@ -1129,6 +1616,22 @@ void start_analysis() {
             throw_if_cancelled();
             result->pose_baseline=animocap::smooth_pose_sequence(
                 animocap::load_pose_sequence_json(final_observations));
+            result->npu_shadow_active=result->pose_baseline->backend.find(
+                "openvino-npu-shadow")!=std::string::npos;
+            const auto npu_path=output/"npu-shadow-diagnostics.json";
+            if(std::filesystem::exists(npu_path)) {
+                try {
+                    std::ifstream input(npu_path,std::ios::binary);
+                    nlohmann::json value; input>>value;
+                    result->npu_sampled_frames=value.value(
+                        "sampled_frames",std::size_t{});
+                    result->npu_total_frames=value.value(
+                        "total_frames",result->pose_baseline->frames.size());
+                    result->npu_shadow_active=result->npu_sampled_frames>0;
+                } catch(...) {
+                    // Capture output remains authoritative if shadow telemetry fails.
+                }
+            }
             auto refinement=animocap::optimize_pose_sequence_detailed(
                 *result->pose_baseline,optimization_options,profile,
                 proportion_policy);
@@ -1144,7 +1647,22 @@ void start_analysis() {
         } catch(const AnalysisCancelled&) {
             result->cancelled=true;
         } catch(const std::exception& error) {
-            result->error=widen(error.what());
+            const auto failure=widen(error.what());
+            if(multiview_mode) {
+                const auto generated_path=output/"motion.amotion";
+                try {
+                    result->motion=animocap::load_motion_package(generated_path);
+                    result->motion_path=generated_path;
+                    result->motion_dirty=false;
+                    result->recovered_motion=true;
+                    result->warning=
+                        L"\u6838\u5fc3\u52a8\u4f5c\u5df2\u6062\u590d\uff1b\u540e\u5904\u7406\u672a\u5b8c\u6210\u3002\u539f\u59cb\u5305\u53ef\u5bfc\u51fa\u6216\u53e6\u5b58\u3002\n"+
+                        generated_path.wstring()+L"\n\n"+failure;
+                } catch(const std::exception& recovery_error) {
+                    result->error=failure+L"\n\nMotion recovery failed: "+
+                        widen(recovery_error.what());
+                }
+            } else result->error=failure;
         }
         PostMessageW(window,kAnalysisDone,0,
             reinterpret_cast<LPARAM>(result.release()));
@@ -1175,14 +1693,48 @@ void toggle_local_vlm() {
 }
 void load_motion() {
     if(!confirm_replace_dirty_motion())return;
-    auto path = choose(true, L"\u9009\u62e9 motion.amotion \u6587\u4ef6\u5939");
+    const auto source = choose_motion_open_source();
+    if(source==MotionOpenSource::Cancelled)return;
+    std::optional<std::filesystem::path> path;
+    if(source==MotionOpenSource::AniMocapPackage) {
+        path=choose(true,L"\u9009\u62e9 motion.amotion \u6587\u4ef6\u5939");
+    } else {
+        const COMDLG_FILTERSPEC filters[] = {
+            {L"BVH / VRMA \u52a8\u4f5c",L"*.bvh;*.vrma"},
+            {L"Biovision Hierarchy",L"*.bvh"},
+            {L"VRM Animation",L"*.vrma"},
+        };
+        path=choose(false,L"\u9009\u62e9 BVH \u6216 VRMA \u52a8\u4f5c\u6587\u4ef6",filters,
+                    static_cast<UINT>(std::size(filters)));
+    }
     if (!path) return;
     try {
-        app.motion = animocap::load_motion_package(*path);
+        std::wstring format=L"AniMocap";
+        if(source==MotionOpenSource::AniMocapPackage) {
+            app.motion=animocap::load_motion_package(*path);
+        } else {
+            auto extension=path->extension().wstring();
+            std::transform(extension.begin(),extension.end(),extension.begin(),
+                [](wchar_t value){return static_cast<wchar_t>(std::towlower(value));});
+            if(extension==L".bvh") {
+                app.motion=animocap::import_bvh(*path);
+                format=L"BVH";
+            } else if(extension==L".vrma") {
+                app.motion=animocap::import_vrma(*path);
+                format=L"VRMA";
+            } else {
+                throw animocap::ContractError("motion file must use the .bvh or .vrma extension");
+            }
+        }
         app.pose.reset();
         app.pose_baseline.reset();
         app.profile_refined_pose.reset();
         app.multiview_diagnostics.reset();
+        app.multiview_mode=false;
+        app.multiview_overview=false;
+        app.multiview_poses={};
+        app.npu_review_issues.clear();
+        SetWindowTextW(GetDlgItem(app.window,kResetFrame),L"重置");
         app.anchor_drag_snapshot.reset();
         app.manual_corrections.clear();
         app.correction_undo.clear(); app.correction_redo.clear();
@@ -1195,10 +1747,11 @@ void load_motion() {
         EnableWindow(GetDlgItem(app.window,kSaveMotion),TRUE);
         app.motion_dirty=false;
         update_timeline();
-        set_status(L"\u52a8\u4f5c\u5df2\u52a0\u8f7d \u00b7 " + std::to_wstring(app.motion->motion.frame_count) + L" \u5e27");
+        set_status(format+L" \u52a8\u4f5c\u5df2\u52a0\u8f7d \u00b7 "+
+                   std::to_wstring(app.motion->motion.frame_count)+L" \u5e27");
         InvalidateRect(app.window, nullptr, TRUE);
     } catch (const std::exception& error) {
-        MessageBoxW(app.window, widen(error.what()).c_str(), L"\u52a8\u4f5c\u52a0\u8f7d\u5931\u8d25", MB_ICONERROR);
+        MessageBoxW(app.window, widen(error.what()).c_str(), L"\u52a8\u4f5c\u6253\u5f00\u5931\u8d25", MB_ICONERROR);
     }
 }
 void export_bvh_file() {
@@ -1271,6 +1824,25 @@ std::size_t pose_frame() {
     std::size_t after = static_cast<std::size_t>(found - frames.begin()), before = after - 1;
     return std::abs(frames[before].time_s - app.time_s) <
            std::abs(frames[after].time_s - app.time_s) ? before : after;
+}
+const animocap::PoseSequence* review_overlay_pose() {
+    if(has_multiview_review())
+        return &*app.multiview_poses[app.multiview_review_view];
+    return app.pose?&*app.pose:nullptr;
+}
+std::size_t review_overlay_frame(const animocap::PoseSequence& sequence) {
+    if(sequence.frames.empty())return 0;
+    const double target=has_multiview_review()?review_source_time(app.time_s):app.time_s;
+    auto found=std::lower_bound(sequence.frames.begin(),sequence.frames.end(),target,
+        [](const animocap::ObservedPoseFrame& frame,double time) {
+            return frame.time_s<time;
+        });
+    if(found==sequence.frames.end())return sequence.frames.size()-1;
+    if(found==sequence.frames.begin())return 0;
+    const auto after=static_cast<std::size_t>(found-sequence.frames.begin());
+    const auto before=after-1;
+    return std::abs(sequence.frames[before].time_s-target)<
+        std::abs(sequence.frames[after].time_s-target)?before:after;
 }
 std::size_t motion_frame() {
     if (!app.motion || app.motion->motion.time_s.empty()) return 0;
@@ -1395,28 +1967,40 @@ bool draw_frame_bitmap(HDC dc,RECT area,const animocap::VideoFrame& frame) {
     SetStretchBltMode(dc,old_stretch_mode);
     return true;
 }
-void draw_multiview_preview(HDC dc,RECT area) {
-    panel_box(dc,area,RGB(7,12,18),theme::border,8);
+std::array<RECT,kMaximumMultiviewViews> multiview_preview_cells(RECT area) {
     const RECT inner=inset(area,8);
     constexpr int gap=8;
-    const int middle_x=(inner.left+inner.right)/2;
-    const int middle_y=(inner.top+inner.bottom)/2;
-    const std::array<RECT,4> cells{{
-        {inner.left,inner.top,middle_x-gap/2,middle_y-gap/2},
-        {middle_x+gap/2,inner.top,inner.right,middle_y-gap/2},
-        {inner.left,middle_y+gap/2,middle_x-gap/2,inner.bottom},
-        {middle_x+gap/2,middle_y+gap/2,inner.right,inner.bottom}
-    }};
-    const std::array<std::wstring,4> labels{L"正面 · FRONT",L"右侧 · RIGHT",
-        L"背面 · BACK",L"左侧 · LEFT"};
-    const std::array<COLORREF,4> accents{theme::accent,theme::violet,theme::amber,theme::green};
+    constexpr int columns=4;
+    constexpr int rows=2;
+    const int cell_width=(inner.right-inner.left-gap*(columns-1))/columns;
+    const int cell_height=(inner.bottom-inner.top-gap*(rows-1))/rows;
+    std::array<RECT,kMaximumMultiviewViews> cells{};
+    for(std::size_t index=0;index<cells.size();++index) {
+        const int column=static_cast<int>(index)%columns;
+        const int row=static_cast<int>(index)/columns;
+        const int left=inner.left+column*(cell_width+gap);
+        const int top=inner.top+row*(cell_height+gap);
+        cells[index]={left,top,left+cell_width,top+cell_height};
+    }
+    return cells;
+}
+void draw_multiview_preview(HDC dc,RECT area) {
+    panel_box(dc,area,RGB(7,12,18),theme::border,8);
+    const auto cells=multiview_preview_cells(area);
+    const std::array<std::wstring,kMaximumMultiviewViews> fallback_labels{
+        L"view 1",L"view 2",L"view 3",L"view 4",
+        L"view 5",L"view 6",L"view 7",L"view 8"};
+    const std::array<COLORREF,kMaximumMultiviewViews> accents{
+        theme::accent,theme::violet,theme::amber,theme::green,
+        theme::accent,theme::violet,theme::amber,theme::green};
     for(std::size_t index=0;index<cells.size();++index) {
         const RECT cell=cells[index];
         panel_box(dc,cell,RGB(10,16,23),theme::border_soft,6);
         RECT header{cell.left+1,cell.top+1,cell.right-1,cell.top+31};
         fill(dc,header,theme::surface_raised);
         fill(dc,{header.left,header.top,header.left+4,header.bottom},accents[index]);
-        std::wstring title=labels[index];
+        std::wstring title=app.multiview_view_labels[index].empty()
+            ? fallback_labels[index] : app.multiview_view_labels[index];
         if(!app.multiview_videos[index].empty())
             title+=L"  ·  "+app.multiview_videos[index].filename().wstring();
         text(dc,title,{header.left+12,header.top,header.right-8,header.bottom},
@@ -1427,6 +2011,10 @@ void draw_multiview_preview(HDC dc,RECT area) {
             text(dc,app.multiview_videos[index].empty()?L"未提供此视角":L"预览不可用",
                  preview,theme::text_muted,app.font,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
         }
+        if(app.multiview_overview&&!app.multiview_videos[index].empty())
+            text(dc,L"点击进入同步检查",{preview.left+5,preview.bottom-28,
+                preview.right-5,preview.bottom-5},theme::text,app.small_font,
+                DT_CENTER|DT_VCENTER|DT_SINGLELINE);
         rounded_outline(dc,cell,theme::border,6);
     }
 }
@@ -1476,13 +2064,16 @@ void layout_joint_label_column(std::vector<JointOverlayLabel>& labels,
     constexpr int label_width=58,label_height=18,gap=2;
     const int top=static_cast<int>(bounds.top)+6;
     const int bottom=static_cast<int>(bounds.bottom)-6;
+    // A transient resize/DPI layout can produce a drawing band shorter than a
+    // label. Keep std::clamp's interval valid; clipping handles the overflow.
+    const int maximum_top=std::max(top,bottom-label_height);
     const int x=left_column?static_cast<int>(bounds.left)+6:
         static_cast<int>(bounds.right)-6-label_width;
     std::vector<int> positions(indices.size());
     for(std::size_t rank=0;rank<indices.size();++rank) {
         const int desired=std::clamp(
             static_cast<int>(labels[indices[rank]].joint.y)-label_height/2,
-            top,bottom-label_height);
+            top,maximum_top);
         positions[rank]=rank==0?desired:
             std::max(desired,positions[rank-1]+label_height+gap);
     }
@@ -1555,13 +2146,14 @@ void draw_video(HDC dc, RECT area) {
     SetStretchBltMode(dc,old_stretch_mode);
     draw_person_frame_selection(dc);
     draw_person_frame_box(dc,destination,source);
-    if (!app.pose || app.scrubbing) {
+    const auto* overlay=review_overlay_pose();
+    if (!overlay || overlay->frames.empty() || app.scrubbing) {
         rounded_outline(dc,area,theme::border,8);
         return;
     }
     int saved_dc=SaveDC(dc);
     IntersectClipRect(dc,destination.left,destination.top,destination.right,destination.bottom);
-    const auto& frame = app.pose->frames[pose_frame()];
+    const auto& frame = overlay->frames[review_overlay_frame(*overlay)];
     auto skeleton = animocap::make_default_skeleton();
     double sx = static_cast<double>(destination.right-destination.left)/(source.right-source.left);
     double sy = static_cast<double>(destination.bottom-destination.top)/(source.bottom-source.top);
@@ -1611,7 +2203,9 @@ void draw_motion(HDC dc, RECT area) {
     panel_box(dc,area,theme::surface,theme::border,8);
     panel_accent(dc,area,app.pose?theme::violet:theme::accent);
     RECT label=area; label.left+=18; label.top+=8; label.bottom=label.top+28;
-    text(dc,app.pose ? L"OBSERVED 2.5D" : L"CANONICAL 3D",
+    text(dc,app.pose
+            ?(app.multiview_mode?L"FUSED 2.5D · FRONT LOCKED":L"OBSERVED 2.5D")
+            :L"CANONICAL 3D",
          label,theme::accent,app.small_font);
     if (!app.motion && !app.pose) {
         text(dc,L"\u5b8c\u6210\u6355\u6349\u6216\u52a0\u8f7d\u52a8\u4f5c\u540e\u663e\u793a 3D \u9aa8\u67b6",area,RGB(116,126,148),app.font,
@@ -1768,9 +2362,24 @@ void draw_issues(HDC dc,RECT area) {
             });
         }
     }
+    if(app.pose&&!app.npu_review_issues.empty()) {
+        const double tolerance=1.5/std::max(1.0,app.pose->fps);
+        for(const auto& npu:app.npu_review_issues) {
+            if(std::abs(npu.reference_time_s-app.time_s)>tolerance)continue;
+            const auto& view_label=app.multiview_view_labels[npu.view_index];
+            std::wstring detail=L"NPU巡检 · "+npu.detail;
+            if(npu.mean_normalized_error>0.0)
+                detail+=L" · 分歧 "+std::to_wstring(static_cast<int>(
+                    std::lround(npu.mean_normalized_error*100.0)))+L"%";
+            const float confidence=npu.left_right_swaps>0?0.1f:
+                static_cast<float>(std::clamp(1.0-npu.mean_normalized_error,0.0,1.0));
+            issues.push_back({L"NPU复核 · "+(view_label.empty()
+                ?L"view "+std::to_wstring(npu.view_index+1):view_label),confidence,detail});
+        }
+    }
     std::wstring heading=issues.empty()
-        ? (app.multiview_diagnostics?L"当前帧四视角一致":L"当前帧没有明显问题")
-        : L"需要检查 · "+std::to_wstring(issues.size())+L" 个关节";
+        ? (app.multiview_diagnostics?L"当前帧多视角未见明显冲突":L"当前帧没有明显问题")
+        : L"需要检查 · "+std::to_wstring(issues.size())+L" 项";
     text(dc,heading,{area.left+16,area.top+50,area.right-16,area.top+80},
          issues.empty()?theme::green:theme::text,app.font);
     int issue_y=area.top+84;
@@ -1832,7 +2441,10 @@ void draw_timeline_panel(HDC dc,RECT area) {
          theme::amber,app.small_font);
     text(dc,L"歧义度",{area.left+14,ambiguity_top,area.left+label_width-8,ambiguity_bottom},
          theme::violet,app.small_font);
-    text(dc,app.decoder&&app.decoder->is_open()?L"视频轨道":L"动作轨道",
+    const std::wstring track_label=app.manual_corrections.empty()
+        ?(app.decoder&&app.decoder->is_open()?L"视频轨道":L"动作轨道")
+        :L"关键帧曲线 · "+std::to_wstring(app.manual_corrections.size());
+    text(dc,track_label,
          {area.left+14,area.top+148,area.left+label_width-8,area.bottom-7},
          theme::text_muted,app.small_font);
 
@@ -1912,11 +2524,46 @@ void draw_timeline_panel(HDC dc,RECT area) {
                 }
             }
         }
+        if(app.pose&&!app.pose->frames.empty()) {
+            for(const auto& correction:app.manual_corrections) {
+                if(correction.frame_weights.empty() ||
+                   correction.keyframe_frame_index>=app.pose->frames.size()) continue;
+                bool curve_started=false;
+                HPEN curve_pen=CreatePen(PS_SOLID,1,theme::violet);
+                auto old_pen=SelectObject(dc,curve_pen);
+                for(std::size_t frame=0;frame<correction.frame_weights.size()&&
+                    frame<app.pose->frames.size();++frame) {
+                    const double weight=correction.frame_weights[frame];
+                    if(weight<=0.0) { curve_started=false; continue; }
+                    const int x=x_at_time(app.pose->frames[frame].time_s);
+                    const int y=bar.top+15-static_cast<int>(std::lround(8.0*weight));
+                    if(!curve_started) { MoveToEx(dc,x,y,nullptr);curve_started=true; }
+                    else LineTo(dc,x,y);
+                }
+                SelectObject(dc,old_pen);DeleteObject(curve_pen);
+                const auto keyframe=correction.keyframe_frame_index;
+                const int key_x=x_at_time(app.pose->frames[keyframe].time_s);
+                const int key_y=bar.top+7;
+                const bool is_current_keyframe=pose_frame()==keyframe;
+                HBRUSH key_brush=CreateSolidBrush(
+                    is_current_keyframe?theme::green:theme::violet);
+                auto old_brush=SelectObject(dc,key_brush);
+                POINT diamond[]={{key_x,key_y-5},{key_x+5,key_y},
+                                 {key_x,key_y+5},{key_x-5,key_y}};
+                Polygon(dc,diamond,4);
+                SelectObject(dc,old_brush);DeleteObject(key_brush);
+            }
+        }
         if(const auto selected=selected_range()) {
             const int start_x=x_at_time(selected->start),end_x=x_at_time(selected->end);
             fill(dc,{start_x,bar.top+2,end_x,bar.top+6},theme::violet);
             stroke(dc,{start_x,bar.top},{start_x,bar.bottom},theme::violet,2);
             stroke(dc,{end_x,bar.top},{end_x,bar.bottom},theme::violet,2);
+        }
+        for(const auto& issue:app.npu_review_issues) {
+            const int x=x_at_time(issue.reference_time_s);
+            const auto color=issue.left_right_swaps>0?theme::red:theme::violet;
+            stroke(dc,{x,ambiguity_top},{x,ambiguity_bottom},color,1);
         }
         const int cursor=x_at_time(app.time_s);
         stroke(dc,{cursor,area.top+48},{cursor,area.bottom-7},theme::accent,2);
@@ -1943,16 +2590,25 @@ void paint(HWND window) {
     fill(dc,scope,theme::surface);
     stroke(dc,{0,scope.top},{client.right,scope.top},theme::border_soft);
     stroke(dc,{0,scope.bottom-1},{client.right,scope.bottom-1},theme::border_soft);
-    text(dc,app.multiview_mode?L"四视角范围":L"人物范围",{20,scope.top,112,scope.bottom},
+    text(dc,app.multiview_mode?L"多视角范围":L"人物范围",{20,scope.top,112,scope.bottom},
          theme::text,app.section_font);
+    std::wstring multiview_scope=L"多视角分别识别，再联合恢复遮挡与深度";
+    if(has_multiview_review()) {
+        const auto& label=app.multiview_view_labels[app.multiview_review_view];
+        multiview_scope=L"同步检查："+(label.empty()
+            ?L"view "+std::to_wstring(app.multiview_review_view+1):label)+
+            (app.multiview_review_view==multiview_reference_view()
+                ?L" · 高置信度参考平面已锁定"
+                :L" · 只读辅助视角");
+    }
     text(dc,app.multiview_mode
-        ? L"正面 / 右侧 / 背面 / 左侧分别自动识别完整人体，再联合恢复遮挡关节"
+        ? multiview_scope
         : app.auto_person_frame
             ? L"仅识别人体骨架，不包含翅膀、武器、宠物和 UI"
             : app.has_person_frame?L"使用手动人物框":L"使用完整视频画面",
         {548,scope.top,workspace_split()-12,scope.bottom},
         theme::text_muted,app.small_font);
-    if(app.multiview_mode&&!app.pose&&!app.motion)
+    if(app.multiview_mode&&(!app.pose&&!app.motion||app.multiview_overview))
         draw_multiview_preview(dc,video_area());
     else
         draw_video(dc,video_area());
@@ -2053,6 +2709,7 @@ void layout(HWND window) {
     MoveWindow(GetDlgItem(window,kRangeEnd),timeline.left+190,timeline.top+6,88,34,TRUE);
     MoveWindow(GetDlgItem(window,kRangeClear),timeline.left+284,timeline.top+6,88,34,TRUE);
     MoveWindow(GetDlgItem(window,kLoopRange),timeline.left+378,timeline.top+6,124,34,TRUE);
+    MoveWindow(GetDlgItem(window,kDeleteKeyframe),timeline.left+508,timeline.top+6,112,34,TRUE);
     ShowWindow(app.timeline,SW_HIDE);
     MoveWindow(GetDlgItem(window,kAnalyze),client.right-210,client.bottom-42,194,36,TRUE);
     MoveWindow(app.progress,client.right-210,client.bottom-52,194,6,TRUE);
@@ -2182,6 +2839,10 @@ void use_auto_person_frame() {
     InvalidateRect(app.window,nullptr,FALSE);
 }
 void reset_person_frame() {
+    if(app.multiview_mode&&has_multiview_review()) {
+        toggle_multiview_overview();
+        return;
+    }
     stop_playback();
     app.auto_person_frame=false;
     app.manual_person_frame=false;
@@ -2279,7 +2940,9 @@ void finish_person_frame() {
     InvalidateRect(app.window,nullptr,FALSE);
 }
 bool begin_anchor_drag(POINT mouse) {
-    if (!app.calibrating || !app.pose || app.video_frame.bgra.empty()) return false;
+    if (app.multiview_overview || !app.calibrating || !app.pose || app.video_frame.bgra.empty() ||
+        (has_multiview_review()&&
+         app.multiview_review_view!=multiview_reference_view())) return false;
     RECT destination=video_destination(video_area());
     RECT source=video_source_rect();
     if (mouse.x<destination.left || mouse.x>destination.right ||
@@ -2340,6 +3003,14 @@ void move_anchor(POINT mouse) {
 void update_correction_controls() {
     EnableWindow(GetDlgItem(app.window,kUndoCorrection),!app.correction_undo.empty());
     EnableWindow(GetDlgItem(app.window,kRedoCorrection),!app.correction_redo.empty());
+    const auto current=app.pose?pose_frame():0;
+    const bool has_current_key=std::any_of(
+        app.manual_corrections.begin(),app.manual_corrections.end(),
+        [&](const auto& correction) {
+            return !correction.frame_weights.empty()&&
+                correction.keyframe_frame_index==current;
+        });
+    EnableWindow(GetDlgItem(app.window,kDeleteKeyframe),has_current_key);
 }
 void rebuild_corrected_motion() {
     auto corrected=animocap::reconstruct_canonical_motion(
@@ -2373,9 +3044,15 @@ void finish_anchor_drag() {
         const auto head=animocap::bone_index(skeleton,animocap::BoneSemantic::Head);
         const auto left_foot=animocap::bone_index(skeleton,animocap::BoneSemantic::LeftFoot);
         const auto right_foot=animocap::bone_index(skeleton,animocap::BoneSemantic::RightFoot);
+        const auto keyframe_frame=pose_frame();
         animocap::ManualPoseCorrection correction;
         correction.joint_index=selected;
         correction.image_delta={app.anchor_drag_delta_u,app.anchor_drag_delta_v};
+        correction.keyframe_frame_index=keyframe_frame;
+        const auto influence_radius=std::max<std::size_t>(4,
+            static_cast<std::size_t>(std::lround(std::max(1.0,before.fps)*0.25)));
+        correction.frame_weights=animocap::make_bounded_keyframe_curve_weights(
+            before.frames.size(),correction.keyframe_frame_index,influence_radius);
         correction.position_deltas_m.reserve(before.frames.size());
         for(const auto& frame:before.frames) {
             const auto head_xy=frame.joints[head].image_xy;
@@ -2406,12 +3083,46 @@ void finish_anchor_drag() {
         EnableWindow(GetDlgItem(app.window,kExportBvh),TRUE);
         EnableWindow(GetDlgItem(app.window,kExportVrma),TRUE);
         update_correction_controls();
-        set_status(L"锚点修正已传播到全部帧 · 尚未保存");
+        set_status(L"关键帧 "+std::to_wstring(keyframe_frame)+
+            L" 已创建 · 三次曲线有界传播 · 尚未保存");
     } catch (const std::exception& error) {
         app.manual_corrections=before_corrections;
         app.pose=std::move(before);
         set_status(L"锚点修正失败 · 已恢复拖动前状态");
         MessageBoxW(app.window,widen(error.what()).c_str(),L"校准失败",MB_ICONERROR);
+    }
+    InvalidateRect(app.window,nullptr,FALSE);
+}
+void delete_current_keyframes() {
+    if(!app.pose)return;
+    const auto frame=pose_frame();
+    const auto before=app.manual_corrections;
+    auto kept=app.manual_corrections;
+    kept.erase(std::remove_if(kept.begin(),kept.end(),[&](const auto& correction) {
+        return !correction.frame_weights.empty()&&
+            correction.keyframe_frame_index==frame;
+    }),kept.end());
+    if(kept.size()==app.manual_corrections.size()) {
+        set_status(L"当前帧没有手动关键帧");
+        return;
+    }
+    try {
+        const auto* refined=app.profile_refined_pose
+            ?&*app.profile_refined_pose
+            :(app.pose_baseline?&*app.pose_baseline:&*app.pose);
+        auto corrected=animocap::apply_manual_pose_corrections(*refined,kept);
+        push_correction_history(app.correction_undo,before);
+        app.correction_redo.clear();
+        app.manual_corrections=std::move(kept);
+        app.pose=std::move(corrected);
+        rebuild_corrected_motion();
+        app.motion_dirty=true;
+        update_correction_controls();
+        set_status(L"已删除当前帧关键帧 · 尚未保存");
+    } catch(const std::exception& error) {
+        app.manual_corrections=before;
+        MessageBoxW(app.window,widen(error.what()).c_str(),
+            L"删除关键帧失败",MB_ICONERROR);
     }
     InvalidateRect(app.window,nullptr,FALSE);
 }
@@ -2463,7 +3174,7 @@ void toggle_calibration() {
     SetWindowTextW(GetDlgItem(app.window,kCalibrate),
         app.calibrating ? L"保存并完成" : L"手动修正");
     if(app.calibrating) {
-        set_status(L"锚点校准 · 拖动错位关节，偏移自动应用到整段视频");
+        set_status(L"关键帧修正 · 在当前帧拖动关节，偏移用三次曲线在局部有界传播");
     } else if(saving_on_finish) {
         set_status(L"修正已保存并完成 · "+app.motion_path.wstring());
     } else {
@@ -2487,7 +3198,7 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
             OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Cascadia Mono");
         app.panel_brush=CreateSolidBrush(theme::background);
         button(window,kImport,L"打开视频");
-        button(window,kMultiview,L"导入四视角");
+        button(window,kMultiview,L"导入多视角");
         button(window,kLoad,L"打开动作");
         button(window,kSaveMotion,L"保存动作");
         EnableWindow(GetDlgItem(window,kSaveMotion),FALSE);
@@ -2503,6 +3214,8 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
         button(window,kResetFrame,L"重置");
         button(window,kUndoCorrection,L"撤销修正");
         button(window,kRedoCorrection,L"重做修正");
+        button(window,kDeleteKeyframe,L"删除当前键");
+        EnableWindow(GetDlgItem(window,kDeleteKeyframe),FALSE);
         button(window,kCharacterProfile,L"\u5bfc\u5165\u52a8\u753b\u89d2\u8272\u53c2\u8003");
         EnableWindow(GetDlgItem(window,kUndoCorrection),FALSE);
         EnableWindow(GetDlgItem(window,kRedoCorrection),FALSE);
@@ -2554,6 +3267,7 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
         case kCharacterProfile: import_character_profile(); return 0;
         case kUndoCorrection: restore_correction(false); return 0;
         case kRedoCorrection: restore_correction(true); return 0;
+        case kDeleteKeyframe: delete_current_keyframes(); return 0;
         case kAnalyze: start_analysis(); return 0;
         case kCalibrate: toggle_calibration(); return 0;
         case kPlay: toggle_play(); return 0;
@@ -2585,6 +3299,7 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
         if(!control&&wparam=='I') { set_range_boundary(true); return 0; }
         if(!control&&wparam=='O') { set_range_boundary(false); return 0; }
         if(!control&&wparam=='L') { toggle_range_loop(); return 0; }
+        if(!control&&wparam==VK_DELETE) { delete_current_keyframes(); return 0; }
         break;
     }
     case WM_TIMER:
@@ -2596,7 +3311,13 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
             if(app.decoder&&app.decoder->is_open()) {
                 try {
                     if (app.decoder->read_frame(app.video_frame)) {
-                        app.time_s=app.video_frame.time_s;
+                        app.video_eof=false;
+                        // Playback must remain sequential. Per-frame seeking made
+                        // post-capture multiview review stutter badly; only explicit
+                        // scrubs, loops, and view switches seek.
+                        app.time_s=has_multiview_review()
+                            ?review_reference_time(app.video_frame.time_s)
+                            :app.video_frame.time_s;
                         const auto active=playback_range();
                         if(app.time_s>=active.end) {
                             if(app.loop_range&&selected_range())decode_at(active.start);
@@ -2611,7 +3332,11 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
                             InvalidateRect(window,nullptr,FALSE);
                         }
                     } else {
+                        app.video_eof=true;
+                        app.time_s=playback_range().end;
+                        update_timeline();
                         stop_playback();
+                        InvalidateRect(window,nullptr,FALSE);
                     }
                 } catch (const std::exception& error) {
                     stop_playback(L"视频解码已停止 · " + widen(error.what()));
@@ -2668,15 +3393,53 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
             EnableWindow(GetDlgItem(window,kExportBvh),TRUE);
             EnableWindow(GetDlgItem(window,kExportVrma),TRUE);
             EnableWindow(GetDlgItem(window,kSaveMotion),TRUE);
-            app.motion_dirty=false;
+            app.motion_dirty=result->motion_dirty;
               app.motion_path=std::move(result->motion_path);
-              app.multiview_diagnostics=std::move(result->diagnostics);
-              if(app.multiview_diagnostics) {
-                  set_status(L"四视角联合求解完成 · 恢复 "+
-                      std::to_wstring(app.multiview_diagnostics->recovered_observations)+
-                    L" 个遮挡观测 · "+
-                      std::to_wstring(app.multiview_diagnostics->conflicts.size())+
-                      L" 个跨视角冲突待检查");
+	              app.multiview_diagnostics=std::move(result->diagnostics);
+	              app.multiview_poses=std::move(result->per_view_poses);
+	              app.npu_review_issues=std::move(result->npu_review_issues);
+	              if(app.multiview_mode) {
+	                  const auto reference=multiview_reference_view();
+	                  app.multiview_review_view=reference;
+                  const bool review_ready=app.multiview_poses[reference].has_value();
+                  EnableWindow(GetDlgItem(window,kResetFrame),review_ready);
+	                  if(review_ready) {
+	                      select_multiview_review(reference);
+	                      app.multiview_overview=true;
+	                      app.yaw=0.0;
+	                      app.pitch=0.0;
+	                      SetWindowTextW(GetDlgItem(window,kResetFrame),L"返回当前视角");
+	                      for(auto& issue:app.npu_review_issues)
+	                          issue.reference_time_s=reference_time_from_source_frame(
+	                              issue.view_index,static_cast<double>(issue.frame_index));
+	                  } else SetWindowTextW(GetDlgItem(window,kResetFrame),L"重置");
+	              }
+	              if(result->recovered_motion) {
+	                  set_status(L"\u6355\u6349\u6838\u5fc3\u52a8\u4f5c\u5df2\u6062\u590d \u00b7 \u540e\u5904\u7406\u672a\u5b8c\u6210 \u00b7 \u539f\u59cb\u5305\u53ef\u7528");
+	                  MessageBoxW(window,result->warning.c_str(),
+	                      L"\u52a8\u4f5c\u5df2\u6062\u590d",MB_ICONWARNING);
+	              } else if(app.multiview_diagnostics) {
+	                  const auto before=app.multiview_diagnostics->jitter_before_curve;
+	                  const auto after=app.multiview_diagnostics->jitter_after_curve;
+	                  const int jitter_reduction=before>0.0
+	                      ?static_cast<int>(std::lround(
+	                          std::clamp(1.0-after/before,0.0,1.0)*100.0)):0;
+	                  set_status(L"多视角联合求解完成 · 恢复 "+
+	                      std::to_wstring(app.multiview_diagnostics->recovered_observations)+
+	                    L" 个遮挡观测 · 剔除 "+
+		                      std::to_wstring(app.multiview_diagnostics->rejected_view_observations)+
+		                    L" 个离群视角观测 · 可见性降权 "+
+		                      std::to_wstring(app.multiview_diagnostics->
+		                          visibility_downweighted_observations)+
+		                    L" / 增强 "+std::to_wstring(app.multiview_diagnostics->
+		                          visibility_boosted_observations)+L" · 曲线修正 "+
+	                      std::to_wstring(app.multiview_diagnostics->curve_corrected_samples)+
+		                    L" 个样本（抖动指标 -"+
+		                      std::to_wstring(jitter_reduction)+L"%，含高置信度微抖 "+
+		                      std::to_wstring(app.multiview_diagnostics->
+		                          curve_high_confidence_jitter_corrected_samples)+L"） · "+
+	                      std::to_wstring(app.multiview_diagnostics->conflicts.size())+
+	                      L" 个跨视角冲突待检查");
               } else if(!result->warning.empty())
                   set_status(L"捕捉完成 · "+result->warning);
             else if(app.character_profile&&app.optimization_diagnostics)
@@ -2688,6 +3451,17 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
                 set_status(L"捕捉完成 · HRNet、光流、本地视觉纠错和时序平滑已应用");
             else
                 set_status(L"捕捉完成 · HRNet、光流和时序平滑已应用");
+            if(result->npu_shadow_active) {
+                const int sample_percent=result->npu_total_frames
+                    ?static_cast<int>(std::lround(
+                        100.0*result->npu_sampled_frames/result->npu_total_frames))
+                    :0;
+                append_status(L" · Intel NPU 风险巡检 "+
+                    std::to_wstring(result->npu_sampled_frames)+L"/"+
+                    std::to_wstring(result->npu_total_frames)+L"（"+
+                    std::to_wstring(sample_percent)+L"%） · 标记 "+
+                    std::to_wstring(app.npu_review_issues.size())+L" 个待复核帧");
+            }
             InvalidateRect(window,nullptr,TRUE);
         }
         if(close_after_analysis)PostMessageW(window,WM_CLOSE,0,0);
@@ -2702,6 +3476,17 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
         } break;
     case WM_LBUTTONDOWN: {
         POINT point{GET_X_LPARAM(lparam),GET_Y_LPARAM(lparam)};
+        const auto video_rect=video_area();
+        if(app.multiview_overview&&PtInRect(&video_rect,point)) {
+            const auto cells=multiview_preview_cells(video_rect);
+            for(std::size_t index=0;index<cells.size();++index) {
+                if(PtInRect(&cells[index],point)&&
+                   !app.multiview_videos[index].empty()&&app.multiview_poses[index]) {
+                    select_multiview_review(index);
+                    return 0;
+                }
+            }
+        }
         if (begin_person_frame_drag(point)) return 0;
         if (begin_anchor_drag(point)) return 0;
         if (const auto time=timeline_time_from_point(point)) {

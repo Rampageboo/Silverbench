@@ -747,20 +747,61 @@ PoseSequence apply_manual_pose_corrections(
             throw ContractError(
                 "manual correction frame count does not match pose sequence");
         }
+        if (!correction.frame_weights.empty() &&
+            correction.frame_weights.size() != result.frames.size()) {
+            throw ContractError(
+                "manual correction curve frame count does not match pose sequence");
+        }
+        if (!correction.frame_weights.empty() &&
+            correction.keyframe_frame_index >= result.frames.size()) {
+            throw ContractError("manual correction keyframe is outside the pose sequence");
+        }
         for (std::size_t frame = 0; frame < result.frames.size(); ++frame) {
             if (correction.joint_index >= result.frames[frame].joints.size()) {
                 throw ContractError(
                     "manual correction joint index is outside the pose schema");
             }
             auto& joint = result.frames[frame].joints[correction.joint_index];
+            const double weight = correction.frame_weights.empty()
+                ? 1.0 : correction.frame_weights[frame];
+            if (!std::isfinite(weight) || weight < 0.0 || weight > 1.0) {
+                throw ContractError("manual correction curve weight is outside [0, 1]");
+            }
+            if (!joint.valid) continue;
             const auto& delta = correction.position_deltas_m[frame];
-            joint.image_xy.x += correction.image_delta.x;
-            joint.image_xy.y += correction.image_delta.y;
-            joint.position_m += delta;
+            joint.image_xy.x += correction.image_delta.x * weight;
+            joint.image_xy.y += correction.image_delta.y * weight;
+            joint.position_m += weight * delta;
         }
     }
     validate_pose_sequence(result);
     return result;
+}
+
+std::vector<double> make_bounded_keyframe_curve_weights(
+    std::size_t frame_count,
+    std::size_t keyframe_frame_index,
+    std::size_t influence_radius_frames
+) {
+    if (frame_count == 0 || keyframe_frame_index >= frame_count) {
+        throw ContractError("manual keyframe is outside the pose sequence");
+    }
+    if (influence_radius_frames == 0) {
+        throw ContractError("manual keyframe influence radius must be positive");
+    }
+    std::vector<double> weights(frame_count, 0.0);
+    for (std::size_t frame = 0; frame < frame_count; ++frame) {
+        const std::size_t distance = frame > keyframe_frame_index
+            ? frame - keyframe_frame_index : keyframe_frame_index - frame;
+        if (distance > influence_radius_frames) continue;
+        const double value = static_cast<double>(distance) /
+            static_cast<double>(influence_radius_frames);
+        // Cubic Hermite smoothstep from 1 at the authored key to 0 at the
+        // bounded edge. The derivative is zero at both ends, avoiding a new
+        // velocity discontinuity where the correction joins the baseline.
+        weights[frame] = 1.0 - value * value * (3.0 - 2.0 * value);
+    }
+    return weights;
 }
 
 MotionPackage reconstruct_canonical_motion(

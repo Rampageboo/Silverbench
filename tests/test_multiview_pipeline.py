@@ -9,17 +9,21 @@ from python.animocap_ml_adapters import multiview_pipeline
 
 
 class SharedMultiviewSessionTests(unittest.TestCase):
-    def test_four_views_share_one_session_and_release_it_before_vlm(self) -> None:
+    def test_three_view_fan_shares_one_session_and_releases_it_before_vlm(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             views = []
-            for index, view_id in enumerate(("front", "right", "back", "left")):
+            for view_id, yaw in (
+                ("front_left", -45.0),
+                ("front", 0.0),
+                ("front_right", 45.0),
+            ):
                 video = root / f"{view_id}.mp4"
                 video.write_bytes(b"test")
                 views.append({
                     "id": view_id,
                     "video": video.name,
-                    "yaw_degrees": index * 90.0,
+                    "yaw_degrees": yaw,
                 })
             manifest = root / "capture.json"
             manifest.write_text(json.dumps({
@@ -30,7 +34,8 @@ class SharedMultiviewSessionTests(unittest.TestCase):
             instances = []
 
             class FakeSession:
-                def __init__(self, **_kwargs) -> None:
+                def __init__(self, **kwargs) -> None:
+                    self.kwargs = kwargs
                     self.runs = []
                     self.closed = False
                     instances.append(self)
@@ -54,6 +59,9 @@ class SharedMultiviewSessionTests(unittest.TestCase):
                 vlm_model="unused",
                 quality="maximum",
                 segmentation="grabcut",
+                npu_mode="shadow",
+                npu_model=root / "observer.xml",
+                npu_sample_interval=15,
                 no_vlm=False,
                 skip_inference=False,
             )
@@ -81,9 +89,49 @@ class SharedMultiviewSessionTests(unittest.TestCase):
                 self.assertEqual(multiview_pipeline.run_pipeline(args), 0)
 
             self.assertEqual(len(instances), 1)
-            self.assertEqual(len(instances[0].runs), 4)
+            self.assertEqual(len(instances[0].runs), 3)
             self.assertTrue(instances[0].closed)
-            self.assertEqual(run_streaming.call_count, 5)
+            self.assertEqual(instances[0].kwargs["npu_mode"], "shadow")
+            self.assertEqual(instances[0].kwargs["npu_sample_interval"], 15)
+            self.assertEqual(run_streaming.call_count, 4)
+
+
+class ManifestValidationTests(unittest.TestCase):
+    def test_directional_manifest_accepts_two_to_eight_finite_yaws(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            views = [
+                {"id": f"view_{index}", "video": f"view_{index}.mp4", "yaw_degrees": index * 15.0}
+                for index in range(8)
+            ]
+            manifest = root / "capture.json"
+            manifest.write_text(json.dumps({
+                "mode": "directional_repeat",
+                "views": views,
+            }), encoding="utf-8")
+            self.assertEqual(len(multiview_pipeline.load_manifest(manifest)["views"]), 8)
+
+            views[3]["yaw_degrees"] = float("nan")
+            manifest.write_text(json.dumps({
+                "mode": "directional_repeat",
+                "views": views,
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "requires yaw_degrees"):
+                multiview_pipeline.load_manifest(manifest)
+
+    def test_synchronized_manifest_accepts_eight_calibrated_views_without_yaws(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "capture.json"
+            manifest.write_text(json.dumps({
+                "mode": "synchronized_multiview",
+                "calibration_file": "calibration.json",
+                "views": [
+                    {"id": f"camera_{index}", "video": f"camera_{index}.mp4"}
+                    for index in range(8)
+                ],
+            }), encoding="utf-8")
+            self.assertEqual(len(multiview_pipeline.load_manifest(manifest)["views"]), 8)
 
 
 if __name__ == "__main__":

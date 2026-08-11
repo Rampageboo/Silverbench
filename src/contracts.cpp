@@ -118,8 +118,8 @@ void validate_capture_manifest(const CaptureManifest& manifest) {
     if (manifest.mode == CaptureMode::SingleView && count != 1) {
         throw ContractError("single_view requires exactly one view");
     }
-    if (manifest.mode != CaptureMode::SingleView && (count < 2 || count > 4)) {
-        throw ContractError("multiview modes require two to four views");
+    if (manifest.mode != CaptureMode::SingleView && (count < 2 || count > 8)) {
+        throw ContractError("multiview modes require two to eight views");
     }
 
     std::set<std::string> ids;
@@ -129,6 +129,9 @@ void validate_capture_manifest(const CaptureManifest& manifest) {
         if (!ids.insert(view.id).second) throw ContractError("duplicate view id");
         if (!videos.insert(view.video).second) throw ContractError("duplicate view video");
         if (view.yaw_degrees && !std::isfinite(*view.yaw_degrees)) throw ContractError("view yaw must be finite");
+        if (manifest.mode == CaptureMode::DirectionalRepeat && !view.yaw_degrees) {
+            throw ContractError("directional_repeat requires an explicit yaw for every view");
+        }
         if (!std::isfinite(view.time_offset_s)) throw ContractError("view time_offset_s must be finite");
     }
 }

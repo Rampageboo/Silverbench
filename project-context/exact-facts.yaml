@@ -1,6 +1,6 @@
 schema_version: 3
 metadata:
-  last_updated: 2026-08-10
+  last_updated: 2026-08-11
   source_revision_represented: ""
 paths: []
 commands:
@@ -23,6 +23,13 @@ constraints:
     gpu: NVIDIA RTX 2060
     role: development compatibility check only; must not constrain target architecture
     observed_on: 2026-08-06
+  - id: development_npu_hardware
+    device: Intel(R) AI Boost
+    processor: Intel(R) Core(TM) Ultra 9 275HX
+    driver: 32.0.100.4778
+    runtime: OpenVINO 2026.2.1
+    role: non-authoritative shadow pose observer only
+    observed_on: 2026-08-11
 codebase_map:
   status: not-adopted
   provider: ""

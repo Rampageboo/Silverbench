@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Local four-direction capture orchestration.
+"""Local animation-first multiview capture orchestration.
 
 Each view is inferred independently only to produce observations. The final
 motion is created by the C++ phase-aligned joint multiview solver, never by
-averaging independently reconstructed motions.
+averaging independently reconstructed motions. Directional-repeat capture
+defaults to the three-view front fan; manifests may carry two to eight
+explicitly yaw-labelled views, including legacy four-cardinal layouts.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import subprocess
 import sys
@@ -22,7 +25,12 @@ except ImportError:  # Script entry point from this directory.
     import mmpose_adapter  # type: ignore[no-redef]
 
 
-VIEW_IDS = ("front", "right", "back", "left")
+DEFAULT_DIRECTIONAL_REPEAT_VIEWS = (
+    ("front_left", -45.0),
+    ("front", 0.0),
+    ("front_right", 45.0),
+)
+VIEW_IDS = tuple(view_id for view_id, _yaw in DEFAULT_DIRECTIONAL_REPEAT_VIEWS)
 
 
 def emit(event: str, **values: Any) -> None:
@@ -35,14 +43,15 @@ def load_manifest(path: Path) -> dict[str, Any]:
     if mode not in ("directional_repeat", "synchronized_multiview"):
         raise RuntimeError("multiview pipeline requires a supported multiview mode")
     views = document.get("views")
-    if not isinstance(views, list) or not 2 <= len(views) <= 4:
-        raise RuntimeError("multiview capture requires two to four views")
+    if not isinstance(views, list) or not 2 <= len(views) <= 8:
+        raise RuntimeError("multiview capture requires two to eight views")
     ids = [view.get("id") for view in views]
     if len(ids) != len(set(ids)) or any(not value for value in ids):
         raise RuntimeError("view ids must be present and unique")
     if mode == "directional_repeat":
         for view in views:
-            if view.get("yaw_degrees") is None:
+            yaw = view.get("yaw_degrees")
+            if yaw is None or isinstance(yaw, bool) or not isinstance(yaw, (int, float)) or not math.isfinite(float(yaw)):
                 raise RuntimeError(f"view {view.get('id')} requires yaw_degrees")
     elif not document.get("calibration_file"):
         raise RuntimeError("synchronized_multiview requires calibration_file")
@@ -160,6 +169,9 @@ def run_pipeline(args: argparse.Namespace) -> int:
                 anime_pose_config=args.anime_pose_config,
                 anime_pose_weights=args.anime_pose_weights,
                 confidence_calibration=getattr(args, "confidence_calibration", None),
+                npu_mode=getattr(args, "npu_mode", "off"),
+                npu_model=getattr(args, "npu_model", None),
+                npu_sample_interval=getattr(args, "npu_sample_interval", 15),
             )
             emit(
                 "stage_finished",
@@ -289,6 +301,9 @@ def main() -> int:
     parser.add_argument("--anime-pose-config", type=Path)
     parser.add_argument("--anime-pose-weights", type=Path)
     parser.add_argument("--confidence-calibration", type=Path)
+    parser.add_argument("--npu-mode", choices=("off", "shadow"), default="off")
+    parser.add_argument("--npu-model", type=Path)
+    parser.add_argument("--npu-sample-interval", type=int, default=15)
     parser.add_argument("--vlm-model", default="qwen3-vl:4b")
     parser.add_argument(
         "--quality", choices=("fast", "balanced", "maximum"), default="balanced"

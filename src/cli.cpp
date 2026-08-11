@@ -226,9 +226,9 @@ int fuse_multiview(int argc, char** argv) {
         views.push_back({
             view.id,
             *view.yaw_degrees,
-            animocap::optimize_pose_sequence(
-                animocap::smooth_pose_sequence(animocap::load_pose_sequence_json(
-                    pose_directory / view.id / "pose_sequence.json"))),
+            animocap::load_pose_sequence_json(
+                pose_directory / view.id / "pose_sequence.json"),
+            view.time_offset_s,
         });
     }
     std::optional<animocap::CharacterProfile> character_profile;
@@ -237,7 +237,13 @@ int fuse_multiview(int argc, char** argv) {
     const auto* profile=character_profile?&character_profile->skeleton:nullptr;
     const auto options=character_profile
         ? character_profile->optimization_options:animocap::PoseOptimizationOptions{};
-    auto result = animocap::solve_directional_multiview(views);
+    animocap::MultiviewSolveOptions solve_options;
+    solve_options.reference_view=static_cast<std::size_t>(std::distance(
+        views.begin(),std::min_element(views.begin(),views.end(),
+            [](const auto& left,const auto& right) {
+                return std::abs(left.yaw_degrees)<std::abs(right.yaw_degrees);
+            })));
+    auto result = animocap::solve_directional_multiview(views,solve_options);
     if(profile) {
         result.fused_pose=animocap::optimize_pose_sequence(
             result.fused_pose,options,profile,
@@ -274,6 +280,25 @@ int fuse_multiview(int argc, char** argv) {
         {"skeleton_id", result.motion.skeleton.skeleton_id},
         {"recovered_observations", result.diagnostics.recovered_observations},
         {"left_right_corrections", result.diagnostics.left_right_corrections},
+        {"rejected_view_observations", result.diagnostics.rejected_view_observations},
+        {"left_right_state_changes", result.diagnostics.left_right_state_changes},
+        {"visibility_evaluated_observations",
+         result.diagnostics.visibility_evaluated_observations},
+        {"visibility_downweighted_observations",
+         result.diagnostics.visibility_downweighted_observations},
+        {"visibility_boosted_observations",
+         result.diagnostics.visibility_boosted_observations},
+        {"overlap_downweighted_observations",
+         result.diagnostics.overlap_downweighted_observations},
+        {"curve_anchor_samples", result.diagnostics.curve_anchor_samples},
+        {"curve_corrected_samples", result.diagnostics.curve_corrected_samples},
+        {"curve_high_confidence_jitter_corrected_samples",
+         result.diagnostics.curve_high_confidence_jitter_corrected_samples},
+        {"curve_contact_locked_samples", result.diagnostics.curve_contact_locked_samples},
+        {"curve_mean_correction_m", result.diagnostics.curve_mean_correction_m},
+        {"curve_maximum_correction_m", result.diagnostics.curve_maximum_correction_m},
+        {"jitter_before_curve", result.diagnostics.jitter_before_curve},
+        {"jitter_after_curve", result.diagnostics.jitter_after_curve},
         {"conflict_count", result.diagnostics.conflicts.size()},
         {"alignments", std::move(alignments)},
     }.dump(2) << '\n';

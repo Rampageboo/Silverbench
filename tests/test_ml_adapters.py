@@ -20,6 +20,10 @@ from python.animocap_ml_adapters.mmpose_adapter import (
     _mask_ratio_is_valid,
     _needs_high_accuracy_pass,
     _needs_humanart_pass,
+    _needs_npu_shadow_pass,
+    _compare_npu_shadow,
+    _npu_review_reasons,
+    _humanart_runtime_config,
     _prepare_offline_models,
     _resolve_anime_pose_model,
 )
@@ -340,6 +344,53 @@ class HighAccuracyPoseTests(unittest.TestCase):
         self.assertTrue(_needs_humanart_pass(scores, 1, "maximum"))
         scores[10] = 0.2
         self.assertTrue(_needs_humanart_pass(scores, 1, "balanced"))
+
+    def test_humanart_config_is_migrated_without_legacy_mmcls_arguments(self) -> None:
+        config = _humanart_runtime_config()
+        self.assertEqual(
+            config.model.backbone.type, "mmpretrain.VisionTransformer"
+        )
+        self.assertEqual(config.model.backbone.out_type, "featmap")
+        self.assertNotIn("output_cls_token", config.model.backbone)
+        self.assertIsNone(config.model.backbone.init_cfg)
+
+    def test_npu_shadow_scheduling_never_changes_off_mode(self) -> None:
+        scores = [0.95] * 17
+        self.assertFalse(_needs_npu_shadow_pass(scores, 0, "off", 15))
+        self.assertTrue(_needs_npu_shadow_pass(scores, 0, "shadow", 15))
+        self.assertFalse(_needs_npu_shadow_pass(scores, 1, "shadow", 15))
+        scores[10] = 0.2
+        self.assertTrue(_needs_npu_shadow_pass(scores, 5, "shadow", 15))
+
+    def test_npu_shadow_reports_missing_and_left_right_swaps(self) -> None:
+        reference = [[float(index * 10), float(index)] for index in range(17)]
+        npu = [point[:] for point in reference]
+        npu[5], npu[6] = npu[6], npu[5]
+        npu_scores = [0.9] * 17
+        npu_scores[10] = 0.0
+        diagnostics = _compare_npu_shadow(
+            npu, npu_scores, reference, [0.95] * 17, (0, 0, 100, 100)
+        )
+        self.assertEqual(diagnostics["invalid_joints"], 1)
+        self.assertEqual(diagnostics["compared_joints"], 16)
+        self.assertGreaterEqual(diagnostics["left_right_swaps"], 1)
+
+    def test_npu_shadow_builds_actionable_review_reasons(self) -> None:
+        self.assertEqual(_npu_review_reasons({
+            "compared_joints": 17,
+            "invalid_joints": 0,
+            "normalized_error_sum": 0.17,
+            "left_right_swaps": 0,
+        }), [])
+        reasons = _npu_review_reasons({
+            "compared_joints": 10,
+            "invalid_joints": 6,
+            "normalized_error_sum": 0.6,
+            "left_right_swaps": 1,
+        })
+        self.assertEqual(reasons, [
+            "left_right_swap", "missing_joints", "gpu_npu_disagreement"
+        ])
 
     def test_active_character_model_identity_is_preserved(self) -> None:
         self.assertEqual(_base_model_name(None), "hrnet")

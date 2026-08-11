@@ -5,10 +5,13 @@ project(AniMocapFusion VERSION 0.1.0 LANGUAGES CXX)
 option(ANIMOCAP_BUILD_TESTS "Build AniMocap Fusion tests" ON)
 
 add_library(animocap_core
+    src/animation_curve.cpp
     src/character_profile.cpp
     src/contracts.cpp
     src/export_bvh.cpp
     src/export_vrma.cpp
+    src/import_bvh.cpp
+    src/import_vrma.cpp
     src/fixture.cpp
     src/hash.cpp
     src/math.cpp
@@ -67,4 +70,8 @@ if(ANIMOCAP_BUILD_TESTS)
         ANIMOCAP_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
     )
     add_test(NAME animocap_core COMMAND animocap_tests)
+
+    add_executable(animocap_animation_curve_tests tests/test_animation_curve.cpp)
+    target_link_libraries(animocap_animation_curve_tests PRIVATE animocap_core)
+    add_test(NAME animocap_animation_curve COMMAND animocap_animation_curve_tests)
 endif()

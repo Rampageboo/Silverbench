@@ -18,9 +18,22 @@ import os
 import sys
 import tempfile
 import types
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Any
+
+try:
+    from .openvino_npu_pose import (
+        MODEL_BIN_SHA256,
+        MODEL_XML_SHA256,
+        OpenVinoNpuPoseObserver,
+    )
+except ImportError:  # Script entry point from this directory.
+    from openvino_npu_pose import (  # type: ignore[no-redef]
+        MODEL_BIN_SHA256,
+        MODEL_XML_SHA256,
+        OpenVinoNpuPoseObserver,
+    )
 
 SCHEMA_VERSION = "1.0.0"
 RTMW_CONFIG = (
@@ -56,6 +69,10 @@ COCO_JOINTS = [
     "left_wrist", "right_wrist", "left_hip", "right_hip", "left_knee",
     "right_knee", "left_ankle", "right_ankle",
 ]
+COCO_LEFT_RIGHT_PAIRS = (
+    (1, 2), (3, 4), (5, 6), (7, 8), (9, 10),
+    (11, 12), (13, 14), (15, 16),
+)
 
 SAM2_CONFIG = "configs/sam2.1/sam2.1_hiera_s.yaml"
 
@@ -330,6 +347,80 @@ def _roi_diagonal(
     if roi is not None:
         return max(1.0, math.hypot(float(roi[2]), float(roi[3])))
     return max(1.0, float(fallback or 1.0))
+
+
+def _needs_npu_shadow_pass(
+    scores: list[float], frame_index: int, mode: str, interval: int
+) -> bool:
+    if mode != "shadow":
+        return False
+    interval = max(1, interval)
+    if frame_index % interval == 0:
+        return True
+    return bool(scores) and min(float(value) for value in scores) < 0.45 and frame_index % 5 == 0
+
+
+def _compare_npu_shadow(
+    npu_points: list[list[float]],
+    npu_scores: list[float],
+    reference_points: list[list[float]],
+    reference_scores: list[float],
+    roi: tuple[int, int, int, int],
+) -> dict[str, float | int]:
+    diagonal = _roi_diagonal(roi)
+    compared = 0
+    invalid = 0
+    normalized_error = 0.0
+    for npu_point, npu_score, reference_point, reference_score in zip(
+        npu_points, npu_scores, reference_points, reference_scores
+    ):
+        if float(npu_score) <= 0.0:
+            invalid += 1
+            continue
+        if float(reference_score) <= 0.0:
+            continue
+        normalized_error += math.dist(npu_point, reference_point) / diagonal
+        compared += 1
+
+    swaps = 0
+    for left, right in COCO_LEFT_RIGHT_PAIRS:
+        if any(
+            float(scores[index]) <= 0.0
+            for scores in (npu_scores, reference_scores)
+            for index in (left, right)
+        ):
+            continue
+        direct = math.dist(npu_points[left], reference_points[left]) + math.dist(
+            npu_points[right], reference_points[right]
+        )
+        swapped = math.dist(npu_points[left], reference_points[right]) + math.dist(
+            npu_points[right], reference_points[left]
+        )
+        if swapped + diagonal * 0.02 < direct:
+            swaps += 1
+    return {
+        "compared_joints": compared,
+        "invalid_joints": invalid,
+        "normalized_error_sum": normalized_error,
+        "left_right_swaps": swaps,
+    }
+
+
+def _npu_review_reasons(comparison: dict[str, float | int]) -> list[str]:
+    """Turn a sparse NPU comparison into a non-authoritative review hint."""
+    compared = int(comparison.get("compared_joints", 0))
+    invalid = int(comparison.get("invalid_joints", 0))
+    swaps = int(comparison.get("left_right_swaps", 0))
+    normalized_error = float(comparison.get("normalized_error_sum", 0.0))
+    mean_error = normalized_error / compared if compared else 0.0
+    reasons: list[str] = []
+    if swaps > 0:
+        reasons.append("left_right_swap")
+    if invalid >= 5:
+        reasons.append("missing_joints")
+    if compared >= 6 and mean_error >= 0.05:
+        reasons.append("gpu_npu_disagreement")
+    return reasons
 
 
 def _fuse_coco_hypotheses(
@@ -985,6 +1076,61 @@ def _load_high_accuracy_refiner(
     )
 
 
+@contextmanager
+def _trusted_openmmlab_checkpoint_load() -> Any:
+    """Allow legacy official OpenMMLab checkpoints under PyTorch 2.6+.
+
+    PyTorch changed ``torch.load`` to ``weights_only=True`` by default.  The
+    pinned OpenMMLab checkpoints contain NumPy metadata that predates that
+    restriction, so MMEngine cannot load them without opting out explicitly.
+    Keep the compatibility override scoped to the two immutable official model
+    URLs owned by this adapter; user-supplied checkpoints never pass through it.
+    """
+    import torch
+
+    original_load = torch.load
+
+    def load_legacy_checkpoint(*args: Any, **kwargs: Any) -> Any:
+        kwargs.setdefault("weights_only", False)
+        return original_load(*args, **kwargs)
+
+    torch.load = load_legacy_checkpoint
+    try:
+        yield
+    finally:
+        torch.load = original_load
+
+
+def _humanart_runtime_config() -> Any:
+    """Return the bundled Human-Art config adapted to MMPreTrain 1.x.
+
+    MMPose 1.3.2 still ships this config with the retired ``mmcls`` registry
+    name and its old ``output_cls_token`` argument.  MMPreTrain is the supported
+    successor.  Patch a Config object in memory so site-packages and the source
+    config remain untouched, and disable the redundant backbone pretraining
+    download because the complete Human-Art checkpoint is loaded immediately.
+    """
+    import mmpose
+    from mmengine import Config
+    from mmpretrain.utils import register_all_modules
+
+    register_all_modules(init_default_scope=False)
+    source = Path(mmpose.__file__).resolve().parent / ".mim" / HUMANART_CONFIG
+    if not source.is_file():
+        raise RuntimeError(f"Human-Art ViTPose-L config is unavailable: {source}")
+    config = Config.fromfile(str(source))
+    backbone = config.model.backbone
+    if backbone.type not in ("mmcls.VisionTransformer", "mmpretrain.VisionTransformer"):
+        raise RuntimeError(
+            f"unsupported Human-Art ViTPose backbone: {backbone.type}"
+        )
+    backbone.type = "mmpretrain.VisionTransformer"
+    backbone.pop("output_cls_token", None)
+    backbone.out_type = "featmap"
+    backbone.init_cfg = None
+    return config
+
+
 def _load_humanart_expert(
     inferencer_type: Any, device: str | None
 ) -> Any:
@@ -994,17 +1140,14 @@ def _load_humanart_expert(
             "mmpretrain is unavailable; install the guided MMPose dependencies "
             "to enable Human-Art ViTPose-L"
         )
-    import mmpose
-
-    config = Path(mmpose.__file__).resolve().parent / ".mim" / HUMANART_CONFIG
-    if not config.is_file():
-        raise RuntimeError(f"Human-Art ViTPose-L config is unavailable: {config}")
-    return inferencer_type(
-        pose2d=str(config),
-        pose2d_weights=HUMANART_WEIGHTS,
-        det_model="whole_image",
-        device=device,
-    )
+    config = _humanart_runtime_config()
+    with _trusted_openmmlab_checkpoint_load():
+        return inferencer_type(
+            pose2d=config,
+            pose2d_weights=HUMANART_WEIGHTS,
+            det_model="whole_image",
+            device=device,
+        )
 
 
 def _prepare_offline_models(device: str | None = "cpu") -> None:
@@ -1019,17 +1162,8 @@ def _prepare_offline_models(device: str | None = "cpu") -> None:
     del base
     refiner = _load_high_accuracy_refiner(inferencer_type, device)
     del refiner
-    try:
-        humanart = _load_humanart_expert(inferencer_type, device)
-        del humanart
-    except Exception as error:
-        # Fast/base-only operation remains usable when the optional expert cannot
-        # be cached, while setup still exposes the exact dependency failure.
-        print(json.dumps({
-            "event": "warning",
-            "stage": "vitpose_humanart",
-            "message": str(error),
-        }), flush=True)
+    humanart = _load_humanart_expert(inferencer_type, device)
+    del humanart
 
 
 def _resolve_anime_pose_model(
@@ -1121,6 +1255,9 @@ class MMPoseSession:
         anime_pose_config: Path | None = None,
         anime_pose_weights: Path | None = None,
         confidence_calibration: Path | None = None,
+        npu_mode: str = "off",
+        npu_model: Path | None = None,
+        npu_sample_interval: int = 15,
     ) -> None:
         try:
             import cv2
@@ -1141,6 +1278,12 @@ class MMPoseSession:
         )
         self.calibration = _resolve_confidence_calibration(confidence_calibration)
         self.base_model = _base_model_name(self.anime_pose_weights)
+        if npu_mode not in ("off", "shadow"):
+            raise RuntimeError("NPU mode must be off or shadow")
+        if npu_sample_interval < 1:
+            raise RuntimeError("NPU sample interval must be at least one frame")
+        self.npu_mode = npu_mode
+        self.npu_sample_interval = npu_sample_interval
         inferencer_arguments: dict[str, Any] = dict(
             pose3d="human3d",
             pose2d=(
@@ -1172,6 +1315,16 @@ class MMPoseSession:
                 )
             except Exception as error:  # noqa: BLE001 - optional model boundary
                 self.humanart_error = str(error)
+
+        self.npu_observer = None
+        self.npu_error = ""
+        if npu_mode == "shadow":
+            try:
+                self.npu_observer = OpenVinoNpuPoseObserver(
+                    Path(__file__).resolve().parents[2], model_path=npu_model
+                )
+            except Exception as error:  # noqa: BLE001 - optional device boundary
+                self.npu_error = str(error)
 
         self.sam2_checkpoint = sam2_checkpoint or (
             Path(__file__).resolve().parents[2]
@@ -1236,6 +1389,7 @@ class MMPoseSession:
         self.inferencer = None
         self.high_accuracy_refiner = None
         self.humanart_expert = None
+        self.npu_observer = None
         self.sam2_predictor = None
         gc.collect()
         torch_module = self.sam2_torch or sys.modules.get("torch")
@@ -1323,6 +1477,8 @@ def _run_mmpose_with_session(
     anime_pose_weights = session.anime_pose_weights
     calibration = session.calibration
     base_model = session.base_model
+    npu_observer = session.npu_observer
+    npu_error = session.npu_error
 
     capture = cv2.VideoCapture(str(input_path))
     if not capture.isOpened():
@@ -1389,6 +1545,12 @@ def _run_mmpose_with_session(
             "stage": "vitpose_humanart",
             "message": humanart_error,
         }), flush=True)
+    if npu_error:
+        print(json.dumps({
+            "event": "warning",
+            "stage": "openvino_npu_shadow",
+            "message": npu_error,
+        }), flush=True)
     frames = []
     planar_fallback_frames = 0
     high_accuracy_frames = 0
@@ -1399,6 +1561,15 @@ def _run_mmpose_with_session(
         "conflict_joints": 0,
         "missing_joints": 0,
     }
+    npu_totals: dict[str, float | int] = {
+        "sampled_frames": 0,
+        "compared_joints": 0,
+        "invalid_joints": 0,
+        "normalized_error_sum": 0.0,
+        "left_right_swaps": 0,
+        "latency_ms_sum": 0.0,
+    }
+    npu_review_frames: list[dict[str, Any]] = []
     generator = inferencer(
         str(input_path),
         return_vis=False,
@@ -1497,6 +1668,56 @@ def _run_mmpose_with_session(
             )
             for key, value in fusion_diagnostics.items():
                 fusion_totals[key] += value
+            if (
+                npu_observer is not None
+                and flow_frame_ok
+                and _needs_npu_shadow_pass(
+                    coco_scores,
+                    frame_index,
+                    session.npu_mode,
+                    session.npu_sample_interval,
+                )
+            ):
+                try:
+                    npu_observation = npu_observer.infer(flow_frame, effective_roi)
+                    comparison = _compare_npu_shadow(
+                        npu_observation.points,
+                        npu_observation.scores,
+                        coco_points,
+                        coco_scores,
+                        effective_roi,
+                    )
+                    npu_totals["sampled_frames"] += 1
+                    npu_totals["latency_ms_sum"] += npu_observation.latency_ms
+                    for key in (
+                        "compared_joints", "invalid_joints",
+                        "normalized_error_sum", "left_right_swaps",
+                    ):
+                        npu_totals[key] += comparison[key]
+                    reasons = _npu_review_reasons(comparison)
+                    if reasons:
+                        compared = int(comparison["compared_joints"])
+                        npu_review_frames.append({
+                            "frame_index": frame_index,
+                            "time_s": frame_index / fps,
+                            "reasons": reasons,
+                            "mean_normalized_error": (
+                                float(comparison["normalized_error_sum"]) / compared
+                                if compared else None
+                            ),
+                            "invalid_joints": int(comparison["invalid_joints"]),
+                            "left_right_swaps": int(comparison["left_right_swaps"]),
+                        })
+                except Exception as error:  # noqa: BLE001 - optional device boundary
+                    session.npu_error = str(error)
+                    npu_error = session.npu_error
+                    npu_observer = None
+                    session.npu_observer = None
+                    print(json.dumps({
+                        "event": "warning",
+                        "stage": "openvino_npu_shadow",
+                        "message": npu_error,
+                    }), flush=True)
             points2d, scores = _coco_to_h36m(coco_points, coco_scores)
 
         joints, used_planar_fallback = _map_h36m(
@@ -1524,8 +1745,51 @@ def _run_mmpose_with_session(
         **fusion_totals,
         "calibration": calibration.status,
     }), flush=True)
+    sampled_frames = int(npu_totals["sampled_frames"])
+    compared_joints = int(npu_totals["compared_joints"])
+    npu_diagnostics = {
+        "event": "npu_shadow_diagnostics",
+        "schema_version": "1.0.0",
+        "authoritative": False,
+        "policy": "sparse-shadow-only",
+        "role": "review-queue-scout",
+        "mode": session.npu_mode,
+        "status": (
+            "active" if sampled_frames
+            else "unavailable" if npu_error
+            else "inactive"
+        ),
+        "total_frames": len(frames),
+        "sample_interval": session.npu_sample_interval,
+        "sampled_frames": sampled_frames,
+        "sampled_ratio": sampled_frames / len(frames),
+        "compared_joints": compared_joints,
+        "invalid_joints": int(npu_totals["invalid_joints"]),
+        "mean_normalized_error": (
+            float(npu_totals["normalized_error_sum"]) / compared_joints
+            if compared_joints else None
+        ),
+        "left_right_swaps": int(npu_totals["left_right_swaps"]),
+        "review_frame_count": len(npu_review_frames),
+        "review_frames": npu_review_frames,
+        "mean_latency_ms": (
+            float(npu_totals["latency_ms_sum"]) / sampled_frames
+            if sampled_frames else None
+        ),
+        "message": npu_error,
+        "device": (
+            session.npu_observer.execution_devices
+            if session.npu_observer is not None else ""
+        ),
+        "model_xml_sha256": MODEL_XML_SHA256,
+        "model_bin_sha256": MODEL_BIN_SHA256,
+    }
+    print(json.dumps(npu_diagnostics), flush=True)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.with_name("npu-shadow-diagnostics.json").write_text(
+        json.dumps(npu_diagnostics, indent=2, sort_keys=True), encoding="utf-8"
+    )
     output_path.write_text(json.dumps({
         "schema_version": SCHEMA_VERSION,
         "source_video": str(input_path.resolve()),
@@ -1577,6 +1841,13 @@ def _run_mmpose_with_session(
                 else "+confidence-calibration-identity"
             )
             + ("+anime-finetuned-hrnet" if anime_pose_weights is not None else "")
+            + (
+                "+openvino-npu-shadow"
+                if sampled_frames
+                else "+openvino-npu-unavailable"
+                if session.npu_mode == "shadow" and npu_error
+                else ""
+            )
             + ("+user-roi" if roi is not None else "+auto-body-roi")
         ),
         "image_width": width,
@@ -1597,15 +1868,21 @@ def run_mmpose(
     anime_pose_config: Path | None = None,
     anime_pose_weights: Path | None = None,
     confidence_calibration: Path | None = None,
+    npu_mode: str = "off",
+    npu_model: Path | None = None,
+    npu_sample_interval: int = 15,
 ) -> None:
     session = MMPoseSession(
-        device,
-        quality,
-        segmentation,
-        sam2_checkpoint,
-        anime_pose_config,
-        anime_pose_weights,
-        confidence_calibration,
+        device=device,
+        quality=quality,
+        segmentation=segmentation,
+        sam2_checkpoint=sam2_checkpoint,
+        anime_pose_config=anime_pose_config,
+        anime_pose_weights=anime_pose_weights,
+        confidence_calibration=confidence_calibration,
+        npu_mode=npu_mode,
+        npu_model=npu_model,
+        npu_sample_interval=npu_sample_interval,
     )
     try:
         session.run(input_path, output_path, roi)
@@ -1629,6 +1906,9 @@ def main() -> int:
     parser.add_argument("--anime-pose-config", type=Path, default=None)
     parser.add_argument("--anime-pose-weights", type=Path, default=None)
     parser.add_argument("--confidence-calibration", type=Path, default=None)
+    parser.add_argument("--npu-mode", choices=("off", "shadow"), default="off")
+    parser.add_argument("--npu-model", type=Path, default=None)
+    parser.add_argument("--npu-sample-interval", type=int, default=15)
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--prepare-models", action="store_true")
     args = parser.parse_args()
@@ -1644,16 +1924,28 @@ def main() -> int:
             try:
                 import mmpretrain
                 mmpretrain_version = mmpretrain.__version__
+                _humanart_runtime_config()
+                humanart_status = "runtime-config-ready"
             except ImportError:
                 mmpretrain_version = None
+                humanart_status = "dependency-missing"
+            except Exception as error:  # noqa: BLE001 - readiness boundary
+                humanart_status = f"runtime-config-error: {error}"
+            try:
+                import openvino as ov
+                openvino_version = ov.get_version()
+                openvino_devices = ov.Core().available_devices
+            except ImportError:
+                openvino_version = None
+                openvino_devices = []
             print(json.dumps({
                 "event": "ready", "mmpose": mmpose.__version__,
                 "mmcv": mmcv.__version__, "mmengine": mmengine.__version__,
                 "torch": torch.__version__, "opencv": cv2.__version__,
                 "cuda": cuda_ready, "mmpretrain": mmpretrain_version,
-                "vitpose_humanart": (
-                    "dependency-ready" if mmpretrain_version else "dependency-missing"
-                ),
+                "vitpose_humanart": humanart_status,
+                "openvino": openvino_version,
+                "intel_npu": "available" if "NPU" in openvino_devices else "unavailable",
             }), flush=True)
             return 0
         if args.prepare_models:
@@ -1682,6 +1974,9 @@ def main() -> int:
             args.anime_pose_config,
             args.anime_pose_weights,
             args.confidence_calibration,
+            args.npu_mode,
+            args.npu_model,
+            args.npu_sample_interval,
         )
         print(json.dumps({"event": "complete", "output": str(args.output)}), flush=True)
         return 0

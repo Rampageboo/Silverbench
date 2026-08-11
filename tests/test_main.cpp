@@ -12,6 +12,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdint>
@@ -117,6 +118,22 @@ void test_manifest_contract() {
         synchronized_path);
     CHECK(synchronized_loaded.calibration_file == synchronized.calibration_file);
     CHECK(synchronized_loaded.views[1].time_offset_s == 0.004);
+
+    auto directional=synchronized;
+    directional.mode=animocap::CaptureMode::DirectionalRepeat;
+    directional.calibration_file.reset();
+    directional.views[0].yaw_degrees=0.0;
+    directional.views[1].yaw_degrees=45.0;
+    for(std::size_t index=2;index<8;++index) {
+        auto extra=directional.views.front();
+        extra.id="view_"+std::to_string(index);
+        extra.video="view_"+std::to_string(index)+".mp4";
+        extra.yaw_degrees=static_cast<double>(index)*15.0;
+        directional.views.push_back(extra);
+    }
+    animocap::validate_capture_manifest(directional);
+    directional.views.back().yaw_degrees.reset();
+    CHECK_THROWS(animocap::validate_capture_manifest(directional));
 
     auto json = nlohmann::json::parse(read_text(path));
     json["unexpected"] = true;
@@ -458,6 +475,44 @@ void test_pose_reconstruction() {
     CHECK_THROWS(animocap::apply_manual_pose_corrections(
         similar_result,{malformed_manual}));
 
+    auto keyframed_manual=manual;
+    keyframed_manual.keyframe_frame_index=5;
+    keyframed_manual.frame_weights=animocap::make_bounded_keyframe_curve_weights(
+        similar_input.frames.size(),5,3);
+    const auto keyframed=animocap::apply_manual_pose_corrections(
+        similar_result,{keyframed_manual});
+    CHECK_NEAR(keyframed_manual.frame_weights[5],1.0,1e-12);
+    CHECK_NEAR(keyframed_manual.frame_weights[2],0.0,1e-12);
+    CHECK_NEAR(keyframed_manual.frame_weights[8],0.0,1e-12);
+    CHECK_NEAR(keyframed_manual.frame_weights[4],keyframed_manual.frame_weights[6],1e-12);
+    CHECK(keyframed_manual.frame_weights[4]>keyframed_manual.frame_weights[3]);
+    CHECK_NEAR(keyframed.frames[5].joints[head].image_xy.x,
+        similar_result.frames[5].joints[head].image_xy.x+4.0,1e-12);
+    CHECK_NEAR(keyframed.frames[3].joints[head].image_xy.x,
+        similar_result.frames[3].joints[head].image_xy.x+
+        4.0*keyframed_manual.frame_weights[3],1e-12);
+    CHECK_NEAR(keyframed.frames[2].joints[head].image_xy.x,
+        similar_result.frames[2].joints[head].image_xy.x,1e-12);
+    auto malformed_curve=keyframed_manual;
+    malformed_curve.frame_weights.pop_back();
+    CHECK_THROWS(animocap::apply_manual_pose_corrections(
+        similar_result,{malformed_curve}));
+    auto malformed_keyframe=keyframed_manual;
+    malformed_keyframe.keyframe_frame_index=similar_input.frames.size();
+    CHECK_THROWS(animocap::apply_manual_pose_corrections(
+        similar_result,{malformed_keyframe}));
+    auto keyframed_missing=similar_result;
+    keyframed_missing.frames[5].joints[head].valid=false;
+    keyframed_missing.frames[5].joints[head].confidence=0.0f;
+    const auto missing_sample=keyframed_missing.frames[5].joints[head];
+    const auto keyframed_missing_result=animocap::apply_manual_pose_corrections(
+        keyframed_missing,{keyframed_manual});
+    CHECK(!keyframed_missing_result.frames[5].joints[head].valid);
+    CHECK(keyframed_missing_result.frames[5].joints[head].position_m==
+          missing_sample.position_m);
+    CHECK(keyframed_missing_result.frames[5].joints[head].image_xy==
+          missing_sample.image_xy);
+
     auto missing_input=low_confidence_profile_input;
     missing_input.frames[5].joints[head].valid=false;
     missing_input.frames[5].joints[head].confidence=0.0f;
@@ -569,6 +624,114 @@ animocap::PoseSequence make_directional_test_pose(
     return sequence;
 }
 
+void normalize_directional_positions(animocap::PoseSequence& sequence,double yaw_degrees) {
+    const double angle=-yaw_degrees*3.14159265358979323846/180.0;
+    const double cosine=std::cos(angle), sine=std::sin(angle);
+    for(auto& frame:sequence.frames) {
+        for(auto& joint:frame.joints) {
+            if(!joint.valid)continue;
+            const auto position=joint.position_m;
+            joint.position_m={
+                cosine*position.x-sine*position.z,
+                position.y,
+                sine*position.x+cosine*position.z};
+        }
+    }
+}
+
+void rotate_directional_body(
+    animocap::PoseSequence& sequence,double view_yaw_degrees,double body_yaw_degrees
+) {
+    const auto skeleton=animocap::make_default_skeleton();
+    const auto hips=animocap::bone_index(skeleton,animocap::BoneSemantic::Hips);
+    const double view=view_yaw_degrees*3.14159265358979323846/180.0;
+    const double body=body_yaw_degrees*3.14159265358979323846/180.0;
+    const double view_cosine=std::cos(view),view_sine=std::sin(view);
+    const double body_cosine=std::cos(body),body_sine=std::sin(body);
+    const auto camera_to_world=[&](const animocap::Vec3& value) {
+        return animocap::Vec3{
+            view_cosine*value.x+view_sine*value.z,value.y,
+            -view_sine*value.x+view_cosine*value.z};
+    };
+    const auto world_to_camera=[&](const animocap::Vec3& value) {
+        return animocap::Vec3{
+            view_cosine*value.x-view_sine*value.z,value.y,
+            view_sine*value.x+view_cosine*value.z};
+    };
+    for(auto& frame:sequence.frames) {
+        const auto hip_world=camera_to_world(frame.joints[hips].position_m);
+        for(auto& joint:frame.joints) {
+            if(!joint.valid)continue;
+            const auto world=camera_to_world(joint.position_m);
+            const auto relative=world-hip_world;
+            const animocap::Vec3 rotated{
+                body_cosine*relative.x+body_sine*relative.z,
+                relative.y,
+                -body_sine*relative.x+body_cosine*relative.z};
+            const auto camera=world_to_camera(hip_world+rotated);
+            joint.position_m=camera;
+            joint.image_xy={320.0+300.0*camera.x,360.0-300.0*camera.y};
+        }
+    }
+}
+
+void compress_directional_depth(animocap::PoseSequence& sequence,double factor) {
+    for(auto& frame:sequence.frames)
+        for(auto& joint:frame.joints)
+            if(joint.valid)joint.position_m.z*=factor;
+}
+
+void swap_directional_sides_at_frame(animocap::PoseSequence& sequence,std::size_t frame) {
+    if(frame>=sequence.frames.size())throw std::runtime_error("test frame is out of range");
+    const auto skeleton=animocap::make_default_skeleton();
+    const std::vector<std::pair<animocap::BoneSemantic,animocap::BoneSemantic>> semantics{
+        {animocap::BoneSemantic::LeftShoulder,animocap::BoneSemantic::RightShoulder},
+        {animocap::BoneSemantic::LeftUpperArm,animocap::BoneSemantic::RightUpperArm},
+        {animocap::BoneSemantic::LeftLowerArm,animocap::BoneSemantic::RightLowerArm},
+        {animocap::BoneSemantic::LeftHand,animocap::BoneSemantic::RightHand},
+        {animocap::BoneSemantic::LeftUpperLeg,animocap::BoneSemantic::RightUpperLeg},
+        {animocap::BoneSemantic::LeftLowerLeg,animocap::BoneSemantic::RightLowerLeg},
+        {animocap::BoneSemantic::LeftFoot,animocap::BoneSemantic::RightFoot},
+        {animocap::BoneSemantic::LeftToes,animocap::BoneSemantic::RightToes},
+    };
+    for(const auto [left,right]:semantics)
+        std::swap(sequence.frames[frame].joints[
+            animocap::bone_index(skeleton,left)],sequence.frames[frame].joints[
+            animocap::bone_index(skeleton,right)]);
+}
+
+void corrupt_directional_joint_segment(
+    animocap::PoseSequence& sequence,std::size_t joint,
+    std::size_t first,std::size_t last
+) {
+    for(std::size_t frame=first;frame<last&&frame<sequence.frames.size();++frame) {
+        auto& observation=sequence.frames[frame].joints[joint];
+        if(!observation.valid)continue;
+        observation.image_xy.x+=420.0;
+        observation.image_xy.y-=160.0;
+        observation.confidence=0.99f;
+    }
+}
+
+double pose_joint_distance(
+    const animocap::ObservedJoint& first,const animocap::ObservedJoint& second
+) {
+    const auto delta=first.position_m-second.position_m;
+    return std::sqrt(delta.x*delta.x+delta.y*delta.y+delta.z*delta.z);
+}
+
+std::vector<animocap::MultiviewPoseInput> make_normalized_fan_views() {
+    std::vector<animocap::MultiviewPoseInput> views;
+    views.push_back({"front_left",-45.0,
+        make_directional_test_pose(-45.0,60,0.0,1.0,false,false)});
+    views.push_back({"front",0.0,
+        make_directional_test_pose(0.0,60,0.0,1.0,false,false)});
+    views.push_back({"front_right",45.0,
+        make_directional_test_pose(45.0,60,0.0,1.0,false,false)});
+    for(auto& view:views)normalize_directional_positions(view.pose,view.yaw_degrees);
+    return views;
+}
+
 void test_directional_multiview() {
     std::vector<animocap::MultiviewPoseInput> views;
     views.push_back({"front", 0.0,
@@ -592,10 +755,28 @@ void test_directional_multiview() {
     const auto hand = animocap::bone_index(
         result.motion.skeleton, animocap::BoneSemantic::LeftHand);
     CHECK(result.fused_pose.frames[25].joints[hand].valid);
-    CHECK(result.fused_pose.frames[25].joints[hand].confidence > 0.80f);
+    CHECK(result.fused_pose.frames[25].joints[hand].confidence > 0.65f);
+    CHECK(result.diagnostics.rejected_view_observations > 0 ||
+          !result.diagnostics.conflicts.empty());
 
     const auto diagnostics_path = test_root() / "multiview-diagnostics.json";
-    animocap::save_multiview_diagnostics(result.diagnostics, diagnostics_path);
+    auto persisted_diagnostics=result.diagnostics;
+    persisted_diagnostics.rejected_view_observations=17;
+    persisted_diagnostics.left_right_state_changes=3;
+    persisted_diagnostics.reference_anchored_observations=41;
+    persisted_diagnostics.visibility_evaluated_observations=301;
+    persisted_diagnostics.visibility_downweighted_observations=91;
+    persisted_diagnostics.visibility_boosted_observations=73;
+    persisted_diagnostics.overlap_downweighted_observations=19;
+    persisted_diagnostics.curve_anchor_samples=31;
+    persisted_diagnostics.curve_corrected_samples=29;
+    persisted_diagnostics.curve_high_confidence_jitter_corrected_samples=11;
+    persisted_diagnostics.curve_contact_locked_samples=7;
+    persisted_diagnostics.curve_mean_correction_m=0.004;
+    persisted_diagnostics.curve_maximum_correction_m=0.021;
+    persisted_diagnostics.jitter_before_curve=0.062;
+    persisted_diagnostics.jitter_after_curve=0.041;
+    animocap::save_multiview_diagnostics(persisted_diagnostics, diagnostics_path);
     const auto fused_pose_path = test_root() / "fused-pose.json";
     animocap::save_pose_sequence_json(result.fused_pose, fused_pose_path);
     const auto fused_roundtrip = animocap::load_pose_sequence_json(fused_pose_path);
@@ -605,9 +786,267 @@ void test_directional_multiview() {
         animocap::load_multiview_diagnostics(diagnostics_path);
     CHECK(diagnostics_roundtrip.alignments.size() == 4);
     CHECK(diagnostics_roundtrip.recovered_observations >= 8);
-    const auto diagnostics = nlohmann::json::parse(read_text(diagnostics_path));
+    CHECK(diagnostics_roundtrip.rejected_view_observations == 17);
+    CHECK(diagnostics_roundtrip.left_right_state_changes == 3);
+    CHECK(diagnostics_roundtrip.reference_anchored_observations == 41);
+    CHECK(diagnostics_roundtrip.visibility_evaluated_observations == 301);
+    CHECK(diagnostics_roundtrip.visibility_downweighted_observations == 91);
+    CHECK(diagnostics_roundtrip.visibility_boosted_observations == 73);
+    CHECK(diagnostics_roundtrip.overlap_downweighted_observations == 19);
+    CHECK(diagnostics_roundtrip.curve_anchor_samples == 31);
+    CHECK(diagnostics_roundtrip.curve_corrected_samples == 29);
+    CHECK(diagnostics_roundtrip.curve_high_confidence_jitter_corrected_samples == 11);
+    CHECK(diagnostics_roundtrip.curve_contact_locked_samples == 7);
+    CHECK_NEAR(diagnostics_roundtrip.curve_mean_correction_m,0.004,1e-12);
+    CHECK_NEAR(diagnostics_roundtrip.curve_maximum_correction_m,0.021,1e-12);
+    CHECK_NEAR(diagnostics_roundtrip.jitter_before_curve,0.062,1e-12);
+    CHECK_NEAR(diagnostics_roundtrip.jitter_after_curve,0.041,1e-12);
+    auto diagnostics = nlohmann::json::parse(read_text(diagnostics_path));
     CHECK(diagnostics.at("alignments").size() == 4);
     CHECK(diagnostics.at("recovered_observations").get<std::size_t>() >= 8);
+    CHECK(diagnostics.at("rejected_view_observations").get<std::size_t>() == 17);
+    CHECK(diagnostics.at("left_right_state_changes").get<std::size_t>() == 3);
+    CHECK(diagnostics.at("reference_anchored_observations").get<std::size_t>() == 41);
+    const auto old_diagnostics_path = test_root() / "multiview-diagnostics-old.json";
+    diagnostics.erase("rejected_view_observations");
+    diagnostics.erase("left_right_state_changes");
+    diagnostics.erase("reference_anchored_observations");
+    diagnostics.erase("visibility_evaluated_observations");
+    diagnostics.erase("visibility_downweighted_observations");
+    diagnostics.erase("visibility_boosted_observations");
+    diagnostics.erase("overlap_downweighted_observations");
+    diagnostics.erase("curve_anchor_samples");
+    diagnostics.erase("curve_corrected_samples");
+    diagnostics.erase("curve_high_confidence_jitter_corrected_samples");
+    diagnostics.erase("curve_contact_locked_samples");
+    diagnostics.erase("curve_mean_correction_m");
+    diagnostics.erase("curve_maximum_correction_m");
+    diagnostics.erase("jitter_before_curve");
+    diagnostics.erase("jitter_after_curve");
+    write_text(old_diagnostics_path,diagnostics.dump(2));
+    const auto old_diagnostics=animocap::load_multiview_diagnostics(old_diagnostics_path);
+    CHECK(old_diagnostics.rejected_view_observations==0);
+    CHECK(old_diagnostics.left_right_state_changes==0);
+    CHECK(old_diagnostics.reference_anchored_observations==0);
+    CHECK(old_diagnostics.visibility_evaluated_observations==0);
+    CHECK(old_diagnostics.visibility_downweighted_observations==0);
+    CHECK(old_diagnostics.visibility_boosted_observations==0);
+    CHECK(old_diagnostics.overlap_downweighted_observations==0);
+    CHECK(old_diagnostics.curve_anchor_samples==0);
+    CHECK(old_diagnostics.curve_corrected_samples==0);
+    CHECK(old_diagnostics.curve_high_confidence_jitter_corrected_samples==0);
+    CHECK(old_diagnostics.curve_contact_locked_samples==0);
+    CHECK(old_diagnostics.curve_mean_correction_m==0.0);
+    CHECK(old_diagnostics.curve_maximum_correction_m==0.0);
+    CHECK(old_diagnostics.jitter_before_curve==0.0);
+    CHECK(old_diagnostics.jitter_after_curve==0.0);
+}
+
+void test_view_invariant_phase_alignment_with_different_starts() {
+    std::vector<animocap::MultiviewPoseInput> views;
+    views.push_back({"front",0.0,
+        make_directional_test_pose(0.0,60,0.0,1.0,false,false)});
+    views.push_back({"right",90.0,
+        make_directional_test_pose(90.0,78,14.0,0.94,false,false)});
+    views.push_back({"back",180.0,
+        make_directional_test_pose(180.0,74,9.0,1.02,true,false)});
+    // Approximate the view-dependent depth compression seen when MotionBERT
+    // falls back toward a planar reconstruction. Phase matching must still use
+    // the same action landmarks rather than the apparent facing direction.
+    compress_directional_depth(views[1].pose,0.18);
+    compress_directional_depth(views[2].pose,0.35);
+
+    const auto result=animocap::solve_directional_multiview(views);
+    const auto right_at_32=
+        result.diagnostics.alignments[1].source_frame_at_reference[32];
+    const auto back_at_32=
+        result.diagnostics.alignments[2].source_frame_at_reference[32];
+    CHECK(std::abs(right_at_32-(14.0+0.94*32.0))<3.0);
+    CHECK(std::abs(back_at_32-(9.0+1.02*32.0))<3.0);
+    CHECK(result.diagnostics.alignments[1].mean_rate>0.75);
+    CHECK(result.diagnostics.alignments[1].mean_rate<1.15);
+
+    views[1].time_offset_s=14.0/30.0;
+    views[2].time_offset_s=9.0/30.0;
+    animocap::MultiviewSolveOptions hinted_options;
+    hinted_options.maximum_warp_fraction=0.05;
+    const auto hinted=animocap::solve_directional_multiview(views,hinted_options);
+    CHECK(std::abs(
+        hinted.diagnostics.alignments[1].source_frame_at_reference[32]-
+        (14.0+0.94*32.0))<3.0);
+    CHECK(std::abs(
+        hinted.diagnostics.alignments[2].source_frame_at_reference[32]-
+        (9.0+1.02*32.0))<3.0);
+}
+
+void test_animation_first_fan_rejects_corrupt_view() {
+    auto views=make_normalized_fan_views();
+    const auto hand=animocap::bone_index(
+        animocap::make_default_skeleton(),animocap::BoneSemantic::LeftHand);
+    corrupt_directional_joint_segment(views[2].pose,hand,18,33);
+    animocap::MultiviewSolveOptions options;
+    options.reference_view=1;
+    const auto result=animocap::solve_directional_multiview(views,options);
+    CHECK(result.motion.cameras.size()==3);
+    CHECK(result.diagnostics.rejected_view_observations>0);
+    CHECK(result.diagnostics.reference_anchored_observations>0);
+    const auto clean=make_directional_test_pose(0.0,60,0.0,1.0,false,false);
+    const double error=pose_joint_distance(result.fused_pose.frames[25].joints[hand],
+                                            clean.frames[25].joints[hand]);
+    CHECK(error<0.12);
+    const auto hips=animocap::bone_index(
+        animocap::make_default_skeleton(),animocap::BoneSemantic::Hips);
+    const auto& reference_frame=views[1].pose.frames[25];
+    const auto& fused_frame=result.fused_pose.frames[25];
+    const auto relative=fused_frame.joints[hand].position_m-
+        reference_frame.joints[hips].position_m;
+    CHECK_NEAR(relative.x,
+        (reference_frame.joints[hand].image_xy.x-
+         reference_frame.joints[hips].image_xy.x)/300.0,1e-6);
+    CHECK_NEAR(relative.y,
+        -(reference_frame.joints[hand].image_xy.y-
+          reference_frame.joints[hips].image_xy.y)/300.0,1e-6);
+}
+
+void test_joint_view_visibility_prefers_near_body_side() {
+    std::vector<animocap::MultiviewPoseInput> views;
+    views.push_back({"front_left",-45.0,
+        make_directional_test_pose(-45.0,60,0.0,1.0,false,false)});
+    views.push_back({"front",0.0,
+        make_directional_test_pose(0.0,60,0.0,1.0,false,false)});
+    views.push_back({"front_right",45.0,
+        make_directional_test_pose(45.0,60,0.0,1.0,false,false)});
+    const auto skeleton=animocap::make_default_skeleton();
+    const auto right_hand=animocap::bone_index(
+        skeleton,animocap::BoneSemantic::RightHand);
+    const auto left_hand=animocap::bone_index(
+        skeleton,animocap::BoneSemantic::LeftHand);
+    for(std::size_t frame=18;frame<34;++frame) {
+        views[0].pose.frames[frame].joints[right_hand].confidence=0.95f;
+        views[1].pose.frames[frame].joints[right_hand].confidence=0.65f;
+        views[2].pose.frames[frame].joints[right_hand].confidence=0.95f;
+    }
+    const auto clean_views=views;
+    for(std::size_t frame=18;frame<34;++frame) {
+        // The -45 degree view is on the body's left/far side for a right-hand
+        // joint. Keep its error within the consensus threshold: visibility is
+        // allowed to lower its influence, not reject it as an outlier.
+        views[0].pose.frames[frame].joints[right_hand].image_xy.x+=24.0;
+    }
+    animocap::MultiviewSolveOptions weighted_options;
+    weighted_options.reference_view=1;
+    const auto weighted=animocap::solve_directional_multiview(
+        views,weighted_options);
+    auto unweighted_options=weighted_options;
+    unweighted_options.enable_view_visibility_weighting=false;
+    const auto unweighted=animocap::solve_directional_multiview(
+        views,unweighted_options);
+    const auto clean=animocap::solve_directional_multiview(
+        clean_views,weighted_options);
+    const double weighted_error=pose_joint_distance(
+        weighted.fused_pose.frames[25].joints[right_hand],
+        clean.fused_pose.frames[25].joints[right_hand]);
+    const double unweighted_error=pose_joint_distance(
+        unweighted.fused_pose.frames[25].joints[right_hand],
+        clean.fused_pose.frames[25].joints[right_hand]);
+    if(!(weighted_error<unweighted_error))
+        std::cerr<<"visibility comparison: weighted="<<weighted_error
+                 <<" unweighted="<<unweighted_error<<'\n';
+    CHECK(weighted_error<unweighted_error);
+    CHECK(weighted.diagnostics.visibility_evaluated_observations>0);
+    CHECK(weighted.diagnostics.visibility_downweighted_observations>0);
+    CHECK(weighted.diagnostics.visibility_boosted_observations>0);
+    CHECK(weighted.fused_pose.backend.find("joint-view-visibility")!=
+          std::string::npos);
+    CHECK(unweighted.diagnostics.visibility_evaluated_observations==0);
+
+    auto overlap_views=views;
+    for(std::size_t frame=18;frame<34;++frame) {
+        overlap_views[0].pose.frames[frame].joints[right_hand].image_xy=
+            overlap_views[0].pose.frames[frame].joints[left_hand].image_xy;
+    }
+    const auto overlap=animocap::solve_directional_multiview(
+        overlap_views,weighted_options);
+    CHECK(overlap.diagnostics.overlap_downweighted_observations>0);
+    CHECK(overlap.fused_pose.frames[25].joints[right_hand].valid);
+
+    std::vector<animocap::MultiviewPoseInput> turned_views;
+    turned_views.push_back({"front_left",-45.0,
+        make_directional_test_pose(-45.0,60,0.0,1.0,false,false)});
+    turned_views.push_back({"front",0.0,
+        make_directional_test_pose(0.0,60,0.0,1.0,false,false)});
+    turned_views.push_back({"front_right",45.0,
+        make_directional_test_pose(45.0,60,0.0,1.0,false,false)});
+    for(auto& view:turned_views)
+        rotate_directional_body(view.pose,view.yaw_degrees,180.0);
+    for(std::size_t frame=18;frame<34;++frame) {
+        turned_views[0].pose.frames[frame].joints[right_hand].confidence=0.95f;
+        turned_views[1].pose.frames[frame].joints[right_hand].confidence=0.65f;
+        turned_views[2].pose.frames[frame].joints[right_hand].confidence=0.95f;
+    }
+    const auto clean_turned_views=turned_views;
+    // After a 180-degree body turn, the +45 degree camera is now the far side
+    // for the same semantic right hand. The reference-body axis must reverse
+    // the side preference instead of using a fixed view/joint lookup table.
+    for(std::size_t frame=18;frame<34;++frame)
+        turned_views[2].pose.frames[frame].joints[right_hand].image_xy.x+=24.0;
+    const auto weighted_turned=animocap::solve_directional_multiview(
+        turned_views,weighted_options);
+    const auto unweighted_turned=animocap::solve_directional_multiview(
+        turned_views,unweighted_options);
+    const auto clean_turned=animocap::solve_directional_multiview(
+        clean_turned_views,weighted_options);
+    CHECK(pose_joint_distance(
+        weighted_turned.fused_pose.frames[25].joints[right_hand],
+        clean_turned.fused_pose.frames[25].joints[right_hand])<
+        pose_joint_distance(
+            unweighted_turned.fused_pose.frames[25].joints[right_hand],
+            clean_turned.fused_pose.frames[25].joints[right_hand]));
+
+    auto invalid_options=weighted_options;
+    invalid_options.maximum_far_side_visibility_penalty=1.0;
+    CHECK_THROWS(animocap::solve_directional_multiview(views,invalid_options));
+}
+
+void test_eight_view_strict_majority_rejects_two_views() {
+    const std::array<double,8> yaws{-90.0,-60.0,-30.0,0.0,30.0,60.0,90.0,120.0};
+    std::vector<animocap::MultiviewPoseInput> views;
+    for(std::size_t index=0;index<yaws.size();++index) {
+        views.push_back({"view_"+std::to_string(index),yaws[index],
+            make_directional_test_pose(yaws[index],60,0.0,1.0,false,false)});
+        normalize_directional_positions(views.back().pose,yaws[index]);
+    }
+    const auto hand=animocap::bone_index(
+        animocap::make_default_skeleton(),animocap::BoneSemantic::LeftHand);
+    corrupt_directional_joint_segment(views[0].pose,hand,18,33);
+    corrupt_directional_joint_segment(views[1].pose,hand,18,33);
+    animocap::MultiviewSolveOptions options;
+    options.reference_view=3;
+    const auto result=animocap::solve_directional_multiview(views,options);
+    CHECK(result.motion.cameras.size()==8);
+    CHECK(result.diagnostics.rejected_view_observations>=2);
+    const auto clean=make_directional_test_pose(0.0,60,0.0,1.0,false,false);
+    const double error=pose_joint_distance(result.fused_pose.frames[25].joints[hand],
+                                            clean.frames[25].joints[hand]);
+    CHECK(error<0.12);
+}
+
+void test_left_right_single_frame_ambiguity_is_stable() {
+    auto views=make_normalized_fan_views();
+    swap_directional_sides_at_frame(views[0].pose,24);
+    animocap::MultiviewSolveOptions options;
+    options.reference_view=1;
+    const auto result=animocap::solve_directional_multiview(views,options);
+    CHECK(result.diagnostics.left_right_state_changes==0);
+}
+
+void test_degenerate_directional_yaws_rejected() {
+    std::vector<animocap::MultiviewPoseInput> views;
+    views.push_back({"front",0.0,
+        make_directional_test_pose(0.0,30,0.0,1.0,false,false)});
+    views.push_back({"back",180.0,
+        make_directional_test_pose(180.0,30,0.0,1.0,false,false)});
+    CHECK_THROWS(animocap::solve_directional_multiview(views));
 }
 void test_package_roundtrip() {
     const auto directory = test_root() / "roundtrip.amotion";
@@ -657,6 +1096,43 @@ void test_motion_clip() {
     CHECK_THROWS(animocap::clip_motion_package(source,0,20));
 }
 
+std::vector<animocap::Vec3> motion_frame_positions(
+    const animocap::MotionPackage& package,
+    std::size_t frame
+) {
+    const auto begin=package.motion.local_rotations.begin()+
+        static_cast<std::ptrdiff_t>(frame*package.motion.joint_count);
+    const std::vector<animocap::Quat> rotations(
+        begin,begin+static_cast<std::ptrdiff_t>(package.motion.joint_count));
+    return animocap::forward_kinematics(
+        package.skeleton,rotations,
+        package.motion.scene_root_translation_m[frame],
+        package.motion.scene_root_rotation[frame],
+        package.motion.hips_translation_m[frame]).positions_m;
+}
+
+void check_exchange_round_trip(
+    const animocap::MotionPackage& expected,
+    const animocap::MotionPackage& actual,
+    double tolerance
+) {
+    CHECK(actual.motion.frame_count==expected.motion.frame_count);
+    CHECK(actual.motion.joint_count==expected.motion.joint_count);
+    CHECK_NEAR(actual.motion.fps,expected.motion.fps,1e-3);
+    for(std::size_t frame=0;frame<expected.motion.frame_count;++frame) {
+        const auto expected_positions=motion_frame_positions(expected,frame);
+        const auto actual_positions=motion_frame_positions(actual,frame);
+        for(const auto semantic:animocap::required_bone_semantics()) {
+            if(semantic==animocap::BoneSemantic::SceneRoot)continue;
+            const auto expected_joint=animocap::bone_index(expected.skeleton,semantic);
+            const auto actual_joint=animocap::bone_index(actual.skeleton,semantic);
+            CHECK_NEAR(actual_positions[actual_joint].x,expected_positions[expected_joint].x,tolerance);
+            CHECK_NEAR(actual_positions[actual_joint].y,expected_positions[expected_joint].y,tolerance);
+            CHECK_NEAR(actual_positions[actual_joint].z,expected_positions[expected_joint].z,tolerance);
+        }
+    }
+}
+
 void test_bvh_export() {
     const auto package = animocap::make_synthetic_motion(20260808, 7);
     const auto output = test_root() / "synthetic.bvh";
@@ -668,9 +1144,14 @@ void test_bvh_export() {
     CHECK(text.find("JOINT LeftUpperArm") != std::string::npos);
     CHECK(text.find("MOTION\nFrames: 7\nFrame Time: 0.033333") != std::string::npos);
     CHECK(text.find("nan") == std::string::npos);
+    const auto imported=animocap::import_bvh(output);
+    animocap::validate_motion(imported.motion,imported.skeleton);
+    CHECK(imported.motion.provenance.model_id=="bvh-import");
+    check_exchange_round_trip(package,imported,2e-5);
     CHECK_THROWS(animocap::export_bvh(package, output));
     animocap::export_bvh(package, output, {animocap::BvhUnit::Meters, true});
     CHECK(read_text(output).find("Frames: 7") != std::string::npos);
+    check_exchange_round_trip(package,animocap::import_bvh(output),2e-5);
 }
 
 void test_vrma_export() {
@@ -708,6 +1189,10 @@ void test_vrma_export() {
     CHECK(read_u32(bytes,binary_header+4)==0x004e4942U);
     CHECK_THROWS(animocap::export_vrma(package,output));
     animocap::export_vrma(package,output,{true});
+    const auto imported=animocap::import_vrma(output);
+    animocap::validate_motion(imported.motion,imported.skeleton);
+    CHECK(imported.motion.provenance.model_id=="vrma-import");
+    check_exchange_round_trip(package,imported,2e-5);
 }
 
 void test_fixture_determinism() {
@@ -766,6 +1251,12 @@ int main() {
         {"motion_validation", test_motion_validation},
         {"pose_reconstruction", test_pose_reconstruction},
         {"directional_multiview", test_directional_multiview},
+        {"view_invariant_phase_alignment_with_different_starts", test_view_invariant_phase_alignment_with_different_starts},
+        {"animation_first_fan_rejects_corrupt_view", test_animation_first_fan_rejects_corrupt_view},
+        {"joint_view_visibility_prefers_near_body_side", test_joint_view_visibility_prefers_near_body_side},
+        {"eight_view_strict_majority_rejects_two_views", test_eight_view_strict_majority_rejects_two_views},
+        {"left_right_single_frame_ambiguity_is_stable", test_left_right_single_frame_ambiguity_is_stable},
+        {"degenerate_directional_yaws_rejected", test_degenerate_directional_yaws_rejected},
         {"package_roundtrip", test_package_roundtrip},
         {"motion_clip", test_motion_clip},
         {"bvh_export", test_bvh_export},

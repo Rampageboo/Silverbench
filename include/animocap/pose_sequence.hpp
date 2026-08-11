@@ -64,8 +64,19 @@ struct ManualPoseCorrection {
     std::size_t joint_index{};
     Vec2 image_delta{};
     std::vector<Vec3> position_deltas_m;
+    // Empty weights preserve the legacy full-sequence offset behaviour.
+    // New Studio edits use a sparse keyframe and a bounded cubic influence
+    // curve, so changing one pose no longer shifts the whole clip.
+    std::vector<double> frame_weights;
+    std::size_t keyframe_frame_index{};
 };
 using ManualPoseCorrections = std::vector<ManualPoseCorrection>;
+
+std::vector<double> make_bounded_keyframe_curve_weights(
+    std::size_t frame_count,
+    std::size_t keyframe_frame_index,
+    std::size_t influence_radius_frames
+);
 
 PoseSequence load_pose_sequence_json(const std::filesystem::path& path);
 void save_pose_sequence_json(const PoseSequence& sequence, const std::filesystem::path& path);
