@@ -39,3 +39,21 @@ Confirmed by Owner on 2026-08-11:
   reference instead of averaging it away with weaker side/back views. Retain
   synchronized per-view review after capture, and keep NPU sampling
   non-authoritative rather than maximizing device utilization.
+- Make algorithm effects observable and conditional: cross-view conflict may
+  suppress the frontal anchor; NPU review frames trigger local recovery without
+  giving NPU coordinates fusion authority; confidence calibration requires
+  labelled held-out evidence; character profiles report actual correction
+  counts/magnitudes; and Studio displays raw/enhanced depth comparison.
+
+Confirmed by Owner on 2026-08-12:
+
+- Multiple views are complementary evidence, not a union of every camera's
+  defects. A view-specific transient error must be suppressed locally rather
+  than inherited by the final trajectory; intentional shared motion and all
+  otherwise compatible views remain available.
+- Directional repeats with different recording starts must align authored
+  motion events without local stop/catch-up warps. The product exports only the
+  interval supported by every selected view; extra lead/trail footage is not
+  presented as multiview capture. A high-confidence frontal image plane yields
+  only to strict majority rejection, while side views retain depth, visibility,
+  occlusion, and low-confidence recovery authority.

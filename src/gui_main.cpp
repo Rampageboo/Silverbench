@@ -86,6 +86,7 @@ struct NpuReviewIssue {
 };
 
 struct AnalysisResult {
+    std::optional<animocap::PoseSequence> comparison_pose;
     std::optional<animocap::PoseSequence> pose_baseline;
     std::optional<animocap::PoseSequence> pose;
     std::optional<animocap::PoseOptimizationDiagnostics> optimization_diagnostics;
@@ -97,6 +98,9 @@ struct AnalysisResult {
     std::wstring error, warning;
     std::vector<NpuReviewIssue> npu_review_issues;
     std::size_t npu_sampled_frames{},npu_total_frames{};
+    std::size_t npu_reprocess_requested{},npu_reprocess_processed{};
+    std::size_t npu_reprocess_accepted{};
+    std::size_t npu_reprocess_unavailable_views{};
     bool cancelled{}, motion_dirty{}, recovered_motion{}, npu_shadow_active{};
 };
 struct AnalysisCancelled final : std::exception {
@@ -116,6 +120,7 @@ struct AppState {
     std::unique_ptr<animocap::VideoDecoder> decoder;
     animocap::VideoFrame video_frame;
     std::optional<animocap::PoseSequence> pose_baseline;
+    std::optional<animocap::PoseSequence> comparison_pose;
     std::optional<animocap::PoseSequence> profile_refined_pose;
     std::optional<animocap::PoseSequence> pose;
     std::optional<animocap::PoseOptimizationDiagnostics> optimization_diagnostics;
@@ -594,7 +599,8 @@ bool open_video(const std::filesystem::path& path) {
         app.video_frame = std::move(frame);
         app.video_eof=false;
         app.time_s = app.video_frame.time_s;
-        app.pose_baseline.reset(); app.profile_refined_pose.reset(); app.pose.reset();
+        app.pose_baseline.reset(); app.comparison_pose.reset();
+        app.profile_refined_pose.reset(); app.pose.reset();
         app.motion.reset(); app.multiview_diagnostics.reset();
         reset_range_selection();
         app.anchor_drag_snapshot.reset();
@@ -735,6 +741,20 @@ void import_video() {
     open_video(*path);
 }
 
+std::wstring profile_effect_summary(
+    const animocap::PoseOptimizationDiagnostics& diagnostics
+) {
+    if(diagnostics.corrected_joint_samples==0)
+        return L"\u672c\u6b21\u672a\u4ea7\u751f\u5f71\u54cd \u00b7 0 \u6837\u672c \u00b7 0 mm";
+    return L"\u5b9e\u9645\u4fee\u6b63 "+
+        std::to_wstring(diagnostics.corrected_joint_samples)+
+        L" \u6837\u672c \u00b7 \u5e73\u5747 "+
+        std::to_wstring(static_cast<int>(std::lround(
+            diagnostics.mean_correction_m*1000.0)))+L" mm \u00b7 \u6700\u5927 "+
+        std::to_wstring(static_cast<int>(std::lround(
+            diagnostics.maximum_correction_m*1000.0)))+L" mm";
+}
+
 void import_character_profile() {
     if(app.analyzing)return;
     const COMDLG_FILTERSPEC filters[] = {
@@ -778,8 +798,11 @@ void import_character_profile() {
             EnableWindow(GetDlgItem(app.window,kSaveMotion),TRUE);
             update_timeline();
         }
+        const auto profile_effect=updated_diagnostics
+            ?profile_effect_summary(*updated_diagnostics)
+            :L"\u5c06\u5e94\u7528\u4e8e\u4e0b\u6b21\u6355\u6349";
         SetWindowTextW(GetDlgItem(app.window,kCharacterProfile),
-            L"\u52a8\u753b\u89d2\u8272\u53c2\u8003 \u00b7 \u5df2\u542f\u7528");
+            (L"\u52a8\u753b\u89d2\u8272\u53c2\u8003 \u00b7 "+profile_effect).c_str());
         const int confidence_percent=static_cast<int>(std::round(
             app.character_profile->optimization_options.low_confidence_threshold*100.0));
         const auto policy=app.character_profile->proportion_policy==
@@ -788,12 +811,7 @@ void import_character_profile() {
         set_status(L"\u52a8\u753b\u89d2\u8272\u53c2\u8003\u5df2\u5bfc\u5165 \u00b7 "+
             widen(app.character_profile->skeleton.skeleton_id)+L" \u00b7 \u4f4e\u7f6e\u4fe1\u5ea6\u9608\u503c "+
             std::to_wstring(confidence_percent)+L"% \u00b7 "+policy+
-            (updated_diagnostics
-                ?L" \u00b7 \u4fee\u6b63 "+std::to_wstring(
-                    updated_diagnostics->corrected_joint_samples)+L" \u4e2a\u4f4e\u7f6e\u4fe1\u5ea6\u6837\u672c \u00b7 \u6700\u5927 "+
-                    std::to_wstring(static_cast<int>(std::round(
-                        updated_diagnostics->maximum_correction_m*1000.0)))+L" mm"
-                :L"")+
+            L" \u00b7 "+profile_effect+
             (updated_motion?L" \u00b7 \u5df2\u91cd\u5efa\u5f53\u524d\u52a8\u4f5c":
                 L" \u00b7 \u5c06\u5e94\u7528\u4e8e\u4e0b\u6b21\u6355\u6349"));
         InvalidateRect(app.window,nullptr,TRUE);
@@ -1481,6 +1499,10 @@ void start_analysis() {
                 throw_if_cancelled();
                 result->pose_baseline=animocap::load_pose_sequence_json(
                     output/"fused_pose_sequence.json");
+                const auto comparison_path=output/"comparison_pose_sequence.json";
+                if(std::filesystem::exists(comparison_path))
+                    result->comparison_pose=animocap::load_pose_sequence_json(
+                        comparison_path);
                 if(character_profile) {
                     auto refinement=animocap::optimize_pose_sequence_detailed(
                         *result->pose_baseline,optimization_options,profile,
@@ -1529,6 +1551,19 @@ void start_analysis() {
                                 "total_frames",result->per_view_poses[index]
                                     ?result->per_view_poses[index]->frames.size()
                                     :std::size_t{});
+                            if(value.contains("gpu_reprocess")&&
+                               value["gpu_reprocess"].is_object()) {
+                                const auto& reprocess=value["gpu_reprocess"];
+                                result->npu_reprocess_requested+=reprocess.value(
+                                    "requested_frames",std::size_t{});
+                                result->npu_reprocess_processed+=reprocess.value(
+                                    "processed_frames",std::size_t{});
+                                result->npu_reprocess_accepted+=reprocess.value(
+                                    "accepted_joint_corrections",std::size_t{});
+                                if(reprocess.value("status",std::string{})==
+                                   "unavailable")
+                                    ++result->npu_reprocess_unavailable_views;
+                            }
                             if(value.contains("review_frames")&&
                                value["review_frames"].is_array()) {
                                 for(const auto& review:value["review_frames"]) {
@@ -1728,6 +1763,7 @@ void load_motion() {
         }
         app.pose.reset();
         app.pose_baseline.reset();
+        app.comparison_pose.reset();
         app.profile_refined_pose.reset();
         app.multiview_diagnostics.reset();
         app.multiview_mode=false;
@@ -2202,9 +2238,12 @@ animocap::Vec2 project(const animocap::Vec3& value, RECT area) {
 void draw_motion(HDC dc, RECT area) {
     panel_box(dc,area,theme::surface,theme::border,8);
     panel_accent(dc,area,app.pose?theme::violet:theme::accent);
+    const bool has_comparison=app.pose&&app.comparison_pose&&
+        app.comparison_pose->frames.size()==app.pose->frames.size();
     RECT label=area; label.left+=18; label.top+=8; label.bottom=label.top+28;
     text(dc,app.pose
-            ?(app.multiview_mode?L"FUSED 2.5D · FRONT LOCKED":L"OBSERVED 2.5D")
+            ?(has_comparison?L"FUSED 3D · A/B DEPTH REVIEW":
+              app.multiview_mode?L"FUSED 2.5D · DEPTH REVIEW":L"OBSERVED 2.5D")
             :L"CANONICAL 3D",
          label,theme::accent,app.small_font);
     if (!app.motion && !app.pose) {
@@ -2215,6 +2254,8 @@ void draw_motion(HDC dc, RECT area) {
     animocap::Skeleton skeleton;
     std::vector<animocap::Vec3> positions;
     std::vector<float> confidences;
+    std::vector<animocap::Vec3> comparison_positions;
+    std::vector<bool> comparison_valid;
     if (app.pose) {
         skeleton=animocap::make_default_skeleton();
         const auto& observed=app.pose->frames[pose_frame()];
@@ -2223,6 +2264,15 @@ void draw_motion(HDC dc, RECT area) {
         for (const auto& joint : observed.joints) {
             positions.push_back(joint.position_m);
             confidences.push_back(joint.confidence);
+        }
+        if(has_comparison) {
+            const auto& baseline=app.comparison_pose->frames[pose_frame()];
+            comparison_positions.reserve(baseline.joints.size());
+            comparison_valid.reserve(baseline.joints.size());
+            for(const auto& joint:baseline.joints) {
+                comparison_positions.push_back(joint.position_m);
+                comparison_valid.push_back(joint.valid);
+            }
         }
     } else {
         const std::size_t frame=motion_frame();
@@ -2260,6 +2310,20 @@ void draw_motion(HDC dc, RECT area) {
     stroke(dc,{center,ground},{area.right-28,ground},theme::red,1);
     stroke(dc,{center,ground},{center,area.top+48},theme::green,1);
     stroke(dc,{center,ground},{area.left+28,ground},theme::accent,1);
+    if(!comparison_positions.empty()) {
+        HPEN comparison_pen=CreatePen(PS_DOT,1,RGB(112,128,148));
+        old_pen=SelectObject(dc,comparison_pen);
+        for(std::size_t i=1;i<skeleton.bones.size();++i) {
+            const auto parent=static_cast<std::size_t>(skeleton.bones[i].parent);
+            if(!comparison_valid[i]||!comparison_valid[parent])continue;
+            const auto a=project(comparison_positions[parent],area);
+            const auto b=project(comparison_positions[i],area);
+            MoveToEx(dc,static_cast<int>(a.x),static_cast<int>(a.y),nullptr);
+            LineTo(dc,static_cast<int>(b.x),static_cast<int>(b.y));
+        }
+        SelectObject(dc,old_pen);
+        DeleteObject(comparison_pen);
+    }
     HPEN shadow=CreatePen(PS_SOLID,7,RGB(24,30,42)), bone=CreatePen(PS_SOLID,3,theme::violet);
     old_pen=SelectObject(dc,shadow);
     for (std::size_t i=1;i<skeleton.bones.size();++i) {
@@ -2281,6 +2345,27 @@ void draw_motion(HDC dc, RECT area) {
         SelectObject(dc,old); DeleteObject(brush);
     }
     RECT hint=area; hint.left+=18; hint.top=hint.bottom-34;
+    if(!comparison_positions.empty()) {
+        double sum=0.0,maximum=0.0;
+        std::size_t samples=0;
+        for(std::size_t i=0;i<positions.size();++i) {
+            if(!comparison_valid[i])continue;
+            const auto delta=positions[i]-comparison_positions[i];
+            const double distance=std::sqrt(
+                delta.x*delta.x+delta.y*delta.y+delta.z*delta.z);
+            sum+=distance;
+            maximum=std::max(maximum,distance);
+            ++samples;
+        }
+        const auto mean_mm=static_cast<int>(std::lround(
+            (samples?sum/static_cast<double>(samples):0.0)*1000.0));
+        const auto maximum_mm=static_cast<int>(std::lround(maximum*1000.0));
+        text(dc,L"\u539f\u59cb\u7070 / \u589e\u5f3a\u7d2b \u00b7 \u5f53\u524d\u5e27\u5e73\u5747 "+
+             std::to_wstring(mean_mm)+L" mm \u00b7 \u6700\u5927 "+
+             std::to_wstring(maximum_mm)+L" mm \u00b7 \u62d6\u52a8\u65cb\u8f6c\u6df1\u5ea6\u89c6\u89d2",
+             hint,theme::text_faint,app.small_font);
+        return;
+    }
     text(dc,L"拖动旋转视角",hint,theme::text_faint,app.small_font);
 }
 std::wstring issue_joint_name(animocap::BoneSemantic semantic) {
@@ -2387,7 +2472,10 @@ void draw_issues(HDC dc,RECT area) {
         std::wstring alignment=L"时间对齐";
         for(const auto& item:app.multiview_diagnostics->alignments) {
             alignment+=L" · "+widen(item.view_id)+L" "+
-                std::to_wstring(static_cast<int>(std::lround(item.mean_offset_s*1000.0)))+L"ms";
+                std::to_wstring(static_cast<int>(std::lround(item.mean_offset_s*1000.0)))+L"ms"+
+                L" "+std::to_wstring(item.overlap_reference_frames)+L"/"+
+                std::to_wstring(item.overlap_reference_frames+
+                    item.out_of_range_reference_frames);
         }
         text(dc,alignment,{area.left+16,area.top+76,area.right-16,area.top+104},
              theme::text_muted,app.small_font);
@@ -3382,9 +3470,14 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
         } else {
             reset_range_selection();
             app.pose_baseline=std::move(result->pose_baseline);
+            app.comparison_pose=std::move(result->comparison_pose);
             app.pose=std::move(result->pose);
             app.profile_refined_pose=app.pose;
             app.optimization_diagnostics=std::move(result->optimization_diagnostics);
+            if(app.character_profile&&app.optimization_diagnostics)
+                SetWindowTextW(GetDlgItem(window,kCharacterProfile),
+                    (L"\u52a8\u753b\u89d2\u8272\u53c2\u8003 \u00b7 "+
+                     profile_effect_summary(*app.optimization_diagnostics)).c_str());
             app.anchor_drag_snapshot.reset();
             app.manual_corrections.clear();
             app.correction_undo.clear(); app.correction_redo.clear();
@@ -3406,8 +3499,10 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
 	                  if(review_ready) {
 	                      select_multiview_review(reference);
 	                      app.multiview_overview=true;
-	                      app.yaw=0.0;
-	                      app.pitch=0.0;
+	                      // Start oblique: a frontal projection hides the depth
+	                      // contributed by side cameras.
+	                      app.yaw=32.0;
+	                      app.pitch=-6.0;
 	                      SetWindowTextW(GetDlgItem(window,kResetFrame),L"返回当前视角");
 	                      for(auto& issue:app.npu_review_issues)
 	                          issue.reference_time_s=reference_time_from_source_frame(
@@ -3440,17 +3535,37 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
 		                          curve_high_confidence_jitter_corrected_samples)+L"） · "+
 	                      std::to_wstring(app.multiview_diagnostics->conflicts.size())+
 	                      L" 个跨视角冲突待检查");
-              } else if(!result->warning.empty())
+		                  if(app.multiview_diagnostics->
+		                         reference_anchor_suppressed_conflicts>0)
+		                      append_status(L" \u00b7 \u4e89\u8bae\u5173\u8282\u89e3\u9664\u6b63\u9762\u9501\u5b9a "+
+		                          std::to_wstring(app.multiview_diagnostics->
+		                              reference_anchor_suppressed_conflicts));
+		                  if(app.multiview_diagnostics->
+		                         temporal_outlier_downweighted_observations>0)
+		                      append_status(L" \u00b7 \u72ec\u7acb\u89c6\u89d2\u5c16\u5cf0\u964d\u6743 "+
+		                          std::to_wstring(app.multiview_diagnostics->
+		                              temporal_outlier_downweighted_observations));
+		                  if(app.character_profile&&app.optimization_diagnostics)
+		                      append_status(L" \u00b7 \u89d2\u8272\u53c2\u8003: "+
+		                          profile_effect_summary(*app.optimization_diagnostics));
+	              } else if(!result->warning.empty())
                   set_status(L"捕捉完成 · "+result->warning);
             else if(app.character_profile&&app.optimization_diagnostics)
-                set_status(L"\u6355\u6349\u5b8c\u6210 \u00b7 \u52a8\u753b\u89d2\u8272\u53c2\u8003\u4fee\u6b63 "+
-                    std::to_wstring(app.optimization_diagnostics->corrected_joint_samples)+
-                    L" \u4e2a\u4f4e\u7f6e\u4fe1\u5ea6\u6837\u672c \u00b7 \u9ad8\u7f6e\u4fe1\u5ea6\u79fb\u52a8尝试 "+
-                    std::to_wstring(app.optimization_diagnostics->high_confidence_move_attempts));
+                set_status(L"\u6355\u6349\u5b8c\u6210 \u00b7 \u52a8\u753b\u89d2\u8272\u53c2\u8003: "+
+                    profile_effect_summary(*app.optimization_diagnostics));
             else if(app.pose&&app.pose->backend.find("qwen3-vl-local")!=std::string::npos)
                 set_status(L"捕捉完成 · HRNet、光流、本地视觉纠错和时序平滑已应用");
             else
                 set_status(L"捕捉完成 · HRNet、光流和时序平滑已应用");
+            bool evidence_calibrated=app.pose&&app.pose->backend.find(
+                "confidence-calibration-evidence-backed")!=std::string::npos;
+            for(const auto& per_view:app.multiview_poses)
+                if(per_view&&per_view->backend.find(
+                       "confidence-calibration-evidence-backed")!=std::string::npos)
+                    evidence_calibrated=true;
+            append_status(evidence_calibrated
+                ?L" \u00b7 \u6a21\u578b\u7f6e\u4fe1\u5ea6: \u6807\u6ce8\u4fdd\u6301\u96c6\u5df2\u6821\u51c6"
+                :L" \u00b7 \u6a21\u578b\u7f6e\u4fe1\u5ea6: identity\uff08\u7f3a\u5c11\u6807\u6ce8\u4fdd\u6301\u96c6\uff09");
             if(result->npu_shadow_active) {
                 const int sample_percent=result->npu_total_frames
                     ?static_cast<int>(std::lround(
@@ -3461,6 +3576,15 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
                     std::to_wstring(result->npu_total_frames)+L"（"+
                     std::to_wstring(sample_percent)+L"%） · 标记 "+
                     std::to_wstring(app.npu_review_issues.size())+L" 个待复核帧");
+                if(result->npu_reprocess_requested>0)
+                    append_status(L" \u00b7 NPU\u89e6\u53d1GPU/VLM\u91cd\u7b97 "+
+                        std::to_wstring(result->npu_reprocess_processed)+L"/"+
+                        std::to_wstring(result->npu_reprocess_requested)+
+                        L" \u00b7 \u63a5\u53d7\u5173\u8282\u4fee\u6b63 "+
+                        std::to_wstring(result->npu_reprocess_accepted)+
+                        (result->npu_reprocess_unavailable_views>0
+                            ?L" \u00b7 \u672c\u5730\u6062\u590d\u90e8\u5206\u4e0d\u53ef\u7528"
+                            :L""));
             }
             InvalidateRect(window,nullptr,TRUE);
         }

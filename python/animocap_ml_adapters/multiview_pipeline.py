@@ -215,6 +215,18 @@ def run_pipeline(args: argparse.Namespace) -> int:
             for _view_index, view_id, video, view_output, pose_path in jobs:
                 corrected = view_output / "pose_sequence-vlm.json"
                 issues = view_output / "visual-recovery-issues.json"
+                npu_diagnostics = view_output / "npu-shadow-diagnostics.json"
+                npu_document: dict[str, Any] = {}
+                if npu_diagnostics.is_file():
+                    npu_document = json.loads(
+                        npu_diagnostics.read_text(encoding="utf-8-sig")
+                    )
+                npu_review_frames = {
+                    int(item.get("frame_index", -1))
+                    for item in npu_document.get("review_frames", [])
+                    if isinstance(item, dict)
+                }
+                requested_frames = len({frame for frame in npu_review_frames if frame >= 0})
                 command = [
                     sys.executable,
                     str(vlm_adapter),
@@ -229,15 +241,57 @@ def run_pipeline(args: argparse.Namespace) -> int:
                     "--model",
                     args.vlm_model,
                 ]
+                if requested_frames:
+                    command.extend(["--priority-frames", str(npu_diagnostics)])
                 if view_id in rois:
                     command.extend(["--roi", *(str(value) for value in rois[view_id])])
-                if run_streaming(command, root, view_id, "local_visual_recovery") == 0:
+                recovery_exit = run_streaming(
+                    command, root, view_id, "local_visual_recovery"
+                )
+                if recovery_exit == 0:
                     os.replace(corrected, pose_path)
+                    recovery = (
+                        json.loads(issues.read_text(encoding="utf-8-sig"))
+                        if issues.is_file()
+                        else {}
+                    )
+                    accepted = sum(
+                        len(item.get("accepted", []))
+                        for item in recovery.get("issues", [])
+                        if int(item.get("frame", -1)) in npu_review_frames
+                    )
+                    if npu_diagnostics.is_file():
+                        npu_document["gpu_reprocess"] = {
+                            "status": "completed",
+                            "requested_frames": requested_frames,
+                            "processed_frames": int(
+                                recovery.get("npu_priority_processed", 0)
+                            ),
+                            "accepted_joint_corrections": accepted,
+                        }
                 else:
+                    if npu_diagnostics.is_file():
+                        npu_document["gpu_reprocess"] = {
+                            "status": "unavailable",
+                            "requested_frames": requested_frames,
+                            "processed_frames": 0,
+                            "accepted_joint_corrections": 0,
+                        }
                     emit(
                         "warning",
                         view=view_id,
                         message="local VLM unavailable; retaining HRNet + flow observations",
+                    )
+                if npu_diagnostics.is_file():
+                    npu_diagnostics.write_text(
+                        json.dumps(npu_document, ensure_ascii=False, indent=2,
+                                   sort_keys=True),
+                        encoding="utf-8",
+                    )
+                    emit(
+                        "npu_reprocess",
+                        view=view_id,
+                        **npu_document.get("gpu_reprocess", {}),
                     )
 
         for _view_index, view_id, _video, _view_output, pose_path in jobs:
@@ -247,6 +301,7 @@ def run_pipeline(args: argparse.Namespace) -> int:
     motion_output = output / "motion.amotion"
     diagnostics = output / "multiview-diagnostics.json"
     fused_pose = output / "fused_pose_sequence.json"
+    comparison_pose = output / "comparison_pose_sequence.json"
     if manifest["mode"] == "synchronized_multiview":
         calibration = args.calibration
         if calibration is None:
@@ -278,6 +333,8 @@ def run_pipeline(args: argparse.Namespace) -> int:
             str(motion_output),
             "--diagnostics",
             str(diagnostics),
+            "--comparison-pose",
+            str(comparison_pose),
         ]
         if run_streaming(command, root, "all", "phase_align_and_joint_solve") != 0:
             raise RuntimeError("multiview joint solve failed")
@@ -287,6 +344,7 @@ def run_pipeline(args: argparse.Namespace) -> int:
         motion=str(motion_output),
         diagnostics=str(diagnostics),
         fused_pose=str(fused_pose),
+        comparison_pose=str(comparison_pose) if comparison_pose.is_file() else "",
     )
     return 0
 

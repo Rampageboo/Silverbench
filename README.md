@@ -68,7 +68,7 @@ GUI 默认使用最高精度模式：HRNet/MotionBERT 生成基础观测，RTMW-
 
 Intel AI Boost NPU 是独立的低功耗观察器，不替代 RTX 上的 HRNet、Human-Art ViTPose-L、RTMW-x 或 MotionBERT。`tools/setup_openvino_npu.ps1` 会在本地虚拟环境固定安装 OpenVINO 2026.2.1，并把 Intel Open Model Zoo 的 `human-pose-estimation-0005` FP16 模型下载到 Git 忽略的 `private/`。第一次 NPU 编译可能需要约 90 秒；编译缓存保存在 `private/cache/openvino/`，之后启动复用缓存。
 
-Studio 以 `shadow` 模式稀疏运行 NPU：默认每 15 帧以及部分低置信度帧生成一次独立 COCO 17 点观测，并在每个视角旁写出 `npu-shadow-diagnostics.json`。报告包含总帧数、采样间隔/比例、实际执行设备、模型哈希、延迟、无效关节、与 GPU 权威观测的人员框归一化误差及左右交换数。NPU 会把左右交换、至少 5 个缺失关节或明显 GPU/NPU 分歧的采样帧加入复核队列；GUI 在参考时间轴和问题面板中标记这些帧。低占用是稀疏巡检策略的预期结果，不是要求追满的吞吐指标。影子结果不会进入关节点融合；缺少 OpenVINO、模型、NPU 驱动或推理失败都只产生警告，CUDA Mocap 保持不变。只有通过不同动作的动画素材门槛后，NPU 才能候选进入融合。
+Studio 以 `shadow` 模式稀疏运行 NPU：默认每 15 帧以及部分低置信度帧生成一次独立 COCO 17 点观测，并在每个视角旁写出 `npu-shadow-diagnostics.json`。报告包含总帧数、采样间隔/比例、实际执行设备、模型哈希、延迟、无效关节、与 GPU 权威观测的人员框归一化误差及左右交换数。NPU 会把左右交换、至少 5 个缺失关节或明显 GPU/NPU 分歧的采样帧优先送入本地 VLM/GPU 疑难帧恢复，并记录请求帧、已处理帧及接受的关节修正数；它自己的坐标仍不参与融合。GUI 在参考时间轴和问题面板中显示这些帧及处理结果。低占用是稀疏巡检策略的预期结果，不是要求追满的吞吐指标；缺少 OpenVINO、模型、NPU 驱动或本地 VLM 只产生明确警告，CUDA Mocap 保持可用。
 
 ## 单目深度说明
 
@@ -76,7 +76,7 @@ Studio 以 `shadow` 模式稀疏运行 NPU：默认每 15 帧以及部分低置�
 
 ## 骨架预设
 
-“导入骨架预设”读取角色导出的 `profile.json` 或 `skeleton.json`，用于提供该角色的规范骨长、静止骨架比例和低置信度修正阈值。它会约束下一次捕捉，也可以按该骨架重建当前动作；它不会导入角色模型、贴图、服装或特效。
+“导入骨架预设”读取角色导出的 `profile.json` 或 `skeleton.json`，用于提供该角色的规范骨长、静止骨架比例和低置信度修正阈值。它会约束下一次捕捉，也可以按该骨架重建当前动作；它不会导入角色模型、贴图、服装或特效。Studio 会明确报告本次修正样本数、平均/最大修正毫米数；若没有触发低置信度修正，会显示“本次未产生影响 · 0 样本 · 0 mm”。
 
 ## 构建与测试
 
@@ -106,9 +106,11 @@ project-context/             持久项目决策与边界
 
 `capture.json` 是任意角度和扩展视角的输入：`directional_repeat` 与 `synchronized_multiview` 都接受 2–8 个唯一 view id；方向重复模式的每个活动 view 必须显式提供有限 `yaw_degrees`，同步标定模式的 yaw 可由标定数据提供。可选 `time_offset_s` 是人工同步锚点：正值表示相对参考时间从该视角更晚的位置取帧；未提供或为零时使用自动动作相位匹配。直接文件/文件夹导入保持 fan3 或传统 cardinal4 的引导路径，4–8 个任意角度请使用清单；GUI 预览保留 8 个可选槽位，不要求填满。
 
-确认后点击“开始捕捉”。处理顺序是：共享姿态模型 → 各视角独立 2D 观测 → 使用身体尺度归一化距离、左右对称肢体高度、肘膝夹角和局部速度组成的视角不敏感动作指纹 → 有界 affine + DTW 相位对齐 → 带确认帧的左右肢体状态 → 每关节在 hip-relative、人体框归一化坐标中的 2D 重投影共识与严格多数离群剔除 → 可见性加权共同三维求解 → 后续时序/骨长约束。可见性权重逐帧检查身体侧别、镜像关节重叠、跨视角肢段稳定性和画面边缘；近侧关节最多增强 15%，远侧最多降低 30%，肢段差异低于 20% 不触发权重变化，并用短时因果滤波避免权重闪烁。它只能调整已经兼容的观测，不能推翻严格多数离群判断。方向重复模式自动选择最接近 0° 的视角为参考；最终优化后，参考视角高置信度关节的两个图像平面坐标会被恢复，其他视角只补充正交深度、遮挡恢复和低置信度证据。不兼容观测不会被平均，未形成严格多数时会保留观测并降低置信度。
+确认后点击“开始捕捉”。处理顺序是：共享姿态模型 → 各视角独立 2D 观测 → 使用身体归一化、剔除最快异常肢端的视角不变运动能量指纹寻找共同动作事件 → 连续近仿射相位对齐 → 仅保留所有视角共同有效的动作区间 → 带确认帧的左右肢体状态 → 每关节在 hip-relative、人体框归一化坐标中的 2D 重投影共识与严格多数离群剔除 → 可见性加权共同三维求解 → 后续时序/骨长约束。相位映射不允许某路逐帧停顿后再追赶；区间外观测也不会夹到首尾帧继续投票。可见性权重逐帧检查身体侧别、镜像关节重叠、跨视角肢段稳定性和画面边缘；近侧关节最多增强 15%，远侧最多降低 30%，肢段差异低于 20% 不触发权重变化，并用短时因果滤波避免权重闪烁。它只能调整已经兼容的观测，不能推翻严格多数离群判断。方向重复模式自动选择最接近 0° 的视角为参考；最终优化后，参考视角高置信度关节的两个图像平面坐标会被恢复，其他视角只补充正交深度、遮挡恢复和低置信度证据。不兼容观测不会被平均。
 
-最终动作不是各视角单独动作的平均值；所有视频只生成观测，随后共同求解同一副三维骨架。结果目录包含 `motion.amotion`、`fused_pose_sequence.json` 和 `multiview-diagnostics.json`，其中记录冲突、被拒绝的 view observation、参考平面锚定数与左右状态变化。捕捉完成后默认显示可点击的 2×4 多视角总览；进入任一画面后，Studio 使用连续解码在同一参考时间轴上播放该路视频及其本路 2D 姿势，“多视角总览”可随时返回。非参考视角只读，避免把侧面坐标误当作正面手工修正。GUI 不会对 CLI 已优化并锁定正面参考的融合姿势再执行一次通用优化；只有显式角色 profile 可从同一基线修正低置信度样本。上述结构和确定性测试不代表已经完成真实视频质量验收；真实相机高度、尺度和任意角度 QA 仍需单独进行。
+最终动作不是各视角单独动作的平均值；所有视频只生成观测，随后共同求解同一副三维骨架。结果目录包含 `motion.amotion`、`fused_pose_sequence.json`、`comparison_pose_sequence.json` 和 `multiview-diagnostics.json`。高置信正面参考在另一视角贡献且未被严格多数判为离群时保持图像平面所有权；单个冲突侧视角不能拉走正面，只有明确的严格多数拒绝才让正面让权。诊断同时记录每路偏移、近仿射速率和“共同覆盖帧/原参考帧”。捕捉完成后默认显示可点击的 2×4 多视角总览；进入任一画面后，Studio 使用连续解码在同一参考时间轴上播放该路视频及其本路 2D 姿势。“FUSED 3D · A/B DEPTH REVIEW”会以灰色虚线显示未增强基线、紫色显示增强结果，并报告当前帧平均/最大差异毫米数；默认斜视角可直接看出 Z 轴变化。非参考视角只读。只有显式角色 profile 可从同一不可变基线修正低置信度样本。上述结构和确定性测试不代表已经完成真实视频质量验收；真实相机高度、尺度和任意角度 QA 仍需单独进行。
+
+融合不会把三个视角的全部缺陷逐帧累加。每个视角先在自身的身体尺度归一化轨迹中计算局部速度与加速度；只有某个视角出现而其他视角没有的瞬时尖峰才会在该关节、该帧被降权。其余视角继续形成稳健共识，不永久删除任何机位。被识别的跨视角时序分歧会临时放宽有界动画曲线的修正权限，但最终输出置信度保持融合证据本身的数值；动作峰值、转向、接触段和无效观察仍按原规则保护。诊断字段 `temporal_outlier_downweighted_observations` 与 Studio 状态栏显示实际触发次数。
 
 ## 同步标定多机捕捉
 
@@ -194,6 +196,6 @@ The maximum offline path now keeps MotionBERT as the only production 3D lifter a
 
 Quality scheduling is deliberate: `fast` is base-only, `balanced` invokes ViTPose-L and RTMW adaptively, and `maximum` invokes both experts on every usable frame. MMPose 1.3.2's bundled Human-Art config still names the retired `mmcls.VisionTransformer`; the adapter non-destructively migrates the in-memory config to `mmpretrain.VisionTransformer`, removes the legacy output argument, and loads the immutable official checkpoint with a narrowly scoped PyTorch 2.6+ compatibility boundary. Model failure is still reported explicitly and the available CUDA path remains usable.
 
-Optional held-out confidence calibration is a local JSON profile. Pass it explicitly with `--confidence-calibration private\calibration\pose_confidence.json`, or place it at that ignored conventional path for auto-discovery. The profile uses schema `1.0.0` and monotonic piecewise-linear `[raw, support]` points per model and COCO joint. Malformed or non-monotonic profiles are rejected; absent profiles use identity calibration and the output backend records that distinction. The same option is forwarded by `multiview_pipeline.py`.
+Held-out confidence calibration is a local, evidence-bound JSON profile. Create it with `tools\calibrate_pose_confidence.ps1 -Evidence private\calibration\labelled_pose_evidence.json`; the evidence must contain labelled real samples from at least two distinct source motions for HRNet, Human-Art ViTPose-L, and RTMW. The fitter produces monotonic per-model/per-joint curves plus the source hash and motion IDs. Pass the result with `--confidence-calibration private\calibration\pose_confidence.json`, or use that ignored conventional path for auto-discovery. Structurally valid curves without the held-out evidence block are rejected rather than treated as calibrated; absent profiles use identity calibration and Studio says so explicitly.
 
 The official Human-Art ViTPose-L config/checkpoint and the required MMPreTrain dependency are installed/cached only by `tools\setup_mmpose.ps1`; weights and calibration remain local/Git-ignored and are never bundled. Local verification on 2026-08-11 loaded the full maximum HRNet + MotionBERT + RTMW-x + ViTPose-L session and ran a real 2304×1440 animation frame through ViTPose-L on CUDA (17/17 returned joints). This proves execution compatibility, not held-out quality or checkpoint activation evidence.

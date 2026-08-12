@@ -212,6 +212,74 @@ std::vector<MotionDescriptor> motion_descriptor(const PoseSequence& sequence) {
     }
     return result;
 }
+
+std::vector<double> view_invariant_motion_energy(const PoseSequence& sequence) {
+    const auto skeleton = make_default_skeleton();
+    const auto hips = bone_index(skeleton, BoneSemantic::Hips);
+    const auto head = bone_index(skeleton, BoneSemantic::Head);
+    std::vector<double> raw(sequence.frames.size(), 0.0);
+    for (std::size_t frame = 1; frame < sequence.frames.size(); ++frame) {
+        const auto& current = sequence.frames[frame];
+        const auto& before = sequence.frames[frame - 1];
+        if (!current.joints[hips].valid || !current.joints[head].valid ||
+            !before.joints[hips].valid || !before.joints[head].valid) continue;
+        const double current_scale = std::max(50.0, std::hypot(
+            current.joints[head].image_xy.x - current.joints[hips].image_xy.x,
+            current.joints[head].image_xy.y - current.joints[hips].image_xy.y));
+        const double before_scale = std::max(50.0, std::hypot(
+            before.joints[head].image_xy.x - before.joints[hips].image_xy.x,
+            before.joints[head].image_xy.y - before.joints[hips].image_xy.y));
+        std::vector<double> speeds;
+        speeds.reserve(current.joints.size());
+        for (std::size_t joint = 1; joint < current.joints.size(); ++joint) {
+            if (!current.joints[joint].valid || !before.joints[joint].valid) continue;
+            const Vec2 current_local{
+                (current.joints[joint].image_xy.x - current.joints[hips].image_xy.x) /
+                    current_scale,
+                (current.joints[joint].image_xy.y - current.joints[hips].image_xy.y) /
+                    current_scale,
+            };
+            const Vec2 before_local{
+                (before.joints[joint].image_xy.x - before.joints[hips].image_xy.x) /
+                    before_scale,
+                (before.joints[joint].image_xy.y - before.joints[hips].image_xy.y) /
+                    before_scale,
+            };
+            speeds.push_back(std::hypot(
+                current_local.x - before_local.x,
+                current_local.y - before_local.y));
+        }
+        if (speeds.empty()) continue;
+        std::sort(speeds.begin(), speeds.end());
+        // Ignore the fastest fifth: a single mistracked extremity is not an
+        // authored animation event and must not decide phase alignment.
+        const std::size_t retained = std::max<std::size_t>(
+            1, speeds.size() * 4 / 5);
+        raw[frame] = std::accumulate(
+            speeds.begin(), speeds.begin() + static_cast<std::ptrdiff_t>(retained),
+            0.0) / static_cast<double>(retained);
+    }
+    if (raw.size() > 1) raw[0] = raw[1];
+    std::vector<double> smoothed(raw.size(), 0.0);
+    constexpr std::size_t kRadius = 3;
+    for (std::size_t frame = 0; frame < raw.size(); ++frame) {
+        const std::size_t begin = frame > kRadius ? frame - kRadius : 0;
+        const std::size_t end = std::min(raw.size(), frame + kRadius + 1);
+        smoothed[frame] = std::accumulate(
+            raw.begin() + static_cast<std::ptrdiff_t>(begin),
+            raw.begin() + static_cast<std::ptrdiff_t>(end), 0.0) /
+            static_cast<double>(end - begin);
+    }
+    return smoothed;
+}
+
+double sample_scalar(const std::vector<double>& values, double position) {
+    position = std::clamp(position, 0.0, static_cast<double>(values.size() - 1));
+    const auto before = static_cast<std::size_t>(std::floor(position));
+    const auto after = std::min(before + 1, values.size() - 1);
+    const double alpha = position - static_cast<double>(before);
+    return values[before] + (values[after] - values[before]) * alpha;
+}
 struct ReducedSignal {
     std::vector<MotionDescriptor> values;
     std::vector<double> original_frame;
@@ -256,186 +324,125 @@ ViewAlignment align_view(
         std::iota(
             result.source_frame_at_reference.begin(),
             result.source_frame_at_reference.end(), 0.0);
+        result.method = "reference";
+        result.overlap_reference_frames = reference.frames.size();
         return result;
     }
 
-    const auto reference_signal = reduce_signal(motion_descriptor(reference));
-    const auto source_signal = reduce_signal(motion_descriptor(source));
-    const std::size_t rows = reference_signal.values.size();
-    const std::size_t columns = source_signal.values.size();
+    const auto reference_energy = view_invariant_motion_energy(reference);
+    const auto source_energy = view_invariant_motion_energy(source);
+    const auto reference_descriptors = motion_descriptor(reference);
+    const auto source_descriptors = motion_descriptor(source);
     const double infinity = std::numeric_limits<double>::infinity();
-
-    // Seed DTW with a global affine time fit. This prevents periodic motion
-    // from matching the correct shape at the wrong repetition.
-    double seed_offset = 0.0;
-    double seed_rate = source.fps / reference.fps;
-    double seed_cost = infinity;
+    double best_offset = 0.0;
+    double best_rate = source.fps / reference.fps;
+    double best_quality = -infinity;
+    double best_correlation = -1.0;
+    double best_descriptor_cost = 3.0;
     const double maximum_offset = std::max(
         2.0, source.frames.size() * std::clamp(maximum_warp_fraction, 0.05, 0.80));
-    const double offset_step = std::max(1.0, source.frames.size() / 300.0);
-    auto sample_source_signal = [&](double source_frame) {
-        const double position = source.frames.size() > 1
-            ? source_frame * (columns - 1) / (source.frames.size() - 1)
-            : 0.0;
-        const auto before = static_cast<std::size_t>(std::clamp(
-            std::floor(position), 0.0, static_cast<double>(columns - 1)));
-        const auto after = std::min(before + 1, columns - 1);
-        const double alpha = std::clamp(position - before, 0.0, 1.0);
-        MotionDescriptor sampled{};
-        for (std::size_t dimension = 0; dimension < sampled.size(); ++dimension)
-            sampled[dimension] = source_signal.values[before][dimension] +
-                (source_signal.values[after][dimension] -
-                 source_signal.values[before][dimension]) * alpha;
-        return sampled;
-    };
     const bool has_explicit_offset = std::abs(time_offset_s) > kEpsilon;
-    if (has_explicit_offset) {
-        seed_offset = time_offset_s * source.fps;
-        seed_cost = 0.0;
-    }
-    // Directional repeats are captures of the same authored animation. Their
-    // trim points may differ substantially, but their playback rate should not.
-    // A broad 0.70-1.30 search tended to explain missing lead/trail footage as
-    // speed change, which aligned idle poses while drifting away from keyframes.
-    for (int rate_step = 85; !has_explicit_offset && rate_step <= 115; ++rate_step) {
-        const double rate = rate_step / 100.0;
-        for (double offset = -maximum_offset; offset <= maximum_offset;
-             offset += offset_step) {
-            double candidate_cost = 0.0;
-            std::size_t samples = 0;
-            for (std::size_t row = 0; row < rows; ++row) {
-                const double source_frame = offset +
-                    rate * reference_signal.original_frame[row];
+    const double expected_rate = source.fps / reference.fps;
+    const double fixed_offset = time_offset_s * source.fps;
+    const std::size_t minimum_overlap = std::max<std::size_t>(
+        12, std::min(reference.frames.size(), source.frames.size()) * 55 / 100);
+    const int minimum_rate_step = has_explicit_offset ? 0 : -30;
+    const int maximum_rate_step = has_explicit_offset ? 0 : 30;
+    for (int rate_step = minimum_rate_step;
+         rate_step <= maximum_rate_step; ++rate_step) {
+        const double rate = expected_rate * (1.0 + rate_step * 0.005);
+        const double offset_begin = has_explicit_offset ? fixed_offset : -maximum_offset;
+        const double offset_end = has_explicit_offset ? fixed_offset : maximum_offset;
+        for (double offset = offset_begin; offset <= offset_end + 0.25; offset += 1.0) {
+            std::vector<double> reference_samples;
+            std::vector<double> source_samples;
+            double descriptor_cost = 0.0;
+            std::size_t descriptor_samples = 0;
+            for (std::size_t frame = 0; frame < reference.frames.size(); ++frame) {
+                const double source_frame = offset + rate * static_cast<double>(frame);
                 if (source_frame < 0.0 ||
-                    source_frame > static_cast<double>(source.frames.size() - 1)) {
-                    candidate_cost += 2.5;
-                    continue;
+                    source_frame > static_cast<double>(source.frames.size() - 1)) continue;
+                reference_samples.push_back(reference_energy[frame]);
+                source_samples.push_back(sample_scalar(source_energy, source_frame));
+                if (frame % std::max<std::size_t>(
+                        1, reference.frames.size() / kMaximumAlignmentSamples) == 0) {
+                    const auto before = static_cast<std::size_t>(std::floor(source_frame));
+                    const auto after = std::min(before + 1, source_descriptors.size() - 1);
+                    const double alpha = source_frame - static_cast<double>(before);
+                    MotionDescriptor sampled{};
+                    for (std::size_t dimension = 0; dimension < sampled.size(); ++dimension)
+                        sampled[dimension] = source_descriptors[before][dimension] +
+                            (source_descriptors[after][dimension] -
+                             source_descriptors[before][dimension]) * alpha;
+                    descriptor_cost += descriptor_distance(
+                        reference_descriptors[frame], sampled);
+                    ++descriptor_samples;
                 }
-                candidate_cost += descriptor_distance(
-                    reference_signal.values[row], sample_source_signal(source_frame));
-                ++samples;
             }
-            if (samples < rows * 7 / 10) continue;
-            candidate_cost /= static_cast<double>(rows);
-            candidate_cost += 0.80 * std::abs(rate - 1.0);
-            if (candidate_cost < seed_cost) {
-                seed_cost = candidate_cost;
-                seed_offset = offset;
-                seed_rate = rate;
+            if (reference_samples.size() < minimum_overlap) continue;
+            const double reference_mean = std::accumulate(
+                reference_samples.begin(), reference_samples.end(), 0.0) /
+                static_cast<double>(reference_samples.size());
+            const double source_mean = std::accumulate(
+                source_samples.begin(), source_samples.end(), 0.0) /
+                static_cast<double>(source_samples.size());
+            double covariance = 0.0;
+            double reference_variance = 0.0;
+            double source_variance = 0.0;
+            for (std::size_t sample = 0; sample < reference_samples.size(); ++sample) {
+                const double a = reference_samples[sample] - reference_mean;
+                const double b = source_samples[sample] - source_mean;
+                covariance += a * b;
+                reference_variance += a * a;
+                source_variance += b * b;
             }
-        }
-    }
-    std::vector<double> cost(rows * columns, infinity);
-    std::vector<unsigned char> predecessor(rows * columns, 0);
-    const auto cell = [columns](std::size_t row, std::size_t column) {
-        return row * columns + column;
-    };
-    const std::size_t window = std::max<std::size_t>(
-        3, static_cast<std::size_t>(std::ceil(
-            std::max(rows, columns) *
-            std::clamp(maximum_warp_fraction * 0.25, 0.03, 0.20))));
-
-    for (std::size_t row = 0; row < rows; ++row) {
-        const double expected_source_frame = seed_offset +
-            seed_rate * reference_signal.original_frame[row];
-        const double expected = std::clamp(
-            source.frames.size() > 1
-                ? expected_source_frame * (columns - 1) /
-                    (source.frames.size() - 1)
-                : 0.0,
-            0.0, static_cast<double>(columns - 1));
-        const std::size_t begin = static_cast<std::size_t>(std::max(
-            0.0, std::floor(expected - static_cast<double>(window))));
-        const std::size_t end = std::min(
-            columns, static_cast<std::size_t>(std::ceil(expected + window + 1.0)));
-        for (std::size_t column = begin; column < end; ++column) {
-            const double local = descriptor_distance(
-                reference_signal.values[row], source_signal.values[column]);
-            if (row == 0) {
-                cost[cell(row, column)] = local + 0.12 * static_cast<double>(column);
-                predecessor[cell(row, column)] = 4;
-                continue;
-            }
-            double best = infinity;
-            unsigned char direction = 0;
-            if (row > 0 && column > 0 && cost[cell(row - 1, column - 1)] < best) {
-                best = cost[cell(row - 1, column - 1)]; direction = 1;
-            }
-            if (row > 0 && cost[cell(row - 1, column)] + 0.08 < best) {
-                best = cost[cell(row - 1, column)] + 0.08; direction = 2;
-            }
-            if (column > 0 && cost[cell(row, column - 1)] + 0.08 < best) {
-                best = cost[cell(row, column - 1)] + 0.08; direction = 3;
-            }
-            if (std::isfinite(best)) {
-                cost[cell(row, column)] = local + best;
-                predecessor[cell(row, column)] = direction;
+            const double denominator = std::sqrt(
+                reference_variance * source_variance);
+            const double correlation = denominator > 1e-12
+                ? covariance / denominator : -1.0;
+            const double normalized_descriptor_cost = descriptor_samples
+                ? descriptor_cost / static_cast<double>(descriptor_samples) : 3.0;
+            const double overlap_ratio = static_cast<double>(reference_samples.size()) /
+                static_cast<double>(reference.frames.size());
+            const double quality = 0.85 * correlation -
+                0.15 * normalized_descriptor_cost -
+                0.20 * std::abs(rate / expected_rate - 1.0) +
+                0.03 * overlap_ratio;
+            if (quality > best_quality) {
+                best_quality = quality;
+                best_correlation = correlation;
+                best_descriptor_cost = normalized_descriptor_cost;
+                best_offset = offset;
+                best_rate = rate;
             }
         }
     }
-    std::size_t endpoint = columns - 1;
-    double endpoint_cost = infinity;
-    for (std::size_t candidate = 0; candidate < columns; ++candidate) {
-        const double value = cost[cell(rows - 1, candidate)] +
-            0.12 * static_cast<double>(columns - 1 - candidate);
-        if (value < endpoint_cost) {
-            endpoint_cost = value;
-            endpoint = candidate;
-        }
+    if (!std::isfinite(best_quality)) {
+        throw ContractError("directional view alignment found no sufficient common action interval");
     }
-    if (!std::isfinite(endpoint_cost)) {
-        throw ContractError("directional view alignment exceeded the configured warp window");
-    }
-
-    std::vector<std::pair<std::size_t, std::size_t>> path;
-    std::size_t row = rows - 1;
-    std::size_t column = endpoint;
-    for (;;) {
-        path.emplace_back(row, column);
-        if (row == 0) break;
-        switch (predecessor[cell(row, column)]) {
-            case 1: --row; --column; break;
-            case 2: --row; break;
-            case 3: --column; break;
-            default: throw ContractError("directional view alignment path is incomplete");
-        }
-    }
-    std::reverse(path.begin(), path.end());
-    std::vector<double> reduced_mapping(rows, 0.0);
-    std::vector<std::size_t> mapping_samples(rows, 0);
-    for (const auto [reference_index, source_index] : path) {
-        reduced_mapping[reference_index] += source_signal.original_frame[source_index];
-        ++mapping_samples[reference_index];
-    }
-    for (std::size_t index = 0; index < rows; ++index) {
-        if (mapping_samples[index]) {
-            reduced_mapping[index] /= static_cast<double>(mapping_samples[index]);
-        } else if (index > 0) {
-            reduced_mapping[index] = reduced_mapping[index - 1];
-        }
-    }
-
     result.source_frame_at_reference.resize(reference.frames.size());
     for (std::size_t frame = 0; frame < reference.frames.size(); ++frame) {
-        const double reduced_position = reference.frames.size() > 1
-            ? static_cast<double>(frame) * (rows - 1) / (reference.frames.size() - 1)
-            : 0.0;
-        const auto before = static_cast<std::size_t>(std::floor(reduced_position));
-        const auto after = std::min(before + 1, rows - 1);
-        const double alpha = reduced_position - static_cast<double>(before);
         result.source_frame_at_reference[frame] =
-            reduced_mapping[before] +
-            (reduced_mapping[after] - reduced_mapping[before]) * alpha;
+            best_offset + best_rate * static_cast<double>(frame);
     }
     double offset_sum = 0.0;
+    std::size_t offset_samples = 0;
     for (std::size_t frame = 0; frame < reference.frames.size(); ++frame) {
         const double source_frame = result.source_frame_at_reference[frame];
+        if (source_frame < 0.0 ||
+            source_frame > static_cast<double>(source.frames.size() - 1)) {
+            ++result.out_of_range_reference_frames;
+            continue;
+        }
+        ++result.overlap_reference_frames;
         const auto source_index = static_cast<std::size_t>(std::clamp(
             std::llround(source_frame), 0LL,
             static_cast<long long>(source.frames.size() - 1)));
         offset_sum += source.frames[source_index].time_s - reference.frames[frame].time_s;
+        ++offset_samples;
     }
-    result.mean_offset_s = offset_sum / static_cast<double>(reference.frames.size());
+    result.mean_offset_s = offset_samples
+        ? offset_sum / static_cast<double>(offset_samples) : 0.0;
     const double reference_duration =
         reference.frames.back().time_s - reference.frames.front().time_s;
     const double source_duration =
@@ -443,8 +450,11 @@ ViewAlignment align_view(
         source.fps;
     result.mean_rate = reference_duration > kEpsilon
         ? source_duration / reference_duration : 1.0;
-    result.normalized_cost = endpoint_cost /
-        static_cast<double>(path.size());
+    // Correlation is a phase-quality signal, not a pose-confidence score. Keep
+    // it bounded so a valid oblique view still contributes after alignment.
+    result.normalized_cost = best_correlation > -0.99
+        ? std::clamp(0.35 * (1.0 - best_correlation), 0.0, 0.70)
+        : std::clamp(0.35 * best_descriptor_cost, 0.0, 0.70);
     return result;
 }
 
@@ -467,6 +477,10 @@ std::vector<ObservedJoint> aligned_world_joints(
     std::size_t hips
 ) {
     std::vector<ObservedJoint> result(view.pose.frames.front().joints.size());
+    if (source_frame < 0.0 ||
+        source_frame > static_cast<double>(view.pose.frames.size() - 1)) {
+        return result;
+    }
     const auto hip = sample_joint(view.pose, source_frame, hips);
     for (std::size_t joint = 0; joint < result.size(); ++joint) {
         result[joint] = sample_joint(view.pose, source_frame, joint);
@@ -670,8 +684,19 @@ struct JointTriangulation {
     std::size_t visibility_downweighted_observations{};
     std::size_t visibility_boosted_observations{};
     std::size_t overlap_downweighted_observations{};
+    std::size_t temporal_outlier_downweighted_observations{};
+    bool reference_rejected{};
+    bool temporal_disagreement{};
     double maximum_residual{};
+    double reference_residual{};
     double rms_residual{};
+};
+
+struct TemporalViewState {
+    Vec2 position{};
+    Vec2 velocity{};
+    std::size_t last_frame{std::numeric_limits<std::size_t>::max()};
+    bool has_velocity{};
 };
 
 double estimate_pixels_per_meter(
@@ -711,6 +736,7 @@ JointTriangulation triangulate_joint(
     const MultiviewSolveOptions& options,
     std::vector<std::vector<double>>& visibility_state,
     std::vector<std::vector<std::size_t>>& visibility_last_frame,
+    std::vector<std::vector<TemporalViewState>>& temporal_view_state,
     std::size_t frame_index,
     std::size_t joint,
     std::size_t hips
@@ -755,6 +781,58 @@ JointTriangulation triangulate_joint(
                 ++result.overlap_downweighted_observations;
         }
     }
+    std::vector<double> temporal_factor(samples.size(), 1.0);
+    if (options.enable_temporal_view_reliability) {
+        std::vector<double> acceleration(samples.size(), 0.0);
+        std::vector<double> comparable_acceleration;
+        std::vector<bool> has_acceleration(samples.size(), false);
+        for (const auto view : usable_views) {
+            const auto& observation = samples[view][joint];
+            const auto& hip = samples[view][hips];
+            const double scale = std::max(1.0, pixels_per_meter[view]);
+            const Vec2 current{
+                (observation.image_xy.x - hip.image_xy.x) / scale,
+                -(observation.image_xy.y - hip.image_xy.y) / scale};
+            auto& state = temporal_view_state[view][joint];
+            if (state.last_frame != std::numeric_limits<std::size_t>::max() &&
+                state.last_frame + 1 == frame_index) {
+                const Vec2 velocity{
+                    current.x - state.position.x,
+                    current.y - state.position.y};
+                if (state.has_velocity) {
+                    acceleration[view] = std::hypot(
+                        velocity.x - state.velocity.x,
+                        velocity.y - state.velocity.y);
+                    comparable_acceleration.push_back(acceleration[view]);
+                    has_acceleration[view] = true;
+                }
+                state.velocity = velocity;
+                state.has_velocity = true;
+            } else {
+                state.velocity = {};
+                state.has_velocity = false;
+            }
+            state.position = current;
+            state.last_frame = frame_index;
+        }
+        if (comparable_acceleration.size() >= 3) {
+            std::sort(comparable_acceleration.begin(), comparable_acceleration.end());
+            const double median = comparable_acceleration[
+                comparable_acceleration.size() / 2];
+            const double threshold = std::max(
+                options.temporal_outlier_acceleration_m,
+                median * options.temporal_outlier_ratio + 0.005);
+            for (const auto view : usable_views) {
+                if (!has_acceleration[view] || acceleration[view] <= threshold)
+                    continue;
+                temporal_factor[view] = std::clamp(
+                    threshold / std::max(acceleration[view], kEpsilon),
+                    0.05, 1.0);
+                ++result.temporal_outlier_downweighted_observations;
+                result.temporal_disagreement = true;
+            }
+        }
+    }
     std::vector<bool> rejected(samples.size(), false);
     if (usable_views.size() >= 3) {
         // Build deterministic pair hypotheses directly from the 2D
@@ -782,7 +860,8 @@ JointTriangulation triangulate_joint(
             const double quality = 1.0 /
                 (1.0 + 2.0 * alignments[view].normalized_cost);
             const double confidence = samples[view][joint].confidence;
-            return quality * confidence * confidence * visibility_factor[view];
+            return quality * confidence * confidence * visibility_factor[view] *
+                temporal_factor[view];
         };
         for (std::size_t first = 0; first < usable_views.size(); ++first) {
             for (std::size_t second = first + 1;
@@ -847,6 +926,7 @@ JointTriangulation triangulate_joint(
             }
         }
     }
+    result.reference_rejected = rejected[options.reference_view];
     std::vector<double> robust_factor(samples.size(), 1.0);
     Vec3 estimate{};
     for (int iteration = 0; iteration < 3; ++iteration) {
@@ -863,7 +943,7 @@ JointTriangulation triangulate_joint(
                 (1.0 + 2.0 * alignments[view].normalized_cost);
             const double weight = quality * observation.confidence *
                 observation.confidence * robust_factor[view] *
-                visibility_factor[view];
+                visibility_factor[view] * temporal_factor[view];
             const double angle = views[view].yaw_degrees * kPi / 180.0;
             const double row_x = std::cos(angle);
             const double row_z = -std::sin(angle);
@@ -935,12 +1015,13 @@ JointTriangulation triangulate_joint(
         const double residual = std::hypot(
             predicted_horizontal - horizontal, estimate.y - vertical);
         result.maximum_residual = std::max(result.maximum_residual, residual);
+        if (view == options.reference_view) result.reference_residual = residual;
         if (rejected[view]) continue;
         const double quality = 1.0 /
             (1.0 + 2.0 * alignments[view].normalized_cost);
         const double weight = quality * observation.confidence *
             observation.confidence * robust_factor[view] *
-            visibility_factor[view];
+            visibility_factor[view] * temporal_factor[view];
         weighted_squared_error += weight * residual * residual;
         total_weight += weight;
         confidence_complement *= 1.0 - quality * observation.confidence *
@@ -979,9 +1060,16 @@ void enforce_bone_lengths(
     }
 }
 
-std::size_t pin_reference_image_plane(
+struct ReferenceAnchorResult {
+    std::size_t anchored{};
+    std::size_t suppressed_conflicts{};
+    std::size_t suppressed_low_confidence{};
+};
+
+ReferenceAnchorResult pin_reference_image_plane(
     PoseSequence& fused,
     const PoseSequence& reference,
+    const std::vector<std::vector<bool>>& anchor_allowed,
     double yaw_degrees,
     std::size_t hips,
     std::size_t head,
@@ -989,7 +1077,7 @@ std::size_t pin_reference_image_plane(
     std::size_t right_foot,
     double minimum_confidence
 ) {
-    std::size_t anchored = 0;
+    ReferenceAnchorResult result;
     const double angle = yaw_degrees * kPi / 180.0;
     const double row_x = std::cos(angle);
     const double row_z = -std::sin(angle);
@@ -1004,8 +1092,15 @@ std::size_t pin_reference_image_plane(
              joint < fused.frames[frame].joints.size(); ++joint) {
             const auto& observation = reference_frame.joints[joint];
             auto& output = fused.frames[frame].joints[joint];
-            if (!output.valid || !observation.valid ||
-                observation.confidence < minimum_confidence) continue;
+            if (!output.valid || !observation.valid) continue;
+            if (observation.confidence < minimum_confidence) {
+                ++result.suppressed_low_confidence;
+                continue;
+            }
+            if (!anchor_allowed.empty() && !anchor_allowed[frame][joint]) {
+                ++result.suppressed_conflicts;
+                continue;
+            }
 
             Vec3 relative = output.position_m - reference_hip.position_m;
             const double observed_horizontal =
@@ -1022,10 +1117,10 @@ std::size_t pin_reference_image_plane(
                 std::max(1.0, pixels_per_meter);
             output.position_m = reference_hip.position_m + relative;
             output.image_xy = observation.image_xy;
-            ++anchored;
+            ++result.anchored;
         }
     }
-    return anchored;
+    return result;
 }
 
 bool has_useful_yaw_diversity(const std::vector<MultiviewPoseInput>& views) {
@@ -1063,6 +1158,17 @@ MultiviewSolveResult solve_directional_multiview(
         options.mirrored_joint_overlap_threshold_m <= 0.0) {
         throw ContractError("invalid multiview visibility weighting options");
     }
+    if (!std::isfinite(options.reference_anchor_maximum_rms_m) ||
+        options.reference_anchor_maximum_rms_m <= 0.0) {
+        throw ContractError(
+            "reference anchor maximum RMS must be finite and positive");
+    }
+    if (!std::isfinite(options.temporal_outlier_acceleration_m) ||
+        options.temporal_outlier_acceleration_m <= 0.0 ||
+        !std::isfinite(options.temporal_outlier_ratio) ||
+        options.temporal_outlier_ratio <= 1.0) {
+        throw ContractError("invalid temporal view reliability options");
+    }
     for (const auto& view : views) {
         if (view.view_id.empty() || !std::isfinite(view.yaw_degrees) ||
             !std::isfinite(view.time_offset_s)) {
@@ -1075,7 +1181,7 @@ MultiviewSolveResult solve_directional_multiview(
             "directional multiview yaw set is geometrically degenerate; "
             "use distinct non-collinear view yaws");
     }
-    const auto& reference = views[options.reference_view].pose;
+    const auto& source_reference = views[options.reference_view].pose;
     const auto skeleton = make_default_skeleton();
     const auto hips = bone_index(skeleton, BoneSemantic::Hips);
     const auto head = bone_index(skeleton, BoneSemantic::Head);
@@ -1087,15 +1193,57 @@ MultiviewSolveResult solve_directional_multiview(
     result.diagnostics.alignments.reserve(views.size());
     for (const auto& view : views) {
         result.diagnostics.alignments.push_back(align_view(
-            reference, view.pose, view.view_id, options.maximum_warp_fraction,
+            source_reference, view.pose, view.view_id, options.maximum_warp_fraction,
             view.time_offset_s));
+    }
+
+    // A directional repeat is one authored action captured several times. Only
+    // the shared phase interval is genuinely multiview; clamping a shorter view
+    // at either endpoint creates frozen observations and false consensus.
+    std::size_t common_begin = 0;
+    std::size_t common_end = source_reference.frames.size();
+    for (const auto& alignment : result.diagnostics.alignments) {
+        std::size_t begin = 0;
+        while (begin < alignment.source_frame_at_reference.size() &&
+               alignment.source_frame_at_reference[begin] < 0.0) ++begin;
+        std::size_t end = alignment.source_frame_at_reference.size();
+        const auto view_index = static_cast<std::size_t>(
+            &alignment - result.diagnostics.alignments.data());
+        const double maximum_source_frame = static_cast<double>(
+            views[view_index].pose.frames.size() - 1);
+        while (end > begin &&
+               alignment.source_frame_at_reference[end - 1] >
+                   maximum_source_frame) --end;
+        common_begin = std::max(common_begin, begin);
+        common_end = std::min(common_end, end);
+    }
+    if (common_end <= common_begin || common_end - common_begin < 3) {
+        throw ContractError(
+            "directional views have no sufficient common aligned action interval");
+    }
+    PoseSequence reference = source_reference;
+    reference.frames = std::vector<ObservedPoseFrame>(
+        source_reference.frames.begin() + static_cast<std::ptrdiff_t>(common_begin),
+        source_reference.frames.begin() + static_cast<std::ptrdiff_t>(common_end));
+    const double first_time = reference.frames.front().time_s;
+    for (auto& frame : reference.frames) frame.time_s -= first_time;
+    for (auto& alignment : result.diagnostics.alignments) {
+        alignment.source_frame_at_reference = std::vector<double>(
+            alignment.source_frame_at_reference.begin() +
+                static_cast<std::ptrdiff_t>(common_begin),
+            alignment.source_frame_at_reference.begin() +
+                static_cast<std::ptrdiff_t>(common_end));
     }
 
     result.fused_pose = reference;
     result.fused_pose.backend =
-        "directional-multiview-view-invariant-dtw+confidence-orthographic";
+        "directional-multiview-motion-energy-affine+confidence-orthographic";
     if (options.enable_view_visibility_weighting)
         result.fused_pose.backend += "+joint-view-visibility";
+    if (options.enable_temporal_view_reliability)
+        result.fused_pose.backend += "+temporal-view-reliability";
+    if (options.require_reference_consensus_for_anchor)
+        result.fused_pose.backend += "+evidence-gated-reference-anchor";
     result.fused_pose.source_video = reference.source_video;
     double reprojection_error_sum = 0.0;
     std::size_t reprojection_error_samples = 0;
@@ -1108,6 +1256,12 @@ MultiviewSolveResult solve_directional_multiview(
     std::vector<std::vector<std::size_t>> visibility_last_frame(
         views.size(),std::vector<std::size_t>(joint_count,
             std::numeric_limits<std::size_t>::max()));
+    std::vector<std::vector<TemporalViewState>> temporal_view_state(
+        views.size(), std::vector<TemporalViewState>(joint_count));
+    std::vector<std::vector<bool>> reference_anchor_allowed(
+        reference.frames.size(), std::vector<bool>(joint_count, true));
+    std::vector<std::vector<bool>> temporal_curve_relaxation(
+        reference.frames.size(), std::vector<bool>(joint_count, false));
     constexpr std::size_t kLeftRightConfirmationFrames = 3;
     constexpr double kLeftRightRatio = 0.72;
     constexpr double kLeftRightMargin = 0.01;
@@ -1178,6 +1332,7 @@ MultiviewSolveResult solve_directional_multiview(
             const auto solved = triangulate_joint(
                 samples, views, result.diagnostics.alignments, pixels_per_meter,
                 skeleton, options,visibility_state,visibility_last_frame,
+                temporal_view_state,
                 frame,joint,hips);
             result.diagnostics.rejected_view_observations +=
                 solved.rejected_view_observations;
@@ -1189,10 +1344,19 @@ MultiviewSolveResult solve_directional_multiview(
                 solved.visibility_boosted_observations;
             result.diagnostics.overlap_downweighted_observations +=
                 solved.overlap_downweighted_observations;
+            result.diagnostics.temporal_outlier_downweighted_observations +=
+                solved.temporal_outlier_downweighted_observations;
+            temporal_curve_relaxation[frame][joint] =
+                solved.temporal_disagreement;
             if (!solved.valid) {
                 output_frame.joints[joint].valid = false;
                 output_frame.joints[joint].confidence = 0.0f;
                 continue;
+            }
+            if (options.require_reference_consensus_for_anchor) {
+                reference_anchor_allowed[frame][joint] =
+                    solved.contributors >= 2 &&
+                    !solved.reference_rejected;
             }
             auto& fused = output_frame.joints[joint];
             fused.position_m = reference_hip + solved.relative_position;
@@ -1230,8 +1394,20 @@ MultiviewSolveResult solve_directional_multiview(
     validate_pose_sequence(result.fused_pose);
     if (options.enable_animation_curve_stabilization &&
         options.temporal_weight > 0.0) {
+        auto curve_input = result.fused_pose;
+        for (std::size_t frame = 0; frame < curve_input.frames.size(); ++frame)
+            for (std::size_t joint = 0;
+                 joint < curve_input.frames[frame].joints.size(); ++joint)
+                if (temporal_curve_relaxation[frame][joint])
+                    curve_input.frames[frame].joints[joint].confidence = std::min(
+                        curve_input.frames[frame].joints[joint].confidence, 0.05f);
         auto stabilized = stabilize_pose_with_animation_curves(
-            result.fused_pose, options.animation_curve, &skeleton);
+            curve_input, options.animation_curve, &skeleton);
+        for (std::size_t frame = 0; frame < stabilized.sequence.frames.size(); ++frame)
+            for (std::size_t joint = 0;
+                 joint < stabilized.sequence.frames[frame].joints.size(); ++joint)
+                stabilized.sequence.frames[frame].joints[joint].confidence =
+                    result.fused_pose.frames[frame].joints[joint].confidence;
         result.diagnostics.curve_anchor_samples =
             stabilized.diagnostics.anchor_samples;
         result.diagnostics.curve_corrected_samples =
@@ -1251,10 +1427,16 @@ MultiviewSolveResult solve_directional_multiview(
         result.fused_pose = std::move(stabilized.sequence);
     }
     result.fused_pose = optimize_pose_sequence(result.fused_pose);
-    result.diagnostics.reference_anchored_observations = pin_reference_image_plane(
-        result.fused_pose, reference, views[options.reference_view].yaw_degrees,
+    const auto anchor_result = pin_reference_image_plane(
+        result.fused_pose, reference, reference_anchor_allowed,
+        views[options.reference_view].yaw_degrees,
         hips, head, left_foot, right_foot,
         options.reference_anchor_confidence);
+    result.diagnostics.reference_anchored_observations = anchor_result.anchored;
+    result.diagnostics.reference_anchor_suppressed_conflicts =
+        anchor_result.suppressed_conflicts;
+    result.diagnostics.reference_anchor_suppressed_low_confidence =
+        anchor_result.suppressed_low_confidence;
     validate_pose_sequence(result.fused_pose);
     result.motion = reconstruct_canonical_motion(result.fused_pose);
     result.motion.cameras.clear();
@@ -1292,6 +1474,12 @@ MultiviewDiagnostics load_multiview_diagnostics(const std::filesystem::path& pat
     result.reference_anchored_observations =
         value.contains("reference_anchored_observations")
         ? value.at("reference_anchored_observations").get<std::size_t>() : 0;
+    result.reference_anchor_suppressed_conflicts =
+        value.contains("reference_anchor_suppressed_conflicts")
+        ? value.at("reference_anchor_suppressed_conflicts").get<std::size_t>() : 0;
+    result.reference_anchor_suppressed_low_confidence =
+        value.contains("reference_anchor_suppressed_low_confidence")
+        ? value.at("reference_anchor_suppressed_low_confidence").get<std::size_t>() : 0;
     result.visibility_evaluated_observations =
         value.contains("visibility_evaluated_observations")
         ? value.at("visibility_evaluated_observations").get<std::size_t>() : 0;
@@ -1304,6 +1492,10 @@ MultiviewDiagnostics load_multiview_diagnostics(const std::filesystem::path& pat
     result.overlap_downweighted_observations =
         value.contains("overlap_downweighted_observations")
         ? value.at("overlap_downweighted_observations").get<std::size_t>() : 0;
+    result.temporal_outlier_downweighted_observations =
+        value.contains("temporal_outlier_downweighted_observations")
+        ? value.at("temporal_outlier_downweighted_observations")
+              .get<std::size_t>() : 0;
     result.curve_anchor_samples = value.contains("curve_anchor_samples")
         ? value.at("curve_anchor_samples").get<std::size_t>() : 0;
     result.curve_corrected_samples = value.contains("curve_corrected_samples")
@@ -1323,13 +1515,19 @@ MultiviewDiagnostics load_multiview_diagnostics(const std::filesystem::path& pat
     result.jitter_after_curve = value.contains("jitter_after_curve")
         ? value.at("jitter_after_curve").get<double>() : 0.0;
     for (const auto& item : value.at("alignments")) {
-        result.alignments.push_back({
-            item.at("view_id").get<std::string>(),
-            item.at("mean_offset_s").get<double>(),
-            item.at("mean_rate").get<double>(),
-            item.at("normalized_cost").get<double>(),
-            item.at("source_frame_at_reference").get<std::vector<double>>(),
-        });
+        ViewAlignment alignment;
+        alignment.view_id = item.at("view_id").get<std::string>();
+        alignment.mean_offset_s = item.at("mean_offset_s").get<double>();
+        alignment.mean_rate = item.at("mean_rate").get<double>();
+        alignment.normalized_cost = item.at("normalized_cost").get<double>();
+        alignment.method = item.value("method", std::string{"legacy"});
+        alignment.overlap_reference_frames = item.value(
+            "overlap_reference_frames", std::size_t{});
+        alignment.out_of_range_reference_frames = item.value(
+            "out_of_range_reference_frames", std::size_t{});
+        alignment.source_frame_at_reference =
+            item.at("source_frame_at_reference").get<std::vector<double>>();
+        result.alignments.push_back(std::move(alignment));
     }
     for (const auto& item : value.at("conflicts")) {
         result.conflicts.push_back({
@@ -1363,6 +1561,10 @@ void save_multiview_diagnostics(
         {"left_right_state_changes", diagnostics.left_right_state_changes},
         {"reference_anchored_observations",
          diagnostics.reference_anchored_observations},
+        {"reference_anchor_suppressed_conflicts",
+         diagnostics.reference_anchor_suppressed_conflicts},
+        {"reference_anchor_suppressed_low_confidence",
+         diagnostics.reference_anchor_suppressed_low_confidence},
         {"visibility_evaluated_observations",
          diagnostics.visibility_evaluated_observations},
         {"visibility_downweighted_observations",
@@ -1371,6 +1573,8 @@ void save_multiview_diagnostics(
          diagnostics.visibility_boosted_observations},
         {"overlap_downweighted_observations",
          diagnostics.overlap_downweighted_observations},
+        {"temporal_outlier_downweighted_observations",
+         diagnostics.temporal_outlier_downweighted_observations},
         {"curve_anchor_samples", diagnostics.curve_anchor_samples},
         {"curve_corrected_samples", diagnostics.curve_corrected_samples},
         {"curve_high_confidence_jitter_corrected_samples",
@@ -1388,6 +1592,10 @@ void save_multiview_diagnostics(
             {"mean_offset_s", alignment.mean_offset_s},
             {"mean_rate", alignment.mean_rate},
             {"normalized_cost", alignment.normalized_cost},
+            {"method", alignment.method},
+            {"overlap_reference_frames", alignment.overlap_reference_frames},
+            {"out_of_range_reference_frames",
+             alignment.out_of_range_reference_frames},
             {"source_frame_at_reference", alignment.source_frame_at_reference},
         });
     }

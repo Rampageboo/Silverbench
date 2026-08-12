@@ -44,6 +44,13 @@ class SharedMultiviewSessionTests(unittest.TestCase):
                     self.runs.append((video, output, roi))
                     output.parent.mkdir(parents=True, exist_ok=True)
                     output.write_text("{}", encoding="utf-8")
+                    (output.parent / "npu-shadow-diagnostics.json").write_text(
+                        json.dumps({"review_frames": [{
+                            "frame_index": 5,
+                            "reasons": ["gpu_npu_disagreement"],
+                        }]}),
+                        encoding="utf-8",
+                    )
 
                 def close(self) -> None:
                     self.closed = True
@@ -71,6 +78,12 @@ class SharedMultiviewSessionTests(unittest.TestCase):
                 if stage == "local_visual_recovery":
                     corrected = Path(command[command.index("--output-pose") + 1])
                     corrected.write_text("{}", encoding="utf-8")
+                    self.assertIn("--priority-frames", command)
+                    issues = Path(command[command.index("--issues-output") + 1])
+                    issues.write_text(json.dumps({
+                        "npu_priority_processed": 1,
+                        "issues": [{"frame": 5, "accepted": ["left_wrist"]}],
+                    }), encoding="utf-8")
                 return 0
 
             with mock.patch.object(
@@ -94,6 +107,17 @@ class SharedMultiviewSessionTests(unittest.TestCase):
             self.assertEqual(instances[0].kwargs["npu_mode"], "shadow")
             self.assertEqual(instances[0].kwargs["npu_sample_interval"], 15)
             self.assertEqual(run_streaming.call_count, 4)
+            for view in views:
+                diagnostics = json.loads((
+                    root / "output" / "poses" / view["id"] /
+                    "npu-shadow-diagnostics.json"
+                ).read_text(encoding="utf-8"))
+                self.assertEqual(diagnostics["gpu_reprocess"], {
+                    "status": "completed",
+                    "requested_frames": 1,
+                    "processed_frames": 1,
+                    "accepted_joint_corrections": 1,
+                })
 
 
 class ManifestValidationTests(unittest.TestCase):

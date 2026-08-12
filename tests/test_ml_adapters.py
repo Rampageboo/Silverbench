@@ -35,6 +35,11 @@ from python.animocap_ml_adapters.character_synthetic_dataset import (
     _select_frames,
 )
 from python.animocap_ml_adapters.evaluate_character_capture import evaluate, pose_metrics
+from python.animocap_ml_adapters.calibrate_pose_confidence import fit_profile
+from python.animocap_ml_adapters.local_vlm_adapter import (
+    _candidate_frames,
+    _priority_frames,
+)
 
 
 class HighAccuracyPoseTests(unittest.TestCase):
@@ -298,6 +303,66 @@ class HighAccuracyPoseTests(unittest.TestCase):
         self.assertEqual(points[0], [300.0, 300.0])
         self.assertAlmostEqual(scores[0], 0.95)
 
+    def test_evidence_backed_confidence_calibration_profile(self) -> None:
+        samples = []
+        for model in ("hrnet", "vitpose-humanart", "rtmw"):
+            for motion in ("motion-a", "motion-b"):
+                for index in range(30):
+                    confidence = (index + 1) / 31.0
+                    samples.append({
+                        "model": model,
+                        "joint": "nose",
+                        "motion_id": motion,
+                        "raw_confidence": confidence,
+                        "error_normalized": 0.02 if confidence >= 0.5 else 0.10,
+                    })
+        profile = fit_profile({
+            "schema_version": "1.0.0",
+            "samples": samples,
+        }, minimum_samples=30)
+        profile["evidence"]["source_sha256"] = "a" * 64
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "calibration.json"
+            path.write_text(json.dumps(profile), encoding="utf-8")
+            calibration = _load_confidence_calibration(path)
+            self.assertEqual(calibration.status, "profile-evidence-backed")
+            self.assertLess(
+                calibration.calibrate("hrnet", 0, 0.25),
+                calibration.calibrate("hrnet", 0, 0.75),
+            )
+
+    def test_structural_calibration_without_held_out_evidence_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "calibration.json"
+            path.write_text(json.dumps({
+                "schema_version": "1.0.0",
+                "models": {"hrnet": {"joints": {
+                    "nose": [[0.0, 0.0], [1.0, 1.0]],
+                }}},
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "hash-bound"):
+                _load_confidence_calibration(path)
+
+    def test_npu_review_frames_prioritize_local_reprocessing(self) -> None:
+        document = {
+            "image_width": 100,
+            "image_height": 100,
+            "frames": [{"joints": []} for _ in range(20)],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "npu.json"
+            path.write_text(json.dumps({
+                "review_frames": [{
+                    "frame_index": 10,
+                    "reasons": ["gpu_npu_disagreement", "left_right_swap"],
+                    "mean_normalized_error": 0.12,
+                    "left_right_swaps": 1,
+                }],
+            }), encoding="utf-8")
+            priority = _priority_frames(path, 20)
+            self.assertEqual(priority, [10])
+            self.assertIn(10, _candidate_frames(document, 4, priority))
+
     def test_malformed_calibration_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "bad.json"
@@ -471,6 +536,7 @@ class HighAccuracyPoseTests(unittest.TestCase):
             self.assertEqual(
                 session_arguments[0]["confidence_calibration"], calibration
             )
+            self.assertIn("--comparison-pose", commands[-1])
 
     def test_refiner_replaces_only_stronger_observations(self) -> None:
         base = [[float(index), float(index)] for index in range(17)]

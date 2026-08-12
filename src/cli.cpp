@@ -194,6 +194,7 @@ int fuse_multiview(int argc, char** argv) {
     std::filesystem::path pose_directory;
     std::filesystem::path output;
     std::filesystem::path diagnostics;
+    std::filesystem::path comparison_pose;
     std::filesystem::path character_profile_path;
     for (int index = 3; index < argc; ++index) {
         const std::string_view option(argv[index]);
@@ -203,6 +204,8 @@ int fuse_multiview(int argc, char** argv) {
             output = argv[++index];
         } else if (option == "--diagnostics" && index + 1 < argc) {
             diagnostics = argv[++index];
+        } else if (option == "--comparison-pose" && index + 1 < argc) {
+            comparison_pose = argv[++index];
         } else if(option=="--character-profile" && index+1<argc) {
             character_profile_path=argv[++index];
         } else {
@@ -243,6 +246,17 @@ int fuse_multiview(int argc, char** argv) {
             [](const auto& left,const auto& right) {
                 return std::abs(left.yaw_degrees)<std::abs(right.yaw_degrees);
             })));
+    if (!comparison_pose.empty()) {
+        auto baseline_options=solve_options;
+        baseline_options.enable_view_visibility_weighting=false;
+        baseline_options.enable_temporal_view_reliability=false;
+        baseline_options.enable_animation_curve_stabilization=false;
+        baseline_options.temporal_weight=0.0;
+        baseline_options.require_reference_consensus_for_anchor=false;
+        const auto baseline=animocap::solve_directional_multiview(
+            views,baseline_options);
+        animocap::save_pose_sequence_json(baseline.fused_pose,comparison_pose);
+    }
     auto result = animocap::solve_directional_multiview(views,solve_options);
     if(profile) {
         result.fused_pose=animocap::optimize_pose_sequence(
@@ -268,12 +282,17 @@ int fuse_multiview(int argc, char** argv) {
             {"mean_offset_s", alignment.mean_offset_s},
             {"mean_rate", alignment.mean_rate},
             {"normalized_cost", alignment.normalized_cost},
+            {"method", alignment.method},
+            {"overlap_reference_frames", alignment.overlap_reference_frames},
+            {"out_of_range_reference_frames", alignment.out_of_range_reference_frames},
         });
     }
     std::cout << json{
         {"status", "generated"},
         {"output", output.generic_string()},
         {"fused_pose", fused_pose_path.generic_string()},
+        {"comparison_pose", comparison_pose.empty()
+            ? std::string{} : comparison_pose.generic_string()},
         {"diagnostics", diagnostics.generic_string()},
         {"view_count", views.size()},
         {"frame_count", result.motion.motion.frame_count},
@@ -282,6 +301,12 @@ int fuse_multiview(int argc, char** argv) {
         {"left_right_corrections", result.diagnostics.left_right_corrections},
         {"rejected_view_observations", result.diagnostics.rejected_view_observations},
         {"left_right_state_changes", result.diagnostics.left_right_state_changes},
+        {"reference_anchored_observations",
+         result.diagnostics.reference_anchored_observations},
+        {"reference_anchor_suppressed_conflicts",
+         result.diagnostics.reference_anchor_suppressed_conflicts},
+        {"reference_anchor_suppressed_low_confidence",
+         result.diagnostics.reference_anchor_suppressed_low_confidence},
         {"visibility_evaluated_observations",
          result.diagnostics.visibility_evaluated_observations},
         {"visibility_downweighted_observations",
@@ -290,6 +315,8 @@ int fuse_multiview(int argc, char** argv) {
          result.diagnostics.visibility_boosted_observations},
         {"overlap_downweighted_observations",
          result.diagnostics.overlap_downweighted_observations},
+        {"temporal_outlier_downweighted_observations",
+         result.diagnostics.temporal_outlier_downweighted_observations},
         {"curve_anchor_samples", result.diagnostics.curve_anchor_samples},
         {"curve_corrected_samples", result.diagnostics.curve_corrected_samples},
         {"curve_high_confidence_jitter_corrected_samples",

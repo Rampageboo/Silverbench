@@ -313,9 +313,25 @@ def _load_confidence_calibration(path: Path) -> _ConfidenceCalibration:
                 previous_raw = raw
                 previous_support = support
             curves[model][joint] = validated
-    # Structural validation succeeds here; the profile itself is not evidence
-    # that a held-out calibration study was performed.
-    return _ConfidenceCalibration(curves, "profile", path.resolve())
+    evidence = document.get("evidence")
+    motion_ids = evidence.get("motion_ids", []) if isinstance(evidence, dict) else []
+    source_hash = evidence.get("source_sha256", "") if isinstance(evidence, dict) else ""
+    if (
+        not isinstance(evidence, dict)
+        or evidence.get("kind") != "held-out-labelled-real"
+        or not isinstance(motion_ids, list)
+        or len({str(item) for item in motion_ids if str(item)}) < 2
+        or not isinstance(source_hash, str)
+        or len(source_hash) != 64
+        or any(character not in "0123456789abcdefABCDEF" for character in source_hash)
+    ):
+        raise RuntimeError(
+            "confidence calibration requires hash-bound labelled evidence "
+            "from at least two distinct source motions"
+        )
+    return _ConfidenceCalibration(
+        curves, "profile-evidence-backed", path.resolve()
+    )
 
 
 def _resolve_confidence_calibration(
@@ -1836,8 +1852,8 @@ def _run_mmpose_with_session(
                 else ""
             )
             + (
-                "+confidence-calibration-profile"
-                if calibration.status == "profile"
+                "+confidence-calibration-evidence-backed"
+                if calibration.status == "profile-evidence-backed"
                 else "+confidence-calibration-identity"
             )
             + ("+anime-finetuned-hrnet" if anime_pose_weights is not None else "")

@@ -48,6 +48,32 @@ review frames onto the fused reference timeline and shows them in the issue
 panel. They remain review hints outside fusion, so low Task Manager utilization
 is expected under this policy.
 
+NPU review frames now receive priority in the existing local VLM/GPU recovery
+stage, and per-view diagnostics record requested, processed, and accepted joint
+correction counts. NPU coordinates remain outside fusion. If the local VLM is
+unavailable, the status is explicit and CUDA capture continues with zero NPU-
+triggered corrections.
+
+Front-reference anchoring is now evidence-gated: a joint must have at least two
+compatible contributors, the reference observation must survive consensus,
+and cross-view residuals must remain bounded. Deterministic tests confirm that
+a disputed side view suppresses the former unconditional front pin. Studio also
+loads a separate unenhanced comparison pose, renders it as a grey dotted ghost
+against the enhanced purple skeleton in an oblique depth view, and displays
+current-frame millimetre deltas. A preserved 531-frame three-view re-solve
+produced 12,213 comparable samples with a 1.66 mm median and 15.79 mm mean A/B
+delta; 433 samples exceeded 100 mm. This proves that the paths are observably
+different and exposes material outliers for review, but provides no ground-
+truth accuracy claim.
+
+Confidence calibration now has a local monotonic fitter and activation guard.
+Profiles must be hash-bound to labelled real evidence spanning at least two
+distinct source motions; a merely structural profile is rejected and identity
+mapping is reported explicitly. No qualifying local evidence/profile exists yet,
+so the three production experts are not claimed to be calibrated. Character-
+profile status now reports corrected sample count and mean/maximum millimetres,
+or explicitly states that the profile produced zero effect.
+
 The 2026-08-11 four-cardinal real run exposed three GUI defects after successful
 capture: Studio reapplied generic pose optimization to the already optimized
 and reference-pinned fused sequence, post-capture playback sought the decoder on
@@ -91,6 +117,30 @@ reprojection error by 1.35%, rejected observations by 0.82%, and final jitter
 by 0.64% while retaining all 12,166 reference anchors; reported conflicts rose
 by 1.60%. These are internal-consistency diagnostics without ground truth, not
 an accuracy or activation claim.
+
+Directional fusion now also detects view-specific temporal spikes before they
+can accumulate across cameras. It compares each view's body-normalized joint
+acceleration with the cross-view median, downweights only the isolated spike,
+and grants that sample temporary bounded-curve authority without changing the
+published fused confidence or validity. A deterministic test injects distinct
+high-confidence hand spikes into different side views and confirms the guarded
+fusion is closer to the clean sequence than the former fusion. Re-solving the
+preserved 531-frame three-view observations downweighted 1,236 view/joint
+samples and reduced the post-curve second-difference jitter metric from 0.02208
+to 0.01936 (12.3%) with the same two low-confidence observations and zero
+invalid observations. This is real-clip internal stability evidence, not
+ground-truth pose accuracy or accepted visual-review evidence.
+
+The preserved 531/497/577-frame front-fan run exposed a separate phase defect:
+the former DTW mapping held the left view for 121 reference steps and the right
+view for 52, while matching the right action about 75 frames before its shared
+motion event. The replacement motion-energy affine alignment selects about
++94/+173 source frames at reference frame zero, rates 1.000/1.005, and the 403
+frame interval supported by all three captures. Re-solving those observations
+reduced reported conflicts from 775 to 166 and post-curve jitter from 0.01936 to
+0.01411 (27.1%); high-confidence front-plane suppression fell from 1,210 to 32.
+These are internal consistency and stability results on one motion, not labelled
+3D accuracy or accepted visual review.
 
 The false multiview failure after successful package generation was traced to
 profile refinement attempting to overwrite the immutable raw `motion.amotion`.

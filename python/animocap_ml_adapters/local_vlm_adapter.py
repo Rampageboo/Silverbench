@@ -70,7 +70,32 @@ def _distance(a: list[float], b: list[float]) -> float:
     return math.hypot(float(a[0]) - float(b[0]), float(a[1]) - float(b[1]))
 
 
-def _candidate_frames(document: dict[str, Any], maximum: int) -> list[int]:
+def _priority_frames(path: Path | None, frame_count: int) -> list[int]:
+    """Load non-authoritative NPU review hints as a reprocessing priority."""
+    if path is None or not path.is_file():
+        return []
+    document = json.loads(path.read_text(encoding="utf-8-sig"))
+    ranked: list[tuple[float, int]] = []
+    for item in document.get("review_frames", []):
+        frame = int(item.get("frame_index", -1))
+        if not 0 <= frame < frame_count:
+            continue
+        reasons = item.get("reasons", [])
+        error = item.get("mean_normalized_error")
+        severity = float(len(reasons))
+        if isinstance(error, (int, float)) and math.isfinite(float(error)):
+            severity += min(2.0, float(error) * 10.0)
+        severity += min(2.0, int(item.get("left_right_swaps", 0)))
+        ranked.append((severity, frame))
+    return [frame for _severity, frame in sorted(
+        ranked, key=lambda item: (-item[0], item[1])
+    )]
+
+
+def _candidate_frames(
+    document: dict[str, Any], maximum: int,
+    priority_frames: list[int] | None = None,
+) -> list[int]:
     frames = document.get("frames", [])
     if not frames:
         return []
@@ -103,6 +128,11 @@ def _candidate_frames(document: dict[str, Any], maximum: int) -> list[int]:
 
     # Always validate the first frame as the semantic left/right reference.
     chosen = [0]
+    for index in priority_frames or []:
+        if index not in chosen and all(abs(index - existing) > 2 for existing in chosen):
+            chosen.append(index)
+        if len(chosen) >= maximum:
+            return sorted(chosen)
     for _, index in sorted(scored, reverse=True):
         if all(abs(index - existing) > 2 for existing in chosen):
             chosen.append(index)
@@ -273,7 +303,8 @@ def _refresh_planar_positions(document: dict[str, Any]) -> None:
 def run(input_video: Path, input_pose: Path, output_pose: Path,
         endpoint: str, model: str, roi: tuple[int, int, int, int] | None,
         maximum: int, mock_response: Path | None,
-        issues_output: Path | None) -> None:
+        issues_output: Path | None,
+        priority_frames_path: Path | None = None) -> None:
     import cv2
 
     original = json.loads(input_pose.read_text(encoding="utf-8"))
@@ -281,7 +312,8 @@ def run(input_video: Path, input_pose: Path, output_pose: Path,
     frames = document.get("frames", [])
     if not frames:
         raise RuntimeError("pose sequence has no frames")
-    candidates = _candidate_frames(document, maximum)
+    npu_priority = _priority_frames(priority_frames_path, len(frames))
+    candidates = _candidate_frames(document, maximum, npu_priority)
     effective_roi = _effective_roi(document, roi)
     mocks = _load_mock(mock_response)
     if mock_response is None:
@@ -329,7 +361,15 @@ def run(input_video: Path, input_pose: Path, output_pose: Path,
     if issues_output is not None:
         issues_output.parent.mkdir(parents=True, exist_ok=True)
         issues_output.write_text(
-            json.dumps({"model": model, "roi": effective_roi, "issues": issues},
+            json.dumps({
+                "model": model,
+                "roi": effective_roi,
+                "npu_priority_requested": len(npu_priority),
+                "npu_priority_processed": sum(
+                    frame in set(npu_priority) for frame in candidates
+                ),
+                "issues": issues,
+            },
                        ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
@@ -346,6 +386,7 @@ def main() -> int:
     parser.add_argument("--max-frames", type=int, default=12)
     parser.add_argument("--mock-response", type=Path)
     parser.add_argument("--issues-output", type=Path)
+    parser.add_argument("--priority-frames", type=Path)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     try:
@@ -359,7 +400,7 @@ def main() -> int:
         roi = tuple(args.roi) if args.roi is not None else None
         run(args.input_video, args.input_pose, args.output_pose, args.endpoint,
             args.model, roi, max(1, args.max_frames), args.mock_response,
-            args.issues_output)
+            args.issues_output, args.priority_frames)
         print(json.dumps({"event": "complete",
                           "output": str(args.output_pose)}), flush=True)
         return 0

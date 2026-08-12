@@ -764,10 +764,13 @@ void test_directional_multiview() {
     persisted_diagnostics.rejected_view_observations=17;
     persisted_diagnostics.left_right_state_changes=3;
     persisted_diagnostics.reference_anchored_observations=41;
+    persisted_diagnostics.reference_anchor_suppressed_conflicts=13;
+    persisted_diagnostics.reference_anchor_suppressed_low_confidence=17;
     persisted_diagnostics.visibility_evaluated_observations=301;
     persisted_diagnostics.visibility_downweighted_observations=91;
     persisted_diagnostics.visibility_boosted_observations=73;
     persisted_diagnostics.overlap_downweighted_observations=19;
+    persisted_diagnostics.temporal_outlier_downweighted_observations=23;
     persisted_diagnostics.curve_anchor_samples=31;
     persisted_diagnostics.curve_corrected_samples=29;
     persisted_diagnostics.curve_high_confidence_jitter_corrected_samples=11;
@@ -785,14 +788,20 @@ void test_directional_multiview() {
     const auto diagnostics_roundtrip =
         animocap::load_multiview_diagnostics(diagnostics_path);
     CHECK(diagnostics_roundtrip.alignments.size() == 4);
+    CHECK(diagnostics_roundtrip.alignments[1].method ==
+          "view-invariant-motion-energy-affine");
+    CHECK(diagnostics_roundtrip.alignments[1].overlap_reference_frames > 0);
     CHECK(diagnostics_roundtrip.recovered_observations >= 8);
     CHECK(diagnostics_roundtrip.rejected_view_observations == 17);
     CHECK(diagnostics_roundtrip.left_right_state_changes == 3);
     CHECK(diagnostics_roundtrip.reference_anchored_observations == 41);
+    CHECK(diagnostics_roundtrip.reference_anchor_suppressed_conflicts == 13);
+    CHECK(diagnostics_roundtrip.reference_anchor_suppressed_low_confidence == 17);
     CHECK(diagnostics_roundtrip.visibility_evaluated_observations == 301);
     CHECK(diagnostics_roundtrip.visibility_downweighted_observations == 91);
     CHECK(diagnostics_roundtrip.visibility_boosted_observations == 73);
     CHECK(diagnostics_roundtrip.overlap_downweighted_observations == 19);
+    CHECK(diagnostics_roundtrip.temporal_outlier_downweighted_observations == 23);
     CHECK(diagnostics_roundtrip.curve_anchor_samples == 31);
     CHECK(diagnostics_roundtrip.curve_corrected_samples == 29);
     CHECK(diagnostics_roundtrip.curve_high_confidence_jitter_corrected_samples == 11);
@@ -811,10 +820,13 @@ void test_directional_multiview() {
     diagnostics.erase("rejected_view_observations");
     diagnostics.erase("left_right_state_changes");
     diagnostics.erase("reference_anchored_observations");
+    diagnostics.erase("reference_anchor_suppressed_conflicts");
+    diagnostics.erase("reference_anchor_suppressed_low_confidence");
     diagnostics.erase("visibility_evaluated_observations");
     diagnostics.erase("visibility_downweighted_observations");
     diagnostics.erase("visibility_boosted_observations");
     diagnostics.erase("overlap_downweighted_observations");
+    diagnostics.erase("temporal_outlier_downweighted_observations");
     diagnostics.erase("curve_anchor_samples");
     diagnostics.erase("curve_corrected_samples");
     diagnostics.erase("curve_high_confidence_jitter_corrected_samples");
@@ -823,15 +835,23 @@ void test_directional_multiview() {
     diagnostics.erase("curve_maximum_correction_m");
     diagnostics.erase("jitter_before_curve");
     diagnostics.erase("jitter_after_curve");
+    for(auto& alignment:diagnostics.at("alignments")) {
+        alignment.erase("method");
+        alignment.erase("overlap_reference_frames");
+        alignment.erase("out_of_range_reference_frames");
+    }
     write_text(old_diagnostics_path,diagnostics.dump(2));
     const auto old_diagnostics=animocap::load_multiview_diagnostics(old_diagnostics_path);
     CHECK(old_diagnostics.rejected_view_observations==0);
     CHECK(old_diagnostics.left_right_state_changes==0);
     CHECK(old_diagnostics.reference_anchored_observations==0);
+    CHECK(old_diagnostics.reference_anchor_suppressed_conflicts==0);
+    CHECK(old_diagnostics.reference_anchor_suppressed_low_confidence==0);
     CHECK(old_diagnostics.visibility_evaluated_observations==0);
     CHECK(old_diagnostics.visibility_downweighted_observations==0);
     CHECK(old_diagnostics.visibility_boosted_observations==0);
     CHECK(old_diagnostics.overlap_downweighted_observations==0);
+    CHECK(old_diagnostics.temporal_outlier_downweighted_observations==0);
     CHECK(old_diagnostics.curve_anchor_samples==0);
     CHECK(old_diagnostics.curve_corrected_samples==0);
     CHECK(old_diagnostics.curve_high_confidence_jitter_corrected_samples==0);
@@ -840,6 +860,9 @@ void test_directional_multiview() {
     CHECK(old_diagnostics.curve_maximum_correction_m==0.0);
     CHECK(old_diagnostics.jitter_before_curve==0.0);
     CHECK(old_diagnostics.jitter_after_curve==0.0);
+    CHECK(old_diagnostics.alignments[1].method=="legacy");
+    CHECK(old_diagnostics.alignments[1].overlap_reference_frames==0);
+    CHECK(old_diagnostics.alignments[1].out_of_range_reference_frames==0);
 }
 
 void test_view_invariant_phase_alignment_with_different_starts() {
@@ -879,6 +902,25 @@ void test_view_invariant_phase_alignment_with_different_starts() {
         (9.0+1.02*32.0))<3.0);
 }
 
+void test_phase_alignment_does_not_freeze_trimmed_view() {
+    std::vector<animocap::MultiviewPoseInput> views;
+    views.push_back({"front",0.0,
+        make_directional_test_pose(0.0,60,0.0,1.0,false,false)});
+    views.push_back({"right",90.0,
+        make_directional_test_pose(90.0,50,6.0,1.0,false,false),6.0/30.0});
+    const auto result=animocap::solve_directional_multiview(views);
+    const auto& alignment=result.diagnostics.alignments[1];
+    CHECK(alignment.method=="view-invariant-motion-energy-affine");
+    CHECK(alignment.overlap_reference_frames==44);
+    CHECK(alignment.out_of_range_reference_frames==16);
+    CHECK(result.fused_pose.frames.size()==44);
+    CHECK(alignment.source_frame_at_reference.size()==44);
+    for(std::size_t frame=1;frame<alignment.source_frame_at_reference.size();++frame)
+        CHECK(alignment.source_frame_at_reference[frame]>
+              alignment.source_frame_at_reference[frame-1]+0.99);
+    CHECK(result.fused_pose.frames.back().joints[1].valid);
+}
+
 void test_animation_first_fan_rejects_corrupt_view() {
     auto views=make_normalized_fan_views();
     const auto hand=animocap::bone_index(
@@ -894,18 +936,81 @@ void test_animation_first_fan_rejects_corrupt_view() {
     const double error=pose_joint_distance(result.fused_pose.frames[25].joints[hand],
                                             clean.frames[25].joints[hand]);
     CHECK(error<0.12);
-    const auto hips=animocap::bone_index(
-        animocap::make_default_skeleton(),animocap::BoneSemantic::Hips);
-    const auto& reference_frame=views[1].pose.frames[25];
-    const auto& fused_frame=result.fused_pose.frames[25];
-    const auto relative=fused_frame.joints[hand].position_m-
-        reference_frame.joints[hips].position_m;
-    CHECK_NEAR(relative.x,
-        (reference_frame.joints[hand].image_xy.x-
-         reference_frame.joints[hips].image_xy.x)/300.0,1e-6);
-    CHECK_NEAR(relative.y,
-        -(reference_frame.joints[hand].image_xy.y-
-          reference_frame.joints[hips].image_xy.y)/300.0,1e-6);
+    CHECK(result.diagnostics.reference_anchored_observations>0);
+}
+
+void test_complementary_views_do_not_accumulate_independent_spikes() {
+    auto views=make_normalized_fan_views();
+    const auto clean_views=views;
+    const auto hand=animocap::bone_index(
+        animocap::make_default_skeleton(),animocap::BoneSemantic::LeftHand);
+    // Each side view has a different high-confidence defect. Both stay below
+    // the geometric rejection threshold, so temporal reliability must prevent
+    // them from being inherited one after another by the fused trajectory.
+    views[0].pose.frames[20].joints[hand].image_xy.x+=45.0;
+    views[0].pose.frames[20].joints[hand].confidence=0.99f;
+    views[2].pose.frames[34].joints[hand].image_xy.x-=45.0;
+    views[2].pose.frames[34].joints[hand].confidence=0.99f;
+    animocap::MultiviewSolveOptions options;
+    options.reference_view=1;
+    options.enable_animation_curve_stabilization=false;
+    options.temporal_weight=0.0;
+    const auto adaptive=animocap::solve_directional_multiview(views,options);
+    auto legacy_options=options;
+    legacy_options.enable_temporal_view_reliability=false;
+    const auto legacy=animocap::solve_directional_multiview(views,legacy_options);
+    const auto clean=animocap::solve_directional_multiview(clean_views,options);
+    double adaptive_error=0.0,legacy_error=0.0;
+    for(const auto frame:{std::size_t{20},std::size_t{34}}) {
+        adaptive_error+=pose_joint_distance(
+            adaptive.fused_pose.frames[frame].joints[hand],
+            clean.fused_pose.frames[frame].joints[hand]);
+        legacy_error+=pose_joint_distance(
+            legacy.fused_pose.frames[frame].joints[hand],
+            clean.fused_pose.frames[frame].joints[hand]);
+    }
+    CHECK(adaptive_error<legacy_error);
+    CHECK(adaptive.diagnostics.temporal_outlier_downweighted_observations>=2);
+    CHECK(adaptive.fused_pose.backend.find("temporal-view-reliability")!=
+          std::string::npos);
+    CHECK(legacy.diagnostics.temporal_outlier_downweighted_observations==0);
+}
+
+void test_reference_anchor_yields_to_cross_view_consensus() {
+    auto views=make_normalized_fan_views();
+    const auto skeleton=animocap::make_default_skeleton();
+    const auto right_hand=animocap::bone_index(
+        skeleton,animocap::BoneSemantic::RightHand);
+    for(std::size_t frame=18;frame<34;++frame) {
+        auto& reference=views[1].pose.frames[frame].joints[right_hand];
+        reference.image_xy.x+=800.0;
+        reference.confidence=0.99f;
+    }
+    animocap::MultiviewSolveOptions options;
+    options.reference_view=1;
+    options.enable_animation_curve_stabilization=false;
+    options.temporal_weight=0.0;
+    const auto adaptive=animocap::solve_directional_multiview(views,options);
+    auto legacy_options=options;
+    legacy_options.require_reference_consensus_for_anchor=false;
+    const auto legacy=animocap::solve_directional_multiview(views,legacy_options);
+    const auto hips=animocap::bone_index(skeleton,animocap::BoneSemantic::Hips);
+    auto reference_residual=[&](const animocap::MultiviewSolveResult& result) {
+        const auto relative=result.fused_pose.frames[25].joints[right_hand].position_m-
+            result.fused_pose.frames[25].joints[hips].position_m;
+        const auto& frame=views[1].pose.frames[25];
+        const double observed=(frame.joints[right_hand].image_xy.x-
+            frame.joints[hips].image_xy.x)/300.0;
+        return std::abs(relative.x-observed);
+    };
+    const double adaptive_error=reference_residual(adaptive);
+    const double legacy_error=reference_residual(legacy);
+    std::cerr<<"anchor consensus comparison: adaptive="<<adaptive_error
+             <<" legacy="<<legacy_error<<'\n';
+    CHECK(adaptive.diagnostics.reference_anchor_suppressed_conflicts>0);
+    CHECK(legacy_error<1e-6);
+    CHECK(adaptive.fused_pose.backend.find("evidence-gated-reference-anchor")!=
+          std::string::npos);
 }
 
 void test_joint_view_visibility_prefers_near_body_side() {
@@ -1005,6 +1110,12 @@ void test_joint_view_visibility_prefers_near_body_side() {
 
     auto invalid_options=weighted_options;
     invalid_options.maximum_far_side_visibility_penalty=1.0;
+    CHECK_THROWS(animocap::solve_directional_multiview(views,invalid_options));
+    invalid_options=weighted_options;
+    invalid_options.reference_anchor_maximum_rms_m=0.0;
+    CHECK_THROWS(animocap::solve_directional_multiview(views,invalid_options));
+    invalid_options=weighted_options;
+    invalid_options.temporal_outlier_ratio=1.0;
     CHECK_THROWS(animocap::solve_directional_multiview(views,invalid_options));
 }
 
@@ -1252,7 +1363,10 @@ int main() {
         {"pose_reconstruction", test_pose_reconstruction},
         {"directional_multiview", test_directional_multiview},
         {"view_invariant_phase_alignment_with_different_starts", test_view_invariant_phase_alignment_with_different_starts},
+        {"phase_alignment_does_not_freeze_trimmed_view", test_phase_alignment_does_not_freeze_trimmed_view},
         {"animation_first_fan_rejects_corrupt_view", test_animation_first_fan_rejects_corrupt_view},
+        {"complementary_views_do_not_accumulate_independent_spikes", test_complementary_views_do_not_accumulate_independent_spikes},
+        {"reference_anchor_yields_to_cross_view_consensus", test_reference_anchor_yields_to_cross_view_consensus},
         {"joint_view_visibility_prefers_near_body_side", test_joint_view_visibility_prefers_near_body_side},
         {"eight_view_strict_majority_rejects_two_views", test_eight_view_strict_majority_rejects_two_views},
         {"left_right_single_frame_ambiguity_is_stable", test_left_right_single_frame_ambiguity_is_stable},
