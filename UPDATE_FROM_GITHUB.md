@@ -5,7 +5,12 @@ repository runs the protocol distributor, which opens one pull request per
 registered consumer. Nothing is pushed to a consumer's default branch directly,
 and no update is auto-merged unless that consumer opts in.
 
-Review the pull request, confirm the routed modules still exist, then merge.
+Review the pull request, confirm the managed modules still exist, then merge.
+
+`AGENTS.md` and `CLAUDE.md` are no longer release-managed. On the first update
+after this change, unchanged copies proven by the old lock are removed. Locally
+modified copies are preserved and block the update for explicit resolution;
+they are never overwritten or silently deleted.
 
 ## Read the title before merging
 
