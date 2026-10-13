@@ -26,7 +26,6 @@ import {
 } from "./labelAnalysisStats";
 import { buildMediaOrder, normalizeMediaSelection, shouldSelectNewlyLoadedVideo } from "./labelMediaSelection";
 import type {
-  LabelSourceSummary,
   LabelWorkbenchActionGroup,
   LabelWorkbenchContextValue,
   LabelWorkbenchInspectorState,
@@ -198,11 +197,12 @@ function AnalysisPanel({
 export function LabelPage({ active = true, onReady }: Props) {
   const { workspaceRoot, poolLabelFocusFilename, clearPoolLabelFocus } = useWorkspace();
   const [selection, setSelection] = useState<LabelMediaSelection>({ kind: "video", index: 0 });
-  const [sourceSummary, setSourceSummary] = useState<LabelSourceSummary | null>(null);
   const [inspectorState, setInspectorState] = useState<LabelWorkbenchInspectorState | null>(null);
   const [actionGroups, setActionGroups] = useState<LabelWorkbenchActionGroup[]>([]);
   const [mediaRevealToken, setMediaRevealToken] = useState(0);
   const [mediaCollapsed, setMediaCollapsed] = useState(readMediaCollapsed);
+  // State (not a ref) so surfaces re-render when the inspector slot mounts or remounts.
+  const [classificationSlot, setClassificationSlot] = useState<HTMLElement | null>(null);
   const previousVideoCountRef = useRef(0);
   const pendingVideoEntryDirectionRef = useRef<-1 | 1 | null>(null);
   const mode: LabelWorkbenchMode = selection.kind === "video" ? "video" : "image";
@@ -257,10 +257,6 @@ export function LabelPage({ active = true, onReady }: Props) {
     setActionGroups([]);
   }, []);
 
-  const reportSourceSummary = useCallback((summary: LabelSourceSummary | null) => {
-    setSourceSummary(summary);
-  }, []);
-
   const reportInspectorState = useCallback((state: LabelWorkbenchInspectorState | null) => {
     setInspectorState(state);
   }, []);
@@ -281,7 +277,6 @@ export function LabelPage({ active = true, onReady }: Props) {
       const index = Math.max(0, Math.min(nextSelection.index, videoSession.videos.length - 1));
       setSelection({ kind: "video", index });
     }
-    setSourceSummary(null);
     setInspectorState(null);
     setActionGroups([]);
   }, [imagePool.entries.length, videoSession.videos.length]);
@@ -416,20 +411,15 @@ export function LabelPage({ active = true, onReady }: Props) {
     videoSession,
   ]);
 
+  // Reduced to a boolean so playback time (synced ~8x/s while playing) does not
+  // re-run the reporting effect below on every tick.
+  const hasNextVideoMarker = useMemo(
+    () => videoSession.timelineMarkers.some((marker) => marker.time > videoSession.time + 0.0005),
+    [videoSession.time, videoSession.timelineMarkers]
+  );
+
   useEffect(() => {
     if (selection.kind !== "video") return;
-    if (videoSession.current) {
-      const filename = `${videoSession.current.name} @ ${Math.round(videoSession.time * 1000)}ms`;
-      reportSourceSummary({
-        kind: "image",
-        totalImages: mediaOrder.length,
-        currentIndex: activeMediaPosition >= 0 ? activeMediaPosition : null,
-        filename,
-        reviewStatus: videoSession.reviewed ? "approved" : "unreviewed",
-      });
-    } else {
-      reportSourceSummary(null);
-    }
     reportInspectorState({
       taskKind: "both",
       reviewStatus: videoSession.current
@@ -448,7 +438,6 @@ export function LabelPage({ active = true, onReady }: Props) {
         readOnlyReason: null,
       },
     });
-    const hasNextVideoMarker = videoSession.timelineMarkers.some((marker) => marker.time > videoSession.time + 0.0005);
     registerWorkbenchActions([
       {
         id: "video-duplicate",
@@ -500,11 +489,9 @@ export function LabelPage({ active = true, onReady }: Props) {
       },
     ]);
   }, [
-    activeMediaPosition,
-    mediaOrder.length,
+    hasNextVideoMarker,
     registerWorkbenchActions,
     reportInspectorState,
-    reportSourceSummary,
     selection.kind,
     videoSession.activeDetectClasses,
     videoSession.boxes,
@@ -515,8 +502,6 @@ export function LabelPage({ active = true, onReady }: Props) {
     videoSession.duplicateCurrentBoxesToNextMarker,
     videoSession.markCurrentVideoJunk,
     videoSession.reviewed,
-    videoSession.time,
-    videoSession.timelineMarkers,
     videoSession.updateCurrentFrame,
   ]);
 
@@ -525,17 +510,17 @@ export function LabelPage({ active = true, onReady }: Props) {
       mode,
       setMode: handleModeChange,
       renderMode: "workbench-embedded",
-      reportSourceSummary,
       reportInspectorState,
       registerWorkbenchActions,
       clearWorkbenchActions,
+      classificationSlot,
     }),
     [
+      classificationSlot,
       clearWorkbenchActions,
       handleModeChange,
       mode,
       reportInspectorState,
-      reportSourceSummary,
       registerWorkbenchActions,
     ]
   );
@@ -654,9 +639,9 @@ export function LabelPage({ active = true, onReady }: Props) {
           </div>
           <LabelWorkbenchInspector
             mode={mode}
-            sourceSummary={sourceSummary}
             inspectorState={inspectorState}
             actionGroups={actionGroups}
+            classificationSlotRef={setClassificationSlot}
           />
         </div>
       </div>

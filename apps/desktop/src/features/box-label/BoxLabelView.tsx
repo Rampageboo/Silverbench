@@ -8,6 +8,7 @@ import { BoxLabelShortcutDropdown } from "./BoxLabelShortcutDropdown";
 import { classNameFor, SLOT_ORDER } from "./geometry";
 import type { FixedBoxSlot } from "./session";
 import { useBoxLabelEditor } from "./useBoxLabelEditor";
+import { useLabelWorkbench } from "../label/useLabelWorkbench";
 
 function fixedBoxReady(slot: FixedBoxSlot | null) {
   return Boolean(slot && slot.w > 0 && slot.h > 0);
@@ -41,7 +42,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     classificationClasses = [],
     classificationClassesBusy = false,
     classificationClassesStatus,
-    classificationClassesPortalId,
+    classificationClassesInWorkbenchSlot,
     detectClassKeysById,
     currentClassificationKey,
     onAssignClassificationClass,
@@ -58,6 +59,10 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     onToggleClfTaskEnabled,
     classPanelSummaries,
   } = props;
+  const workbenchClassificationSlot = useLabelWorkbench()?.classificationSlot ?? null;
+  // Falls back to rendering the panel inline (side stack) until the slot exists,
+  // so it can never silently disappear.
+  const classificationPortalTarget = classificationClassesInWorkbenchSlot ? workbenchClassificationSlot : null;
   const auraRef = useRef<HTMLDivElement | null>(null);
   const canvasClassSearchInputRef = useRef<HTMLInputElement | null>(null);
   const canvasRightPointerRef = useRef<{ startX: number; startY: number; moved: boolean } | null>(null);
@@ -66,7 +71,6 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
   const [classificationClassSearch, setClassificationClassSearch] = useState("");
   const [detectClassToolMode, setDetectClassToolMode] = useState<ClassToolMode>("none");
   const [classificationClassToolMode, setClassificationClassToolMode] = useState<ClassToolMode>("none");
-  const [classificationPortalTarget, setClassificationPortalTarget] = useState<HTMLElement | null>(null);
   const [canvasClassSearchMenu, setCanvasClassSearchMenu] = useState<CanvasClassSearchMenu | null>(null);
   const selectedProposal = editor.selectedProposalId
     ? editor.proposals.find((p) => p.id === editor.selectedProposalId)
@@ -280,13 +284,6 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     setCanvasClassSearchMenu(null);
   }, [props.entry?.basename]);
 
-  useEffect(() => {
-    if (!classificationClassesPortalId || typeof document === "undefined") {
-      setClassificationPortalTarget(null);
-      return;
-    }
-    setClassificationPortalTarget(document.getElementById(classificationClassesPortalId));
-  }, [classificationClassesPortalId]);
 
   const classificationClassesPanel = (
     <section className="panel filter-panel pool-label-classes-panel pool-label-clf-classes-panel">
@@ -409,7 +406,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     </section>
   );
   const classificationClassesPortal =
-    classificationClassesPortalId && classificationPortalTarget
+    classificationPortalTarget
       ? createPortal(classificationClassesPanel, classificationPortalTarget)
       : null;
 
@@ -890,7 +887,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
           </section>
 
           <div
-            className={`pool-label-class-panels${classificationClassesPortalId ? " pool-label-class-panels--single" : ""}`}
+            className={`pool-label-class-panels${classificationPortalTarget ? " pool-label-class-panels--single" : ""}`}
           >
             <section className="panel filter-panel pool-label-classes-panel pool-label-detect-classes-panel">
               <div className="panel-header pool-label-class-panel-header">
@@ -1009,7 +1006,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
                 </div>
               </div>
             </section>
-            {classificationClassesPortalId ? null : classificationClassesPanel}
+            {classificationPortalTarget ? null : classificationClassesPanel}
           </div>
         </aside>
       ) : null}

@@ -160,7 +160,8 @@ export type BoxLabelViewProps = {
   classificationClasses?: Array<{ key: string; name: string; archived?: boolean }>;
   classificationClassesBusy?: boolean;
   classificationClassesStatus?: string;
-  classificationClassesPortalId?: string;
+  /** Render the classification panel into the label workbench inspector slot. */
+  classificationClassesInWorkbenchSlot?: boolean;
   detectClassKeysById?: Record<number, string>;
   currentClassificationKey?: string | null;
   onAssignClassificationClass?: (classKey: string | null, basename?: string) => Promise<void>;

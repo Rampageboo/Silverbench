@@ -447,7 +447,7 @@ export function BoxLabelSurface({
           classificationClasses={imageClassificationClasses}
           classificationClassesBusy={workspaceClassesLoading || workspaceClassesSaving}
           classificationClassesStatus={classificationClassStatus}
-          classificationClassesPortalId={embedded ? "lwbClassifyClassesSlot" : undefined}
+          classificationClassesInWorkbenchSlot={embedded}
           detectClassKeysById={detectClassKeysById}
           currentClassificationKey={currentClassificationKey}
           onAssignClassificationClass={pool.assignClassificationClass}

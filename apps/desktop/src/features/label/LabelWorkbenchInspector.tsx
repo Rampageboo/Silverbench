@@ -10,9 +10,12 @@ import type {
 
 type Props = {
   mode: LabelWorkbenchMode;
-  sourceSummary: LabelSourceSummary | null;
+  /** Accepted for compatibility; the canvas header shows the source now. */
+  sourceSummary?: LabelSourceSummary | null;
   inspectorState: LabelWorkbenchInspectorState | null;
   actionGroups: LabelWorkbenchActionGroup[];
+  /** Receives the element the classification class panel is portaled into. */
+  classificationSlotRef?: (element: HTMLDivElement | null) => void;
 };
 
 function safeNumber(value: number | null | undefined): number | null {
@@ -328,6 +331,7 @@ export function LabelWorkbenchInspector({
   mode,
   inspectorState,
   actionGroups,
+  classificationSlotRef,
 }: Props) {
   const overlayCount = safeNumber(inspectorState?.overlaySummary?.activeCount);
   const segment = inspectorState?.segmentSummary;
@@ -372,7 +376,7 @@ export function LabelWorkbenchInspector({
     <aside className="lwb-inspector" aria-label="Label workbench inspector">
       {duplicateActionGroup ? <DuplicateActionsView group={duplicateActionGroup} /> : null}
 
-      {mode === "image" ? <div id="lwbClassifyClassesSlot" className="lwb-inspector-classify-slot" /> : null}
+      {mode === "image" ? <div id="lwbClassifyClassesSlot" ref={classificationSlotRef} className="lwb-inspector-classify-slot" /> : null}
 
       {mode === "video" && samplingControl ? <SamplingControlsView control={samplingControl} /> : null}
 
@@ -380,7 +384,7 @@ export function LabelWorkbenchInspector({
 
       {mode === "video" && classPalette ? <DetectClassPaletteView palette={classPalette} /> : null}
 
-      {mode === "video" ? <div id="lwbClassifyClassesSlot" className="lwb-inspector-classify-slot" /> : null}
+      {mode === "video" ? <div id="lwbClassifyClassesSlot" ref={classificationSlotRef} className="lwb-inspector-classify-slot" /> : null}
 
       {overlayCount !== null || segment ? (
         <section className="lwb-inspector-section">

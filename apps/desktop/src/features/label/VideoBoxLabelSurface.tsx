@@ -544,7 +544,7 @@ export function VideoBoxLabelSurface({
           onStatusText={() => {}}
           classPanelSummaries={classPanelSummaries}
           classificationClasses={videoSession.clfClassOptions}
-          classificationClassesPortalId="lwbClassifyClassesSlot"
+          classificationClassesInWorkbenchSlot
           currentClassificationKey={activeClfTask?.classKey ?? null}
           onAssignClassificationClass={assignClassificationClass}
           imageUrlOverride={imageUrlOverride}

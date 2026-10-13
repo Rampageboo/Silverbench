@@ -236,4 +236,6 @@ export type LabelWorkbenchContextValue = {
   reportInspectorState?: (state: LabelWorkbenchInspectorState | null) => void;
   registerWorkbenchActions?: (groups: LabelWorkbenchActionGroup[] | null) => void;
   clearWorkbenchActions?: () => void;
+  /** Inspector element that hosts the classification class panel (null until mounted). */
+  classificationSlot?: HTMLElement | null;
 };
