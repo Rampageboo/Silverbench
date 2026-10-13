@@ -45,14 +45,13 @@ describe("resolveActiveWorkspaceRoot", () => {
   });
 
   it("resolves an already-open version path through the parent manifest", async () => {
-    vi.mocked(readTextFile)
-      .mockRejectedValueOnce(new Error("no manifest in version"))
-      .mockResolvedValueOnce(snapshotManifest());
+    vi.mocked(readTextFile).mockResolvedValueOnce(snapshotManifest());
 
     await expect(resolveActiveWorkspaceRoot("D:\\Yolo\\ZZZ\\V1")).resolves.toBe("D:\\Yolo\\ZZZ\\V1");
 
-    expect(readTextFile).toHaveBeenNthCalledWith(1, "D:\\Yolo\\ZZZ\\V1", "workspace_versions.json");
-    expect(readTextFile).toHaveBeenNthCalledWith(2, "D:\\Yolo\\ZZZ", "workspace_versions.json");
+    // Parent first, and only one read: no failing probe inside the version folder.
+    expect(readTextFile).toHaveBeenCalledTimes(1);
+    expect(readTextFile).toHaveBeenCalledWith("D:\\Yolo\\ZZZ", "workspace_versions.json");
     expect(resolveActiveSnapshotWorkspacePath).not.toHaveBeenCalled();
   });
 

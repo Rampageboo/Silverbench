@@ -315,20 +315,25 @@ export function LabelPage({ active = true, onReady }: Props) {
     [activeMediaPosition, revealActiveMediaTile, selectMediaAtPosition]
   );
 
-  const handleModeChange = useCallback(
-    (nextMode: LabelWorkbenchMode) => {
-      if (nextMode === "image") {
-        const index = Math.max(0, Math.min(imagePool.currentIndex, imagePool.entries.length - 1));
-        imagePool.navigate(index);
-        handleSelectionChange({ kind: "image", index });
-        return;
-      }
-      const index = Math.max(0, Math.min(videoSession.currentIndex, videoSession.videos.length - 1));
-      videoSession.setCurrentIndex(index);
-      handleSelectionChange({ kind: "video", index });
-    },
-    [handleSelectionChange, imagePool, videoSession]
-  );
+  // The hook objects (imagePool, videoSession) are new on every render; reading
+  // them through a ref keeps handleModeChange — and the context value — stable.
+  // Otherwise every child report re-renders LabelPage, which rebuilds the context,
+  // which re-triggers the child report (a render loop React aborts after ~50 passes).
+  const modeChangeDepsRef = useRef({ imagePool, videoSession, handleSelectionChange });
+  modeChangeDepsRef.current = { imagePool, videoSession, handleSelectionChange };
+
+  const handleModeChange = useCallback((nextMode: LabelWorkbenchMode) => {
+    const { imagePool: pool, videoSession: session, handleSelectionChange: select } = modeChangeDepsRef.current;
+    if (nextMode === "image") {
+      const index = Math.max(0, Math.min(pool.currentIndex, pool.entries.length - 1));
+      pool.navigate(index);
+      select({ kind: "image", index });
+      return;
+    }
+    const index = Math.max(0, Math.min(session.currentIndex, session.videos.length - 1));
+    session.setCurrentIndex(index);
+    select({ kind: "video", index });
+  }, []);
 
   useEffect(() => {
     if (!mediaCatalogReady) return;

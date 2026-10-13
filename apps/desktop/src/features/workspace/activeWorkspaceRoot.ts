@@ -60,15 +60,15 @@ function activePathFromManifest(containerRoot: string, manifest: WorkspaceVersio
 
 async function resolveActiveWorkspaceRootFromManifest(workspaceRoot: string): Promise<string | null> {
   const root = trimTrailingSeparators(workspaceRoot);
+  // An open version folder (…/V1) never holds the manifest itself; ask its parent
+  // first so the common case does not issue a failing read on every call.
+  const parent = VERSION_DIR_RE.test(pathBasename(root)) ? pathDirname(root) : "";
+  if (parent) {
+    const parentManifest = await readSnapshotManifest(parent);
+    if (parentManifest) return activePathFromManifest(parent, parentManifest);
+  }
   const manifest = await readSnapshotManifest(root);
-  if (manifest) return activePathFromManifest(root, manifest);
-
-  if (!VERSION_DIR_RE.test(pathBasename(root))) return null;
-  const parent = pathDirname(root);
-  if (!parent) return null;
-  const parentManifest = await readSnapshotManifest(parent);
-  if (!parentManifest) return null;
-  return activePathFromManifest(parent, parentManifest);
+  return manifest ? activePathFromManifest(root, manifest) : null;
 }
 
 export async function resolveActiveWorkspaceRoot(workspaceRoot: string): Promise<string> {
