@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { adjacentVideoMarkerTime } from "./useVideoPlaybackTimeline";
 import {
-  adjacentVideoMarkerTime,
   initialVideoAnnotationTargetTime,
   markerDrivenAnnotationTargetTime,
   nextVideoKeyboardTime,

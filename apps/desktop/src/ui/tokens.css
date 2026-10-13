@@ -1,0 +1,164 @@
+/*
+ * YoloWorkBench design tokens.
+ *
+ * Two themes: "graphite" (default, dark) and "paper" (light).
+ * New code uses the --c-* / --fs-* / --sp-* / --r-* tokens only.
+ * The block at the bottom maps the legacy variable names (--bg, --panel, --ink…)
+ * onto these tokens so older tool pages pick up the same palette.
+ */
+
+:root,
+[data-theme="graphite"] {
+  color-scheme: dark;
+
+  /* Surfaces: sunken < bg < surface < raised < overlay */
+  --c-sunken: #08090a;
+  --c-bg: #0d0e10;
+  --c-surface: #141518;
+  --c-raised: #1c1d21;
+  --c-overlay: #222328;
+  --c-hover: rgba(255, 255, 255, 0.05);
+  --c-pressed: rgba(255, 255, 255, 0.09);
+
+  --c-line: #25272c;
+  --c-line-strong: #34363d;
+
+  --c-text: #ecebe7;
+  --c-text-2: #b3b1ab;
+  --c-text-3: #7b7974;
+  --c-text-disabled: #55534f;
+
+  /* Accent: signal lime. Text on accent uses --c-on-accent. */
+  --c-accent: #c6ef3a;
+  --c-accent-hover: #d5f76a;
+  --c-accent-text: #d2f45c;
+  --c-on-accent: #101400;
+  --c-accent-soft: rgba(198, 239, 58, 0.11);
+  --c-accent-line: rgba(198, 239, 58, 0.42);
+
+  --c-danger: #ff5f5a;
+  --c-danger-soft: rgba(255, 95, 90, 0.12);
+  --c-warn: #f4b740;
+  --c-warn-soft: rgba(244, 183, 64, 0.13);
+  --c-ok: #3fd69a;
+  --c-ok-soft: rgba(63, 214, 154, 0.12);
+  --c-info: #6ea8ff;
+  --c-info-soft: rgba(110, 168, 255, 0.13);
+
+  --c-scrim: rgba(4, 5, 6, 0.66);
+  --c-focus: rgba(198, 239, 58, 0.55);
+
+  --shadow-pop: 0 16px 40px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
+  --shadow-raise: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+}
+
+[data-theme="paper"] {
+  color-scheme: light;
+
+  --c-sunken: #e6e4df;
+  --c-bg: #f2f1ee;
+  --c-surface: #ffffff;
+  --c-raised: #f7f6f3;
+  --c-overlay: #ffffff;
+  --c-hover: rgba(20, 20, 18, 0.045);
+  --c-pressed: rgba(20, 20, 18, 0.08);
+
+  --c-line: #e1dfda;
+  --c-line-strong: #cbc8c1;
+
+  --c-text: #1a1a18;
+  --c-text-2: #4a4945;
+  --c-text-3: #84827c;
+  --c-text-disabled: #b2b0aa;
+
+  --c-accent: #4c7a00;
+  --c-accent-hover: #5a8f00;
+  --c-accent-text: #3f6600;
+  --c-on-accent: #ffffff;
+  --c-accent-soft: rgba(76, 122, 0, 0.09);
+  --c-accent-line: rgba(76, 122, 0, 0.4);
+
+  --c-danger: #d6362f;
+  --c-danger-soft: rgba(214, 54, 47, 0.08);
+  --c-warn: #b07208;
+  --c-warn-soft: rgba(176, 114, 8, 0.1);
+  --c-ok: #16885a;
+  --c-ok-soft: rgba(22, 136, 90, 0.09);
+  --c-info: #2f68d0;
+  --c-info-soft: rgba(47, 104, 208, 0.09);
+
+  --c-scrim: rgba(26, 26, 24, 0.36);
+  --c-focus: rgba(76, 122, 0, 0.45);
+
+  --shadow-pop: 0 18px 44px rgba(30, 28, 24, 0.16), 0 2px 6px rgba(30, 28, 24, 0.08);
+  --shadow-raise: 0 1px 2px rgba(30, 28, 24, 0.05);
+}
+
+:root {
+  /* Type */
+  --font-ui: "Inter", "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", "Cascadia Code", Consolas, monospace;
+  --fs-2xs: 10px;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 15px;
+  --fs-xl: 19px;
+  --fs-2xl: 26px;
+
+  /* Space (4px grid) */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+
+  /* Shape */
+  --r-xs: 3px;
+  --r-sm: 5px;
+  --r-md: 7px;
+  --r-lg: 10px;
+  --r-pill: 999px;
+
+  /* Controls */
+  --h-control: 30px;
+  --h-control-sm: 24px;
+  --h-control-lg: 36px;
+
+  /* Shell */
+  --shell-sidebar: 224px;
+  --shell-sidebar-collapsed: 56px;
+
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur-fast: 90ms;
+  --dur: 160ms;
+
+  /* ── Legacy variable bridge ───────────────────────────────────────────── */
+  --bg: var(--c-bg);
+  --panel: var(--c-surface);
+  --panel-2: var(--c-raised);
+  --ink: var(--c-text);
+  --muted: var(--c-text-3);
+  --line: var(--c-line);
+  --green: var(--c-ok);
+  --amber: var(--c-warn);
+  --red: var(--c-danger);
+  --blue: var(--c-accent);
+  --blue-strong: var(--c-accent);
+  --focus-ring: var(--c-focus);
+  --shadow: var(--shadow-raise);
+  --surface-muted: var(--c-sunken);
+  --surface-subtle: var(--c-raised);
+  --surface-hover: var(--c-hover);
+  --surface-active: var(--c-accent-soft);
+  --surface-stripe: var(--c-raised);
+  --topbar-bg: var(--c-surface);
+  --tabbar-bg: var(--c-bg);
+  --button-hover-border: var(--c-line-strong);
+  --button-hover-bg: var(--c-raised);
+  --on-primary: var(--c-on-accent);
+  --overlay-backdrop: var(--c-scrim);
+}

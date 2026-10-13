@@ -4,9 +4,9 @@
   bottom: 14px;
   z-index: 1200;
   width: min(360px, calc(100vw - 28px));
-  border: 1px solid rgba(148, 163, 184, 0.32);
+  border: 1px solid var(--c-line-strong);
   border-radius: 10px;
-  background: rgba(15, 23, 42, 0.96);
+  background: var(--c-surface);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.42);
   backdrop-filter: blur(12px);
   overflow: hidden;
@@ -16,7 +16,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: stretch;
-  background: rgba(30, 41, 59, 0.94);
+  background: var(--c-surface);
 }
 
 .multimodal-control-summary {
@@ -27,23 +27,23 @@
   border: 0;
   border-radius: 0;
   text-align: left;
-  background: rgba(30, 41, 59, 0.94);
+  background: var(--c-surface);
 }
 
 .multimodal-control-hide {
   min-width: 48px;
   padding: 0 10px;
   border: 0;
-  border-left: 1px solid rgba(148, 163, 184, 0.22);
+  border-left: 1px solid var(--c-line);
   border-radius: 0;
-  background: rgba(15, 23, 42, 0.72);
-  color: rgba(226, 232, 240, 0.78);
+  background: var(--c-surface);
+  color: var(--c-text-3);
   font-size: 11px;
 }
 
 .multimodal-control-hide:hover {
-  color: #e2e8f0;
-  background: rgba(30, 41, 59, 0.96);
+  color: var(--c-text);
+  background: var(--c-surface);
 }
 
 .multimodal-control-reopen {
@@ -53,21 +53,21 @@
   z-index: 1200;
   min-height: 28px;
   padding: 4px 9px;
-  border: 1px solid rgba(148, 163, 184, 0.26);
+  border: 1px solid var(--c-line-strong);
   border-radius: 7px;
-  background: rgba(15, 23, 42, 0.72);
-  color: rgba(226, 232, 240, 0.78);
+  background: var(--c-surface);
+  color: var(--c-text-3);
   font-size: 11px;
   backdrop-filter: blur(10px);
 }
 
 .multimodal-control-reopen:hover {
-  color: #e2e8f0;
-  background: rgba(30, 41, 59, 0.94);
+  color: var(--c-text);
+  background: var(--c-surface);
 }
 
 .multimodal-control-summary.is-armed {
-  box-shadow: inset 4px 0 0 #22c55e;
+  box-shadow: inset 4px 0 0 var(--c-ok);
 }
 
 .multimodal-control-summary small {
@@ -105,9 +105,9 @@
   position: relative;
   overflow: hidden;
   aspect-ratio: 16 / 9;
-  border: 1px solid rgba(148, 163, 184, 0.32);
+  border: 1px solid var(--c-line-strong);
   border-radius: 8px;
-  background: #020617;
+  background: var(--c-sunken);
 }
 
 .multimodal-camera-feed {
@@ -132,7 +132,7 @@
   transform: translateX(-50%);
   padding: 4px 8px;
   border-radius: 999px;
-  background: rgba(2, 6, 23, 0.85);
+  background: var(--c-surface);
   font-size: 12px;
   pointer-events: none;
   white-space: nowrap;
@@ -145,10 +145,10 @@
   transform: translate(-50%, -50%);
   display: grid;
   place-items: center;
-  border: 2px solid #f59e0b;
+  border: 2px solid var(--c-warn);
   border-radius: 50%;
-  background: rgba(15, 23, 42, 0.9);
-  color: #fbbf24;
+  background: var(--c-surface);
+  color: var(--c-warn);
   font-size: 12px;
   font-weight: 700;
   pointer-events: none;
@@ -158,7 +158,7 @@
   display: grid;
   gap: 4px;
   padding: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
+  border: 1px solid var(--c-line);
   border-radius: 7px;
   font-size: 12px;
   line-height: 1.35;
@@ -198,7 +198,7 @@
   justify-content: center;
 }
 .calibration-sheet-box {
-  background: var(--surface-1, #1e293b);
+  background: var(--surface-1, var(--c-raised));
   border: 1px solid var(--border, rgba(255,255,255,.1));
   border-radius: 10px;
   overflow: hidden;
@@ -216,7 +216,7 @@
   padding: 10px 16px;
   border-bottom: 1px solid var(--border, rgba(255,255,255,.1));
   font-size: .84rem;
-  color: var(--text-2, #94a3b8);
+  color: var(--text-2, var(--c-text-3));
   flex-shrink: 0;
 }
 .calibration-sheet-actions {

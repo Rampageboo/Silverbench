@@ -31,13 +31,6 @@ const LabelTool = lazy(async () => {
   return { default: (props: ToolPageProps) => <LabelPage active={props.active} onReady={props.onReady} /> };
 });
 
-const ReviewHubTool = lazy(async () => {
-  const { ReviewHubPage } = await import("../features/review-hub/ReviewHubPage");
-  return {
-    default: (props: ToolPageProps) => <ReviewHubPage active={props.active} onReady={props.onReady} />
-  };
-});
-
 const UiOrchestratorTool = lazy(async () => {
   const { UiOrchestratorPage } = await import("../features/ui-orchestrator/UiOrchestratorPage");
   return {
@@ -47,18 +40,9 @@ const UiOrchestratorTool = lazy(async () => {
   };
 });
 
-const ExportHubTool = lazy(async () => {
-  const { ExportHubPage } = await import("../features/export-hub/ExportHubPage");
-  return {
-    default: (props: ToolPageProps) => <ExportHubPage active={props.active} onReady={props.onReady} />
-  };
-});
-
-const SettingsTool = lazy(async () => {
-  const { SettingsPage } = await import("../features/settings/SettingsPage");
-  return {
-    default: (props: ToolPageProps) => <SettingsPage active={props.active} onReady={props.onReady} />
-  };
+const ClassesTool = lazy(async () => {
+  const { ClassesPage } = await import("../features/library/ClassesPage");
+  return { default: (props: ToolPageProps) => <ClassesPage onReady={props.onReady} /> };
 });
 
 // ── Legacy keep-alive tools ───────────────────────────────────────────────────
@@ -129,9 +113,7 @@ const TOOL_COMPONENTS: Record<ToolTab, WorkbenchToolDefinition["component"]> = {
   library: LibraryTool,
   label: LabelTool,
   orchestrate: UiOrchestratorTool,
-  review: ReviewHubTool,
-  export: ExportHubTool,
-  settings: SettingsTool,
+  classes: ClassesTool,
   // Legacy keep-alive
   video: VideoLabelTool,
   "video-capture": VideoCaptureTool,

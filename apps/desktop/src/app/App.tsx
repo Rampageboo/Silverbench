@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useBackend } from "../hooks/useBackend";
-import { BackendStatusBanner } from "../components/BackendStatusBanner";
 import { ToastProvider } from "../components/ToastProvider";
 import { ConfirmProvider } from "../components/ConfirmProvider";
 import { WorkspaceCacheProvider } from "../features/shared/WorkspaceCacheProvider";
@@ -103,7 +102,6 @@ export function App() {
 
   return (
     <>
-      <BackendStatusBanner visible={!startupActive && !connected} />
       <StartupOverlay
         visible={startupActive}
         done={startupPhase === "done"}
@@ -118,7 +116,7 @@ export function App() {
           <ConfirmProvider>
             <WorkspaceCacheProvider>
               <WorkspaceProvider connected={connected}>
-                <WorkbenchBody onNativeTabReady={notifyNativeTabReady} />
+                <WorkbenchBody onNativeTabReady={notifyNativeTabReady} backendConnected={connected || startupActive} />
               </WorkspaceProvider>
             </WorkspaceCacheProvider>
           </ConfirmProvider>

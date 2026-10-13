@@ -3,8 +3,9 @@ import { chooseDirectory } from "../../lib/tauri";
 import {
   validateClassSetup,
   type WorkspaceTaskType,
-  type WorkspaceMediaMode,
+  type WorkspaceMediaMode
 } from "../workspace/workspaceClassTaxonomy";
+import "./home.css";
 
 export type CreateWorkspaceOptions = {
   name: string;
@@ -44,7 +45,7 @@ function ClassListEditor({
   onChange,
   disabled,
   placeholder,
-  showIds = false,
+  showIds = false
 }: ClassListEditorProps) {
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -66,13 +67,12 @@ function ClassListEditor({
   }
 
   return (
-    <div className="glass-field">
-      <label className="glass-label">{label}</label>
-      <p className="glass-hint cw-class-hint">{hint}</p>
-      <div className="glass-input-row">
+    <div className="ui-field">
+      <label className="ui-field__label">{label}</label>
+      <p className="ui-field__hint">{hint}</p>
+      <div className="ui-input-row">
         <input
           ref={inputRef}
-          className="glass-input glass-input--flex"
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -80,12 +80,7 @@ function ClassListEditor({
           placeholder={placeholder}
           disabled={disabled}
         />
-        <button
-          type="button"
-          className="glass-btn glass-btn--sm"
-          onClick={tryAdd}
-          disabled={disabled || !input.trim()}
-        >
+        <button type="button" className="ui-btn--sm" onClick={tryAdd} disabled={disabled || !input.trim()}>
           Add
         </button>
       </div>
@@ -102,15 +97,24 @@ function ClassListEditor({
                 aria-label={`Remove ${name}`}
                 disabled={disabled}
               >
-                <svg viewBox="0 0 10 10" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                  <path d="M2 2l6 6M8 2L2 8"/>
+                <svg
+                  viewBox="0 0 10 10"
+                  width="8"
+                  height="8"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  aria-hidden="true"
+                >
+                  <path d="M2 2l6 6M8 2L2 8" />
                 </svg>
               </button>
             </span>
           ))}
         </div>
       ) : (
-        <p className="glass-hint cw-class-empty-hint">
+        <p className="ui-field__hint">
           {showIds
             ? 'No detect classes added — workspace will use a default "object" class.'
             : 'No classification classes added — workspace will use a default "object" class.'}
@@ -153,15 +157,21 @@ export function CreateWorkspaceDialog({ open, onCreate, onClose }: Props) {
   async function handleCreate() {
     const trimmedName = name.trim();
     const trimmedLoc = location.trim();
-    if (!trimmedName) { setError("Workspace name is required."); return; }
-    if (!trimmedLoc) { setError("Location is required."); return; }
+    if (!trimmedName) {
+      setError("Workspace name is required.");
+      return;
+    }
+    if (!trimmedLoc) {
+      setError("Location is required.");
+      return;
+    }
 
     const validationErrors = validateClassSetup({
       taskType,
       mediaMode,
       detectClasses: detectClasses.map((n) => ({ name: n })),
       clfClasses: clfClasses.map((n) => ({ name: n })),
-      setupMode: "manual",
+      setupMode: "manual"
     });
     if (validationErrors.length > 0) {
       setError(validationErrors[0]);
@@ -177,7 +187,7 @@ export function CreateWorkspaceDialog({ open, onCreate, onClose }: Props) {
         taskType,
         mediaMode,
         detectClasses,
-        clfClasses,
+        clfClasses
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -196,26 +206,34 @@ export function CreateWorkspaceDialog({ open, onCreate, onClose }: Props) {
 
   return (
     <div
-      className="glass-dialog-backdrop"
+      className="ui-dialog-scrim"
       role="dialog"
       aria-modal="true"
       aria-label="Create Workspace"
       onKeyDown={handleKeyDown}
     >
-      <div className="glass-dialog glass-dialog--wide">
-        <div className="glass-dialog-header">
-          <h2 className="glass-dialog-title">Create Workspace</h2>
-          <button type="button" className="glass-dialog-close" onClick={onClose} aria-label="Close">✕</button>
+      <div className="ui-dialog ui-dialog--wide">
+        <div className="ui-dialog__head">
+          <h2 className="ui-dialog__title">Create Workspace</h2>
+          <button
+            type="button"
+            className="ui-btn--ghost ui-btn--icon ui-btn--sm"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            ✕
+          </button>
         </div>
 
-        <div className="glass-dialog-body">
+        <div className="ui-dialog__body">
           {/* ── Workspace identity ─────────────────────────────────────── */}
-          <div className="glass-field">
-            <label className="glass-label" htmlFor="ws-name">Workspace Name</label>
+          <div className="ui-field">
+            <label className="ui-field__label" htmlFor="ws-name">
+              Workspace Name
+            </label>
             <input
               id="ws-name"
               ref={nameRef}
-              className="glass-input"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -224,12 +242,13 @@ export function CreateWorkspaceDialog({ open, onCreate, onClose }: Props) {
             />
           </div>
 
-          <div className="glass-field">
-            <label className="glass-label" htmlFor="ws-location">Location</label>
-            <div className="glass-input-row">
+          <div className="ui-field">
+            <label className="ui-field__label" htmlFor="ws-location">
+              Location
+            </label>
+            <div className="ui-input-row">
               <input
                 id="ws-location"
-                className="glass-input glass-input--flex"
                 type="text"
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
@@ -239,7 +258,7 @@ export function CreateWorkspaceDialog({ open, onCreate, onClose }: Props) {
               />
               <button
                 type="button"
-                className="glass-btn glass-btn--sm"
+                className="ui-btn--sm"
                 onClick={() => void handlePickLocation()}
                 disabled={creating}
               >
@@ -247,22 +266,23 @@ export function CreateWorkspaceDialog({ open, onCreate, onClose }: Props) {
               </button>
             </div>
             {location && name.trim() && (
-              <span className="glass-hint">
+              <span className="ui-field__hint">
                 Will create: {location.replace(/[/\\]+$/, "")}/{name.trim()}
               </span>
             )}
           </div>
 
           {/* ── Task type + media mode ────────────────────────────────── */}
-          <div className="glass-field-row">
-            <div className="glass-field">
-              <label className="glass-label">Task Type</label>
-              <div className="glass-segmented">
+          <div className="ui-field-row">
+            <div className="ui-field">
+              <label className="ui-field__label">Task Type</label>
+              <div className="ui-seg">
                 {(["detect", "classify", "both"] as WorkspaceTaskType[]).map((t) => (
                   <button
                     key={t}
                     type="button"
-                    className={`glass-seg-btn${taskType === t ? " active" : ""}`}
+                    className={taskType === t ? "active" : undefined}
+                    aria-pressed={taskType === t}
                     onClick={() => setTaskType(t)}
                     disabled={creating}
                   >
@@ -271,14 +291,15 @@ export function CreateWorkspaceDialog({ open, onCreate, onClose }: Props) {
                 ))}
               </div>
             </div>
-            <div className="glass-field">
-              <label className="glass-label">Media Mode</label>
-              <div className="glass-segmented">
+            <div className="ui-field">
+              <label className="ui-field__label">Media Mode</label>
+              <div className="ui-seg">
                 {(["images", "videos", "mixed"] as WorkspaceMediaMode[]).map((m) => (
                   <button
                     key={m}
                     type="button"
-                    className={`glass-seg-btn${mediaMode === m ? " active" : ""}`}
+                    className={mediaMode === m ? "active" : undefined}
+                    aria-pressed={mediaMode === m}
                     onClick={() => setMediaMode(m)}
                     disabled={creating}
                   >
@@ -294,7 +315,9 @@ export function CreateWorkspaceDialog({ open, onCreate, onClose }: Props) {
             <div className="cw-class-section">
               <div className="cw-class-section-header">
                 <span className="cw-class-section-title">Classes</span>
-                <span className="cw-class-section-hint">Optional — add classes now or set them up later in the workspace.</span>
+                <span className="cw-class-section-hint">
+                  Optional — add classes now or set them up later in the workspace.
+                </span>
               </div>
               {needDetect && (
                 <ClassListEditor
@@ -320,19 +343,14 @@ export function CreateWorkspaceDialog({ open, onCreate, onClose }: Props) {
             </div>
           )}
 
-          {error && <p className="glass-error">{error}</p>}
+          {error && <p className="ui-error">{error}</p>}
         </div>
 
-        <div className="glass-dialog-footer">
-          <button type="button" className="glass-btn" onClick={onClose} disabled={creating}>
+        <div className="ui-dialog__foot">
+          <button type="button" onClick={onClose} disabled={creating}>
             Cancel
           </button>
-          <button
-            type="button"
-            className="glass-btn glass-btn--primary"
-            onClick={() => void handleCreate()}
-            disabled={creating}
-          >
+          <button type="button" className="ui-btn--solid" onClick={() => void handleCreate()} disabled={creating}>
             {creating ? "Creating…" : "Create Workspace"}
           </button>
         </div>

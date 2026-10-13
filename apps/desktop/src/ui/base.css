@@ -1,0 +1,408 @@
+/*
+ * Base layer: reset, element defaults, and the generic legacy classes
+ * (.panel, .hint, button.primary …) that every tool page still uses.
+ * Loaded after the legacy stylesheets so equal-specificity rules win here.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv11", "ss01";
+}
+
+body {
+  margin: 0;
+  min-width: 1100px;
+  min-height: 640px;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font: inherit;
+  cursor: default;
+}
+
+/* Undo the legacy custom cursor images. */
+a,
+button,
+label,
+select,
+[role="button"],
+[role="link"],
+[class*="cursor-pointer"] {
+  cursor: default !important;
+}
+
+a {
+  color: var(--c-accent-text);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--c-text);
+}
+
+p {
+  margin: 0;
+}
+
+code,
+kbd,
+pre,
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+::selection {
+  background: var(--c-accent-soft);
+  color: var(--c-text);
+}
+
+/* ── Scrollbars ─────────────────────────────────────────────────────────── */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-line-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--c-line-strong);
+  border: 3px solid transparent;
+  border-radius: var(--r-pill);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--c-text-3);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ── Focus ──────────────────────────────────────────────────────────────── */
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--c-focus);
+  outline-offset: 1px;
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--h-control);
+  padding: 0 12px;
+  border: 1px solid var(--c-line-strong);
+  border-radius: var(--r-sm);
+  background: var(--c-raised);
+  color: var(--c-text);
+  font: inherit;
+  font-size: var(--fs-md);
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-shadow: none;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--c-text-3);
+  background: var(--c-overlay);
+}
+
+button:active:not(:disabled) {
+  background: var(--c-pressed);
+  transform: none;
+}
+
+button:disabled {
+  opacity: 1;
+  color: var(--c-text-disabled);
+  border-color: var(--c-line);
+  background: transparent;
+}
+
+/* Tinted accent: legacy pages mark many buttons .primary, so keep it calm. */
+button.primary {
+  border-color: var(--c-accent-line);
+  background: var(--c-accent-soft);
+  color: var(--c-accent-text);
+  font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  border-color: var(--c-accent);
+  background: color-mix(in srgb, var(--c-accent) 20%, transparent);
+  color: var(--c-accent-text);
+}
+
+button.primary:disabled {
+  border-color: var(--c-line);
+  background: transparent;
+  color: var(--c-text-disabled);
+}
+
+/* Solid accent: reserved for the one main action in a view. */
+button.ui-btn--solid,
+button.primary.ui-btn--solid {
+  border-color: var(--c-accent);
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+}
+
+button.ui-btn--solid:hover:not(:disabled),
+button.primary.ui-btn--solid:hover:not(:disabled) {
+  border-color: var(--c-accent-hover);
+  background: var(--c-accent-hover);
+  color: var(--c-on-accent);
+}
+
+button.danger,
+.btn--danger {
+  border-color: color-mix(in srgb, var(--c-danger) 45%, transparent);
+  background: var(--c-danger-soft);
+  color: var(--c-danger);
+}
+
+button.danger:hover:not(:disabled),
+.btn--danger:hover:not(:disabled) {
+  border-color: var(--c-danger);
+  background: color-mix(in srgb, var(--c-danger) 20%, transparent);
+  color: var(--c-danger);
+}
+
+button.danger:disabled {
+  background: transparent;
+  color: var(--c-text-disabled);
+  border-color: var(--c-line);
+}
+
+/* ── Fields ─────────────────────────────────────────────────────────────── */
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+select,
+textarea {
+  min-height: var(--h-control);
+  padding: 0 9px;
+  border: 1px solid var(--c-line-strong);
+  border-radius: var(--r-sm);
+  background: var(--c-sunken);
+  color: var(--c-text);
+  font: inherit;
+  font-size: var(--fs-md);
+  box-shadow: none;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+textarea {
+  padding: 7px 9px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--c-text-3);
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):hover:not(:disabled),
+select:hover:not(:disabled),
+textarea:hover:not(:disabled) {
+  border-color: var(--c-text-3);
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
+select:focus,
+textarea:focus {
+  border-color: var(--c-accent-line);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--c-accent-soft);
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  color: var(--c-text-disabled);
+  background: transparent;
+  border-color: var(--c-line);
+}
+
+select {
+  padding-right: 26px;
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--c-text-3) 50%),
+    linear-gradient(135deg, var(--c-text-3) 50%, transparent 50%);
+  background-position:
+    calc(100% - 13px) 50%,
+    calc(100% - 9px) 50%;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+}
+
+select option {
+  background: var(--c-overlay);
+  color: var(--c-text);
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--c-accent);
+  vertical-align: -2px;
+}
+
+input[type="range"] {
+  accent-color: var(--c-accent);
+}
+
+input[type="number"] {
+  font-variant-numeric: tabular-nums;
+}
+
+label {
+  color: var(--c-text-2);
+  font-size: var(--fs-sm);
+}
+
+/* ── Legacy generic classes ─────────────────────────────────────────────── */
+
+.panel {
+  min-width: 0;
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+  box-shadow: none;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-height: 36px;
+  padding: 0 var(--sp-3);
+  border-bottom: 1px solid var(--c-line);
+  background: transparent;
+  color: var(--c-text);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.panel-body {
+  padding: var(--sp-3);
+}
+
+.hint {
+  color: var(--c-text-3);
+  font-size: var(--fs-sm);
+}
+
+.status {
+  color: var(--c-text-3);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.empty {
+  display: grid;
+  place-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-6) var(--sp-4);
+  color: var(--c-text-3);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.empty strong {
+  color: var(--c-text-2);
+  font-weight: 500;
+}
+
+.error-banner {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid color-mix(in srgb, var(--c-danger) 40%, transparent);
+  border-radius: var(--r-sm);
+  background: var(--c-danger-soft);
+  color: var(--c-danger);
+  font-size: var(--fs-sm);
+}
+
+.page-loading {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--c-text-3);
+  font-size: var(--fs-sm);
+}
+
+table {
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+th {
+  color: var(--c-text-3);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  text-align: left;
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--c-line);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

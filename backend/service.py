@@ -363,7 +363,8 @@ class BackendService:
 
     def _handle_openDirectory(self, args: list[Any]) -> object:
             path = self.path_access.require_path(args[0])
-            if not path.exists():
+            # Directories only: os.startfile on a file would execute it.
+            if not path.is_dir():
                 return False
             if not self.open_directory_callback:
                 raise RuntimeError("Open directory is not available in this backend.")

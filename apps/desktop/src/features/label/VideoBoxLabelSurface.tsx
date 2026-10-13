@@ -6,6 +6,7 @@ import { formatVideoClock } from "../video/videoAnnotationDomain";
 import { BoxLabelView } from "../box-label/BoxLabelView";
 import type { BoxLabelEntry } from "../box-label/boxLabelCore";
 import type { BoxLabelModel } from "../box-label/useBoxLabel";
+import { WorkbenchDock } from "./WorkbenchDock";
 import { AutoLabelModelPanel } from "./AutoLabelModelPanel";
 import { analysisClassPanelSummaries, type AnalysisStats } from "./labelAnalysisStats";
 import { adjacentVideoMarkerTime, useVideoPlaybackTimeline } from "./useVideoPlaybackTimeline";
@@ -232,6 +233,7 @@ export function VideoBoxLabelSurface({
   analysisStats,
   onNavigateBoundary,
   renderAnalysisPanel,
+  headerActions,
 }: {
   workspaceRoot: string;
   videoSession: VideoAnnotationSession;
@@ -241,6 +243,7 @@ export function VideoBoxLabelSurface({
   analysisStats: AnalysisStats;
   onNavigateBoundary: (delta: -1 | 1) => void;
   renderAnalysisPanel: () => ReactNode;
+  headerActions?: ReactNode;
 }) {
   const currentVideoPath = videoSession.current?.path ?? "";
   const currentFrameTime = videoSession.currentFrame?.time ?? null;
@@ -551,6 +554,7 @@ export function VideoBoxLabelSurface({
           previewIndexText={previewMediaIndexText}
           previewReviewLabel={previewReviewLabel}
           previewStatusItems={previewStatusItems}
+          previewHeaderActions={headerActions}
           videoUrlOverride={nativeVideoUrl}
           videoPlaybackTime={playbackTime}
           videoSeekTime={playbackTime}
@@ -563,7 +567,6 @@ export function VideoBoxLabelSurface({
           loadLabelsOverride={loadLabelsOverride}
           saveLabelsOverride={saveLabelsOverride}
           disableProposals
-          canvasOverlayPlacement="zoom-side"
           canvasOverlay={({ selectedBoxId }) => {
             selectedBoxIdRef.current = selectedBoxId;
             return (
@@ -635,57 +638,71 @@ export function VideoBoxLabelSurface({
             reloadWorkspaceClasses,
             capturePreviewBase64,
           }) => (
-            <div className="lwb-workbench-dock">
-              <VideoFrameControlsPanel
-                segmentCount={sampling.segmentCount}
-                samplingMode={sampling.samplingMode}
-                minSpacingMs={sampling.minSpacingMs}
-                randomMultiplier={randomMultiplier}
-                current={Boolean(videoSession.current)}
-                canDuplicateToNext={canDuplicateToNextMarker}
-                hasFrameRecord={hasFrameRecord}
-                videoDurationMs={videoDurationMs}
-                onSamplingModeChange={sampling.setMode}
-                onMinSpacingMsChange={sampling.setMinSpacingMs}
-                onRandomMultiplierChange={setRandomMultiplier}
-                onRandom={handleRandom}
-                onRandomNext={handleRandomNext}
-                onAddMarker={handleAddMarker}
-                onDuplicateToNext={() => {
-                  handleDuplicateToNextMarker();
-                }}
-                onMarkEmpty={() => {
-                  if (annotationTime !== null) videoSession.markEmptyReviewed();
-                }}
-                onClearRecord={() => {
-                  if (annotationTime !== null) videoSession.clearFrameRecord();
-                }}
-              />
-              <AutoLabelModelPanel
-                workspaceRoot={workspaceRoot}
-                currentImage={overlayEntry}
-                entries={overlayEntries}
-                currentIndex={currentIndex}
-                boxCount={boxes.length}
-                proposalCount={proposals.length}
-                classificationClasses={classificationClasses}
-                currentClassificationKey={currentClassificationKey}
-                sourceImageBase64={null}
-                sourceImagePath={null}
-                prepareSourceImageBase64={hasFrameRecord ? (target) => {
-                  const targetTime = videoFrameEntryTime(target) ?? annotationTime;
-                  return targetTime === null ? null : waitForVideoPreviewCapture(capturePreviewBase64, targetTime);
-                } : undefined}
-                prepareSourceImagePath={hasFrameRecord ? prepareAutoLabelFramePath : undefined}
-                requireSourceImageBase64={hasFrameRecord}
-                sourceUnavailableMessage={hasFrameRecord ? "Cannot confirm Auto Label frame matches the visible label frame." : "Add a marker or use Random Next to run video Auto Label."}
-                autoRunAllowed={hasFrameRecord && !activeReviewed}
-                onApplyDetectPredictions={applyAutoLabelPredictions}
-                onAssignClassificationClass={assignOverlayClassificationClass}
-                onClassesChanged={reloadWorkspaceClasses}
-              />
-              {renderAnalysisPanel()}
-            </div>
+            <WorkbenchDock
+              sections={[
+                {
+                  id: "sampling",
+                  label: "Sampling",
+                  content: (
+                    <VideoFrameControlsPanel
+                      segmentCount={sampling.segmentCount}
+                      samplingMode={sampling.samplingMode}
+                      minSpacingMs={sampling.minSpacingMs}
+                      randomMultiplier={randomMultiplier}
+                      current={Boolean(videoSession.current)}
+                      canDuplicateToNext={canDuplicateToNextMarker}
+                      hasFrameRecord={hasFrameRecord}
+                      videoDurationMs={videoDurationMs}
+                      onSamplingModeChange={sampling.setMode}
+                      onMinSpacingMsChange={sampling.setMinSpacingMs}
+                      onRandomMultiplierChange={setRandomMultiplier}
+                      onRandom={handleRandom}
+                      onRandomNext={handleRandomNext}
+                      onAddMarker={handleAddMarker}
+                      onDuplicateToNext={() => {
+                        handleDuplicateToNextMarker();
+                      }}
+                      onMarkEmpty={() => {
+                        if (annotationTime !== null) videoSession.markEmptyReviewed();
+                      }}
+                      onClearRecord={() => {
+                        if (annotationTime !== null) videoSession.clearFrameRecord();
+                      }}
+                    />
+                  ),
+                },
+                {
+                  id: "auto-label",
+                  label: "Auto-label",
+                  content: (
+                    <AutoLabelModelPanel
+                      workspaceRoot={workspaceRoot}
+                      currentImage={overlayEntry}
+                      entries={overlayEntries}
+                      currentIndex={currentIndex}
+                      boxCount={boxes.length}
+                      proposalCount={proposals.length}
+                      classificationClasses={classificationClasses}
+                      currentClassificationKey={currentClassificationKey}
+                      sourceImageBase64={null}
+                      sourceImagePath={null}
+                      prepareSourceImageBase64={hasFrameRecord ? (target) => {
+                        const targetTime = videoFrameEntryTime(target) ?? annotationTime;
+                        return targetTime === null ? null : waitForVideoPreviewCapture(capturePreviewBase64, targetTime);
+                      } : undefined}
+                      prepareSourceImagePath={hasFrameRecord ? prepareAutoLabelFramePath : undefined}
+                      requireSourceImageBase64={hasFrameRecord}
+                      sourceUnavailableMessage={hasFrameRecord ? "Cannot confirm Auto Label frame matches the visible label frame." : "Add a marker or use Random Next to run video Auto Label."}
+                      autoRunAllowed={hasFrameRecord && !activeReviewed}
+                      onApplyDetectPredictions={applyAutoLabelPredictions}
+                      onAssignClassificationClass={assignOverlayClassificationClass}
+                      onClassesChanged={reloadWorkspaceClasses}
+                    />
+                  ),
+                },
+                { id: "stats", label: "Stats", content: renderAnalysisPanel() },
+              ]}
+            />
           )}
         />
       </main>

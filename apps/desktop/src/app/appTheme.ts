@@ -1,21 +1,26 @@
-export type AppTheme = "dark" | "obsidian";
+export type AppTheme = "graphite" | "paper";
 
 const STORAGE_KEY = "yoloworkbench.theme";
 
 export const APP_THEME_OPTIONS: Array<{ value: AppTheme; title: string; desc: string }> = [
-  { value: "dark", title: "Dark", desc: "Current blue glass theme." },
-  { value: "obsidian", title: "Obsidian", desc: "Graphite surfaces with teal and amber accents." }
+  {
+    value: "graphite",
+    title: "Graphite",
+    desc: "Dark neutral surfaces. Easiest on the eyes for long labeling sessions."
+  },
+  { value: "paper", title: "Paper", desc: "Light warm surfaces for bright rooms." }
 ];
 
+/** Older builds stored "dark" / "obsidian"; both map to graphite. */
 export function normalizeAppTheme(value: unknown): AppTheme {
-  return value === "obsidian" ? "obsidian" : "dark";
+  return value === "paper" ? "paper" : "graphite";
 }
 
 export function readAppTheme(): AppTheme {
   try {
     return normalizeAppTheme(window.localStorage.getItem(STORAGE_KEY));
   } catch {
-    return "dark";
+    return "graphite";
   }
 }
 

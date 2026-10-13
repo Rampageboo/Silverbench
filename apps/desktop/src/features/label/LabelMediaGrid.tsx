@@ -4,6 +4,7 @@ import { isFlaggedFile, isNextTrainingFile, isReviewedFile } from "../image-pool
 import { getAnnotationFrameUrl } from "../video/videoAnnotationApi";
 import type { BoxLabelModel } from "../box-label/useBoxLabel";
 import type { VideoAnnotationSession } from "../video/useVideoAnnotationSession";
+import { IconPlus, IconSidebar } from "../../ui/icons";
 
 export type LabelMediaSelection =
   | { kind: "video"; index: number }
@@ -16,6 +17,8 @@ type Props = {
   loading?: boolean;
   activeRevealToken?: number;
   onSelectionChange: (selection: LabelMediaSelection) => void;
+  /** Collapse the media rail. */
+  onCollapse?: () => void;
 };
 
 type MediaItem =
@@ -108,7 +111,22 @@ function mediaKey(selection: LabelMediaSelection) {
   return `${selection.kind}:${selection.index}`;
 }
 
-export function LabelMediaGrid({ pool, videoSession, selection, loading = false, activeRevealToken = 0, onSelectionChange }: Props) {
+const MEDIA_FILTERS = [
+  { value: "all", label: "All", title: "Show all media" },
+  { value: "hideReviewed", label: "To do", title: "Hide reviewed images" },
+  { value: "flagged", label: "Flagged", title: "Only flagged images" },
+  { value: "nextTraining", label: "★ Next", title: "Queued for next training" }
+] as const;
+
+export function LabelMediaGrid({
+  pool,
+  videoSession,
+  selection,
+  loading = false,
+  activeRevealToken = 0,
+  onSelectionChange,
+  onCollapse
+}: Props) {
   const activeTileRef = useRef<HTMLButtonElement | null>(null);
   const mediaItems = useMemo<MediaItem[]>(() => {
     const videos: MediaItem[] = videoSession.videos.map((video, index) => ({
@@ -151,36 +169,46 @@ export function LabelMediaGrid({ pool, videoSession, selection, loading = false,
   return (
     <section className="panel lwb-media-panel" aria-label="Media">
       <div className="panel-header lwb-media-header">
-        <span>Media</span>
-        <div className="lwb-media-actions">
+        {onCollapse ? (
           <button
             type="button"
-            className="primary"
-            onClick={() => {
-              void videoSession.addVideos();
-            }}
-            disabled={!videoSession.annotationsRoot}
+            className="ui-btn--ghost ui-btn--icon ui-btn--sm"
+            onClick={onCollapse}
+            title="Hide media"
+            aria-label="Hide media"
           >
-            Add Video
+            <IconSidebar size={14} />
           </button>
-          <span className="status">
-            {activePosition >= 0 ? activePosition + 1 : 0} / {mediaItems.length}
-          </span>
-        </div>
+        ) : null}
+        <span className="lwb-media-title">Media</span>
+        <span className="status lwb-media-count">
+          {activePosition >= 0 ? activePosition + 1 : 0} / {mediaItems.length}
+        </span>
+        <button
+          type="button"
+          className="ui-btn--ghost ui-btn--icon ui-btn--sm"
+          onClick={() => {
+            void videoSession.addVideos();
+          }}
+          disabled={!videoSession.annotationsRoot}
+          title="Add video"
+          aria-label="Add video"
+        >
+          <IconPlus size={14} />
+        </button>
       </div>
-      <div className="lwb-media-filter-row">
-        <button type="button" className={pool.imageViewMode === "all" ? "active" : ""} onClick={() => pool.setImageViewMode("all")}>
-          All
-        </button>
-        <button type="button" className={pool.imageViewMode === "hideReviewed" ? "active" : ""} onClick={() => pool.setImageViewMode("hideReviewed")}>
-          Hide reviewed
-        </button>
-        <button type="button" className={pool.imageViewMode === "flagged" ? "active" : ""} onClick={() => pool.setImageViewMode("flagged")}>
-          Flagged
-        </button>
-        <button type="button" className={pool.imageViewMode === "nextTraining" ? "active" : ""} onClick={() => pool.setImageViewMode("nextTraining")}>
-          ★ Next train
-        </button>
+      <div className="ui-seg lwb-media-filter-row" role="group" aria-label="Image filter">
+        {MEDIA_FILTERS.map((filter) => (
+          <button
+            key={filter.value}
+            type="button"
+            aria-pressed={pool.imageViewMode === filter.value}
+            title={filter.title}
+            onClick={() => pool.setImageViewMode(filter.value)}
+          >
+            {filter.label}
+          </button>
+        ))}
       </div>
       <div className="panel-body lwb-media-grid-scroll">
         {loading ? (

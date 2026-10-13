@@ -27,6 +27,11 @@ import {
   type Viewport
 } from "./geometry";
 
+/** Letterbox color behind the image; follows the app theme's sunken surface. */
+function canvasBackdrop(canvas: HTMLCanvasElement) {
+  return getComputedStyle(canvas).getPropertyValue("--c-sunken").trim() || "#08090a";
+}
+
 export type MainCanvasRenderInput = {
   canvas: HTMLCanvasElement;
   image: CanvasPreviewSource | null;
@@ -67,7 +72,7 @@ export function renderMainCanvas(input: MainCanvasRenderInput): DisplayRect | nu
   if (!ctx) return null;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#0b1220";
+  ctx.fillStyle = canvasBackdrop(canvas);
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   if (!image) {
     drawCenteredText(ctx, canvas, "Loading image...");
@@ -152,7 +157,7 @@ export function renderZoomCanvas(input: ZoomCanvasRenderInput) {
   if (!ctx) return;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#111827";
+  ctx.fillStyle = canvasBackdrop(canvas);
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const { width: imageW, height: imageH } = previewSourceSize(image);

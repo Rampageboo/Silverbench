@@ -153,6 +153,8 @@ export type BoxLabelViewProps = {
   previewIndexText?: string;
   previewReviewLabel?: string;
   previewStatusItems?: string[];
+  /** Extra controls rendered at the end of the preview header (e.g. review actions). */
+  previewHeaderActions?: ReactNode;
   onMarkJunk?: () => Promise<void>;
   onUndoJunk?: () => Promise<void>;
   classificationClasses?: Array<{ key: string; name: string; archived?: boolean }>;

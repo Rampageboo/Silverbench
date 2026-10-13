@@ -452,13 +452,17 @@ export function WorkspaceProvider({
 
     if (activeTab === "home") return;
 
-    saveActiveTabSession(root, activeTab).catch(() => {
+    // Image-pool sub-tabs are saved by name ("yolo", "inbox") so restore reopens the same tool.
+
+    const sessionTab = activeTab === "image-pool" ? imageWorkspaceTab : activeTab;
+
+    saveActiveTabSession(root, sessionTab).catch(() => {
 
       // Session persistence is best-effort.
 
     });
 
-  }, [activeTab, workspaceRoot, initPhase]);
+  }, [activeTab, imageWorkspaceTab, workspaceRoot, initPhase]);
 
 
 

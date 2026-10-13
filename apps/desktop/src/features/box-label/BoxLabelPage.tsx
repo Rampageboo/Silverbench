@@ -30,6 +30,7 @@ type BoxLabelSurfaceProps = {
   classPanelSummaries?: BoxLabelViewProps["classPanelSummaries"];
   canvasOverlay?: BoxLabelCanvasOverlay;
   previewDock?: BoxLabelCanvasOverlay;
+  previewHeaderActions?: BoxLabelViewProps["previewHeaderActions"];
 };
 
 export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
@@ -54,6 +55,7 @@ export function BoxLabelSurface({
   classPanelSummaries,
   canvasOverlay,
   previewDock,
+  previewHeaderActions,
 }: BoxLabelSurfaceProps) {
   const { workspaceRoot, chooseWorkspaceFolder } = useWorkspace();
   const { showToast } = useToast();
@@ -454,6 +456,7 @@ export function BoxLabelSurface({
           onWorkspaceClassesChanged={loadWorkspaceClasses}
           canvasOverlay={canvasOverlay}
           previewDock={previewDock}
+          previewHeaderActions={previewHeaderActions}
         />
       </main>
     </div>

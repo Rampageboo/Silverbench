@@ -1,7 +1,7 @@
 import React, { type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { LabelWorkbenchInspector, formatInspectorMs } from "./LabelWorkbenchInspector";
+import { LabelReviewActions, LabelWorkbenchInspector, formatInspectorMs } from "./LabelWorkbenchInspector";
 import type { LabelWorkbenchActionGroup } from "./labelWorkbenchTypes";
 
 function inspector(props: React.ComponentProps<typeof LabelWorkbenchInspector>) {
@@ -27,10 +27,23 @@ describe("LabelWorkbenchInspector", () => {
     expect(output).not.toContain("NaN");
   });
 
-  it("renders image review actions only", () => {
-    let reviewed = 0;
-    let junked = 0;
-    const output = html(inspector({
+  it("renders image review actions in the header group, not the inspector", () => {
+    const actionGroups: LabelWorkbenchActionGroup[] = [{
+      id: "image-review",
+      label: "Review",
+      actions: [
+        { id: "review.markReviewed", label: "Unmark Reviewed", variant: "primary", run: () => {} },
+        { id: "review.markJunk", label: "Mark Junk", variant: "danger", run: () => {} },
+      ],
+    }];
+    const header = html(React.createElement(LabelReviewActions, { mode: "image", actionGroups }));
+    expect(header).toContain("aria-label=\"Review\"");
+    expect(header).toContain("Unmark Reviewed");
+    expect(header).toContain("Mark Junk");
+    expect(header).toContain("class=\"ui-btn--sm primary\"");
+    expect(header).toContain("class=\"ui-btn--sm danger\"");
+
+    const panel = html(inspector({
       mode: "image",
       sourceSummary: {
         kind: "image",
@@ -43,26 +56,19 @@ describe("LabelWorkbenchInspector", () => {
         taskKind: "both",
         proposalSummary: { pendingCount: 2, totalCount: 5 },
       },
-      actionGroups: [{
-        id: "image-review",
-        label: "Review",
-        actions: [
-          { id: "review.markReviewed", label: "Unmark Reviewed", variant: "primary", run: () => { reviewed += 1; } },
-          { id: "review.markJunk", label: "Mark Junk", variant: "danger", run: () => { junked += 1; } },
-        ],
-      }],
+      actionGroups,
     }));
+    expect(panel).not.toContain("Unmark Reviewed");
+    expect(panel).not.toContain("frame_001.jpg");
+    expect(panel).not.toContain("Proposals:");
+  });
 
-    expect(output).toContain("Review");
-    expect((output.match(/>Review</g) ?? [])).toHaveLength(1);
-    expect(output).toContain("Unmark Reviewed");
-    expect(output).toContain("Mark Junk");
-    expect(output).not.toContain("frame_001.jpg");
-    expect(output).not.toContain("Proposals:");
-    reviewed += 1;
-    junked += 1;
-    expect(reviewed).toBe(1);
-    expect(junked).toBe(1);
+  it("renders nothing for review actions of the other mode", () => {
+    const header = html(React.createElement(LabelReviewActions, {
+      mode: "video",
+      actionGroups: [{ id: "image-review", label: "Review", actions: [{ id: "review.markJunk", label: "Mark Junk", run: () => {} }] }],
+    }));
+    expect(header).toBe("");
   });
 
   it("filters all proposal actions from image inspector", () => {
@@ -171,27 +177,23 @@ describe("LabelWorkbenchInspector", () => {
     expect(output).not.toContain("No duplicate boxes queued.");
   });
 
-  it("renders video review actions in the review panel", () => {
-    const output = html(inspector({
-      mode: "video",
-      sourceSummary: null,
-      inspectorState: null,
-      actionGroups: [{
-        id: "video-review",
-        label: "Review",
-        actions: [
-          { id: "review.markReviewed", label: "Mark Reviewed", variant: "primary", run: () => {} },
-          { id: "review.markJunk", label: "Mark Junk", variant: "danger", run: () => {} },
-        ],
-      }],
-    }));
-
-    expect(output).toContain("Review");
-    expect((output.match(/>Review</g) ?? [])).toHaveLength(1);
-    expect(output).toContain("Mark Reviewed");
-    expect(output).toContain("Mark Junk");
+  it("keeps video review actions out of the inspector", () => {
+    const actionGroups: LabelWorkbenchActionGroup[] = [{
+      id: "video-review",
+      label: "Review",
+      actions: [
+        { id: "review.markReviewed", label: "Mark Reviewed", variant: "primary", run: () => {} },
+        { id: "review.markJunk", label: "Mark Junk", variant: "danger", run: () => {} },
+      ],
+    }];
+    const output = html(inspector({ mode: "video", sourceSummary: null, inspectorState: null, actionGroups }));
+    expect(output).not.toContain("Mark Reviewed");
     expect(output).not.toContain("Actions");
     expect(output).not.toContain("Mark Empty");
+
+    const header = html(React.createElement(LabelReviewActions, { mode: "video", actionGroups }));
+    expect(header).toContain("Mark Reviewed");
+    expect(header).toContain("Mark Junk");
   });
 
   it("renders duplicate controls in the image inspector panel", () => {
@@ -283,7 +285,8 @@ describe("LabelWorkbenchInspector", () => {
         actions: [{ id: "review.markReviewed", label: "Mark Reviewed", run: () => {} }],
       }],
     }));
-    expect(imageOutput).toContain("Mark Reviewed");
+    // Review actions live in the canvas header (LabelReviewActions), not the inspector.
+    expect(imageOutput).not.toContain("Mark Reviewed");
     expect(imageOutput).not.toContain("Random Next");
 
     const videoOutput = html(inspector({

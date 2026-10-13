@@ -1,5 +1,5 @@
 /** Primary navigation tabs visible in the redesigned sidebar. */
-export type PrimaryTab = "home" | "library" | "label" | "orchestrate" | "review" | "export" | "settings";
+export type PrimaryTab = "home" | "library" | "classes" | "label" | "orchestrate";
 
 /** Legacy tool tabs kept alive for KeepAlive rendering; not shown directly in nav. */
 export type LegacyToolTab =
@@ -38,18 +38,28 @@ export type WorkbenchTool = {
 export const PRIMARY_NAV_TOOLS: readonly WorkbenchTool[] = [
   {
     tab: "home",
-    label: "Home",
-    labelZh: "主页",
-    keywords: "home workspace create open recent",
+    label: "Start",
+    labelZh: "开始",
+    keywords: "home start welcome workspace create open recent",
     group: "primary",
     keepAlive: false,
     navPrimary: true
   },
   {
     tab: "library",
-    label: "Library",
-    labelZh: "资源库",
-    keywords: "library sources classes segments media",
+    label: "Overview",
+    labelZh: "概览",
+    keywords: "overview library workspace versions snapshot",
+    group: "primary",
+    keepAlive: false,
+    requiresWorkspace: true,
+    navPrimary: true
+  },
+  {
+    tab: "classes",
+    label: "Classes",
+    labelZh: "类别",
+    keywords: "classes taxonomy detect classify rename archive",
     group: "primary",
     keepAlive: false,
     requiresWorkspace: true,
@@ -69,43 +79,13 @@ export const PRIMARY_NAV_TOOLS: readonly WorkbenchTool[] = [
   },
   {
     tab: "orchestrate",
-    label: "Orchestrate",
+    label: "Orchestrator",
     labelZh: "编排",
     keywords: "orchestrate ui map page element automation author editor",
     group: "primary",
     keepAlive: true,
     heavy: true,
     requiresWorkspace: true,
-    navPrimary: true
-  },
-  {
-    tab: "review",
-    label: "Review",
-    labelZh: "审阅",
-    keywords: "review queue yolo dataset check",
-    group: "primary",
-    keepAlive: true,
-    heavy: true,
-    requiresWorkspace: true,
-    navPrimary: true
-  },
-  {
-    tab: "export",
-    label: "Export",
-    labelZh: "导出",
-    keywords: "export train prep dataset split yaml",
-    group: "primary",
-    keepAlive: true,
-    requiresWorkspace: true,
-    navPrimary: true
-  },
-  {
-    tab: "settings",
-    label: "Settings",
-    labelZh: "设置",
-    keywords: "settings preferences workspace",
-    group: "primary",
-    keepAlive: false,
     navPrimary: true
   }
 ] as const;

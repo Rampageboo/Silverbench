@@ -119,6 +119,44 @@ function ActionGroupsView({ groups, hideGroupTitles = false }: { groups: LabelWo
   );
 }
 
+/** Review actions (mark reviewed / junk) rendered in the canvas header. */
+export function LabelReviewActions({
+  mode,
+  actionGroups,
+}: {
+  mode: LabelWorkbenchMode;
+  actionGroups: LabelWorkbenchActionGroup[];
+}) {
+  const actions = actionGroups
+    .filter((group) => group.id === `${mode}-review`)
+    .flatMap((group) => group.actions);
+  if (!actions.length) return null;
+  return (
+    <div className="lwb-review-actions" role="group" aria-label="Review">
+      {actions.map((action) => {
+        const disabled = actionDisabled(action);
+        const statusText = actionStatusText(action);
+        return (
+          <button
+            key={action.id}
+            type="button"
+            className={`ui-btn--sm${action.variant === "primary" ? " primary" : action.variant === "danger" ? " danger" : ""}`}
+            disabled={disabled}
+            aria-busy={action.busy || undefined}
+            data-state={actionState(action)}
+            title={statusText || action.title || action.label}
+            onClick={() => {
+              if (!disabled) void action.run?.();
+            }}
+          >
+            {action.busy ? `${action.label}...` : action.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function DuplicateActionsView({ group }: { group: LabelWorkbenchActionGroup | null }) {
   const items = group?.items ?? [];
   const showItemList = items.length > 0 || !group?.actions.length;
@@ -332,15 +370,6 @@ export function LabelWorkbenchInspector({
 
   return (
     <aside className="lwb-inspector" aria-label="Label workbench inspector">
-      {reviewActionGroups.length > 0 ? (
-        <section className="lwb-inspector-section lwb-inspector-proposal-review">
-          <div className="lwb-inspector-kicker">Review</div>
-          {reviewActionGroups.some((group) => group.actions.length > 0) ? (
-            <ActionGroupsView groups={reviewActionGroups} hideGroupTitles />
-          ) : null}
-        </section>
-      ) : null}
-
       {duplicateActionGroup ? <DuplicateActionsView group={duplicateActionGroup} /> : null}
 
       {mode === "image" ? <div id="lwbClassifyClassesSlot" className="lwb-inspector-classify-slot" /> : null}

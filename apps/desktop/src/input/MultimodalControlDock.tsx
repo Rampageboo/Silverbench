@@ -9,18 +9,6 @@ import { computeHomography, homographyFromAprilTags, type Point2 } from "./homog
 import { useMultimodalControls } from "./MultimodalControlProvider";
 import "./multimodal-controls.css";
 
-const DOCK_HIDDEN_KEY = "ywb.multimodal.dockHidden";
-
-function readDockHidden() {
-  if (typeof window === "undefined") return false;
-  return window.localStorage.getItem(DOCK_HIDDEN_KEY) === "true";
-}
-
-function writeDockHidden(value: boolean) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(DOCK_HIDDEN_KEY, String(value));
-}
-
 const TARGET_CORNERS = [
   { x: 0, y: 0 },
   { x: 1, y: 0 },
@@ -44,16 +32,17 @@ function decisionText(value: ReturnType<typeof useMultimodalControls>["lastDecis
   }
 }
 
-export function MultimodalControlDock() {
+type DockProps = { open: boolean; onClose: () => void };
+
+/** Voice / gesture control panel, opened from the sidebar status button. */
+export function MultimodalControlDock({ open, onClose }: DockProps) {
   const controls = useMultimodalControls();
-  const [expanded, setExpanded] = useState(false);
   const [calibrating, setCalibrating] = useState(false);
   const [detectingTags, setDetectingTags] = useState(false);
   const [calibrationPoints, setCalibrationPoints] = useState<Point2[]>([]);
   const [calibrationError, setCalibrationError] = useState("");
   const [showSheet, setShowSheet] = useState(false);
   const [calibrationStatus, setCalibrationStatus] = useState("");
-  const [hidden, setHidden] = useState(readDockHidden);
 
   const sourceStatus = useMemo(() => {
     const voice = controls.voiceEnabled ? `语音 ${controls.voiceStatus}` : "语音关闭";
@@ -67,7 +56,6 @@ export function MultimodalControlDock() {
     setCalibrationError("");
     setCalibrationStatus("");
     setCalibrating(true);
-    setExpanded(true);
   }
 
   function cancelCalibration() {
@@ -132,49 +120,19 @@ export function MultimodalControlDock() {
     setShowSheet(true);
   }
 
-  function setDockHidden(value: boolean) {
-    writeDockHidden(value);
-    setHidden(value);
-    if (value) setExpanded(false);
-  }
-
-  if (hidden) {
-    return (
-      <button
-        type="button"
-        className="multimodal-control-reopen"
-        onClick={() => setDockHidden(false)}
-        title="Show multimodal controls"
-      >
-        Controls
-      </button>
-    );
-  }
-
   return (
     <>
-    <aside className={`multimodal-control-dock${expanded ? " is-expanded" : ""}`}>
-      <div className="multimodal-control-summary-row">
-      <button
-        type="button"
-        className={`multimodal-control-summary${controls.armed ? " is-armed" : ""}`}
-        onClick={() => setExpanded((value) => !value)}
-        aria-expanded={expanded}
-      >
-        <span>{controls.armed ? "控制已解锁" : "控制已锁定"}</span>
-        <small>{sourceStatus}</small>
-      </button>
-        <button
-          type="button"
-          className="multimodal-control-hide"
-          onClick={() => setDockHidden(true)}
-          title="Hide multimodal controls"
-        >
-          Hide
+    {open ? (
+    <aside className="multimodal-control-dock" aria-label="Voice and gesture controls">
+      <div className="multimodal-control-head">
+        <div>
+          <strong>{controls.armed ? "控制已解锁" : "控制已锁定"}</strong>
+          <small>{sourceStatus}</small>
+        </div>
+        <button type="button" className="ui-btn--ghost ui-btn--sm" onClick={onClose}>
+          Close
         </button>
       </div>
-
-      {expanded ? (
         <div className="multimodal-control-body">
           <div className="multimodal-control-row">
             <button type="button" className={controls.armed ? "danger" : "primary"} onClick={() => controls.setArmed(!controls.armed)}>
@@ -298,9 +256,8 @@ export function MultimodalControlDock() {
             <p>离散手势和手臂挥动不需要校准；只有指向、捏合和隔空画框使用该矩阵。手离标定平面越远，视差误差越大。</p>
           </details>
         </div>
-      ) : null}
-
     </aside>
+    ) : null}
 
       {showSheet ? createPortal(
         <div

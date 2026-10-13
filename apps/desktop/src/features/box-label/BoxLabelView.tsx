@@ -736,6 +736,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
               {editor.boxes.length} box(es)
             </span>
           </div>
+          {props.previewHeaderActions}
         </div>
         <div className="panel-body viewer" id="previewViewer">
           {editor.error ? <div className="error-banner">{editor.error}</div> : null}

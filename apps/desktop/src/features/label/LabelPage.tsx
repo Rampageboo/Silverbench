@@ -4,11 +4,13 @@ import { useVideoAnnotationSession } from "../video/useVideoAnnotationSession";
 import { BoxLabelSurface } from "../box-label/BoxLabelPage";
 import { useBoxLabel } from "../box-label/useBoxLabel";
 import { LabelWorkbenchContext } from "./LabelWorkbenchContext";
-import { LabelWorkbenchHeader } from "./LabelWorkbenchHeader";
-import { LabelWorkbenchInspector } from "./LabelWorkbenchInspector";
+import { LabelReviewActions, LabelWorkbenchInspector } from "./LabelWorkbenchInspector";
+import { WorkbenchDock } from "./WorkbenchDock";
+import { IconSidebar } from "../../ui/icons";
+import "./labelWorkbench.css";
 import { LabelMediaGrid, type LabelMediaSelection } from "./LabelMediaGrid";
 import { AutoLabelModelPanel } from "./AutoLabelModelPanel";
-import { VideoBoxLabelSurface, VideoFrameControlsPanel, wrappedAdjacentVideoMarkerTime } from "./VideoBoxLabelSurface";
+import { VideoBoxLabelSurface, wrappedAdjacentVideoMarkerTime } from "./VideoBoxLabelSurface";
 import { classBoxColor } from "../shared/classColors";
 import { useWorkspaceClasses } from "../workspace/useWorkspaceClasses";
 import { activeDetectClassDefs } from "../workspace/workspaceClassTaxonomy";
@@ -35,6 +37,24 @@ type Props = {
   active?: boolean;
   onReady?: () => void;
 };
+
+const MEDIA_COLLAPSED_KEY = "ywb.label.mediaCollapsed";
+
+function readMediaCollapsed() {
+  try {
+    return window.localStorage.getItem(MEDIA_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeMediaCollapsed(value: boolean) {
+  try {
+    window.localStorage.setItem(MEDIA_COLLAPSED_KEY, value ? "1" : "0");
+  } catch {
+    // UI preference only.
+  }
+}
 
 function AnalysisPanel({
   stats,
@@ -169,17 +189,11 @@ function AnalysisPanel({
 }
 
 /**
- * Label Workbench shell — Phase 3A.
+ * Label workbench: media rail | canvas (with tool dock) | boxes, classes and inspector.
  *
- * Responsibilities:
- *   - Manage mode state (image / video).
- *   - Provide LabelWorkbenchContext to all descendant components.
- *   - Render the unified workbench header (LabelWorkbenchHeader).
- *   - Delegate canvas rendering to VideoLabelPage (video mode) or
- *     BoxLabelPage (image mode) — both unchanged.
- *
- * Phase 3B will wire child pages up to reportSourceSummary so the
- * header can show live source/review status.
+ * Owns the image/video selection and hosts either the video or the image label
+ * surface. Child surfaces report their state up through LabelWorkbenchContext;
+ * review actions they register are rendered in the canvas header.
  */
 export function LabelPage({ active = true, onReady }: Props) {
   const { workspaceRoot, poolLabelFocusFilename, clearPoolLabelFocus } = useWorkspace();
@@ -188,6 +202,7 @@ export function LabelPage({ active = true, onReady }: Props) {
   const [inspectorState, setInspectorState] = useState<LabelWorkbenchInspectorState | null>(null);
   const [actionGroups, setActionGroups] = useState<LabelWorkbenchActionGroup[]>([]);
   const [mediaRevealToken, setMediaRevealToken] = useState(0);
+  const [mediaCollapsed, setMediaCollapsed] = useState(readMediaCollapsed);
   const previousVideoCountRef = useRef(0);
   const pendingVideoEntryDirectionRef = useRef<-1 | 1 | null>(null);
   const mode: LabelWorkbenchMode = selection.kind === "video" ? "video" : "image";
@@ -535,26 +550,38 @@ export function LabelPage({ active = true, onReady }: Props) {
     );
   }
 
-  const wsName = workspaceRoot.replace(/[/\\]+$/, "").split(/[/\\]/).at(-1) || workspaceRoot;
+  const reviewActions = <LabelReviewActions mode={mode} actionGroups={actionGroups} />;
+  const setMediaRail = (collapsed: boolean) => {
+    setMediaCollapsed(collapsed);
+    writeMediaCollapsed(collapsed);
+  };
 
   return (
     <LabelWorkbenchContext.Provider value={ctxValue}>
-      <div className="label-page label-page--workbench">
-        <LabelWorkbenchHeader
-          mode={mode}
-          workspaceName={wsName}
-          workspacePath={workspaceRoot}
-          sourceSummary={sourceSummary}
-        />
-        <div className="label-workbench-body label-workbench-body--unified-media">
-          <LabelMediaGrid
-            pool={imagePool}
-            videoSession={videoSession}
-            selection={selection}
-            loading={mediaCatalogLoading}
-            activeRevealToken={mediaRevealToken}
-            onSelectionChange={handleSelectionChange}
-          />
+      <div id="labelWorkbench" className="label-page label-page--workbench">
+        <div className={`label-workbench-body label-workbench-body--unified-media${mediaCollapsed ? " is-media-collapsed" : ""}`}>
+          {mediaCollapsed ? (
+            <button
+              type="button"
+              className="lwb-media-rail"
+              onClick={() => setMediaRail(false)}
+              title="Show media"
+              aria-label="Show media"
+            >
+              <IconSidebar size={15} />
+              <span>Media</span>
+            </button>
+          ) : (
+            <LabelMediaGrid
+              pool={imagePool}
+              videoSession={videoSession}
+              selection={selection}
+              loading={mediaCatalogLoading}
+              activeRevealToken={mediaRevealToken}
+              onSelectionChange={handleSelectionChange}
+              onCollapse={() => setMediaRail(true)}
+            />
+          )}
           <div className="label-content">
             {mode === "video" ? (
               <VideoBoxLabelSurface
@@ -566,6 +593,7 @@ export function LabelPage({ active = true, onReady }: Props) {
                 analysisStats={analysisStats}
                 onNavigateBoundary={handleMediaBoundaryNavigate}
                 renderAnalysisPanel={() => <AnalysisPanel stats={analysisStats} detectClassNames={detectClassNames} />}
+                headerActions={reviewActions}
               />
             ) : (
               <BoxLabelSurface
@@ -579,6 +607,7 @@ export function LabelPage({ active = true, onReady }: Props) {
                 }}
                 onNavigateBoundary={handleMediaBoundaryNavigate}
                 classPanelSummaries={classPanelSummaries}
+                previewHeaderActions={reviewActions}
                 previewDock={({
                   entry,
                   entries,
@@ -591,42 +620,34 @@ export function LabelPage({ active = true, onReady }: Props) {
                   assignClassificationClass,
                   reloadWorkspaceClasses,
                 }) => (
-                  <div className="lwb-workbench-dock">
-                    <VideoFrameControlsPanel
-                      segmentCount={0}
-                      samplingMode="segments-preferred"
-                      minSpacingMs={2000}
-                      randomMultiplier={1}
-                      current={false}
-                      disabled
-                      canDuplicateToNext={false}
-                      hasFrameRecord={false}
-                      videoDurationMs={0}
-                      onSamplingModeChange={() => {}}
-                      onMinSpacingMsChange={() => {}}
-                      onRandomMultiplierChange={() => {}}
-                      onRandom={() => {}}
-                      onRandomNext={() => {}}
-                      onAddMarker={() => {}}
-                      onDuplicateToNext={() => {}}
-                      onMarkEmpty={() => {}}
-                      onClearRecord={() => {}}
-                    />
-                    <AutoLabelModelPanel
-                      workspaceRoot={workspaceRoot}
-                      currentImage={entry}
-                      entries={entries}
-                      currentIndex={currentIndex}
-                      boxCount={boxes.length}
-                      proposalCount={proposals.length}
-                      classificationClasses={classificationClasses}
-                      currentClassificationKey={currentClassificationKey}
-                      onApplyDetectPredictions={applyAutoLabelPredictions}
-                      onAssignClassificationClass={assignClassificationClass}
-                      onClassesChanged={reloadWorkspaceClasses}
-                    />
-                    <AnalysisPanel stats={analysisStats} detectClassNames={detectClassNames} />
-                  </div>
+                  <WorkbenchDock
+                    sections={[
+                      {
+                        id: "auto-label",
+                        label: "Auto-label",
+                        content: (
+                          <AutoLabelModelPanel
+                            workspaceRoot={workspaceRoot}
+                            currentImage={entry}
+                            entries={entries}
+                            currentIndex={currentIndex}
+                            boxCount={boxes.length}
+                            proposalCount={proposals.length}
+                            classificationClasses={classificationClasses}
+                            currentClassificationKey={currentClassificationKey}
+                            onApplyDetectPredictions={applyAutoLabelPredictions}
+                            onAssignClassificationClass={assignClassificationClass}
+                            onClassesChanged={reloadWorkspaceClasses}
+                          />
+                        ),
+                      },
+                      {
+                        id: "stats",
+                        label: "Stats",
+                        content: <AnalysisPanel stats={analysisStats} detectClassNames={detectClassNames} />,
+                      },
+                    ]}
+                  />
                 )}
               />
             )}

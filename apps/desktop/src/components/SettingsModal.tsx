@@ -8,6 +8,7 @@ import {
 } from "../app/startupOverlayMode";
 import { APP_THEME_OPTIONS, readAppTheme, writeAppTheme, type AppTheme } from "../app/appTheme";
 import { useWorkspaceArchitecture } from "../workspace/WorkspaceArchitectureProvider";
+import "./settings.css";
 
 type SettingsModalProps = {
   open: boolean;
@@ -83,34 +84,50 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   if (!render) return null;
 
+  const manifestRows: Array<[string, string]> = manifest
+    ? [
+        ["Name", manifest.name],
+        ["Manifest", `v${manifest.version}`],
+        ["App mode", "video-first · timestamp manifest · no extracted frames"],
+        ["Video annotations", String(manifest.paths.video_annotations)],
+        ["Video segments", String(manifest.paths.video_segments)],
+        ["Structured logs", String(manifest.paths.logs)],
+        ["Disposable cache", String(manifest.paths.cache)]
+      ]
+    : [];
+
   return (
     <div
-      className={`app-settings-backdrop${visible ? " is-visible" : ""}`}
+      className={`ui-dialog-scrim settings-scrim${visible ? " is-visible" : ""}`}
       role="presentation"
       onClick={onClose}
     >
       <section
-        className={`app-settings-dialog${visible ? " is-visible" : ""}`}
+        className="ui-dialog ui-dialog--wide settings-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="app-settings-title"
         onClick={(event) => event.stopPropagation()}
       >
-        <header className="app-settings-header">
-          <h2 id="app-settings-title">设置</h2>
-          <button type="button" className="app-settings-close" aria-label="关闭" onClick={onClose}>
-            ×
+        <header className="ui-dialog__head">
+          <h2 id="app-settings-title" className="ui-dialog__title">
+            Settings <span className="settings-dialog__zh">设置</span>
+          </h2>
+          <button type="button" className="ui-btn--ghost ui-btn--sm" aria-label="关闭" onClick={onClose}>
+            Close
           </button>
         </header>
-        <div className="app-settings-body">
-          <div className="app-settings-section">
-            <h3>Theme</h3>
-            <p className="app-settings-hint">Choose the workbench color system.</p>
-            <div className="app-settings-options">
+        <div className="ui-dialog__body settings-dialog__body">
+          <section className="settings-group">
+            <div className="settings-group__head">
+              <h3>Appearance</h3>
+              <p>Color system for the whole workbench.</p>
+            </div>
+            <div className="settings-choices">
               {APP_THEME_OPTIONS.map((option) => (
                 <label
                   key={option.value}
-                  className={`app-settings-option${theme === option.value ? " selected" : ""}`}
+                  className={`settings-choice${theme === option.value ? " is-selected" : ""}`}
                 >
                   <input
                     type="radio"
@@ -119,71 +136,82 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                     checked={theme === option.value}
                     onChange={() => selectTheme(option.value)}
                   />
-                  <span className="app-settings-option-copy">
+                  <span className={`settings-swatch settings-swatch--${option.value}`} aria-hidden="true">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                  <span className="settings-choice__copy">
                     <strong>{option.title}</strong>
                     <span>{option.desc}</span>
                   </span>
                 </label>
               ))}
             </div>
-          </div>
+          </section>
 
-          <div className="app-settings-section">
-            <h3>启动加载样式</h3>
-            <p className="app-settings-hint">选择应用启动时加载遮罩的样式。</p>
-            <div className="app-settings-options">
+          <section className="settings-group">
+            <div className="settings-group__head">
+              <h3>Startup screen</h3>
+              <p>选择应用启动时加载遮罩的样式。</p>
+            </div>
+            <div className="ui-seg" role="radiogroup" aria-label="Startup screen">
               {STARTUP_OPTIONS.map((option) => (
-                <label
+                <button
                   key={option.value}
-                  className={`app-settings-option${mode === option.value ? " selected" : ""}`}
+                  type="button"
+                  role="radio"
+                  aria-checked={mode === option.value}
+                  aria-pressed={mode === option.value}
+                  title={option.desc}
+                  onClick={() => selectMode(option.value)}
                 >
-                  <input
-                    type="radio"
-                    name="startupOverlayMode"
-                    value={option.value}
-                    checked={mode === option.value}
-                    onChange={() => selectMode(option.value)}
-                  />
-                  <span className="app-settings-option-copy">
-                    <strong>{option.title}</strong>
-                    <span>{option.desc}</span>
-                  </span>
-                </label>
+                  {option.title}
+                </button>
               ))}
             </div>
-          </div>
+          </section>
 
-          <div className="app-settings-section">
-            <div className="row">
-              <h3 style={{ margin: 0 }}>Workspace Architecture</h3>
-              <button type="button" onClick={() => void refresh()} disabled={!workspaceRoot.trim() || phase === "loading"}>
+          <section className="settings-group">
+            <div className="settings-group__head settings-group__head--row">
+              <div>
+                <h3>Workspace architecture</h3>
+                <p>Read from the open workspace manifest.</p>
+              </div>
+              <button
+                type="button"
+                className="ui-btn--sm"
+                onClick={() => void refresh()}
+                disabled={!workspaceRoot.trim() || phase === "loading"}
+              >
                 Refresh
               </button>
             </div>
             {!workspaceRoot.trim() ? (
-              <p className="app-settings-hint">No workspace is open.</p>
+              <p className="settings-muted">No workspace is open.</p>
             ) : manifest ? (
-              <div className="app-settings-options">
-                <div className="app-settings-option selected">
-                  <span className="app-settings-option-copy">
-                    <strong>{manifest.name} · manifest v{manifest.version}</strong>
-                    <span>Video Label is primary. Extracted screenshots are disabled.</span>
-                    <span>Image Box Label and Image Pool remain enabled as secondary workflows.</span>
-                    <span>App mode: video-first · timestamp-manifest · no extracted frames</span>
-                    <span>Video annotations: {String(manifest.paths.video_annotations)}</span>
-                    <span>Video segments: {String(manifest.paths.video_segments)}</span>
-                    <span>Structured logs: {String(manifest.paths.logs)}</span>
-                    <span>Disposable cache: {String(manifest.paths.cache)}</span>
-                    {migrated ? <span>Manifest upgraded during this session.</span> : null}
-                  </span>
-                </div>
-              </div>
+              <dl className="settings-kv">
+                {manifestRows.map(([key, value]) => (
+                  <div key={key}>
+                    <dt>{key}</dt>
+                    <dd>{value}</dd>
+                  </div>
+                ))}
+                {migrated ? (
+                  <div>
+                    <dt>Note</dt>
+                    <dd>Manifest upgraded during this session.</dd>
+                  </div>
+                ) : null}
+              </dl>
             ) : (
-              <p className="app-settings-hint">
-                {phase === "loading" ? "Loading workspace manifest…" : error || "Workspace manifest unavailable."}
+              <p className="settings-muted">
+                {phase === "loading"
+                  ? "Loading workspace manifest…"
+                  : error || "Workspace manifest unavailable."}
               </p>
             )}
-          </div>
+          </section>
         </div>
       </section>
     </div>
