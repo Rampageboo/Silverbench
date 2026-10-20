@@ -6,7 +6,7 @@ from typing import Any, Iterable
 
 from .dataset_merge import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from .video_screenshot import find_videos, video_info
-from .yolo_workspace import load_workspace_config, workspace_media_relative_dir
+from .workspace_layout import WorkspaceLayout
 
 SUPPORTED_MEDIA_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
 
@@ -22,12 +22,11 @@ def _unique_media_path(media_dir: Path, filename: str) -> Path:
     raise FileExistsError(f"Cannot create a unique media path for {target}")
 
 
-def import_media_files(workspace_root: Path, source_paths: Iterable[Path], mode: str = "copy") -> dict[str, Any]:
+def import_media_files(layout: WorkspaceLayout, source_paths: Iterable[Path], mode: str = "copy") -> dict[str, Any]:
     action = "move" if str(mode).strip().lower() == "move" else "copy"
-    paths = load_workspace_config(workspace_root)
-    media_dir = paths.image_pool
+    media_dir = layout.media
     media_dir.mkdir(parents=True, exist_ok=True)
-    media_rel = workspace_media_relative_dir(paths)
+    media_rel = layout.relative(media_dir)
 
     imported: list[dict[str, str]] = []
     skipped: list[dict[str, str]] = []
@@ -69,7 +68,7 @@ def import_media_files(workspace_root: Path, source_paths: Iterable[Path], mode:
 
     return {
         "ok": True,
-        "workspaceRoot": str(paths.root),
+        "workspaceRoot": str(layout.root),
         "mediaDir": media_rel,
         "mode": action,
         "importedCount": len(imported),
@@ -81,6 +80,5 @@ def import_media_files(workspace_root: Path, source_paths: Iterable[Path], mode:
     }
 
 
-def list_workspace_videos(workspace_root: Path) -> list[dict[str, Any]]:
-    paths = load_workspace_config(workspace_root)
-    return [video_info(path) for path in find_videos(paths.image_pool)]
+def list_workspace_videos(layout: WorkspaceLayout) -> list[dict[str, Any]]:
+    return [video_info(path) for path in find_videos(layout.media)]

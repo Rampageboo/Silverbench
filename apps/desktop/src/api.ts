@@ -8,7 +8,7 @@ import type { Predictions, UiOrchestrationDoc } from "./features/ui-orchestrator
 import type { UiOrchestrationDocV2 } from "./features/ui-orchestrator/schemaV2";
 
 export const API_BASE_URL = backendBaseUrl();
-export const REQUIRED_API_SCHEMA_VERSION = 25;
+export const REQUIRED_API_SCHEMA_VERSION = 26;
 
 export type BackendMethod =
   | "markImagePoolSeen"

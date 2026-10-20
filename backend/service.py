@@ -39,47 +39,21 @@ from .yolo_pt_model_info import pt_model_info
 from .image_preview import image_scaled_jpeg_base64
 from .image_pool import mark_image_pool_seen
 from .media_import import import_media_files, list_workspace_videos
-from .metadata_assign import (
-    _workspace_clf_out,
-    build_workspace_links,
-    get_workspace_classes,
-    list_clf_dataset_classes,
-    read_metadata_rows,
-    remove_clf_dataset_links,
-    remove_detect_dataset_links,
-    upsert_metadata_rows,
-)
-from .image_pool_backup import (
-    ensure_image_pool_backup,
-    ensure_image_pool_label_backup,
-    image_pool_backup_stats,
-    restore_image_pool_backup,
-)
+from .app_settings import read_settings, remember_workspace, write_settings
+from .classes_store import classify_classes, read_classes
+from .dataset_export import export_dataset, export_dirs
+from .image_status import status_payload, upsert_status_rows
+from .image_pool_backup import backup_stats, ensure_image_backup, ensure_label_backup, restore_image_backup
 from .image_pool_cleanup import (
     clear_image_pool_duplicates,
     delete_pool_image_completely,
     find_image_pool_duplicates,
 )
-from .yolo_workspace import (
-    infer_dataset_task,
-    list_dataset_files,
-    list_workspace_files,
-    load_workspace_config,
-    looks_like_workspace,
-    read_workspace_session,
-    resolve_open_folder,
-    workspace_info,
-    write_app_settings,
-    write_workspace_session,
-    workspace_meta_dir,
-)
-from .workspace_snapshot_versions import (
-    create_snapshot_version,
-    initialize_snapshot_versioning,
-    read_snapshot_versions,
-    resolve_active_version_path,
-    set_active_snapshot_version,
-)
+from .workspace import infer_dataset_task, list_dataset_files, list_workspace_files, open_folder, workspace_info
+from .workspace_layout import WorkspaceLayout, layout_payload, open_workspace
+from .workspace_migration import execute_migration, finish_migration, has_pending_migration, plan_migration, rollback_migration
+from .workspace_session import lite_session, read_session, write_session
+from .workspace_versions import create_snapshot, delete_snapshot, read_versions, restore_snapshot
 from .yolo_tracker import track_yolo_forward_from_json
 
 
@@ -94,6 +68,7 @@ class BackendService:
         session_dir: Path,
         *,
         app_settings_dir: Path | None = None,
+        legacy_settings_dir: Path | None = None,
         choose_directory: Callable[[str], str] | None = None,
         choose_image_file: Callable[[str], str] | None = None,
         choose_image_files: Callable[[str], list[Path]] | None = None,
@@ -106,6 +81,7 @@ class BackendService:
         self.path_access = path_access
         self.session_dir = session_dir
         self.app_settings_dir = app_settings_dir or session_dir
+        self.legacy_settings_dir = legacy_settings_dir
         self.choose_directory = choose_directory
         self.choose_image_file = choose_image_file
         self.choose_image_files = choose_image_files
@@ -154,16 +130,21 @@ class BackendService:
             "readFileBase64": self._handle_readFileBase64,
             "readFilePreviewBase64": self._handle_readFilePreviewBase64,
             "writeFileBase64": self._handle_writeFileBase64,
+            "readAppSettings": self._handle_readAppSettings,
             "writeAppSettings": self._handle_writeAppSettings,
             "loadUiMap": self._handle_loadUiMap,
             "saveUiMap": self._handle_saveUiMap,
             "runReferencePredictions": self._handle_runReferencePredictions,
             "openFolder": self._handle_openFolder,
-            "readSnapshotVersions": self._handle_readSnapshotVersions,
-            "initializeSnapshotVersioning": self._handle_initializeSnapshotVersioning,
-            "createSnapshotVersion": self._handle_createSnapshotVersion,
-            "setActiveSnapshotVersion": self._handle_setActiveSnapshotVersion,
-            "resolveActiveSnapshotWorkspacePath": self._handle_resolveActiveSnapshotWorkspacePath,
+            "createWorkspace": self._handle_createWorkspace,
+            "planWorkspaceMigration": self._handle_planWorkspaceMigration,
+            "migrateWorkspace": self._handle_migrateWorkspace,
+            "rollbackWorkspaceMigration": self._handle_rollbackWorkspaceMigration,
+            "finishWorkspaceMigration": self._handle_finishWorkspaceMigration,
+            "listSnapshots": self._handle_listSnapshots,
+            "createSnapshot": self._handle_createSnapshot,
+            "restoreSnapshot": self._handle_restoreSnapshot,
+            "deleteSnapshot": self._handle_deleteSnapshot,
             "getWorkspaceInfo": self._handle_getWorkspaceInfo,
             "listWorkspaceFiles": self._handle_listWorkspaceFiles,
             "importMediaFiles": self._handle_importMediaFiles,
@@ -172,10 +153,8 @@ class BackendService:
             "listClfDatasetClasses": self._handle_listClfDatasetClasses,
             "upsertMetadataRows": self._handle_upsertMetadataRows,
             "getWorkspaceClasses": self._handle_getWorkspaceClasses,
-            "startBuildYoloLinks": self._handle_startBuildYoloLinks,
+            "startExportDataset": self._handle_startExportDataset,
             "getBuildJob": self._handle_getBuildJob,
-            "removeDetectDatasetLinks": self._handle_removeDetectDatasetLinks,
-            "removeClfDatasetLinks": self._handle_removeClfDatasetLinks,
             "ensureImagePoolBackup": self._handle_ensureImagePoolBackup,
             "ensureImagePoolLabelBackup": self._handle_ensureImagePoolLabelBackup,
             "restoreImagePoolBackup": self._handle_restoreImagePoolBackup,
@@ -260,8 +239,7 @@ class BackendService:
             return videos_json(find_videos(self.path_access.require_path(folder))) if folder else "[]"
 
     def _handle_listWorkspaceVideos(self, args: list[Any]) -> object:
-            root = self.path_access.require_path(args[0])
-            return json.dumps(list_workspace_videos(Path(root)), ensure_ascii=False)
+            return json.dumps(list_workspace_videos(self._layout(args[0])), ensure_ascii=False)
 
     def _handle_getVideoInfo(self, args: list[Any]) -> object:
             return json.dumps(video_info(self.path_access.require_path(args[0])), ensure_ascii=False)
@@ -403,16 +381,15 @@ class BackendService:
             path.write_bytes(base64.b64decode(args[2]))
             return True
 
+    def _handle_readAppSettings(self, args: list[Any]) -> object:
+        return read_settings(self.app_settings_dir, legacy_dir=self.legacy_settings_dir)
+
     def _handle_writeAppSettings(self, args: list[Any]) -> object:
-            payload = args[0] if args else {}
-            if isinstance(payload, str):
-                settings = json.loads(payload or "{}")
-            elif isinstance(payload, dict):
-                settings = payload
-            else:
-                settings = {}
-            write_app_settings(self.app_settings_dir, settings)
-            return True
+        payload = args[0] if args else {}
+        settings = json.loads(payload or "{}") if isinstance(payload, str) else payload
+        if not isinstance(settings, dict):
+            raise ValueError("App settings must be a JSON object.")
+        return write_settings(settings, self.app_settings_dir, legacy_dir=self.legacy_settings_dir)
 
     def _handle_loadUiMap(self, args: list[Any]) -> object:
             if len(args) != 1:
@@ -471,204 +448,125 @@ class BackendService:
             except (PermissionError, FileNotFoundError, ValueError, RuntimeError, OSError) as error:
                 return json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False)
 
-    def _remember_workspace_paths(self, workspace_root: Path | str) -> Path:
-        root = Path(self.path_access.remember_parent(workspace_root))
-        if not looks_like_workspace(root):
-            return root
-        try:
-            paths = load_workspace_config(root)
-        except (FileNotFoundError, ValueError, OSError):
-            return root
-        for path in (
-            paths.root,
-            paths.image_pool,
-            paths.metadata,
-            paths.detect_out,
-            paths.clf_out,
-            paths.label_source,
-        ):
-            self.path_access.remember_path(path)
-        return paths.root
+    # ── Workspaces ──────────────────────────────────────────────────────────
+
+    def _layout(self, root_arg: object) -> WorkspaceLayout:
+        return open_workspace(self.path_access.require_path(str(root_arg)))
+
+    def _remember_workspace(self, root: str) -> None:
+        self.path_access.remember_path(root)
+        remember_workspace(root, self.app_settings_dir, legacy_dir=self.legacy_settings_dir)
 
     def _handle_openFolder(self, args: list[Any]) -> object:
-            root = self._remember_workspace_paths(str(args[0]))
-            self._remember_active_snapshot_workspace(root)
-            init_if_needed = bool(args[1]) if len(args) > 1 else True
-            try:
-                payload = resolve_open_folder(root, init_if_needed=init_if_needed)
-            except (NotADirectoryError, OSError, ValueError) as error:
-                payload = {"ok": False, "error": str(error), "root": str(root)}
-            return json.dumps(payload, ensure_ascii=False)
+        folder = self.path_access.remember_path(str(args[0]))
+        try:
+            payload = open_folder(folder)
+        except (NotADirectoryError, OSError, ValueError) as error:
+            return {"ok": False, "error": str(error), "root": str(folder)}
+        if payload.get("root"):
+            self.path_access.remember_path(payload["root"])
+        if payload.get("kind") == "workspace":
+            self._remember_workspace(payload["root"])
+            payload["migrationPending"] = has_pending_migration(payload["root"])
+        return payload
 
-    def _snapshot_root_arg(self, args: list[Any]) -> Path:
-            if not args:
-                raise ValueError("Workspace root is required.")
-            root = self.path_access.remember_parent(str(args[0]))
-            return Path(root).resolve()
+    def _handle_createWorkspace(self, args: list[Any]) -> object:
+        folder = self.path_access.remember_path(str(args[0]))
+        payload = open_folder(folder, create=True)
+        if payload.get("kind") != "workspace":
+            raise ValueError(f"{folder} is not an empty folder or plain folder ({payload.get('kind')}).")
+        self._remember_workspace(payload["root"])
+        return payload
 
-    def _remember_snapshot_manifest_paths(self, root: Path, manifest: dict[str, Any]) -> None:
-            self.path_access.remember_path(root)
-            for entry in manifest.get("versions", []):
-                if not isinstance(entry, dict):
-                    continue
-                rel = Path(str(entry.get("path") or entry.get("id") or ""))
-                version_path = rel if rel.is_absolute() else root / rel
-                self.path_access.remember_path(version_path)
+    def _handle_planWorkspaceMigration(self, args: list[Any]) -> object:
+        return plan_migration(self.path_access.require_path(str(args[0]))).summary()
 
-    def _remember_active_snapshot_workspace(self, root: Path) -> None:
-            try:
-                manifest = read_snapshot_versions(root)
-                self._remember_snapshot_manifest_paths(root, manifest)
-                active_path = resolve_active_version_path(root)
-                self._remember_workspace_paths(active_path)
-            except (FileNotFoundError, ValueError, OSError):
-                return
+    def _handle_migrateWorkspace(self, args: list[Any]) -> object:
+        plan = plan_migration(self.path_access.require_path(str(args[0])))
+        result = execute_migration(plan)
+        layout = open_workspace(plan.root)
+        self._remember_workspace(str(layout.root))
+        return {**result, "workspace": layout_payload(layout)}
 
-    def _handle_readSnapshotVersions(self, args: list[Any]) -> object:
-            root = self._snapshot_root_arg(args)
-            manifest = read_snapshot_versions(root)
-            self._remember_snapshot_manifest_paths(root, manifest)
-            return json.dumps(manifest, ensure_ascii=False)
+    def _handle_rollbackWorkspaceMigration(self, args: list[Any]) -> object:
+        return rollback_migration(self.path_access.require_path(str(args[0])))
 
-    def _handle_initializeSnapshotVersioning(self, args: list[Any]) -> object:
-            root = self._snapshot_root_arg(args)
-            manifest = initialize_snapshot_versioning(root)
-            self._remember_snapshot_manifest_paths(root, manifest)
-            return json.dumps(manifest, ensure_ascii=False)
+    def _handle_finishWorkspaceMigration(self, args: list[Any]) -> object:
+        finish_migration(self.path_access.require_path(str(args[0])))
+        return {"ok": True}
 
-    def _handle_createSnapshotVersion(self, args: list[Any]) -> object:
-            root = self._snapshot_root_arg(args)
-            from_version_id = str(args[1]).strip() if len(args) > 1 and str(args[1]).strip() else None
-            manifest = create_snapshot_version(root, from_version_id)
-            self._remember_snapshot_manifest_paths(root, manifest)
-            return json.dumps(manifest, ensure_ascii=False)
+    def _handle_listSnapshots(self, args: list[Any]) -> object:
+        return read_versions(self._layout(args[0]))
 
-    def _handle_setActiveSnapshotVersion(self, args: list[Any]) -> object:
-            root = self._snapshot_root_arg(args)
-            if len(args) < 2:
-                raise ValueError("Version id is required.")
-            manifest = set_active_snapshot_version(root, str(args[1]))
-            self._remember_snapshot_manifest_paths(root, manifest)
-            return json.dumps(manifest, ensure_ascii=False)
+    def _handle_createSnapshot(self, args: list[Any]) -> object:
+        return create_snapshot(self._layout(args[0]), str(args[1]) if len(args) > 1 else "")
 
-    def _handle_resolveActiveSnapshotWorkspacePath(self, args: list[Any]) -> object:
-            root = self._snapshot_root_arg(args)
-            active_path = resolve_active_version_path(root)
-            self.path_access.remember_path(active_path)
-            return str(active_path)
+    def _handle_restoreSnapshot(self, args: list[Any]) -> object:
+        return restore_snapshot(self._layout(args[0]), str(args[1]))
+
+    def _handle_deleteSnapshot(self, args: list[Any]) -> object:
+        return delete_snapshot(self._layout(args[0]), str(args[1]))
 
     def _handle_getWorkspaceInfo(self, args: list[Any]) -> object:
-            try:
-                root = self._remember_workspace_paths(str(args[0]))
-                return json.dumps(workspace_info(root), ensure_ascii=False)
-            except (PermissionError, FileNotFoundError, ValueError, OSError) as error:
-                return json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False)
+        try:
+            return workspace_info(self._layout(args[0]))
+        except (PermissionError, FileNotFoundError, ValueError, OSError) as error:
+            return {"ok": False, "error": str(error)}
 
     def _handle_listWorkspaceFiles(self, args: list[Any]) -> object:
-            root = self.path_access.require_path(args[0])
-            return json.dumps(list_workspace_files(root), ensure_ascii=False)
+        return list_workspace_files(self._layout(args[0]))
 
     def _handle_importMediaFiles(self, args: list[Any]) -> object:
-            root = self.path_access.require_path(args[0])
-            raw_sources = args[1] if len(args) > 1 else []
-            if isinstance(raw_sources, str):
-                sources = json.loads(raw_sources or "[]")
-            elif isinstance(raw_sources, list):
-                sources = raw_sources
-            else:
-                raise ValueError("Media source paths must be a list.")
-            mode = str(args[2]) if len(args) > 2 else "copy"
-            source_paths = [self.path_access.require_path(path) for path in sources]
-            return json.dumps(import_media_files(Path(root), source_paths, mode), ensure_ascii=False)
+        layout = self._layout(args[0])
+        raw_sources = args[1] if len(args) > 1 else []
+        sources = json.loads(raw_sources or "[]") if isinstance(raw_sources, str) else raw_sources
+        if not isinstance(sources, list):
+            raise ValueError("Media source paths must be a list.")
+        mode = str(args[2]) if len(args) > 2 else "copy"
+        source_paths = [self.path_access.require_path(path) for path in sources]
+        return import_media_files(layout, source_paths, mode)
 
     def _handle_markImagePoolSeen(self, args: list[Any]) -> object:
-            root = self.path_access.require_path(args[0])
-            return json.dumps(mark_image_pool_seen(Path(root)), ensure_ascii=False)
+        return mark_image_pool_seen(self._layout(args[0]))
+
+    # ── Image status and classes ────────────────────────────────────────────
 
     def _handle_readMetadataRows(self, args: list[Any]) -> object:
-            try:
-                root = self.path_access.require_path(args[0])
-                return json.dumps(read_metadata_rows(Path(root)), ensure_ascii=False)
-            except (PermissionError, FileNotFoundError, ValueError, OSError) as error:
-                return json.dumps(
-                    {
-                        "ok": False,
-                        "error": str(error),
-                        "rows": [],
-                        "classes": [],
-                        "clfClasses": [],
-                        "metadataClasses": [],
-                        "detectClasses": [],
-                    },
-                    ensure_ascii=False,
-                )
+        try:
+            return status_payload(self._layout(args[0]))
+        except (PermissionError, FileNotFoundError, ValueError, OSError) as error:
+            return {"ok": False, "error": str(error), "rows": [], "classes": [], "clfClasses": [], "detectClasses": []}
 
     def _handle_listClfDatasetClasses(self, args: list[Any]) -> object:
-            root = self.path_access.require_path(args[0])
-            root_path = Path(root)
-            return json.dumps(
-                {
-                    "ok": True,
-                    "classes": list_clf_dataset_classes(root_path),
-                    "clfDataset": str(_workspace_clf_out(root_path)),
-                },
-                ensure_ascii=False,
-            )
+        layout = self._layout(args[0])
+        keys = [item["key"] for item in classify_classes(read_classes(layout))]
+        return {"ok": True, "classes": keys, "clfDataset": str(export_dirs(layout)["classify"])}
 
     def _handle_upsertMetadataRows(self, args: list[Any]) -> object:
-            try:
-                root = self.path_access.require_path(args[0])
-                updates = json.loads(args[1] or "[]")
-                return json.dumps(upsert_metadata_rows(Path(root), updates), ensure_ascii=False)
-            except (PermissionError, FileNotFoundError, ValueError, OSError) as error:
-                return json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False)
+        try:
+            return upsert_status_rows(self._layout(args[0]), json.loads(args[1] or "[]"))
+        except (PermissionError, FileNotFoundError, ValueError, OSError) as error:
+            return {"ok": False, "error": str(error)}
 
     def _handle_getWorkspaceClasses(self, args: list[Any]) -> object:
-            try:
-                root = self.path_access.require_path(args[0])
-                return json.dumps(
-                    {"ok": True, "classes": get_workspace_classes(Path(root))},
-                    ensure_ascii=False,
-                )
-            except (PermissionError, FileNotFoundError, ValueError, OSError) as error:
-                return json.dumps({"ok": False, "error": str(error), "classes": []}, ensure_ascii=False)
+        try:
+            keys = [item["key"] for item in classify_classes(read_classes(self._layout(args[0])))]
+            return {"ok": True, "classes": keys}
+        except (PermissionError, FileNotFoundError, ValueError, OSError) as error:
+            return {"ok": False, "error": str(error), "classes": []}
 
-    def _handle_removeDetectDatasetLinks(self, args: list[Any]) -> object:
-            root = self.path_access.require_path(args[0])
-            filenames = json.loads(args[1] or "[]") if len(args) > 1 else []
-            return json.dumps(
-                remove_detect_dataset_links(Path(root), filenames=filenames),
-                ensure_ascii=False,
-            )
+    # ── Dataset export ──────────────────────────────────────────────────────
 
-    def _handle_removeClfDatasetLinks(self, args: list[Any]) -> object:
-            root = self.path_access.require_path(args[0])
-            filenames = json.loads(args[1] or "[]") if len(args) > 1 else []
-            return json.dumps(
-                remove_clf_dataset_links(Path(root), filenames=filenames),
-                ensure_ascii=False,
-            )
-
-    def _handle_startBuildYoloLinks(self, args: list[Any]) -> object:
-            return json.dumps(self._start_build_job(args), ensure_ascii=False)
-
-    def _handle_getBuildJob(self, args: list[Any]) -> object:
-            return json.dumps(self._build_job_snapshot(str(args[0])), ensure_ascii=False)
-
-    def _start_build_job(self, args: list[Any]) -> dict[str, Any]:
-        root = self.path_access.require_path(args[0])
-        rebuild = bool(args[1]) if len(args) > 1 else False
-        filenames = None
-        if len(args) > 2 and args[2]:
-            filenames = json.loads(args[2] or "[]")
-        state: dict[str, Any] = {
-            "status": "running",
-            "done": 0,
-            "total": 1,
-            "detail": "准备构建...",
-            "errors": [],
-            "result": None,
-        }
+    def _handle_startExportDataset(self, args: list[Any]) -> object:
+        layout = self._layout(args[0])
+        raw = args[1] if len(args) > 1 else {}
+        options = json.loads(raw or "{}") if isinstance(raw, str) else (raw or {})
+        destination = options.get("destination")
+        destination_path = self.path_access.require_path(destination) if destination else None
+        filenames = options.get("filenames") or None
+        rebuild = bool(options.get("rebuild", True))
+        name = str(options.get("name") or "dataset")
+        state: dict[str, Any] = {"status": "running", "done": 0, "total": 1, "detail": "准备导出...", "errors": [], "result": None}
         job_id, _ = self._build_jobs.create(state)
 
         def update(done: int, total: int, detail: str) -> None:
@@ -676,85 +574,78 @@ class BackendService:
 
         def run() -> None:
             try:
-                result = build_workspace_links(
-                    Path(root),
+                result = export_dataset(
+                    layout,
+                    name=name,
+                    destination=destination_path,
                     rebuild=rebuild,
                     filenames=filenames,
-                    progress_callback=update,
+                    progress=update,
+                    link=bool(options.get("link")),
                 )
+                ok = bool(result.get("ok", True))
                 current = self._build_jobs.snapshot(job_id)
                 self._build_jobs.finish(
                     job_id,
                     {
-                        "status": "done" if result.get("ok", True) else "error",
+                        "status": "done" if ok else "error",
                         "done": current.get("total") or current.get("done") or 0,
                         "errors": result.get("errors") or [],
                         "result": result,
-                        "detail": "构建完成" if result.get("ok", True) else "构建完成但有错误",
+                        "detail": "导出完成" if ok else "导出完成但有错误",
                     },
                 )
             except Exception as error:
-                self._build_jobs.finish(
-                    job_id,
-                    {
-                        "status": "error",
-                        "errors": [str(error)],
-                        "detail": str(error),
-                    },
-                )
+                self._build_jobs.finish(job_id, {"status": "error", "errors": [str(error)], "detail": str(error)})
 
         threading.Thread(target=run, daemon=True).start()
         return self._build_job_snapshot(job_id)
 
+    def _handle_getBuildJob(self, args: list[Any]) -> object:
+        return self._build_job_snapshot(str(args[0]))
+
     def _build_job_snapshot(self, job_id: str) -> dict[str, Any]:
         return self._build_jobs.snapshot(job_id)
 
+    # ── Originals, duplicates, deletion ─────────────────────────────────────
+
     def _handle_ensureImagePoolBackup(self, args: list[Any]) -> object:
-            root = self.path_access.require_path(args[0])
-            return json.dumps(ensure_image_pool_backup(Path(root), str(args[1])), ensure_ascii=False)
+        return ensure_image_backup(self._layout(args[0]), str(args[1]))
 
     def _handle_ensureImagePoolLabelBackup(self, args: list[Any]) -> object:
-            root = self.path_access.require_path(args[0])
-            return json.dumps(ensure_image_pool_label_backup(Path(root), str(args[1])), ensure_ascii=False)
+        return ensure_label_backup(self._layout(args[0]), str(args[1]))
 
     def _handle_restoreImagePoolBackup(self, args: list[Any]) -> object:
-            root = self.path_access.require_path(args[0])
-            return json.dumps(restore_image_pool_backup(Path(root), str(args[1])), ensure_ascii=False)
+        return restore_image_backup(self._layout(args[0]), str(args[1]))
 
     def _handle_getImagePoolBackupStats(self, args: list[Any]) -> object:
-            root = self.path_access.require_path(args[0])
-            return json.dumps(image_pool_backup_stats(Path(root)), ensure_ascii=False)
+        return backup_stats(self._layout(args[0]))
 
     def _handle_findImagePoolDuplicates(self, args: list[Any]) -> object:
-            root = self.path_access.require_path(args[0])
-            return json.dumps(find_image_pool_duplicates(Path(root)), ensure_ascii=False)
+        return find_image_pool_duplicates(self._layout(args[0]))
 
     def _handle_clearImagePoolDuplicates(self, args: list[Any]) -> object:
-            root = self.path_access.require_path(args[0])
-            return json.dumps(clear_image_pool_duplicates(Path(root)), ensure_ascii=False)
+        return clear_image_pool_duplicates(self._layout(args[0]))
 
     def _handle_deletePoolImageCompletely(self, args: list[Any]) -> object:
-            root = self.path_access.require_path(args[0])
-            return json.dumps(delete_pool_image_completely(Path(root), str(args[1])), ensure_ascii=False)
+        return delete_pool_image_completely(self._layout(args[0]), str(args[1]))
+
+    # ── Session ─────────────────────────────────────────────────────────────
 
     def _handle_readWorkspaceSession(self, args: list[Any]) -> object:
-            root = self.path_access.require_path(args[0])
-            lite = False
-            if len(args) > 1:
-                lite = str(args[1]).lower() in {"1", "true", "yes", "lite"}
-            return read_workspace_session(root, lite=lite)
+        session = read_session(self._layout(args[0]))
+        lite = len(args) > 1 and str(args[1]).lower() in {"1", "true", "yes", "lite"}
+        return json.dumps(lite_session(session) if lite else session, ensure_ascii=False)
 
     def _handle_writeWorkspaceSession(self, args: list[Any]) -> object:
-            root = self.path_access.require_path(args[0])
-            return write_workspace_session(root, str(args[1]))
+        return write_session(self._layout(args[0]), json.loads(str(args[1]) or "{}"))
 
     def _handle_saveMaskNoiseTempImage(self, args: list[Any]) -> object:
-            session_dir = self.session_dir
-            if len(args) > 2 and str(args[2] or "").strip():
-                workspace_root = self.path_access.require_path(args[2])
-                session_dir = workspace_meta_dir(Path(workspace_root))
-            session_dir.mkdir(parents=True, exist_ok=True)
-            return mask_noise_save_temp_image(session_dir, args[0], args[1])
+        temp_dir = self.session_dir
+        if len(args) > 2 and str(args[2] or "").strip():
+            temp_dir = self._layout(args[2]).cache
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        return mask_noise_save_temp_image(temp_dir, args[0], args[1])
 
     def _handle_maskNoisePreview(self, args: list[Any]) -> object:
             settings = mask_noise_settings_from_json(args[2] if len(args) > 2 else "{}")
@@ -1275,7 +1166,7 @@ class BackendService:
         return json.dumps(registry, ensure_ascii=False)
 
     def _auto_label_model_registry_path(self, workspace_root: Path) -> Path:
-        return self.path_access.safe_child_path(workspace_root, "workspace/autolabel_models.json")
+        return open_workspace(workspace_root).path("modelRegistry")
 
     def _auto_label_model_rel_path(self, kind: str, path: Path) -> str:
         return f"models/autolabel/{kind}/{path.name}"

@@ -1,13 +1,15 @@
+"""Duplicate detection and complete deletion of media images."""
+
 from __future__ import annotations
 
-import csv
 import hashlib
 from pathlib import Path
 from typing import Any
 
-from .image_pool import _build_hardlink_index, _file_identity, _list_pool_images
-from .image_pool_backup import image_pool_backup_file, image_pool_label_backup_file
-from .yolo_workspace import load_workspace_config, workspace_media_relative_dir
+from .image_pool import list_media_images
+from .image_pool_backup import discard_backups
+from .image_status import read_status_rows, remove_status_row
+from .workspace_layout import RELATIVE_PATHS, WorkspaceLayout
 
 
 def _sha256_file(path: Path) -> str:
@@ -18,203 +20,91 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _read_metadata_filenames(metadata_path: Path) -> set[str]:
-    if not metadata_path.is_file():
-        return set()
-    with metadata_path.open(newline="", encoding="utf-8-sig") as handle:
-        reader = csv.DictReader(handle)
-        return {
-            (row.get("filename") or row.get("Filename") or "").strip()
-            for row in reader
-            if (row.get("filename") or row.get("Filename") or "").strip()
-        }
-
-
-def find_image_pool_duplicates(workspace_root: Path) -> dict[str, Any]:
-    """Find exact duplicate files inside the configured media folder only (by SHA-256)."""
-    paths = load_workspace_config(workspace_root)
-    pool_images = _list_pool_images(paths.image_pool)
-    metadata_names = _read_metadata_filenames(paths.metadata)
-
+def find_image_pool_duplicates(layout: WorkspaceLayout) -> dict[str, Any]:
+    """Exact duplicate images in media/ (by SHA-256)."""
+    images = [layout.media / name for name in list_media_images(layout)]
+    with_status = {row["filename"] for row in read_status_rows(layout)}
     by_size: dict[int, list[Path]] = {}
-    for pool_file in pool_images:
-        by_size.setdefault(pool_file.stat().st_size, []).append(pool_file)
-
+    for image in images:
+        by_size.setdefault(image.stat().st_size, []).append(image)
     groups: list[dict[str, Any]] = []
     for size, candidates in by_size.items():
         if len(candidates) < 2:
             continue
         by_hash: dict[str, list[Path]] = {}
-        for pool_file in candidates:
-            by_hash.setdefault(_sha256_file(pool_file), []).append(pool_file)
+        for image in candidates:
+            by_hash.setdefault(_sha256_file(image), []).append(image)
         for digest, matches in by_hash.items():
             if len(matches) < 2:
                 continue
-            filenames = sorted(path.name for path in matches)
-            groups.append(
-                {
-                    "hash": digest,
-                    "size": size,
-                    "count": len(filenames),
-                    "filenames": filenames,
-                    "inMetadata": [name for name in filenames if name in metadata_names],
-                }
-            )
-
+            names = sorted(path.name for path in matches)
+            groups.append({"hash": digest, "size": size, "count": len(names), "filenames": names, "inMetadata": [n for n in names if n in with_status]})
     groups.sort(key=lambda group: (-int(group["count"]), group["filenames"][0]))
-    duplicate_files = sum(int(group["count"]) - 1 for group in groups)
     return {
         "ok": True,
-        "totalImages": len(pool_images),
+        "totalImages": len(images),
         "groupCount": len(groups),
-        "duplicateFiles": duplicate_files,
+        "duplicateFiles": sum(int(group["count"]) - 1 for group in groups),
         "groups": groups,
     }
 
 
-def _choose_keeper(filenames: list[str], metadata_names: set[str]) -> str:
-    in_meta = [name for name in filenames if name in metadata_names]
-    if len(in_meta) == 1:
-        return in_meta[0]
-    if in_meta:
-        return sorted(in_meta)[0]
+def _choose_keeper(filenames: list[str], with_status: set[str]) -> str:
+    annotated = sorted(name for name in filenames if name in with_status)
+    if annotated:
+        return annotated[0]
     return sorted(filenames, key=lambda name: (len(name), name))[0]
 
 
-def _collect_paths_for_pool_file(
-    workspace_root: Path,
-    pool_file: Path,
-    media_dir: str,
-    hardlink_index: dict[tuple[int, int], list[str]],
-) -> list[Path]:
-    root = workspace_root.expanduser().resolve()
-    identity = _file_identity(pool_file)
-    rel_paths: list[str] = [f"{media_dir}/{pool_file.name}"]
-    if identity is not None:
-        rel_paths.extend(hardlink_index.get(identity, []))
-    unique: list[Path] = []
-    seen: set[str] = set()
-    for rel in rel_paths:
-        key = rel.replace("\\", "/")
-        if key in seen:
-            continue
-        seen.add(key)
-        absolute = (root / key).resolve()
-        if absolute.is_file():
-            unique.append(absolute)
-    return unique
-
-
-def _remove_metadata_row(metadata_path: Path, filename: str) -> bool:
-    if not metadata_path.is_file():
-        return False
-    with metadata_path.open(newline="", encoding="utf-8-sig") as handle:
-        reader = csv.DictReader(handle)
-        fieldnames = list(reader.fieldnames or [])
-        rows = list(reader)
-    if not fieldnames:
-        return False
-    kept = [row for row in rows if (row.get("filename") or "").strip() != filename]
-    if len(kept) == len(rows):
-        return False
-    with metadata_path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
-        writer.writeheader()
-        writer.writerows(kept)
-    return True
-
-
-def delete_pool_image_completely(workspace_root: Path, filename: str) -> dict[str, Any]:
-    """
-    Delete a media file and every hard-linked dataset path sharing its inode.
-    Also removes detect_labels, metadata.csv row, and image_pool_backup copies.
-    """
-    paths = load_workspace_config(workspace_root)
-    root = paths.root
+def delete_pool_image_completely(layout: WorkspaceLayout, filename: str) -> dict[str, Any]:
+    """Delete a media image with everything that belongs to it: label, status row,
+    proposals and kept originals. Exported datasets are snapshots and stay as they are."""
     filename = Path(str(filename).replace("\\", "/")).name
     if not filename:
         raise ValueError("Invalid filename.")
-
-    pool_file = paths.image_pool / filename
-    if not pool_file.is_file():
+    image = layout.media / filename
+    if not image.is_file():
         raise FileNotFoundError(f"Image not found in media: {filename}")
 
-    hardlink_index = _build_hardlink_index(root, paths.detect_out, paths.clf_out)
-    to_delete = _collect_paths_for_pool_file(root, pool_file, workspace_media_relative_dir(paths), hardlink_index)
-
-    deleted_paths: list[str] = []
-    failed_paths: list[dict[str, str]] = []
-    for path in to_delete:
-        rel = path.relative_to(root).as_posix()
-        try:
-            path.unlink()
-            deleted_paths.append(rel)
-        except OSError as error:
-            failed_paths.append({"path": rel, "error": str(error)})
-
-    stem = Path(filename).stem
-    extras: list[str] = []
-
-    label_file = paths.label_source / f"{stem}.txt"
-    if label_file.is_file():
-        try:
-            label_file.unlink()
-            extras.append(f"detect_labels/{stem}.txt")
-        except OSError as error:
-            failed_paths.append({"path": f"detect_labels/{stem}.txt", "error": str(error)})
-
-    if _remove_metadata_row(paths.metadata, filename):
-        extras.append("metadata.csv row")
-
-    for backup in (
-        image_pool_backup_file(root, filename),
-        image_pool_label_backup_file(root, f"{stem}.txt"),
-    ):
-        if backup.is_file():
-            try:
-                backup.unlink()
-                extras.append(backup.relative_to(root).as_posix())
-            except OSError as error:
-                failed_paths.append({"path": backup.relative_to(root).as_posix(), "error": str(error)})
-
-    return {
-        "ok": not failed_paths,
-        "filename": filename,
-        "deletedPaths": deleted_paths,
-        "deletedExtras": extras,
-        "failedPaths": failed_paths,
-    }
-
-
-def clear_image_pool_duplicates(workspace_root: Path) -> dict[str, Any]:
-    """Remove duplicate media files; keep one per content hash group."""
-    paths = load_workspace_config(workspace_root)
-    metadata_names = _read_metadata_filenames(paths.metadata)
-    scan = find_image_pool_duplicates(workspace_root)
-    groups = scan.get("groups") or []
-
-    to_remove: list[str] = []
-    plan: list[dict[str, Any]] = []
-    for group in groups:
-        filenames = list(group.get("filenames") or [])
-        if len(filenames) < 2:
+    deleted: list[str] = []
+    failed: list[dict[str, str]] = []
+    for target in (image, layout.image_label_file(filename), layout.path("proposals") / f"{filename}.json"):
+        if not target.is_file():
             continue
-        keeper = _choose_keeper(filenames, metadata_names)
-        removed = [name for name in filenames if name != keeper]
-        to_remove.extend(removed)
-        plan.append({"keeper": keeper, "remove": removed, "hash": group.get("hash", "")})
+        try:
+            target.unlink()
+            deleted.append(layout.relative(target))
+        except OSError as error:
+            failed.append({"path": layout.relative(target), "error": str(error)})
+    extras = []
+    if remove_status_row(layout, filename):
+        extras.append(f"{RELATIVE_PATHS['imageStatus']} row")
+    extras += discard_backups(layout, f"{RELATIVE_PATHS['media']}/{filename}")
+    return {"ok": not failed, "filename": filename, "deletedPaths": deleted, "deletedExtras": extras, "failedPaths": failed}
 
+
+def clear_image_pool_duplicates(layout: WorkspaceLayout) -> dict[str, Any]:
+    """Remove duplicate media images, keeping one per content group (an annotated one if any)."""
+    with_status = {row["filename"] for row in read_status_rows(layout)}
+    scan = find_image_pool_duplicates(layout)
+    plan: list[dict[str, Any]] = []
+    to_remove: list[str] = []
+    for group in scan["groups"]:
+        names = list(group["filenames"])
+        keeper = _choose_keeper(names, with_status)
+        removed = [name for name in names if name != keeper]
+        to_remove += removed
+        plan.append({"keeper": keeper, "remove": removed, "hash": group["hash"]})
     deleted: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
     for filename in to_remove:
         try:
-            result = delete_pool_image_completely(workspace_root, filename)
+            result = delete_pool_image_completely(layout, filename)
             deleted.append(result)
-            if result.get("failedPaths"):
+            if result["failedPaths"]:
                 failed.append({"filename": filename, "failedPaths": result["failedPaths"]})
         except (FileNotFoundError, ValueError, OSError) as error:
             failed.append({"filename": filename, "error": str(error)})
-
     return {
         "ok": not failed,
         "groupsProcessed": len(plan),
@@ -222,9 +112,5 @@ def clear_image_pool_duplicates(workspace_root: Path) -> dict[str, Any]:
         "plan": plan,
         "deleted": deleted,
         "failed": failed,
-        "scan": {
-            "totalImages": scan.get("totalImages", 0),
-            "groupCount": scan.get("groupCount", 0),
-            "duplicateFiles": scan.get("duplicateFiles", 0),
-        },
+        "scan": {key: scan[key] for key in ("totalImages", "groupCount", "duplicateFiles")},
     }

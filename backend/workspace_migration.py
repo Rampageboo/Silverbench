@@ -563,6 +563,11 @@ def rollback_migration(path: Path | str) -> dict[str, Any]:
     return {"ok": True, "root": str(root), "undone": undone}
 
 
+def has_pending_migration(path: Path | str) -> bool:
+    """A finished migration whose journal is kept until the user keeps or undoes it."""
+    return _journal_path(workspace_root_path(path)).is_file()
+
+
 def finish_migration(path: Path | str) -> None:
     """Forget the journal once the user is happy with the result (keeps .rwb/migrated)."""
     _journal_path(workspace_root_path(path)).unlink(missing_ok=True)
@@ -574,6 +579,7 @@ __all__ = [
     "detect_legacy_workspace",
     "execute_migration",
     "finish_migration",
+    "has_pending_migration",
     "legacy_proposal_key",
     "plan_migration",
     "rollback_migration",

@@ -95,7 +95,7 @@ class BridgeTests(unittest.TestCase):
         result = self.bridge.inspect_workspace(str(self.workspace))
 
         self.assertEqual(result["imageCount"], 3)
-        self.assertEqual(self.backend.calls[0], ("openFolder", [str(self.workspace), False]))
+        self.assertEqual(self.backend.calls[0], ("openFolder", [str(self.workspace)]))
         self.assertEqual(self.backend.calls[1], ("getWorkspaceInfo", [str(self.workspace)]))
 
     def test_start_detection_image_uses_relative_children(self) -> None:

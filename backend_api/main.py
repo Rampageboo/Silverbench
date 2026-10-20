@@ -21,20 +21,20 @@ from starlette.responses import Response
 from PIL import Image, ImageOps
 from pydantic import BaseModel, Field
 
-from backend.atomic_write import write_text_atomic
+from backend.app_settings import app_data_dir
+from backend.classes_store import detect_classes, read_classes
 from backend.image_safety import ImageTooLargeError, ensure_safe_image_size
 from backend.image_pool import scan_image_pool
-from backend.dataset_merge import VIDEO_EXTENSIONS
-from backend.metadata_assign import get_workspace_classes
 from backend.video_screenshot import frame_bytes
-from backend.yolo_workspace import IMAGE_EXTENSIONS, load_workspace_config, workspace_meta_dir
+from backend.workspace_layout import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, WorkspaceLayout, open_workspace
 from backend_api.dialogs import create_desktop_backend_service
 
 
 APP_DIR = Path(__file__).resolve().parent.parent
-SESSION_DIR = APP_DIR / "Sessions"
+# Scratch space for files picked outside any workspace; app settings sit next to it.
+SESSION_DIR = app_data_dir() / "scratch"
 # Bump when /health or /api/call routing changes so dev startup can restart stale backends.
-API_SCHEMA_VERSION = 25
+API_SCHEMA_VERSION = 26
 
 # Guards concurrent proxy transcodes for the same output file.
 _VIDEO_PROXY_LOCKS_GUARD = threading.Lock()
@@ -46,19 +46,8 @@ class ApiCallRequest(BaseModel):
     args: list[Any] | dict[str, Any] | None = None
 
 
-class LabelClass(BaseModel):
-    id: int = Field(ge=0)
-    name: str = Field(min_length=1)
-
-
-class SaveClassesRequest(BaseModel):
-    workspaceRoot: str = Field(min_length=1)
-    classes: list[LabelClass] = Field(default_factory=list, max_length=10000)
-
-
 class OpenWorkspaceRequest(BaseModel):
     workspaceRoot: str = Field(min_length=1)
-    initIfNeeded: bool = True
 
 
 class VideoProxyRequest(BaseModel):
@@ -67,10 +56,10 @@ class VideoProxyRequest(BaseModel):
 
 
 class WriteAppSettingsRequest(BaseModel):
-    lastOpenedWorkspace: str = ""
-    lastOpenedFolder: str = ""
-    lastOpenedYoloFolder: str = ""
-    startupOverlayMode: str = ""
+    lastWorkspace: str | None = None
+    workspaces: list[str] | None = None
+    startupOverlayMode: str | None = None
+    sidebarCollapsed: bool | None = None
 
 
 @asynccontextmanager
@@ -86,7 +75,7 @@ app = FastAPI(title="RampageWorkbench API", lifespan=_lifespan)
 from backend_api.gallery import router as gallery_router
 
 app.include_router(gallery_router)
-service = create_desktop_backend_service(APP_DIR, SESSION_DIR)
+service = create_desktop_backend_service(APP_DIR, SESSION_DIR, app_data_dir())
 
 app.add_middleware(
     CORSMiddleware,
@@ -128,52 +117,17 @@ def health() -> dict[str, object]:
 
 @app.post("/api/app-settings")
 def app_settings_write(payload: WriteAppSettingsRequest) -> JSONResponse:
+    changes = {key: value for key, value in payload.model_dump().items() if value is not None}
     try:
-        service.call(
-            "writeAppSettings",
-            [
-                json.dumps(
-                    {
-                        key: value
-                        for key, value in {
-                            "lastOpenedWorkspace": payload.lastOpenedWorkspace,
-                            "lastOpenedFolder": payload.lastOpenedFolder,
-                            "lastOpenedYoloFolder": payload.lastOpenedYoloFolder,
-                            "startupOverlayMode": payload.startupOverlayMode,
-                        }.items()
-                        if value
-                    },
-                    ensure_ascii=False,
-                )
-            ],
-        )
+        settings = service.call("writeAppSettings", [changes])
     except Exception as error:
         return _error_response(500, "writeAppSettings", str(error), error_type=type(error).__name__)
-    return JSONResponse({"ok": True})
+    return JSONResponse({"ok": True, **settings})
 
 
 @app.get("/api/app-settings")
 def app_settings() -> JSONResponse:
-    settings_path = APP_DIR / "yolo_app_settings.json"
-    settings: dict[str, object] = {}
-    if settings_path.is_file():
-        try:
-            loaded = json.loads(settings_path.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict):
-                settings = loaded
-        except json.JSONDecodeError:
-            settings = {}
-    return JSONResponse(
-        {
-            "ok": True,
-            "lastOpenedWorkspace": str(settings.get("lastOpenedWorkspace") or ""),
-            "lastOpenedFolder": str(settings.get("lastOpenedFolder") or ""),
-            "lastOpenedYoloFolder": str(settings.get("lastOpenedYoloFolder") or ""),
-            "startupOverlayMode": "minimal"
-            if str(settings.get("startupOverlayMode") or "").strip().lower() == "minimal"
-            else "overview",
-        }
-    )
+    return JSONResponse({"ok": True, **service.call("readAppSettings", [])})
 
 
 @app.post("/api/call")
@@ -201,7 +155,7 @@ def api_call(payload: ApiCallRequest) -> JSONResponse:
 @app.post("/api/workspace/open")
 def workspace_open(payload: OpenWorkspaceRequest) -> JSONResponse:
     try:
-        result = service.call("openFolder", [payload.workspaceRoot, payload.initIfNeeded])
+        result = service.call("openFolder", [payload.workspaceRoot])
     except Exception as error:
         return _error_response(400, "openFolder", str(error), error_type=type(error).__name__)
 
@@ -214,8 +168,7 @@ def workspace_open(payload: OpenWorkspaceRequest) -> JSONResponse:
 @app.get("/api/image-pool")
 def image_pool(workspaceRoot: str = Query(min_length=1), fast: bool = True) -> JSONResponse:
     try:
-        paths = _workspace_paths(workspaceRoot)
-        result = scan_image_pool(paths.root, fast=fast)
+        result = scan_image_pool(_workspace_layout(workspaceRoot), fast=fast)
     except Exception as error:
         return _error_response(400, "imagePool", str(error), error_type=type(error).__name__)
 
@@ -228,9 +181,9 @@ def image_thumb(
     filename: str = Query(min_length=1),
     size: int = Query(default=180, ge=32, le=512),
 ) -> StreamingResponse:
-    paths = _workspace_paths_for_http(workspaceRoot)
-    path = _image_pool_file_from_paths(paths, filename)
-    cache_path = _thumb_cache_path(paths.root, path, size=size, quality=78)
+    layout = _workspace_layout_for_http(workspaceRoot)
+    path = _media_image(layout, filename)
+    cache_path = _thumb_cache_path(layout, path, size=size, quality=78)
     return _jpeg_response(path, max_edge=size, quality=78, cache_path=cache_path)
 
 
@@ -240,7 +193,7 @@ def image_preview(
     filename: str = Query(min_length=1),
     maxEdge: int = Query(default=1600, ge=128, le=4096),
 ) -> StreamingResponse:
-    path = _image_pool_file(workspaceRoot, filename)
+    path = _media_image(_workspace_layout_for_http(workspaceRoot), filename)
     return _jpeg_response(path, max_edge=maxEdge, quality=86)
 
 
@@ -251,9 +204,9 @@ def file_preview(
     maxEdge: int = Query(default=1280, ge=128, le=4096),
     quality: int = Query(default=60, ge=35, le=95),
 ) -> StreamingResponse:
-    paths = _workspace_paths_for_http(workspaceRoot)
-    path = (paths.root / relativePath).resolve()
-    _ensure_workspace_child(paths.root, path)
+    layout = _workspace_layout_for_http(workspaceRoot)
+    path = (layout.root / relativePath).resolve()
+    _ensure_workspace_child(layout.root, path)
     if not path.is_file() or path.suffix.lower() not in IMAGE_EXTENSIONS:
         raise HTTPException(status_code=404, detail=f"Image not found: {relativePath}")
     return _jpeg_response(path, max_edge=maxEdge, quality=quality)
@@ -291,8 +244,8 @@ def _video_proxy_lock(proxy_path: Path) -> threading.Lock:
 
 @app.post("/api/video/proxy")
 def video_proxy(payload: VideoProxyRequest) -> JSONResponse:
-    paths, video_path = _workspace_video_path_for_http(payload.workspaceRoot, payload.path)
-    proxy_path = _video_proxy_path(paths.root, video_path)
+    layout, video_path = _workspace_video_path_for_http(payload.workspaceRoot, payload.path)
+    proxy_path = _video_proxy_path(layout, video_path)
     if proxy_path.is_file() and proxy_path.stat().st_size > 0:
         return JSONResponse({
             "ok": True,
@@ -458,28 +411,9 @@ def video_source(
 
 @app.get("/api/labels/classes")
 def label_classes(workspaceRoot: str = Query(min_length=1)) -> JSONResponse:
-    paths = _workspace_paths_for_http(workspaceRoot)
-    return JSONResponse({"ok": True, "workspaceRoot": str(paths.root), "classes": _workspace_label_classes(paths.root)})
-
-
-@app.post("/api/labels/classes")
-def label_classes_save(payload: SaveClassesRequest) -> JSONResponse:
-    paths = _workspace_paths_for_http(payload.workspaceRoot)
-    classes = sorted(payload.classes, key=lambda item: item.id)
-    if not classes:
-        raise HTTPException(status_code=400, detail="At least one class is required.")
-    max_id = max(item.id for item in classes)
-    by_id = {item.id: item.name.strip() for item in classes}
-    names = [by_id.get(index, "") for index in range(max_id + 1)]
-    classes_text = "\n".join(names) + "\n"
-    data_yaml_text = _data_yaml_text(names)
-    write_text_atomic(paths.root / "classes.txt", classes_text)
-    write_text_atomic(paths.root / "data.yaml", data_yaml_text)
-    detect_data_yaml = paths.root / "detect_dataset" / "data.yaml"
-    if detect_data_yaml.parent.is_dir():
-        write_text_atomic(detect_data_yaml, data_yaml_text)
-    saved = [{"id": item.id, "name": item.name.strip()} for item in classes if item.name.strip()]
-    return JSONResponse({"ok": True, "workspaceRoot": str(paths.root), "classes": saved})
+    layout = _workspace_layout_for_http(workspaceRoot)
+    classes = [{"id": item["id"], "name": item["name"]} for item in detect_classes(read_classes(layout))]
+    return JSONResponse({"ok": True, "workspaceRoot": str(layout.root), "classes": classes})
 
 
 def _args_for_backend_call(args: list[Any] | dict[str, Any] | None) -> list[Any]:
@@ -505,149 +439,55 @@ def _normalize_backend_result(result: object) -> object:
     return result
 
 
-def _workspace_paths(workspace_root: str):
-    root = Path(workspace_root).expanduser().resolve()
-    if not root.is_dir():
-        raise NotADirectoryError(f"Workspace root is not a directory: {root}")
-    paths = load_workspace_config(root)
-    if not paths.image_pool.is_dir():
-        raise NotADirectoryError(f"Workspace media directory not found: {paths.image_pool}")
-    return paths
+def _workspace_layout(workspace_root: str) -> WorkspaceLayout:
+    return open_workspace(Path(workspace_root).expanduser().resolve())
 
 
-def _image_pool_file(workspace_root: str, filename: str) -> Path:
-    paths = _workspace_paths_for_http(workspace_root)
-    return _image_pool_file_from_paths(paths, filename)
-
-
-def _workspace_video_path_for_http(workspace_root: str, path: str):
-    paths = _workspace_paths_for_http(workspace_root)
-    video_path = Path(path).expanduser().resolve()
+def _workspace_layout_for_http(workspace_root: str) -> WorkspaceLayout:
     try:
-        _ensure_workspace_child(paths.root, video_path)
-    except HTTPException:
-        media_root = paths.image_pool.resolve()
-        if video_path != media_root and media_root not in video_path.parents:
-            raise
-    if not video_path.is_file() or video_path.suffix.lower() not in VIDEO_EXTENSIONS:
-        raise HTTPException(status_code=404, detail=f"Video not found: {video_path.name}")
-    return paths, video_path
-
-
-def _video_proxy_path(workspace_root: Path, video_path: Path) -> Path:
-    stat = video_path.stat()
-    source_key = f"{video_path.resolve()}|{stat.st_mtime_ns}|{stat.st_size}"
-    digest = hashlib.sha1(source_key.encode("utf-8")).hexdigest()[:24]
-    safe_stem = "".join("_" if char in '<>:"/\\|?*' else char for char in video_path.stem).strip(" ._")
-    safe_stem = (safe_stem or "video")[:80]
-    return workspace_meta_dir(workspace_root) / "video_proxy" / f"{safe_stem}_{digest}.mp4"
-
-
-def _workspace_paths_for_http(workspace_root: str):
-    try:
-        return _workspace_paths(workspace_root)
+        return _workspace_layout(workspace_root)
     except Exception as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
-def _image_pool_file_from_paths(paths, filename: str) -> Path:
+def _workspace_video_path_for_http(workspace_root: str, path: str) -> tuple[WorkspaceLayout, Path]:
+    """Videos may be given workspace-relative (``media/clip.mp4``) or absolute inside the workspace."""
+    layout = _workspace_layout_for_http(workspace_root)
+    raw = Path(path).expanduser()
+    video_path = (raw if raw.is_absolute() else layout.root / raw).resolve()
+    _ensure_workspace_child(layout.root, video_path)
+    if not video_path.is_file() or video_path.suffix.lower() not in VIDEO_EXTENSIONS:
+        raise HTTPException(status_code=404, detail=f"Video not found: {video_path.name}")
+    return layout, video_path
+
+
+def _cache_name(source_path: Path, extra: str) -> str:
+    stat = source_path.stat()
+    key = f"{str(source_path.resolve()).replace(chr(92), '/')}|{stat.st_mtime_ns}|{stat.st_size}|{extra}"
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:24]
+    safe_stem = "".join("_" if char in '<>:"/\\|?*' else char for char in source_path.stem).strip(" ._")
+    return f"{(safe_stem or 'file')[:80]}_{digest}"
+
+
+def _video_proxy_path(layout: WorkspaceLayout, video_path: Path) -> Path:
+    return layout.path("videoProxy") / f"{_cache_name(video_path, 'proxy')}.mp4"
+
+
+def _media_image(layout: WorkspaceLayout, filename: str) -> Path:
     name = Path(filename).name
     if name != filename or not name:
         raise HTTPException(status_code=400, detail="filename must be a file name inside media.")
-
-    image_pool = paths.image_pool.resolve()
-    path = (image_pool / name).resolve()
-    if path.parent != image_pool:
+    media = layout.media.resolve()
+    path = (media / name).resolve()
+    if path.parent != media:
         raise HTTPException(status_code=403, detail="Image path escapes media.")
     if path.suffix.lower() not in IMAGE_EXTENSIONS or not path.is_file():
         raise HTTPException(status_code=404, detail=f"Image not found in media: {name}")
     return path
 
 
-def _thumb_cache_path(workspace_root: Path, source_path: Path, *, size: int, quality: int) -> Path:
-    stat = source_path.stat()
-    normalized_source = str(source_path.resolve()).replace("\\", "/")
-    key = hashlib.sha1(
-        f"{normalized_source}|{stat.st_mtime_ns}|{stat.st_size}|{int(size)}|{int(quality)}".encode("utf-8")
-    ).hexdigest()[:24]
-    safe_stem = source_path.stem[:80].replace("\\", "_").replace("/", "_")
-    return workspace_meta_dir(workspace_root) / "thumb_cache" / "fastapi" / f"{safe_stem}_{key}.jpg"
-
-
-def _workspace_label_classes(workspace_root: Path) -> list[dict[str, int | str]]:
-    names = _read_detect_class_names(workspace_root)
-    if not names:
-        names = {index: name for index, name in enumerate(get_workspace_classes(workspace_root))}
-    return [{"id": class_id, "name": name} for class_id, name in sorted(names.items()) if name]
-
-
-def _data_yaml_text(names: list[str]) -> str:
-    lines = ["names:"]
-    for index, name in enumerate(names):
-        escaped = str(name).replace("\\", "\\\\").replace('"', '\\"')
-        lines.append(f'  {index}: "{escaped}"')
-    lines.append(f"nc: {len(names)}")
-    return "\n".join(lines) + "\n"
-
-
-def _read_detect_class_names(workspace_root: Path) -> dict[int, str]:
-    root = workspace_root.resolve()
-    for relative in (Path("classes.txt"), Path("data.yaml"), Path("detect_dataset") / "data.yaml"):
-        path = (root / relative).resolve()
-        try:
-            _ensure_workspace_child(root, path)
-        except HTTPException:
-            continue
-        if not path.is_file():
-            continue
-        text = path.read_text(encoding="utf-8", errors="replace")
-        names = _parse_classes_txt(text) if path.name == "classes.txt" else _parse_data_yaml_names(text)
-        if names:
-            return names
-    return {}
-
-
-def _parse_classes_txt(text: str) -> dict[int, str]:
-    names: dict[int, str] = {}
-    for index, raw in enumerate(text.splitlines()):
-        name = raw.strip()
-        if name:
-            names[index] = name
-    return names
-
-
-def _parse_data_yaml_names(text: str) -> dict[int, str]:
-    names: dict[int, str] = {}
-    in_names = False
-    for raw in text.splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line == "names:":
-            in_names = True
-            continue
-        if in_names:
-            if raw[:1] not in {" ", "\t"}:
-                break
-            if ":" not in line:
-                continue
-            key, value = line.split(":", 1)
-            try:
-                class_id = int(key.strip())
-            except ValueError:
-                continue
-            names[class_id] = _yaml_scalar(value.strip())
-    return names
-
-
-def _yaml_scalar(value: str) -> str:
-    cleaned = value.split("#", 1)[0].strip()
-    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {"'", '"'}:
-        try:
-            return json.loads(cleaned) if cleaned[0] == '"' else cleaned[1:-1]
-        except json.JSONDecodeError:
-            return cleaned[1:-1]
-    return cleaned
+def _thumb_cache_path(layout: WorkspaceLayout, source_path: Path, *, size: int, quality: int) -> Path:
+    return layout.path("thumbs") / f"{_cache_name(source_path, f'{int(size)}|{int(quality)}')}.jpg"
 
 
 def _ensure_workspace_child(workspace_root: Path, path: Path) -> None:

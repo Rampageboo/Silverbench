@@ -238,6 +238,19 @@ def create_workspace(path: Path | str, *, name: str | None = None, classes: dict
     return layout
 
 
+def label_candidates(image_path: str) -> list[str]:
+    """Where the label of a workspace image (or an exported dataset image) lives."""
+    normalized = str(image_path).replace("\\", "/")
+    path = Path(normalized)
+    candidates = []
+    if normalized.startswith(RELATIVE_PATHS["media"] + "/"):
+        candidates.append(f"{RELATIVE_PATHS['imageLabels']}/{path.stem}.txt")
+    if "/images/" in f"/{normalized}":
+        candidates.append(Path(f"/{normalized}".replace("/images/", "/labels/", 1).lstrip("/")).with_suffix(".txt").as_posix())
+    candidates.append(path.with_suffix(".txt").as_posix())
+    return candidates
+
+
 def layout_payload(layout: WorkspaceLayout) -> dict[str, Any]:
     manifest = layout.read_manifest()
     return {

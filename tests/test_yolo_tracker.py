@@ -23,8 +23,7 @@ class YoloTrackerIoTests(unittest.TestCase):
     def test_label_path_workspace_and_dataset_layouts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            self.assertEqual(label_path_for(root, "image_pool/frame001.jpg"), root / "detect_labels" / "frame001.txt")
-            self.assertEqual(label_path_for(root, "media/frame001.jpg"), root / "detect_labels" / "frame001.txt")
+            self.assertEqual(label_path_for(root, "media/frame001.jpg"), root / "labels" / "images" / "frame001.txt")
             labels_train = root / "labels" / "train"
             labels_train.mkdir(parents=True)
             existing = labels_train / "frame002.txt"
@@ -35,8 +34,8 @@ class YoloTrackerIoTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             image_path = "media/frame003.jpg"
-            label = root / "detect_labels" / "frame003.txt"
-            label.parent.mkdir()
+            label = root / "labels" / "images" / "frame003.txt"
+            label.parent.mkdir(parents=True)
             label.write_text(
                 "4 0.200000 0.200000 0.100000 0.100000\n"
                 "4 0.800000 0.800000 0.100000 0.100000\n",

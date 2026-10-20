@@ -19,6 +19,7 @@ from typing import Any, Iterator
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from backend.app_settings import app_data_dir
 from backend.gallery_metadata import extract_metadata
 
 IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif"})
@@ -53,8 +54,7 @@ class GalleryError(ValueError):
 
 class GalleryLibrary:
     def __init__(self, directory: str | Path | None = None, *, autostart: bool = True):
-        self.directory = Path(directory or os.environ.get("YWB_GALLERY_DIR") or
-                              Path(__file__).resolve().parents[1] / "Sessions" / "gallery").resolve()
+        self.directory = Path(directory or os.environ.get("YWB_GALLERY_DIR") or app_data_dir() / "gallery").resolve()
         self.directory.mkdir(parents=True, exist_ok=True)
         self.thumbnails = self.directory / "thumbnails"
         self.thumbnails.mkdir(exist_ok=True)

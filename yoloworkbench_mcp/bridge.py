@@ -356,10 +356,13 @@ class YoloWorkBenchBridge:
             label="workspace_root",
             kind="directory",
         )
-        result = self.backend.call("openFolder", [str(root), False])
-        if isinstance(result, dict) and not result.get("ok", True):
-            raise BackendError(str(result.get("error") or "RampageWorkbench could not open the workspace."))
-        return root
+        result = self.backend.call("openFolder", [str(root)])
+        if not isinstance(result, dict) or not result.get("ok", True):
+            error = result.get("error") if isinstance(result, dict) else ""
+            raise BackendError(str(error or "RampageWorkbench could not open the workspace."))
+        if result.get("kind") != "workspace":
+            raise BackendError(f"{root} is not a RampageWorkbench workspace (found: {result.get('kind')}).")
+        return Path(str(result["root"]))
 
 
 def _dict_result(result: Any, method: str) -> dict[str, Any]:

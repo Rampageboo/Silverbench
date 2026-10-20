@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .workspace_layout import label_candidates
+
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 
 
@@ -38,22 +40,7 @@ def boxes_to_text(boxes: list[YoloBox]) -> str:
 
 
 def label_path_for(root: Path, image_path: str) -> Path:
-    image_rel = Path(image_path.replace("\\", "/"))
-    stem = image_rel.stem
-    parts = image_rel.parts
-    candidates: list[Path] = []
-    if parts and parts[0] in {"image_pool", "media"}:
-        candidates.append(Path("detect_labels") / f"{stem}.txt")
-    if parts and parts[0] == "images":
-        candidates.append(Path("labels").joinpath(*parts[1:]).with_suffix(".txt"))
-    candidates.extend(
-        [
-            Path("labels") / "train" / f"{stem}.txt",
-            Path("labels") / "val" / f"{stem}.txt",
-            Path("labels") / f"{stem}.txt",
-            image_rel.with_suffix(".txt"),
-        ]
-    )
+    candidates = label_candidates(image_path)
     for candidate in candidates:
         if (root / candidate).is_file():
             return root / candidate

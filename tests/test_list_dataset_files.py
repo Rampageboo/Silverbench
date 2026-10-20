@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.path_access import PathAccess
 from backend.service import BackendService
-from backend.yolo_workspace import list_dataset_files
+from backend.workspace import list_dataset_files
 
 
 class ListDatasetFilesTests(unittest.TestCase):

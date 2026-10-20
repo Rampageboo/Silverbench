@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.path_access import PathAccess
 from backend.service import BackendService
-from backend.yolo_workspace import create_workspace
+from backend.workspace_layout import create_workspace
 
 
 class AutoLabelModelImportTests(unittest.TestCase):
@@ -24,7 +24,7 @@ class AutoLabelModelImportTests(unittest.TestCase):
             registry = json.loads(service.call("readAutoLabelModelRegistry", [str(workspace)]))
 
             self.assertEqual(registry, {})
-            self.assertFalse((workspace / "workspace" / "autolabel_models.json").exists())
+            self.assertFalse((workspace / "models" / "registry.json").exists())
 
     def test_detect_and_classify_best_models_do_not_overwrite_registry_entries(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -68,7 +68,7 @@ class AutoLabelModelImportTests(unittest.TestCase):
                 b"classify model",
             )
 
-            saved = json.loads((workspace / "workspace" / "autolabel_models.json").read_text(encoding="utf-8"))
+            saved = json.loads((workspace / "models" / "registry.json").read_text(encoding="utf-8"))
             self.assertEqual(saved, classify_registry)
 
     def test_read_registry_recovers_existing_workspace_models(self) -> None:
@@ -88,7 +88,7 @@ class AutoLabelModelImportTests(unittest.TestCase):
 
             self.assertEqual(registry["detect"]["activeModel"], "models/autolabel/detect/detect.pt")
             self.assertEqual(registry["classify"]["activeModel"], "models/autolabel/classify/clf.pt")
-            saved = json.loads((workspace / "workspace" / "autolabel_models.json").read_text(encoding="utf-8"))
+            saved = json.loads((workspace / "models" / "registry.json").read_text(encoding="utf-8"))
             self.assertEqual(saved, registry)
 
     def test_read_registry_preserves_existing_active_model_until_changed(self) -> None:
@@ -102,7 +102,7 @@ class AutoLabelModelImportTests(unittest.TestCase):
             other = model_dir / "other.pt"
             selected.write_bytes(b"selected")
             other.write_bytes(b"other")
-            registry_path = workspace / "workspace" / "autolabel_models.json"
+            registry_path = workspace / "models" / "registry.json"
             registry_path.write_text(
                 json.dumps(
                     {

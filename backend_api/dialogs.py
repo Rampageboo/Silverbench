@@ -219,11 +219,12 @@ def open_directory(path: Path) -> bool:
     return True
 
 
-def create_desktop_backend_service(app_dir: Path, session_dir: Path) -> BackendService:
+def create_desktop_backend_service(app_dir: Path, session_dir: Path, settings_dir: Path) -> BackendService:
     return DesktopBackendService(
         PathAccess([session_dir]),
         session_dir,
-        app_settings_dir=app_dir,
+        app_settings_dir=settings_dir,
+        legacy_settings_dir=app_dir,
         choose_directory=choose_directory,
         choose_image_file=choose_image_file,
         choose_image_files=choose_image_files,
