@@ -131,6 +131,34 @@ class ExportTests(WorkspaceTestCase):
         export_dataset(self.layout)
         self.assertFalse(any(root.rglob("b.png")))
 
+    def test_exports_annotated_video_frames(self) -> None:
+        import cv2
+        import numpy as np
+
+        video = self.layout.media / "clip one.mp4"
+        writer = cv2.VideoWriter(str(video), cv2.VideoWriter_fourcc(*"mp4v"), 10, (64, 48))
+        for index in range(20):
+            writer.write(np.full((48, 64, 3), index * 10, dtype=np.uint8))
+        writer.release()
+        frames = {
+            # Reviewed boxes (class by key) + a class: both tasks.
+            "500": {"timestampMs": 500, "tasks": {"detect": {"reviewed": True, "boxes": [{"classKey": "person", "x": 0.5, "y": 0.5, "w": 0.2, "h": 0.2}], "proposals": [{"id": "p", "classId": 0, "x": 0.1, "y": 0.1, "w": 0.1, "h": 0.1}]}, "clf": {"classKey": "night"}}},
+            # Reviewed and empty: a negative detect sample.
+            "1000": {"timestampMs": 1000, "tasks": {"detect": {"reviewed": True, "boxes": []}}},
+            # Unreviewed boxes, no class: not exported.
+            "1500": {"timestampMs": 1500, "tasks": {"detect": {"reviewed": False, "boxes": [{"classId": 0, "x": 0.5, "y": 0.5, "w": 0.1, "h": 0.1}]}}},
+        }
+        write_json(self.layout.path("videoLabels") / "clip one.mp4.json", {"version": 2, "video": {"path": "media/clip one.mp4", "name": "clip one.mp4"}, "frames": frames})
+
+        result = export_dataset(self.layout)
+        detect = self.layout.exports / "dataset" / "detect"
+        self.assertEqual(result["videoFrames"], 2)
+        self.assertEqual(sorted(p.name for p in (detect / "images" / "train").iterdir()), ["clip one_mp4_0000000500.jpg", "clip one_mp4_0000001000.jpg"])
+        self.assertEqual((detect / "labels" / "train" / "clip one_mp4_0000000500.txt").read_text(encoding="utf-8"), "1 0.500000 0.500000 0.200000 0.200000\n")
+        self.assertEqual((detect / "labels" / "train" / "clip one_mp4_0000001000.txt").read_text(encoding="utf-8"), "")
+        self.assertTrue((self.layout.exports / "dataset" / "classify" / "train" / "night" / "clip one_mp4_0000000500.jpg").is_file())
+        self.assertFalse(self.layout.path("frames").exists(), "frames are never stored in the workspace")
+
     def test_refuses_foreign_folder(self) -> None:
         foreign = self.tmp / "mine"
         foreign.mkdir()

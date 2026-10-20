@@ -837,6 +837,8 @@ export type ExportResult = {
   builtFilenames?: string[];
   detectImages?: number;
   clfImages?: number;
+  /** Annotated video timestamps decoded into the export (included in the image counts). */
+  videoFrames?: number;
   labelsPlaced?: number;
   skippedRows?: number;
   warnings?: string[];

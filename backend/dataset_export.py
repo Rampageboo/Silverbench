@@ -7,6 +7,12 @@ exported image also edits the workspace's media), labels are copied from
 ``classes.json``. Each export carries ``rwb-export.json`` recording where it
 came from; a rebuild only ever clears folders that carry that file.
 
+Annotated video timestamps (``labels/videos/*.json``) are decoded here, at export
+time, and written as frames — frames are never stored in the workspace. A
+timestamp goes to detect once its boxes are marked reviewed (an empty reviewed
+frame becomes a negative sample), and to classify as soon as it has a class.
+Video frames go to the train split; the dataset tools can move some to val.
+
 Layout of an export folder::
 
     <export>/
@@ -36,6 +42,7 @@ DEFAULT_EXPORT_NAME = "dataset"
 class ExportStats:
     detect_images: int = 0
     clf_images: int = 0
+    video_frames: int = 0
     labels: int = 0
     skipped: int = 0
     link: bool = False
@@ -101,6 +108,109 @@ def _usable_rows(layout: WorkspaceLayout, filenames: set[str] | None, stats: Exp
     return rows
 
 
+def _video_frame_items(layout: WorkspaceLayout, detect_keys: list[str], stats: ExportStats) -> list[dict[str, Any]]:
+    """One item per exportable video timestamp: where the frame comes from and what it is labelled."""
+    folder = layout.path("videoLabels")
+    items: list[dict[str, Any]] = []
+    for file in sorted(folder.glob("*.json")) if folder.is_dir() else []:
+        try:
+            manifest = json.loads(file.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            stats.warnings.append(f"{file.name}: unreadable video annotation ({error}).")
+            continue
+        video = manifest.get("video") if isinstance(manifest, dict) else None
+        raw = str(video.get("path") or "") if isinstance(video, dict) else ""
+        source = Path(raw) if Path(raw).is_absolute() else layout.root / raw
+        if not raw or not source.is_file():
+            stats.warnings.append(f"{file.name}: video {raw or '(none)'} not found, skipped.")
+            continue
+        prefix = source.name.replace(".", "_")
+        for frame in sorted((manifest.get("frames") or {}).values(), key=lambda item: int(item.get("timestampMs") or 0)):
+            tasks = frame.get("tasks") or {}
+            detect, clf = tasks.get("detect") or {}, tasks.get("clf") or {}
+            ms = int(frame.get("timestampMs") or 0)
+            boxes = None
+            if detect.get("reviewed") and detect.get("enabled") is not False:
+                boxes = []
+                for box in detect.get("boxes") or []:
+                    key = box.get("classKey")
+                    class_id = detect_keys.index(key) if key in detect_keys else box.get("classId")
+                    if class_id is None:
+                        continue
+                    boxes.append((int(class_id), *(float(box[k]) for k in ("x", "y", "w", "h"))))
+            clf_key = str(clf.get("classKey") or "").strip() if clf.get("enabled") is not False else ""
+            if clf_key == JUNK_CLASS:
+                clf_key = ""
+            if boxes is None and not clf_key:
+                continue
+            items.append({"source": source, "seconds": ms / 1000, "name": f"{prefix}_{ms:010d}.jpg", "boxes": boxes, "clf": clf_key})
+    return items
+
+
+def _read_frame(capture: Any, seconds: float) -> Any:
+    import cv2
+
+    fps = capture.get(cv2.CAP_PROP_FPS) or 30
+    capture.set(cv2.CAP_PROP_POS_FRAMES, int(round(seconds * fps)))
+    ok, frame = capture.read()
+    if not ok:
+        capture.set(cv2.CAP_PROP_POS_MSEC, seconds * 1000)
+        ok, frame = capture.read()
+    if not ok or frame is None:
+        raise ValueError("cannot decode a frame at this time")
+    return frame
+
+
+def _write_video_frames(items: list[dict[str, Any]], dirs: dict[str, Path], clf_keys: set[str], stats: ExportStats, step: Callable[[str], None]) -> None:
+    """Decode each video once (its own capture, released afterwards so the file is not left locked)."""
+    import cv2
+
+    by_video: dict[Path, list[dict[str, Any]]] = {}
+    for item in items:
+        by_video.setdefault(item["source"], []).append(item)
+    for source, video_items in by_video.items():
+        capture = cv2.VideoCapture(str(source))
+        try:
+            if not capture.isOpened():
+                stats.warnings.append(f"{source.name}: cannot open video, {len(video_items)} frame(s) skipped.")
+                stats.skipped += len(video_items)
+                for item in video_items:
+                    step(item["name"])
+                continue
+            for item in video_items:
+                try:
+                    ok, encoded = cv2.imencode(".jpg", _read_frame(capture, item["seconds"]), [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+                    if not ok:
+                        raise ValueError("JPEG encoding failed")
+                except Exception as error:  # a truncated video must not stop the export
+                    stats.warnings.append(f"{source.name} @ {item['seconds']:.3f}s: {error}")
+                    stats.skipped += 1
+                    step(item["name"])
+                    continue
+                _place_frame(encoded.tobytes(), item, dirs, clf_keys, stats)
+                step(item["name"])
+        finally:
+            capture.release()
+
+
+def _place_frame(payload: bytes, item: dict[str, Any], dirs: dict[str, Path], clf_keys: set[str], stats: ExportStats) -> None:
+    name = item["name"]
+    if item["boxes"] is not None:
+        (dirs["detect"] / "images" / "train" / name).write_bytes(payload)
+        label = "".join(f"{c} {x:.6f} {y:.6f} {w:.6f} {h:.6f}\n" for c, x, y, w, h in item["boxes"])
+        (dirs["detect"] / "labels" / "train" / f"{Path(name).stem}.txt").write_text(label, encoding="utf-8")
+        stats.detect_images += 1
+        stats.labels += 1
+    if item["clf"]:
+        if item["clf"] not in clf_keys:
+            stats.warnings.append(f"{name}: class '{item['clf']}' is not in classes.json.")
+        target = dirs["classify"] / "train" / item["clf"] / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(payload)
+        stats.clf_images += 1
+    stats.video_frames += 1
+
+
 def _yaml_quote(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
 
@@ -123,8 +233,12 @@ def export_dataset(
     filenames: list[str] | None = None,
     progress: Callable[[int, int, str], None] | None = None,
     link: bool = False,
+    include_videos: bool = True,
 ) -> dict[str, Any]:
-    """Write (or refresh) a YOLO detect + classify dataset from the workspace."""
+    """Write (or refresh) a YOLO detect + classify dataset from the workspace.
+
+    ``filenames`` limits the export to those media images (an incremental update);
+    video frames are only written by a full export."""
     stats = ExportStats(link=link)
     dirs = export_dirs(layout, name, destination)
     _check_export_root(dirs["root"])
@@ -141,7 +255,8 @@ def export_dataset(
         (dirs["detect"] / "images" / split).mkdir(parents=True, exist_ok=True)
         (dirs["detect"] / "labels" / split).mkdir(parents=True, exist_ok=True)
 
-    total = max(1, len(rows))
+    frames = _video_frame_items(layout, [d["key"] for d in detect_defs], stats) if include_videos and allowed is None else []
+    total = max(1, len(rows) + len(frames))
     for index, row in enumerate(rows, start=1):
         name_ = row["filename"]
         split = row["split"]
@@ -162,6 +277,15 @@ def export_dataset(
                 stats.clf_images += 1
         if progress:
             progress(index, total, name_)
+    done = len(rows)
+
+    def step(label: str) -> None:
+        nonlocal done
+        done += 1
+        if progress:
+            progress(done, total, label)
+
+    _write_video_frames(frames, dirs, clf_keys, stats, step)
 
     _write_detect_metadata(dirs["detect"], detect_defs)
     manifest = {
@@ -171,6 +295,7 @@ def export_dataset(
         "workspace": {"root": str(layout.root), "id": layout.read_manifest().get("id")},
         "detectImages": stats.detect_images,
         "classifyImages": stats.clf_images,
+        "videoFrames": stats.video_frames,
     }
     dirs["root"].mkdir(parents=True, exist_ok=True)
     (dirs["root"] / "rwb-export.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -183,6 +308,7 @@ def export_dataset(
         "clfDataset": str(dirs["classify"]),
         "detectImages": stats.detect_images,
         "clfImages": stats.clf_images,
+        "videoFrames": stats.video_frames,
         "labelsPlaced": stats.labels,
         "skippedRows": stats.skipped,
         "warnings": stats.warnings[:20],

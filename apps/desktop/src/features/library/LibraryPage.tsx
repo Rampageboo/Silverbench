@@ -62,8 +62,9 @@ function ExportCard({ root }: { root: string }) {
         <div>
           <div className="ui-card__title">Dataset export</div>
           <div className="ui-field__hint">
-            Writes a YOLO detect + classify dataset to exports/dataset from the current labels and classes. Edit the
-            workspace, then export again — the export is rebuilt each time.
+            Writes a YOLO detect + classify dataset to exports/dataset from the current labels and classes, decoding
+            annotated video timestamps into frames. Edit the workspace, then export again — the export is rebuilt each
+            time.
           </div>
         </div>
         <button type="button" onClick={() => void exportDataset()} disabled={progress !== null}>
@@ -73,7 +74,8 @@ function ExportCard({ root }: { root: string }) {
       {result ? (
         <div className="ov-export">
           <span>
-            {result.detectImages ?? 0} detect images · {result.clfImages ?? 0} classify images ·{" "}
+            {result.detectImages ?? 0} detect images · {result.clfImages ?? 0} classify images
+            {result.videoFrames ? ` (incl. ${result.videoFrames} video frames)` : ""} ·{" "}
             {result.labelsPlaced ?? 0} labels
             {result.skippedRows ? ` · ${result.skippedRows} skipped` : ""}
           </span>

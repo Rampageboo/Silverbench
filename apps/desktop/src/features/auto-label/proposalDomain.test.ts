@@ -30,7 +30,6 @@ import {
   frameAnnotationAt,
   getDetectTask
 } from "../video/videoAnnotationDomain";
-import { planVideoExport } from "../video/videoExportPlanner";
 import type { LabelClass } from "../../api";
 
 // ---------------------------------------------------------------------------
@@ -159,45 +158,6 @@ describe("Phase 4C archived detect class filtering", () => {
 
 // ---------------------------------------------------------------------------
 // TEST 5: proposal is never exported
-// ---------------------------------------------------------------------------
-
-describe("Task 5 — proposal is never exported", () => {
-  it("planVideoExport excludes proposals from export items", () => {
-    const proposal = makeProposal("p1");
-    let manifest = createVideoAnnotationManifest(video);
-    manifest = addVideoProposals(manifest, video, 5.0, [proposal]);
-    // No accepted boxes — only proposals exist
-    const plan = planVideoExport(manifest, {
-      exportRoot: "exports",
-      classes,
-      detectPolicy: "has-boxes"
-    });
-    expect(plan.items).toHaveLength(0);
-  });
-
-  it("planVideoExport includes only real boxes, not proposals", () => {
-    const proposal = makeProposal("p1");
-    let manifest = createVideoAnnotationManifest(video);
-    manifest = addVideoProposals(manifest, video, 5.0, [proposal]);
-    manifest = addVideoAutoBoxes(manifest, video, 5.0, [
-      { classId: 0, x: 0.5, y: 0.5, w: 0.2, h: 0.2, origin: "auto" }
-    ]);
-    manifest = updateVideoDetectBoxes(manifest, video, 5.0,
-      getDetectTask(frameAnnotationAt(manifest, 5.0))!.boxes, true
-    );
-    const plan = planVideoExport(manifest, { exportRoot: "exports", classes, detectPolicy: "reviewed" });
-    expect(plan.items).toHaveLength(1);
-    // Only 1 detect item (the real box); proposals are absent
-    const item = plan.items[0];
-    expect(item.task).toBe("detect");
-    if (item.task === "detect") {
-      expect(item.yoloBoxes).toHaveLength(1);
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// TEST 6: materializing proposal moves it into boxes and removes from proposals
 // ---------------------------------------------------------------------------
 
 describe("Task 6 — materializing proposal moves to boxes, removes from proposals", () => {
@@ -336,46 +296,6 @@ describe("Task 11 — duplicate prediction skipped when IoU >= threshold", () =>
 
 // ---------------------------------------------------------------------------
 // TEST 12: export reviewed sample includes accepted boxes only
-// ---------------------------------------------------------------------------
-
-describe("Task 12 — export reviewed sample includes accepted boxes only", () => {
-  it("exports a reviewed timestamp's boxes in the YOLO plan", () => {
-    let manifest = createVideoAnnotationManifest(video);
-    manifest = updateVideoDetectBoxes(manifest, video, 5.0, [box], true);
-    const plan = planVideoExport(manifest, {
-      exportRoot: "exports",
-      classes,
-      detectPolicy: "reviewed"
-    });
-    expect(plan.items).toHaveLength(1);
-    const item = plan.items[0];
-    if (item.task === "detect") {
-      expect(item.yoloBoxes).toHaveLength(1);
-      expect(item.yoloBoxes[0].classId).toBe(0);
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// TEST 13: export unreviewed sample is skipped by default
-// ---------------------------------------------------------------------------
-
-describe("Task 13 — export unreviewed sample is skipped by default (reviewed policy)", () => {
-  it("skips unreviewed timestamps when detectPolicy is reviewed", () => {
-    let manifest = createVideoAnnotationManifest(video);
-    // reviewed=false
-    manifest = updateVideoDetectBoxes(manifest, video, 5.0, [box], false);
-    const plan = planVideoExport(manifest, {
-      exportRoot: "exports",
-      classes,
-      detectPolicy: "reviewed"
-    });
-    expect(plan.items).toHaveLength(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// TEST 14: review queue skips reviewed/junk items
 // ---------------------------------------------------------------------------
 
 describe("Task 14 — review queue skips reviewed and junk items", () => {
