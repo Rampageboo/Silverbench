@@ -188,4 +188,58 @@
     font-size: 12px;
     color: var(--muted);
   }
+
+  .video-mode-panel {
+    display: grid;
+    gap: 7px;
+    padding: 9px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-subtle);
+  }
+
+  .video-mode-switch {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .video-output-path {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 7px 9px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .video-output-path span {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .video-output-required {
+    padding: 7px 9px;
+    border: 1px dashed var(--line);
+    border-radius: 7px;
+  }
+
+  .video-control-stack .video-dedup-toggle > span {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-height: var(--h-control);
+  }
+
+  .video-control-stack .video-dedup-toggle input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+    padding: 0;
+  }
 }

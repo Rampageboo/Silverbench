@@ -87,6 +87,7 @@ export type BackendMethod =
   | "deleteImages"
   | "batchCropImages"
   | "batchCropFiles"
+  | "openDirectory"
   | "openFolder"
   | "openDirectory"
   | "moveValBackToTrain"

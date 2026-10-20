@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import cv2
+import numpy as np
 
 from .dataset_merge import VIDEO_EXTENSIONS, unique_path
 
@@ -244,6 +245,27 @@ def save_video_frame(path: Path, output_dir: Path, seconds: float, prefix: str, 
     return str(write_frame(frame, output_dir, screenshot_filename(prefix, path.name, seconds, None, image_format), image_format))
 
 
+def _frame_signature(frame):
+    color = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR) if frame.ndim == 2 else frame
+    lab = cv2.cvtColor(color, cv2.COLOR_BGR2LAB)
+    resized = cv2.resize(lab, (64, 64), interpolation=cv2.INTER_AREA)
+    return cv2.GaussianBlur(resized, (3, 3), 0)
+
+
+def _signature_similarity(signature, reference_signature) -> float:
+    difference = cv2.absdiff(signature, reference_signature).astype(np.float32)
+    channel_difference = np.mean(difference, axis=(0, 1), dtype=np.float64) / 255.0
+    luminance_similarity = 1.0 - channel_difference[0]
+    chroma_similarity = 1.0 - (channel_difference[1] + channel_difference[2]) / 2.0
+    score = luminance_similarity * (0.70 + 0.30 * chroma_similarity)
+    return max(0.0, min(1.0, float(score)))
+
+
+def frame_similarity(frame, reference) -> float:
+    """Return a spatial Lab-color similarity score in [0, 1]."""
+    return _signature_similarity(_frame_signature(frame), _frame_signature(reference))
+
+
 def capture_video_screenshots(
     path: Path,
     output_dir: Path,
@@ -251,8 +273,9 @@ def capture_video_screenshots(
     interval: float,
     prefix: str = "",
     image_format: str = "jpg",
-    progress_callback: Callable[[str], None] | None = None,
+    progress_callback: Callable[[bool, str], None] | None = None,
     cancel_event: Any | None = None,
+    similarity_threshold: float | None = None,
 ) -> dict:
     if interval <= 0:
         raise ValueError("Batch interval must be greater than 0.")
@@ -265,7 +288,11 @@ def capture_video_screenshots(
     output_dir.mkdir(parents=True, exist_ok=True)
     saved: list[str] = []
     errors: list[str] = []
+    processed = 0
+    skipped = 0
     sequence = 0
+    reference_signature = None
+    threshold = None if similarity_threshold is None else max(0.0, min(1.0, float(similarity_threshold)))
     try:
         targets = capture_targets(segments, interval, fps, max_frame_index)
         target_index = 0
@@ -273,7 +300,15 @@ def capture_video_screenshots(
         max_sequential_gap = max(90, int(round(fps * 4)))
         while target_index < len(targets):
             if cancel_event is not None and cancel_event.is_set():
-                return {"video": str(path), "saved": len(saved), "files": saved, "errors": errors, "cancelled": True}
+                return {
+                    "video": str(path),
+                    "saved": len(saved),
+                    "processed": processed,
+                    "skipped": skipped,
+                    "files": saved,
+                    "errors": errors,
+                    "cancelled": True,
+                }
             frame_index, seconds, segment_index = targets[target_index]
             if current_frame_index < 0 or frame_index - current_frame_index > max_sequential_gap:
                 cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
@@ -287,25 +322,47 @@ def capture_video_screenshots(
                 if current_frame_index >= frame_index:
                     while target_index < len(targets) and targets[target_index][0] <= current_frame_index:
                         _, target_seconds, target_segment_index = targets[target_index]
-                        sequence += 1
-                        filename = screenshot_filename(
-                            prefix,
-                            path.name,
-                            target_seconds,
-                            target_segment_index,
-                            image_format,
-                            sequence,
+                        processed += 1
+                        detail = f"{path.name} @ {format_timestamp(target_seconds)}"
+                        signature = _frame_signature(frame) if threshold is not None else None
+                        is_similar = (
+                            threshold is not None
+                            and reference_signature is not None
+                            and _signature_similarity(signature, reference_signature) >= threshold
                         )
-                        saved.append(str(write_frame(frame, output_dir, filename, image_format)))
-                        if progress_callback:
-                            progress_callback(f"{path.name} @ {format_timestamp(target_seconds)}")
+                        if is_similar:
+                            skipped += 1
+                            if progress_callback:
+                                progress_callback(False, f"Skipped similar frame: {detail}")
+                        else:
+                            sequence += 1
+                            filename = screenshot_filename(
+                                prefix,
+                                path.name,
+                                target_seconds,
+                                target_segment_index,
+                                image_format,
+                                sequence,
+                            )
+                            saved.append(str(write_frame(frame, output_dir, filename, image_format)))
+                            reference_signature = signature
+                            if progress_callback:
+                                progress_callback(True, detail)
                         target_index += 1
                     break
                 current_frame_index += 1
             current_frame_index += 1
     finally:
         cap.release()
-    return {"video": str(path), "saved": len(saved), "files": saved, "errors": errors, "targetCount": len(targets)}
+    return {
+        "video": str(path),
+        "saved": len(saved),
+        "processed": processed,
+        "skipped": skipped,
+        "files": saved,
+        "errors": errors,
+        "targetCount": len(targets),
+    }
 
 
 def _segment_interval(segment: dict[str, Any], fallback_interval: float) -> float:
@@ -348,21 +405,36 @@ def capture_video_screenshot_jobs(
     interval: float,
     prefix: str,
     image_format: str,
-    progress_callback: Callable[[int, str], None] | None = None,
+    progress_callback: Callable[[int, int, int, str], None] | None = None,
     cancel_event: Any | None = None,
+    similarity_threshold: float | None = None,
 ) -> dict:
     total_saved = 0
+    total_processed = 0
+    total_skipped = 0
     results = []
     errors = []
     for job in jobs:
         if cancel_event is not None and cancel_event.is_set():
-            return {"saved": total_saved, "videos": len(jobs), "results": results, "errors": errors, "cancelled": True}
+            return {
+                "saved": total_saved,
+                "processed": total_processed,
+                "skipped": total_skipped,
+                "videos": len(jobs),
+                "results": results,
+                "errors": errors,
+                "cancelled": True,
+            }
         try:
-            def on_frame(detail: str) -> None:
-                nonlocal total_saved
-                total_saved += 1
+            def on_frame(was_saved: bool, detail: str) -> None:
+                nonlocal total_saved, total_processed, total_skipped
+                total_processed += 1
+                if was_saved:
+                    total_saved += 1
+                else:
+                    total_skipped += 1
                 if progress_callback:
-                    progress_callback(total_saved, detail)
+                    progress_callback(total_processed, total_saved, total_skipped, detail)
 
             job_prefix = str(job.get("prefix") or prefix or "")
             result = capture_video_screenshots(
@@ -374,13 +446,21 @@ def capture_video_screenshot_jobs(
                 image_format,
                 on_frame,
                 cancel_event,
+                similarity_threshold,
             )
             results.append(result)
             errors.extend(result["errors"])
         except Exception as error:
             errors.append(str(error))
             results.append({"video": str(job.get("path") or ""), "saved": 0, "files": [], "errors": [str(error)]})
-    return {"saved": total_saved, "videos": len(jobs), "results": results, "errors": errors}
+    return {
+        "saved": total_saved,
+        "processed": total_processed,
+        "skipped": total_skipped,
+        "videos": len(jobs),
+        "results": results,
+        "errors": errors,
+    }
 
 
 def write_frame(frame, output_dir: Path, filename: str, image_format: str = "jpg") -> Path:

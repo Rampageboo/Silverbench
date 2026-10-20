@@ -274,6 +274,7 @@ class BackendService:
                     float(args[3]),
                     str(args[4]) if len(args) > 4 else "",
                     str(args[5]) if len(args) > 5 else "jpg",
+                    similarity_threshold=None if len(args) <= 6 or not args[6] else float(args[7]) if len(args) > 7 else 0.98,
                 ),
                 ensure_ascii=False,
             )
@@ -289,6 +290,7 @@ class BackendService:
                     float(args[2]),
                     str(args[3]) if len(args) > 3 else "",
                     str(args[4]) if len(args) > 4 else "jpg",
+                    similarity_threshold=None if len(args) <= 5 or not args[5] else float(args[6]) if len(args) > 6 else 0.98,
                 ),
                 ensure_ascii=False,
             )
@@ -1040,9 +1042,13 @@ class BackendService:
         prefix = str(args[3]) if len(args) > 3 else ""
         image_format = str(args[4]) if len(args) > 4 else "jpg"
         total = int(args[5]) if len(args) > 5 else 0
+        deduplicate = bool(args[6]) if len(args) > 6 else False
+        similarity_threshold = float(args[7]) if deduplicate and len(args) > 7 else None
         state: dict[str, Any] = {
             "status": "running",
             "saved": 0,
+            "processed": 0,
+            "skipped": 0,
             "total": total,
             "detail": "Starting export...",
             "errors": [],
@@ -1050,18 +1056,32 @@ class BackendService:
         }
         job_id, cancel_event = self._capture_jobs.create(state, cancelable=True)
 
-        def update(saved: int, detail: str) -> None:
-            self._capture_jobs.update(job_id, {"saved": saved, "detail": detail})
+        def update(processed: int, saved: int, skipped: int, detail: str) -> None:
+            self._capture_jobs.update(
+                job_id,
+                {"processed": processed, "saved": saved, "skipped": skipped, "detail": detail},
+            )
 
         def run() -> None:
             try:
-                result = capture_video_screenshot_jobs(jobs, output_dir, interval, prefix, image_format, update, cancel_event)
+                result = capture_video_screenshot_jobs(
+                    jobs,
+                    output_dir,
+                    interval,
+                    prefix,
+                    image_format,
+                    update,
+                    cancel_event,
+                    similarity_threshold,
+                )
                 current = self._capture_jobs.snapshot(job_id)
                 self._capture_jobs.finish(
                     job_id,
                     {
                         "status": "cancelled" if result.get("cancelled") else "done",
                         "saved": int(result.get("saved") or current["saved"]),
+                        "processed": int(result.get("processed") or current["processed"]),
+                        "skipped": int(result.get("skipped") or current["skipped"]),
                         "errors": result.get("errors") or [],
                         "result": result,
                         "detail": "Cancelled." if result.get("cancelled") else "Done.",

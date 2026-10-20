@@ -15,6 +15,7 @@ import {
   getVideoFrameBase64,
   listWorkspaceVideos,
   loadVideoWorkspace,
+  openVideoOutputFolder,
   saveVideoFrame,
   startCaptureJobs,
   type CaptureJob,
@@ -29,6 +30,7 @@ import {
   type VideoSegment as ManifestSegment
 } from "./videoSegmentApi";
 import { createVideoSegment } from "./videoSegmentDomain";
+import { commitNumberDraft, updateVideoCaptureSegment } from "./videoCaptureDomain";
 import "./video.css";
 
 type Props = {
@@ -38,6 +40,7 @@ type Props = {
 
 type ImageFormat = "jpg" | "png";
 type PageTab = "segments" | "export";
+type VideoMode = "quick" | "workspace";
 
 const PREVIEW_DEBOUNCE_MS = 200;
 
@@ -105,6 +108,84 @@ function frameCount(segments: CaptureSegment[]) {
 function durationLabel(seg: ManifestSegment) {
   const dur = Math.max(0, seg.endMs - seg.startMs);
   return formatClock(dur / 1000);
+}
+
+type VideoModeSwitchProps = {
+  mode: VideoMode;
+  disabled: boolean;
+  onChange: (mode: VideoMode) => void;
+};
+
+function VideoModeSwitch({ mode, disabled, onChange }: VideoModeSwitchProps) {
+  return (
+    <div className="video-mode-panel">
+      <div className="video-mode-switch" role="group" aria-label="Video export mode">
+        <button
+          type="button"
+          className={mode === "quick" ? "primary" : undefined}
+          onClick={() => onChange("quick")}
+          disabled={disabled}
+        >
+          Quick Export
+        </button>
+        <button
+          type="button"
+          className={mode === "workspace" ? "primary" : undefined}
+          onClick={() => onChange("workspace")}
+          disabled={disabled}
+        >
+          Workspace Project
+        </button>
+      </div>
+      <div className="hint">
+        {mode === "quick"
+          ? "Choose videos and an output folder directly. No workspace is required."
+          : "Load workspace media, save reusable segments, and default output to the image pool."}
+      </div>
+    </div>
+  );
+}
+
+type CommittedNumberInputProps = {
+  value: number;
+  min: number;
+  max?: number;
+  step: number;
+  disabled: boolean;
+  onCommit: (value: number) => void;
+};
+
+function CommittedNumberInput({ value, min, max, step, disabled, onCommit }: CommittedNumberInputProps) {
+  const [draft, setDraft] = useState(String(value));
+  const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    if (!editing) setDraft(String(value));
+  }, [editing, value]);
+
+  function commit() {
+    const next = commitNumberDraft(draft, value, min, max);
+    setEditing(false);
+    setDraft(String(next));
+    if (next !== value) onCommit(next);
+  }
+
+  return (
+    <input
+      type="number"
+      step={step}
+      min={min}
+      max={max}
+      value={draft}
+      disabled={disabled}
+      onFocus={() => setEditing(true)}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+      }}
+    />
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -310,6 +391,8 @@ function SegmentsTab({
 // ---------------------------------------------------------------------------
 
 type ExportTabProps = {
+  mode: VideoMode;
+  onModeChange: (mode: VideoMode) => void;
   current: VideoItem | null;
   scrubTime: number;
   setScrubTime: (t: number) => void;
@@ -319,6 +402,10 @@ type ExportTabProps = {
   previewBase64: string;
   format: ImageFormat;
   setFormat: (f: ImageFormat) => void;
+  deduplicateSimilar: boolean;
+  setDeduplicateSimilar: (value: boolean) => void;
+  similarityPercent: number;
+  setSimilarityPercent: (value: number) => void;
   videos: VideoItem[];
   currentIndex: number;
   outputRoot: string;
@@ -333,7 +420,9 @@ type ExportTabProps = {
   onAddVideos: () => void;
   onRemoveVideo: (index: number) => void;
   onSelectVideo: (index: number) => void;
+  onUpdateCaptureSegment: (segmentIndex: number, patch: Partial<CaptureSegment>) => void;
   onChooseOutput: () => void;
+  onOpenOutput: () => void;
   onCaptureFrame: () => void;
   onExportVideos: (scope: "current" | "all") => void;
   onCancelJob: () => void;
@@ -341,6 +430,8 @@ type ExportTabProps = {
 };
 
 function ExportTab({
+  mode,
+  onModeChange,
   current,
   scrubTime,
   setScrubTime,
@@ -350,6 +441,10 @@ function ExportTab({
   previewBase64,
   format,
   setFormat,
+  deduplicateSimilar,
+  setDeduplicateSimilar,
+  similarityPercent,
+  setSimilarityPercent,
   videos,
   currentIndex,
   outputRoot,
@@ -364,7 +459,9 @@ function ExportTab({
   onAddVideos,
   onRemoveVideo,
   onSelectVideo,
+  onUpdateCaptureSegment,
   onChooseOutput,
+  onOpenOutput,
   onCaptureFrame,
   onExportVideos,
   onCancelJob,
@@ -427,33 +524,34 @@ function ExportTab({
               <div className="train-grid" key={index} style={{ marginTop: 8 }}>
                 <label>
                   Start
-                  <input
-                    type="number"
-                    step="0.001"
+                  <CommittedNumberInput
+                    step={0.001}
+                    min={0}
+                    max={duration}
                     value={segment.start}
                     disabled={running}
-                    readOnly
+                    onCommit={(value) => onUpdateCaptureSegment(index, { start: value })}
                   />
                 </label>
                 <label>
                   End
-                  <input
-                    type="number"
-                    step="0.001"
+                  <CommittedNumberInput
+                    step={0.001}
+                    min={0}
+                    max={duration}
                     value={segment.end}
                     disabled={running}
-                    readOnly
+                    onCommit={(value) => onUpdateCaptureSegment(index, { end: value })}
                   />
                 </label>
                 <label>
                   Interval (s)
-                  <input
-                    type="number"
-                    step="0.001"
-                    min="0.001"
+                  <CommittedNumberInput
+                    step={0.001}
+                    min={0.001}
                     value={segment.interval}
                     disabled={running}
-                    readOnly
+                    onCommit={(value) => onUpdateCaptureSegment(index, { interval: value })}
                   />
                 </label>
                 <div className="row" style={{ alignItems: "end" }}>
@@ -472,10 +570,13 @@ function ExportTab({
           <span className="status">{videos.length} videos</span>
         </div>
         <div className="panel-body video-control-stack">
+          <VideoModeSwitch mode={mode} disabled={running} onChange={onModeChange} />
           <div className="row workspace-toolbar">
-            <button className="primary" type="button" onClick={onOpenWorkspace} disabled={running}>
-              Open Workspace
-            </button>
+            {mode === "workspace" ? (
+              <button type="button" onClick={onOpenWorkspace} disabled={running}>
+                Open Workspace
+              </button>
+            ) : null}
             <button className="primary" type="button" onClick={onAddVideos} disabled={running}>
               Add Video
             </button>
@@ -483,7 +584,14 @@ function ExportTab({
               Output Folder
             </button>
           </div>
-          {outputRoot ? <div className="video-time">{outputRoot}</div> : null}
+          {outputRoot ? (
+            <div className="video-output-path">
+              <span>{outputRoot}</span>
+              <button type="button" onClick={onOpenOutput} disabled={running}>Open</button>
+            </div>
+          ) : (
+            <div className="hint video-output-required">Choose an output folder to enable export.</div>
+          )}
           <div className="video-list">
             {videos.length ? (
               videos.map((video, index) => (
@@ -511,7 +619,7 @@ function ExportTab({
                 </div>
               ))
             ) : (
-              <div className="empty">Drop a video file or folder.</div>
+              <div className="empty">Add one or more videos to begin.</div>
             )}
           </div>
           <div className="video-time">
@@ -524,7 +632,7 @@ function ExportTab({
             className="primary"
             type="button"
             onClick={onCaptureFrame}
-            disabled={!current || running}
+            disabled={!current || !outputRoot || running}
           >
             Capture Current Frame
           </button>
@@ -550,21 +658,46 @@ function ExportTab({
               </select>
             </label>
           </div>
+          <div className="video-inline-grid">
+            <label className="video-dedup-toggle">
+              <span>
+                <input
+                  type="checkbox"
+                  checked={deduplicateSimilar}
+                  onChange={(event) => setDeduplicateSimilar(event.target.checked)}
+                  disabled={running}
+                />{" "}
+                Remove similar frames
+              </span>
+            </label>
+            <label>
+              Similarity threshold (%)
+              <CommittedNumberInput
+                min={80}
+                max={100}
+                step={0.5}
+                value={similarityPercent}
+                disabled={running || !deduplicateSimilar}
+                onCommit={setSimilarityPercent}
+              />
+            </label>
+          </div>
           <div className="hint">
-            Export naming: video_seg01_000001_timestamp.jpg. Each video is numbered independently.
+            Interval controls which frames are sampled. Similarity removal is independent and only decides whether each sampled frame is written.
+            Export naming: video_seg01_000001_timestamp.png. Each video is numbered independently.
           </div>
           <div className="row">
             <button
               type="button"
               onClick={() => onExportVideos("current")}
-              disabled={!current || running}
+              disabled={!current || !outputRoot || running}
             >
               Capture Segments
             </button>
             <button
               type="button"
               onClick={() => onExportVideos("all")}
-              disabled={!videos.length || running}
+              disabled={!videos.length || !outputRoot || running}
             >
               Export All Videos
             </button>
@@ -575,12 +708,14 @@ function ExportTab({
           <JobStatusPanel
             visible={running || !!job}
             running={running}
-            done={job?.saved || 0}
+            done={job?.processed ?? job?.saved ?? 0}
             total={job?.total || totalFrames || 1}
             detail={status}
           />
           <div className="hint">
-            Add or drop a video, then capture screenshots. With a workspace open, output defaults to media.
+            {mode === "quick"
+              ? "Quick Export uses only the selected video and output paths; it does not create or modify a workspace."
+              : "Workspace Project keeps segment manifests connected to Video Label and defaults output to the workspace image pool."}
           </div>
           <LogPanel>{log}</LogPanel>
         </div>
@@ -598,22 +733,36 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
   const { showToast } = useToast();
   const runWithConfirm = useRunWithConfirm();
 
-  // Shared video state
-  const [videos, setVideos] = useState<VideoItem[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(-1);
+  // Quick Export and Workspace Project intentionally keep separate sessions.
+  const [mode, setMode] = useState<VideoMode>("quick");
+  const [quickVideos, setQuickVideos] = useState<VideoItem[]>([]);
+  const [workspaceVideos, setWorkspaceVideos] = useState<VideoItem[]>([]);
+  const [quickCurrentIndex, setQuickCurrentIndex] = useState(-1);
+  const [workspaceCurrentIndex, setWorkspaceCurrentIndex] = useState(-1);
+  const [quickOutputRoot, setQuickOutputRoot] = useState("");
+  const [workspaceOutputRoot, setWorkspaceOutputRoot] = useState("");
+  const workspaceOutputOwnerRef = useRef("");
+  const loadedWorkspaceRootRef = useRef("");
+  const videos = mode === "quick" ? quickVideos : workspaceVideos;
+  const setVideos = mode === "quick" ? setQuickVideos : setWorkspaceVideos;
+  const currentIndex = mode === "quick" ? quickCurrentIndex : workspaceCurrentIndex;
+  const setCurrentIndex = mode === "quick" ? setQuickCurrentIndex : setWorkspaceCurrentIndex;
+  const outputRoot = mode === "quick" ? quickOutputRoot : workspaceOutputRoot;
+  const setOutputRoot = mode === "quick" ? setQuickOutputRoot : setWorkspaceOutputRoot;
 
   // Preview state
   const [scrubTime, setScrubTime] = useState(0);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [previewBase64, setPreviewBase64] = useState("");
   const [pending, setPending] = useState(false);
-  const [format, setFormat] = useState<ImageFormat>("jpg");
+  const [format, setFormat] = useState<ImageFormat>("png");
+  const [deduplicateSimilar, setDeduplicateSimilar] = useState(true);
+  const [similarityPercent, setSimilarityPercent] = useState(98);
   const previewRequestIdRef = useRef(0);
 
-  // Workspace / export state
-  const [outputRoot, setOutputRoot] = useState("");
+  // Export state
   const [prefix, setPrefix] = useState("");
-  const [status, setStatus] = useState("Open or drop a video.");
+  const [status, setStatus] = useState("Add a video to begin.");
   const [log, setLog] = useState("Ready.");
   const [job, setJob] = useState<CaptureJob | null>(null);
 
@@ -622,7 +771,7 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
   const [saving, setSaving] = useState(false);
 
   // Page tab
-  const [pageTab, setPageTab] = useState<PageTab>("segments");
+  const [pageTab, setPageTab] = useState<PageTab>("export");
 
   const debouncedScrubTime = useDebouncedValue(scrubTime, isScrubbing ? PREVIEW_DEBOUNCE_MS : 0);
 
@@ -636,27 +785,26 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
     async (options: { replace?: boolean; silent?: boolean } = {}) => {
       const root = workspaceRoot.trim();
       if (!root) {
-        setVideos([]);
-        setCurrentIndex(-1);
-        return;
+        setWorkspaceVideos([]);
+        setWorkspaceCurrentIndex(-1);
+        return [];
       }
       try {
         const workspaceVideos = (await listWorkspaceVideos(root))
           .filter((item) => item.ok !== false && item.path)
           .map(normalizeVideo);
-        setVideos((items) => options.replace ? workspaceVideos : mergeVideoItems(items, workspaceVideos));
-        setCurrentIndex((index) => {
+        setWorkspaceVideos((items) => options.replace ? workspaceVideos : mergeVideoItems(items, workspaceVideos));
+        setWorkspaceCurrentIndex((index) => {
           if (options.replace) {
             if (!workspaceVideos.length) return -1;
             return index >= 0 ? Math.min(index, workspaceVideos.length - 1) : 0;
           }
           return index >= 0 ? index : workspaceVideos.length ? 0 : -1;
         });
-        if (!options.silent && workspaceVideos.length) {
-          setStatus(`Loaded ${workspaceVideos.length} workspace video(s) from media.`);
-        }
+        return workspaceVideos;
       } catch (err) {
         if (!options.silent) showError(err);
+        return [];
       }
     },
     [showError, workspaceRoot]
@@ -671,6 +819,10 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
 
   // Load workspace info on mount / workspace change
   useEffect(() => {
+    if (mode === "quick") {
+      onReady?.();
+      return;
+    }
     let cancelled = false;
     async function load() {
       if (!workspaceRoot.trim()) {
@@ -680,9 +832,16 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
       try {
         const info = await loadVideoWorkspace(workspaceRoot);
         if (cancelled) return;
-        if (!outputRoot && info.imagePool) setOutputRoot(info.imagePool);
-        setStatus(`Workspace: ${info.name || info.root}`);
-        await loadWorkspaceVideos({ replace: true, silent: true });
+        const workspaceChanged = loadedWorkspaceRootRef.current !== workspaceRoot;
+        loadedWorkspaceRootRef.current = workspaceRoot;
+        if (workspaceOutputOwnerRef.current !== workspaceRoot) {
+          workspaceOutputOwnerRef.current = workspaceRoot;
+          setWorkspaceOutputRoot(info.imagePool || "");
+        }
+        const loaded = await loadWorkspaceVideos({ replace: workspaceChanged, silent: true });
+        if (cancelled) return;
+        if (workspaceChanged) setPrefix(loaded[0] ? fileStem(loaded[0].name) : "");
+        setStatus(`Workspace: ${info.name || info.root} · ${loaded.length} video(s)`);
       } catch (err) {
         if (!cancelled) showError(err);
       } finally {
@@ -691,10 +850,10 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
     }
     void load();
     return () => { cancelled = true; };
-  }, [workspaceRoot, outputRoot, onReady, showError, loadWorkspaceVideos]);
+  }, [mode, workspaceRoot, onReady, showError, loadWorkspaceVideos]);
 
   useEffect(() => {
-    if (!workspaceRoot.trim()) return;
+    if (mode !== "workspace" || !workspaceRoot.trim()) return;
     const onMediaChanged = (event: Event) => {
       if (!isWorkspaceMediaChangedEvent(event)) return;
       if (!isSameWorkspaceRoot(event.detail.workspaceRoot, workspaceRoot)) return;
@@ -702,11 +861,11 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
     };
     window.addEventListener(WORKSPACE_MEDIA_CHANGED_EVENT, onMediaChanged);
     return () => window.removeEventListener(WORKSPACE_MEDIA_CHANGED_EVENT, onMediaChanged);
-  }, [loadWorkspaceVideos, workspaceRoot]);
+  }, [loadWorkspaceVideos, mode, workspaceRoot]);
 
   // Load segment manifest when the selected video changes
   useEffect(() => {
-    if (!current?.path || !workspaceRoot.trim()) {
+    if (mode !== "workspace" || !current?.path || !workspaceRoot.trim()) {
       setManifest(null);
       return;
     }
@@ -716,7 +875,7 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
       .then((m) => { if (!cancelled) setManifest(m); })
       .catch((err) => { if (!cancelled) showError(err); });
     return () => { cancelled = true; };
-  }, [current?.path, current?.duration, workspaceRoot, showError]);
+  }, [mode, current?.path, current?.duration, workspaceRoot, showError]);
 
   // Fetch frame preview
   useEffect(() => {
@@ -742,12 +901,16 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
 
   const updateCaptureJobState = useCallback((next: CaptureJob) => {
     setJob(next);
-    setStatus(`${next.status}: ${next.saved || 0}/${next.total || totalFrames}`);
+    const processed = next.processed ?? next.saved ?? 0;
+    const summary = next.skipped ? `, saved ${next.saved || 0}, skipped ${next.skipped}` : "";
+    setStatus(`${next.status}: ${processed}/${next.total || totalFrames}${summary}`);
     setLog(JSON.stringify(next, null, 2));
   }, [totalFrames]);
 
   const notifyCaptureJobTerminal = useCallback((next: CaptureJob) => {
-    if (next.status !== "running") showToast(`Video export ${next.status}.`);
+    if (next.status !== "running") {
+      showToast(`Video export ${next.status}: saved ${next.saved || 0}, skipped ${next.skipped || 0}.`);
+    }
   }, [showToast]);
 
   // Poll running export job
@@ -763,6 +926,27 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
   // ---------------------------------------------------------------------------
   // Video list handlers
   // ---------------------------------------------------------------------------
+
+  function changeMode(nextMode: VideoMode) {
+    if (running || nextMode === mode) return;
+    const nextVideos = nextMode === "quick" ? quickVideos : workspaceVideos;
+    const nextIndex = nextMode === "quick" ? quickCurrentIndex : workspaceCurrentIndex;
+    setMode(nextMode);
+    setPageTab("export");
+    setScrubTime(0);
+    setPreviewBase64("");
+    setManifest(null);
+    setJob(null);
+    setLog("Ready.");
+    setPrefix(nextIndex >= 0 && nextVideos[nextIndex] ? fileStem(nextVideos[nextIndex].name) : "");
+    setStatus(
+      nextMode === "quick"
+        ? "Quick Export: add videos and choose an output folder."
+        : workspaceRoot.trim()
+          ? "Loading workspace videos..."
+          : "Workspace Project: open a workspace to load its media."
+    );
+  }
 
   function selectVideo(index: number) {
     const video = videos[index];
@@ -783,6 +967,19 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
       });
       return next;
     });
+  }
+
+  function updateCaptureSegment(segmentIndex: number, patch: Partial<CaptureSegment>) {
+    setVideos((items) => items.map((video, videoIndex) => {
+      if (videoIndex !== currentIndex) return video;
+      return {
+        ...video,
+        segments: video.segments.map((segment, index) => {
+          if (index !== segmentIndex) return segment;
+          return updateVideoCaptureSegment(segment, patch, video.duration);
+        })
+      };
+    }));
   }
 
   async function addVideos() {
@@ -807,6 +1004,16 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
     try {
       const path = await chooseVideoOutputFolder();
       if (path) setOutputRoot(path);
+    } catch (err) {
+      showError(err);
+    }
+  }
+
+  async function openOutput() {
+    if (!outputRoot) return;
+    try {
+      const opened = await openVideoOutputFolder(outputRoot);
+      if (!opened) showToast("The output folder is not available.", { variant: "error" });
     } catch (err) {
       showError(err);
     }
@@ -859,7 +1066,7 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
   }
 
   async function handleSaveSegments() {
-    if (!manifest || !workspaceRoot.trim()) return;
+    if (mode !== "workspace" || !manifest || !workspaceRoot.trim()) return;
     setSaving(true);
     try {
       await saveVideoSegmentManifest(workspaceRoot, manifest);
@@ -903,7 +1110,7 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
     await runWithConfirm(
       {
         title: "Export video frames",
-        message: `Export ${total} frame(s) from ${selectedVideos.length} video(s)?`,
+        message: `Process ${total} frame(s) from ${selectedVideos.length} video(s)${deduplicateSimilar ? ` and remove frames at least ${similarityPercent}% similar` : ""}?`,
         confirmLabel: "Export"
       },
       async () => {
@@ -913,7 +1120,9 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
             outputRoot,
             prefix,
             format,
-            total
+            total,
+            deduplicateSimilar,
+            similarityThreshold: similarityPercent / 100
           });
           setJob(next);
           setStatus(`${next.status}: ${next.saved || 0}/${total}`);
@@ -979,6 +1188,7 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
               <span className="status">{videos.length} loaded</span>
             </div>
             <div className="panel-body video-control-stack">
+              <VideoModeSwitch mode={mode} disabled={running} onChange={changeMode} />
               {/* Tab switcher — inside segments branch so pageTab is always "segments" here */}
               <div className="row" style={{ gap: 4 }}>
                 <button type="button" className="primary" onClick={() => setPageTab("segments")}>
@@ -1058,6 +1268,8 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
           {/* Tab switcher injected as overlay row — reuse aside panel header area */}
           <section className="panel" style={{ display: "contents" }}>
             <ExportTab
+              mode={mode}
+              onModeChange={changeMode}
               current={current}
               scrubTime={scrubTime}
               setScrubTime={setScrubTime}
@@ -1067,6 +1279,10 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
               previewBase64={previewBase64}
               format={format}
               setFormat={setFormat}
+              deduplicateSimilar={deduplicateSimilar}
+              setDeduplicateSimilar={setDeduplicateSimilar}
+              similarityPercent={similarityPercent}
+              setSimilarityPercent={setSimilarityPercent}
               videos={videos}
               currentIndex={currentIndex}
               outputRoot={outputRoot}
@@ -1081,7 +1297,9 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
               onAddVideos={() => void addVideos()}
               onRemoveVideo={removeVideo}
               onSelectVideo={selectVideo}
+              onUpdateCaptureSegment={updateCaptureSegment}
               onChooseOutput={() => void chooseOutput()}
+              onOpenOutput={() => void openOutput()}
               onCaptureFrame={() => void captureCurrentFrame()}
               onExportVideos={(scope) => void exportVideos(scope)}
               onCancelJob={() => void cancelJob()}
@@ -1099,9 +1317,11 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
               zIndex: 10
             }}
           >
-            <button type="button" onClick={() => setPageTab("segments")}>
-              Segments
-            </button>
+            {mode === "workspace" ? (
+              <button type="button" onClick={() => setPageTab("segments")}>
+                Segments
+              </button>
+            ) : null}
             <button type="button" className="primary" onClick={() => setPageTab("export")}>
               Export Frames
             </button>

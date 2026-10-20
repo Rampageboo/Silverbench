@@ -20,6 +20,8 @@ export type CaptureJob = {
   id: string;
   status: string;
   saved?: number;
+  processed?: number;
+  skipped?: number;
   total?: number;
   detail?: string;
   errors?: string[];
@@ -51,6 +53,10 @@ export function listWorkspaceVideos(workspaceRoot: string) {
 
 export function chooseVideoOutputFolder() {
   return rpc<string>("chooseDirectory", ["Choose Screenshot Output Folder"]);
+}
+
+export function openVideoOutputFolder(path: string) {
+  return rpc<boolean>("openDirectory", [path]);
 }
 
 export function getVideoFrameBase64(path: string, seconds: number, format: "jpg" | "png", maxEdge = 0, quality = 72) {
@@ -122,6 +128,8 @@ export function startCaptureJobs(args: {
   prefix: string;
   format: "jpg" | "png";
   total: number;
+  deduplicateSimilar: boolean;
+  similarityThreshold: number;
 }) {
   return rpc<CaptureJob>("startCaptureVideoScreenshotJobs", [
     JSON.stringify(args.jobs),
@@ -129,7 +137,9 @@ export function startCaptureJobs(args: {
     1,
     args.prefix,
     args.format,
-    args.total
+    args.total,
+    args.deduplicateSimilar,
+    args.similarityThreshold
   ]);
 }
 
