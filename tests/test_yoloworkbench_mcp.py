@@ -233,7 +233,7 @@ class McpStdioContractTests(unittest.IsolatedAsyncioTestCase):
                 response = await session.list_tools()
 
         tools = {tool.name: tool for tool in response.tools}
-        self.assertEqual(len(tools), 16)
+        self.assertEqual(len(tools), 26)
         self.assertEqual(
             set(tools),
             {
@@ -243,9 +243,19 @@ class McpStdioContractTests(unittest.IsolatedAsyncioTestCase):
                 "list_workspace_files",
                 "list_workspace_videos",
                 "list_dataset_files",
-                "get_workspace_classes",
-                "list_classification_classes",
-                "read_metadata_rows",
+                "list_classes",
+                "add_classes",
+                "list_images",
+                "view_image",
+                "get_labels",
+                "set_boxes",
+                "set_class",
+                "mark_junk",
+                "set_image_status",
+                "export_dataset",
+                "gallery_search",
+                "gallery_view_image",
+                "gallery_describe",
                 "get_image_pool_backup_stats",
                 "find_image_pool_duplicates",
                 "inspect_pt_model",
@@ -259,6 +269,13 @@ class McpStdioContractTests(unittest.IsolatedAsyncioTestCase):
             "start_image_inference",
             "start_folder_inference",
             "cancel_inference_job",
+            "add_classes",
+            "set_boxes",
+            "set_class",
+            "mark_junk",
+            "set_image_status",
+            "export_dataset",
+            "gallery_describe",
         }
         for name, tool in tools.items():
             self.assertEqual(tool.annotations.readOnlyHint, name not in stateful, name)

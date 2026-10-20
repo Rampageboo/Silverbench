@@ -4,9 +4,9 @@ import json
 import os
 import socket
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 
@@ -62,6 +62,28 @@ class BackendClient:
             raise BackendError(f"RampageWorkbench method {method} failed: {message}")
         return payload.get("result")
 
+    def get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        query = {key: value for key, value in (params or {}).items() if value is not None}
+        return self._request("GET", f"{path}?{urlencode(query)}" if query else path)
+
+    def post_json(self, path: str, body: dict[str, Any]) -> Any:
+        return self._request("POST", path, body)
+
+    def get_bytes(self, path: str) -> bytes:
+        try:
+            with urlopen(Request(f"{self.base_url}{path}", method="GET"), timeout=self.timeout_seconds) as response:
+                raw = response.read(MAX_RESPONSE_BYTES + 1)
+        except HTTPError as error:
+            message = _response_error_message(error.read(MAX_RESPONSE_BYTES + 1)) or str(error.reason)
+            raise BackendError(f"RampageWorkbench HTTP {error.code}: {message}") from error
+        except (URLError, TimeoutError, socket.timeout, ConnectionError, OSError) as error:
+            raise BackendUnavailableError(
+                f"RampageWorkbench backend is not reachable at {self.base_url}. Start RampageWorkbench, then retry."
+            ) from error
+        if len(raw) > MAX_RESPONSE_BYTES:
+            raise BackendError(f"RampageWorkbench response exceeded {MAX_RESPONSE_BYTES // (1024 * 1024)} MB.")
+        return raw
+
     def _request(self, method: str, path: str, body: dict[str, Any] | None = None) -> Any:
         data = None
         headers = {"Accept": "application/json"}
@@ -100,21 +122,45 @@ def _response_error_message(raw: bytes) -> str:
     return str(payload.get("error") or payload.get("detail") or "")[:1000]
 
 
+def _recent_workspaces() -> list[str]:
+    """Workspaces recorded in RampageWorkbench's app settings (app data, not the install folder)."""
+    from backend.app_settings import read_settings
+
+    return list(read_settings()["workspaces"])
+
+
 class PathPolicy:
     """Restrict every MCP filesystem argument to configured local roots."""
 
-    def __init__(self, allowed_roots: list[Path] | tuple[Path, ...], base_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        allowed_roots: list[Path] | tuple[Path, ...],
+        base_dir: Path | None = None,
+        known_workspaces: Callable[[], list[str]] | None = None,
+    ) -> None:
         if not allowed_roots:
             raise ValueError("At least one MCP allowed root is required.")
         self.base_dir = (base_dir or allowed_roots[0]).expanduser().resolve()
-        self.allowed_roots = tuple(self._resolve_raw(path) for path in allowed_roots)
+        self._configured_roots = tuple(self._resolve_raw(path) for path in allowed_roots)
+        self._known_workspaces = known_workspaces
+
+    @property
+    def allowed_roots(self) -> tuple[Path, ...]:
+        """Configured roots plus every workspace the user has opened in RampageWorkbench."""
+        extra = []
+        if self._known_workspaces is not None:
+            try:
+                extra = [self._resolve_raw(path) for path in self._known_workspaces() if str(path).strip()]
+            except Exception:  # settings unreadable: fall back to the configured roots
+                extra = []
+        return (*self._configured_roots, *extra)
 
     @classmethod
     def from_environment(cls, project_root: Path) -> "PathPolicy":
         raw = os.environ.get("YWB_MCP_ALLOWED_ROOTS", "").strip()
         entries = [entry.strip() for entry in raw.split(os.pathsep) if entry.strip()]
         roots = [Path(entry) for entry in entries] if entries else [project_root]
-        return cls(roots, base_dir=project_root)
+        return cls(roots, base_dir=project_root, known_workspaces=_recent_workspaces)
 
     def require(
         self,
@@ -216,21 +262,6 @@ class YoloWorkBenchBridge:
             kind="directory",
         )
         return _string_list(self.backend.call("listDatasetFiles", [str(dataset_root)]), "listDatasetFiles")
-
-    def get_workspace_classes(self, workspace_root: str) -> dict[str, Any]:
-        root = self._workspace_ready(workspace_root)
-        return _dict_result(self.backend.call("getWorkspaceClasses", [str(root)]), "getWorkspaceClasses")
-
-    def list_classification_classes(self, workspace_root: str) -> dict[str, Any]:
-        root = self._workspace_ready(workspace_root)
-        return _dict_result(
-            self.backend.call("listClfDatasetClasses", [str(root)]),
-            "listClfDatasetClasses",
-        )
-
-    def read_metadata_rows(self, workspace_root: str) -> dict[str, Any]:
-        root = self._workspace_ready(workspace_root)
-        return _dict_result(self.backend.call("readMetadataRows", [str(root)]), "readMetadataRows")
 
     def get_image_pool_backup_stats(self, workspace_root: str) -> dict[str, Any]:
         root = self._workspace_ready(workspace_root)
