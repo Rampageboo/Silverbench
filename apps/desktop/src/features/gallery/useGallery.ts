@@ -4,7 +4,7 @@ import {
   galleryApi,
   type AssetQuery,
   type GalleryAssetDetail,
-  type GalleryPageResult,
+  type GalleryAssetSummary,
   type GalleryPrompts,
   type GalleryStatus,
   type PromptOptions
@@ -79,33 +79,137 @@ export function useGalleryStatus(active: boolean): StatusState {
   return { status, error, changeToken, refresh };
 }
 
-/** One page of assets. Older responses never overwrite a newer query. */
-export function useAssetPage(query: AssetQuery, enabled: boolean, refreshToken: number) {
-  const [page, setPage] = useState<GalleryPageResult | null>(null);
-  const [error, setError] = useState<unknown>(null);
-  const [loading, setLoading] = useState(false);
-  const key = JSON.stringify(query);
+export const ASSET_CHUNK = 200;
 
+export type AssetWindow = {
+  /** Total matching assets, null until the first chunk of this query arrives. */
+  total: number | null;
+  error: unknown;
+  loading: boolean;
+  /** Summary at a list position, or undefined if that chunk is not loaded yet. */
+  getItem: (index: number) => GalleryAssetSummary | undefined;
+  /** Position of a loaded asset in the current query, or -1. */
+  indexOf: (id: string) => number;
+  /** Bumps whenever loaded data changes (for dependent effects). */
+  version: number;
+};
+
+/**
+ * Loads the assets of one query in fixed chunks, only around `range` (what
+ * the virtual grid renders) plus one chunk ahead. A query change drops
+ * everything and aborts in-flight requests; `refreshToken` re-reads the chunks
+ * in view and forgets the rest, because inserts shift offsets.
+ */
+export function useAssetWindow(
+  query: Omit<AssetQuery, "offset" | "limit">,
+  range: { start: number; end: number },
+  enabled: boolean,
+  refreshToken: number
+): AssetWindow {
+  const key = JSON.stringify(query);
+  const chunksRef = useRef(new Map<number, GalleryAssetSummary[]>());
+  const pendingRef = useRef(new Map<number, AbortController>());
+  const generationRef = useRef(0);
+  const [total, setTotal] = useState<number | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [version, setVersion] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
+
+  const abortAll = useCallback(() => {
+    for (const controller of pendingRef.current.values()) controller.abort();
+    pendingRef.current.clear();
+    setPendingCount(0);
+  }, []);
+
+  const load = useCallback(
+    (chunk: number) => {
+      if (pendingRef.current.has(chunk)) return;
+      const generation = generationRef.current;
+      const controller = new AbortController();
+      pendingRef.current.set(chunk, controller);
+      setPendingCount(pendingRef.current.size);
+      galleryApi
+        .assets({ ...(JSON.parse(key) as AssetQuery), offset: chunk * ASSET_CHUNK, limit: ASSET_CHUNK }, controller.signal)
+        .then((result) => {
+          if (generation !== generationRef.current) return;
+          chunksRef.current.set(chunk, result.items);
+          setTotal(result.total);
+          setError(null);
+          setVersion((value) => value + 1);
+        })
+        .catch((err) => {
+          if (!isAbort(err) && generation === generationRef.current) setError(err);
+        })
+        .finally(() => {
+          if (pendingRef.current.get(chunk) === controller) pendingRef.current.delete(chunk);
+          if (generation === generationRef.current) setPendingCount(pendingRef.current.size);
+        });
+    },
+    [key]
+  );
+
+  const neededChunks = useCallback(() => {
+    const last = Math.max(range.start, range.end - 1);
+    const first = Math.floor(range.start / ASSET_CHUNK);
+    const through = Math.floor(last / ASSET_CHUNK) + 1; // one chunk of read-ahead
+    const limit = total === null ? first : Math.max(0, Math.ceil(total / ASSET_CHUNK) - 1);
+    const chunks: number[] = [];
+    for (let chunk = first; chunk <= Math.min(through, limit); chunk += 1) chunks.push(chunk);
+    return chunks.length ? chunks : [0];
+  }, [range.end, range.start, total]);
+
+  // New query: start over.
+  useEffect(() => {
+    generationRef.current += 1;
+    abortAll();
+    chunksRef.current = new Map();
+    setTotal(null);
+    setError(null);
+    setVersion((value) => value + 1);
+  }, [abortAll, key]);
+
+  // Load what the grid needs.
   useEffect(() => {
     if (!enabled) return;
-    const controller = new AbortController();
-    setLoading(true);
-    galleryApi
-      .assets(JSON.parse(key) as AssetQuery, controller.signal)
-      .then((result) => {
-        setPage(result);
-        setError(null);
-      })
-      .catch((err) => {
-        if (!isAbort(err)) setError(err);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [enabled, key, refreshToken]);
+    for (const chunk of neededChunks()) {
+      if (!chunksRef.current.has(chunk)) load(chunk);
+    }
+  }, [enabled, key, load, neededChunks, version]);
 
-  return { page, error, loading };
+  // Refresh: re-read the chunks in view, forget the others.
+  useEffect(() => {
+    if (!enabled || !refreshToken) return;
+    const keep = new Set(neededChunks());
+    for (const chunk of [...chunksRef.current.keys()]) if (!keep.has(chunk)) chunksRef.current.delete(chunk);
+    generationRef.current += 1;
+    abortAll();
+    for (const chunk of keep) load(chunk);
+    // Only a refresh request should trigger this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshToken]);
+
+  useEffect(() => abortAll, [abortAll]);
+
+  const getItem = useCallback(
+    (index: number) => chunksRef.current.get(Math.floor(index / ASSET_CHUNK))?.[index % ASSET_CHUNK],
+    // version: chunks are read from a ref; consumers re-render through it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [version]
+  );
+
+  const indexOf = useCallback(
+    (id: string) => {
+      for (const [chunk, items] of chunksRef.current) {
+        const offset = items.findIndex((item) => item.id === id);
+        if (offset >= 0) return chunk * ASSET_CHUNK + offset;
+      }
+      return -1;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [version]
+  );
+
+  return { total, error, loading: pendingCount > 0, getItem, indexOf, version };
 }
 
 /**

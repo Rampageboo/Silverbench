@@ -1,32 +1,36 @@
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { memo, useState, type MouseEvent, type ReactNode } from "react";
+import type { GridWindow } from "../image-pool/virtualGrid";
 import { galleryImageUrl, type GalleryAssetSummary } from "./galleryApi";
 import { contentRatingLabel, METADATA_FORMAT_LABELS, shouldObscure } from "./galleryDomain";
 import { IconCheck, IconEyeOff, IconStar } from "../../ui/icons";
 
+export const GRID_GAP = 8;
+export const GRID_PADDING = 12;
+
 type Props = {
-  items: GalleryAssetSummary[];
+  containerRef: (element: HTMLElement | null) => void;
+  grid: GridWindow;
+  /** null while the first chunk of the query is loading. */
+  total: number | null;
+  getItem: (index: number) => GalleryAssetSummary | undefined;
   focusedId: string | null;
   selected: Set<string>;
   revealAll: boolean;
   revealed: Set<string>;
-  tileSize: number;
   loading: boolean;
   empty: ReactNode;
-  onFocus: (id: string) => void;
-  onToggleSelect: (id: string) => void;
-  onRangeSelect: (id: string) => void;
+  onFocus: (id: string, index: number) => void;
+  onToggleSelect: (id: string, index: number) => void;
+  onRangeSelect: (index: number) => void;
 };
 
-function Thumb({ asset, obscured }: { asset: GalleryAssetSummary; obscured: boolean }) {
+function Thumb({ id, obscured }: { id: string; obscured: boolean }) {
   const [failed, setFailed] = useState(false);
-  if (failed) {
-    return <span className="gal-tile__broken">无法生成缩略图</span>;
-  }
+  if (failed) return <span className="gal-tile__broken">无法生成缩略图</span>;
   return (
     <img
-      src={galleryImageUrl(asset.id)}
+      src={galleryImageUrl(id)}
       alt=""
-      loading="lazy"
       decoding="async"
       draggable={false}
       className={obscured ? "is-obscured" : undefined}
@@ -35,97 +39,145 @@ function Thumb({ asset, obscured }: { asset: GalleryAssetSummary; obscured: bool
   );
 }
 
+type TileProps = {
+  asset: GalleryAssetSummary;
+  index: number;
+  focused: boolean;
+  isSelected: boolean;
+  obscured: boolean;
+  onFocus: (id: string, index: number) => void;
+  onToggleSelect: (id: string, index: number) => void;
+  onRangeSelect: (index: number) => void;
+};
+
+// Memoized so a window shift only renders the tiles that enter it.
+const Tile = memo(function Tile({ asset, index, focused, isSelected, obscured, onFocus, onToggleSelect, onRangeSelect }: TileProps) {
+  function onClick(event: MouseEvent) {
+    if (event.shiftKey) onRangeSelect(index);
+    else if (event.ctrlKey || event.metaKey) onToggleSelect(asset.id, index);
+    else onFocus(asset.id, index);
+  }
+  return (
+    <button
+      type="button"
+      role="option"
+      aria-selected={focused}
+      aria-posinset={index + 1}
+      className={`gal-tile${focused ? " is-focused" : ""}${isSelected ? " is-selected" : ""}${asset.missing ? " is-missing" : ""}`}
+      title={asset.filename}
+      onClick={onClick}
+    >
+      <span className="gal-tile__media">
+        <Thumb id={asset.id} obscured={obscured} />
+        {obscured ? (
+          <span className="gal-tile__veil">
+            <IconEyeOff size={16} />
+            <span>{contentRatingLabel(asset.contentRating)}</span>
+          </span>
+        ) : null}
+      </span>
+      <span
+        className={`gal-tile__check${isSelected ? " is-on" : ""}`}
+        role="checkbox"
+        aria-checked={isSelected}
+        aria-label={isSelected ? "取消选择" : "选择"}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (event.shiftKey) onRangeSelect(index);
+          else onToggleSelect(asset.id, index);
+        }}
+      >
+        {isSelected ? <IconCheck size={12} /> : null}
+      </span>
+      <span className="gal-tile__badges">
+        {asset.hasMetadata ? (
+          <span className="gal-badge gal-badge--meta" title={`原始元数据：${METADATA_FORMAT_LABELS[asset.metadata?.format] ?? asset.metadata?.format}`}>
+            元
+          </span>
+        ) : null}
+        {asset.missing ? <span className="gal-badge gal-badge--missing">离线</span> : null}
+      </span>
+      {asset.rating ? (
+        <span className="gal-tile__rating" aria-label={`${asset.rating} 星`}>
+          <IconStar size={10} />
+          {asset.rating}
+        </span>
+      ) : null}
+    </button>
+  );
+});
+
+/**
+ * Only the rows the virtual grid window covers are in the DOM. Row geometry
+ * comes from the window (exact px), so offsets never drift over long lists.
+ * The scroll container is always mounted: the grid hook measures it.
+ */
 export function GalleryGrid({
-  items,
+  containerRef,
+  grid,
+  total,
+  getItem,
   focusedId,
   selected,
   revealAll,
   revealed,
-  tileSize,
   loading,
   empty,
   onFocus,
   onToggleSelect,
   onRangeSelect
 }: Props) {
-  const focusedRef = useRef<HTMLButtonElement | null>(null);
-
-  useEffect(() => {
-    focusedRef.current?.scrollIntoView({ block: "nearest" });
-  }, [focusedId]);
-
-  function onClick(event: MouseEvent, id: string) {
-    if (event.shiftKey) onRangeSelect(id);
-    else if (event.ctrlKey || event.metaKey) onToggleSelect(id);
-    else onFocus(id);
-  }
-
-  if (!items.length) {
-    return <div className={`gal-grid-empty${loading ? " is-loading" : ""}`}>{loading ? "加载中…" : empty}</div>;
+  const slots: ReactNode[] = [];
+  for (let index = grid.startIndex; index < grid.endIndex; index += 1) {
+    const asset = getItem(index);
+    if (!asset) {
+      slots.push(<span key={`slot-${index}`} className="gal-tile gal-tile--placeholder" aria-hidden="true" />);
+      continue;
+    }
+    slots.push(
+      <Tile
+        key={asset.id}
+        asset={asset}
+        index={index}
+        focused={asset.id === focusedId}
+        isSelected={selected.has(asset.id)}
+        obscured={shouldObscure(asset.contentRating, revealAll) && !revealed.has(asset.id)}
+        onFocus={onFocus}
+        onToggleSelect={onToggleSelect}
+        onRangeSelect={onRangeSelect}
+      />
+    );
   }
 
   return (
     <div
-      className={`gal-grid${loading ? " is-loading" : ""}`}
-      style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${tileSize}px, 1fr))` }}
+      ref={containerRef}
+      className={`gal-scroll${loading ? " is-loading" : ""}`}
+      style={{ padding: `${GRID_PADDING}px` }}
       role="listbox"
       aria-label="图片"
       aria-multiselectable="true"
+      aria-setsize={total ?? undefined}
     >
-      {items.map((asset) => {
-        const obscured = shouldObscure(asset.contentRating, revealAll) && !revealed.has(asset.id);
-        const isSelected = selected.has(asset.id);
-        const isFocused = asset.id === focusedId;
-        return (
-          <button
-            key={asset.id}
-            ref={isFocused ? focusedRef : null}
-            type="button"
-            role="option"
-            aria-selected={isFocused}
-            className={`gal-tile${isFocused ? " is-focused" : ""}${isSelected ? " is-selected" : ""}${asset.missing ? " is-missing" : ""}`}
-            title={asset.filename}
-            onClick={(event) => onClick(event, asset.id)}
+      {total === null ? (
+        <div className="gal-grid-empty gal-muted">加载中…</div>
+      ) : total === 0 ? (
+        <div className="gal-grid-empty">{empty}</div>
+      ) : (
+        <div className="gal-grid-spacer" style={{ height: grid.totalHeight }}>
+          <div
+            className="gal-grid"
+            style={{
+              transform: `translateY(${grid.startRow * grid.rowStride}px)`,
+              gridTemplateColumns: `repeat(${grid.columns}, ${grid.columnWidth}px)`,
+              gridAutoRows: `${grid.cellHeight}px`,
+              gap: `${GRID_GAP}px`
+            }}
           >
-            <span className="gal-tile__media">
-              <Thumb asset={asset} obscured={obscured} />
-              {obscured ? (
-                <span className="gal-tile__veil">
-                  <IconEyeOff size={16} />
-                  <span>{contentRatingLabel(asset.contentRating)}</span>
-                </span>
-              ) : null}
-            </span>
-            <span
-              className={`gal-tile__check${isSelected ? " is-on" : ""}`}
-              role="checkbox"
-              aria-checked={isSelected}
-              aria-label={isSelected ? "取消选择" : "选择"}
-              onClick={(event) => {
-                event.stopPropagation();
-                if (event.shiftKey) onRangeSelect(asset.id);
-                else onToggleSelect(asset.id);
-              }}
-            >
-              {isSelected ? <IconCheck size={12} /> : null}
-            </span>
-            <span className="gal-tile__badges">
-              {asset.hasMetadata ? (
-                <span className="gal-badge gal-badge--meta" title={`原始元数据：${METADATA_FORMAT_LABELS[asset.metadata?.format] ?? asset.metadata?.format}`}>
-                  元
-                </span>
-              ) : null}
-              {asset.missing ? <span className="gal-badge gal-badge--missing">离线</span> : null}
-            </span>
-            {asset.rating ? (
-              <span className="gal-tile__rating" aria-label={`${asset.rating} 星`}>
-                <IconStar size={10} />
-                {asset.rating}
-              </span>
-            ) : null}
-          </button>
-        );
-      })}
+            {slots}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

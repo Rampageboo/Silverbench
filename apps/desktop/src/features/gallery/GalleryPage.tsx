@@ -23,7 +23,7 @@ import {
   SummaryDialog
 } from "./GalleryDialogs";
 import { GalleryDetail } from "./GalleryDetail";
-import { GalleryGrid } from "./GalleryGrid";
+import { GRID_GAP, GRID_PADDING, GalleryGrid } from "./GalleryGrid";
 import { GalleryNav, type GalleryFilters } from "./GalleryNav";
 import {
   DEFAULT_RULES,
@@ -37,12 +37,12 @@ import {
   type GalleryMode,
   type GalleryRules
 } from "./galleryDomain";
-import { errorText, useAssetDetail, useAssetPage, useGalleryStatus, usePromptPreview } from "./useGallery";
+import { errorText, useAssetDetail, useAssetWindow, useGalleryStatus, usePromptPreview } from "./useGallery";
+import { useVirtualGrid } from "../image-pool/virtualGrid";
 import "./gallery.css";
 
 type Props = { active?: boolean; onReady?: () => void };
 
-const PAGE_SIZE = 120;
 const PREFS_KEY = "ywb.gallery.prefs";
 
 type Prefs = { mode: GalleryMode; rules: GalleryRules; revealAll: boolean; tileSize: number };
@@ -86,12 +86,14 @@ export function GalleryPage({ active = true, onReady }: Props) {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search.trim(), 300);
   const [filters, setFilters] = useState<GalleryFilters>({ rootId: undefined, collection: undefined, minRating: 0, hasMetadata: undefined });
-  const [pageIndex, setPageIndex] = useState(0);
   const [listToken, setListToken] = useState(0);
   const [detailToken, setDetailToken] = useState(0);
-  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [focus, setFocus] = useState<{ id: string; index: number } | null>(null);
+  const focusedId = focus?.id ?? null;
+  /** Keyboard moved onto a position whose chunk is still loading. */
+  const [pendingFocusIndex, setPendingFocusIndex] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
-  const [anchorId, setAnchorId] = useState<string | null>(null);
+  const anchorIndexRef = useRef<number | null>(null);
   const [drafts, setDrafts] = useState<Record<string, AssetDraft>>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -123,33 +125,67 @@ export function GalleryPage({ active = true, onReady }: Props) {
     setDetailToken((value) => value + 1);
   }, [statusState.changeToken]);
 
-  const queryFilters = useMemo(
-    () => ({ ...filters, q: debouncedSearch }),
-    [debouncedSearch, filters]
-  );
-  useEffect(() => setPageIndex(0), [queryFilters]);
-
   const query = useMemo<AssetQuery>(() => {
-    const value: AssetQuery = { offset: pageIndex * PAGE_SIZE, limit: PAGE_SIZE };
+    const value: AssetQuery = {};
     if (debouncedSearch) value.q = debouncedSearch;
     if (filters.rootId) value.rootId = filters.rootId;
     if (filters.collection !== undefined) value.collection = filters.collection;
     if (filters.minRating) value.minRating = filters.minRating;
     if (filters.hasMetadata !== undefined) value.hasMetadata = filters.hasMetadata;
     return value;
-  }, [debouncedSearch, filters, pageIndex]);
+  }, [debouncedSearch, filters]);
 
   const backendReady = Boolean(status);
-  const { page, error: pageError, loading: pageLoading } = useAssetPage(query, active && backendReady, listToken);
-  const items = useMemo(() => page?.items ?? [], [page]);
-  const total = page?.total ?? 0;
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const [knownTotal, setKnownTotal] = useState(0);
+  const { grid, containerRef, scrollToIndex, scrollToTop } = useVirtualGrid({
+    itemCount: knownTotal,
+    minColumnWidth: prefs.tileSize,
+    gap: GRID_GAP,
+    aspectRatio: 1,
+    paddingX: GRID_PADDING * 2,
+    paddingTop: GRID_PADDING,
+    overscanRows: 3
+  });
+  const data = useAssetWindow(query, { start: grid.startIndex, end: grid.endIndex }, active && backendReady, listToken);
+  const total = data.total ?? 0;
+  useEffect(() => setKnownTotal(total), [total]);
+  const pageError = data.error;
 
-  // Keep focus on something visible when the page or filter changes.
+  // Synchronous mirrors: several key presses can arrive before React re-renders.
+  const dataRef = useRef(data);
+  dataRef.current = data;
+  const focusRef = useRef(focus);
+  focusRef.current = focus;
+  const pendingFocusRef = useRef(pendingFocusIndex);
+  pendingFocusRef.current = pendingFocusIndex;
+
+  // New query: back to the top, nothing focused yet.
   useEffect(() => {
-    if (!items.length) return;
-    if (!focusedId || !items.some((item) => item.id === focusedId)) setFocusedId(items[0].id);
-  }, [focusedId, items]);
+    scrollToTop();
+    setFocus(null);
+    setPendingFocusIndex(null);
+    anchorIndexRef.current = null;
+  }, [query, scrollToTop]);
+
+  // Something always focused once the first item is in; keep the focused
+  // index in step with refreshed data (inserts shift positions).
+  useEffect(() => {
+    if (pendingFocusIndex !== null) {
+      const item = data.getItem(pendingFocusIndex);
+      if (item) {
+        setFocus({ id: item.id, index: pendingFocusIndex });
+        setPendingFocusIndex(null);
+      }
+      return;
+    }
+    if (!focus) {
+      const first = data.getItem(0);
+      if (first) setFocus({ id: first.id, index: 0 });
+      return;
+    }
+    const index = data.indexOf(focus.id);
+    if (index >= 0 && index !== focus.index) setFocus({ id: focus.id, index });
+  }, [data, focus, pendingFocusIndex]);
 
   const { asset, setAsset, error: detailError } = useAssetDetail(focusedId, detailToken);
   const promptOptions = useMemo(() => buildPromptOptions(prefs.mode, prefs.rules), [prefs.mode, prefs.rules]);
@@ -221,12 +257,25 @@ export function GalleryPage({ active = true, onReady }: Props) {
   );
 
   const step = useCallback(
-    (delta: -1 | 1) => {
-      const index = items.findIndex((item) => item.id === focusedId);
-      const next = items[index + delta];
-      if (next) setFocusedId(next.id);
+    (delta: number) => {
+      const count = dataRef.current.total ?? 0;
+      if (!count) return;
+      const from = pendingFocusRef.current ?? focusRef.current?.index ?? -1;
+      const index = Math.max(0, Math.min(count - 1, from + delta));
+      if (index === from) return;
+      scrollToIndex(index);
+      const item = dataRef.current.getItem(index);
+      if (item) {
+        focusRef.current = { id: item.id, index };
+        pendingFocusRef.current = null;
+        setFocus(focusRef.current);
+        setPendingFocusIndex(null);
+      } else {
+        pendingFocusRef.current = index;
+        setPendingFocusIndex(index);
+      }
     },
-    [focusedId, items]
+    [scrollToIndex]
   );
 
   // Keyboard: ←/→ switch image, 0–5 rate (saved immediately), A select page.
@@ -234,12 +283,18 @@ export function GalleryPage({ active = true, onReady }: Props) {
     if (!active || dialog || viewerOpen) return;
     function onKey(event: KeyboardEvent) {
       if (event.ctrlKey || event.metaKey || event.altKey || isTypingTarget(event.target)) return;
-      if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      if (event.key === "ArrowRight") {
         event.preventDefault();
         step(1);
-      } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      } else if (event.key === "ArrowLeft") {
         event.preventDefault();
         step(-1);
+      } else if (event.key === "ArrowDown") {
+        event.preventDefault();
+        step(grid.columns);
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        step(-grid.columns);
       } else if (/^[0-5]$/.test(event.key)) {
         event.preventDefault();
         void setRatingNow(Number(event.key));
@@ -249,10 +304,17 @@ export function GalleryPage({ active = true, onReady }: Props) {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, asset, dialog, prefs.revealAll, revealed, setRatingNow, step, viewerOpen]);
+  }, [active, asset, dialog, grid.columns, prefs.revealAll, revealed, setRatingNow, step, viewerOpen]);
 
-  const toggleSelect = useCallback((id: string) => {
-    setAnchorId(id);
+  // Tile callbacks stay stable (memoized tiles); they read the latest data via refs.
+  const focusTile = useCallback((id: string, index: number) => {
+    anchorIndexRef.current = index;
+    setPendingFocusIndex(null);
+    setFocus({ id, index });
+  }, []);
+
+  const toggleSelect = useCallback((id: string, index: number) => {
+    anchorIndexRef.current = index;
     setSelected((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
@@ -262,26 +324,40 @@ export function GalleryPage({ active = true, onReady }: Props) {
   }, []);
 
   const rangeSelect = useCallback(
-    (id: string) => {
-      const from = items.findIndex((item) => item.id === (anchorId ?? focusedId));
-      const to = items.findIndex((item) => item.id === id);
-      if (from < 0 || to < 0) {
-        toggleSelect(id);
-        return;
+    (index: number) => {
+      const from = anchorIndexRef.current ?? focusRef.current?.index ?? index;
+      const [a, b] = from < index ? [from, index] : [index, from];
+      let missing = 0;
+      const ids: string[] = [];
+      for (let i = a; i <= b; i += 1) {
+        const item = dataRef.current.getItem(i);
+        if (item) ids.push(item.id);
+        else missing += 1;
       }
-      const [a, b] = from < to ? [from, to] : [to, from];
-      setSelected((current) => {
-        const next = new Set(current);
-        for (const item of items.slice(a, b + 1)) next.add(item.id);
-        return next;
-      });
+      setSelected((current) => new Set([...current, ...ids]));
+      if (missing) showToast(`范围内有 ${missing} 张尚未加载，未被选中；滚动经过后可再次选择。`, { variant: "error" });
     },
-    [anchorId, focusedId, items, toggleSelect]
+    [showToast]
   );
 
+  const selectVisible = useCallback(() => {
+    const ids: string[] = [];
+    const first = grid.firstVisibleRow * grid.columns;
+    const last = Math.min(total, (grid.lastVisibleRow + 1) * grid.columns);
+    for (let i = first; i < last; i += 1) {
+      const item = data.getItem(i);
+      if (item) ids.push(item.id);
+    }
+    setSelected((current) => new Set([...current, ...ids]));
+  }, [data, grid.columns, grid.firstVisibleRow, grid.lastVisibleRow, total]);
+
   const selectedIds = useMemo(() => [...selected], [selected]);
-  const selectedOnPage = items.filter((item) => selected.has(item.id)).length;
-  const offPage = selected.size - selectedOnPage;
+  let selectedInView = 0;
+  for (let i = grid.startIndex; i < grid.endIndex; i += 1) {
+    const item = data.getItem(i);
+    if (item && selected.has(item.id)) selectedInView += 1;
+  }
+  const offPage = selected.size - selectedInView;
 
   const capabilities = status?.capabilities;
   const wd = capabilities?.adapters?.wd_onnx ?? capabilities?.adapters?.wd;
@@ -503,20 +579,14 @@ export function GalleryPage({ active = true, onReady }: Props) {
             </div>
           ) : (
             <div className="gal-selbar gal-selbar--idle">
-              <span className="gal-muted">
-                {pageError ? null : `共 ${total} 张${total > PAGE_SIZE ? ` · 第 ${pageIndex + 1} / ${pageCount} 页` : ""}`}
-              </span>
+              <span className="gal-muted">{pageError || data.total === null ? null : `共 ${total} 张`}</span>
               <span className="gal-bar__spacer" />
-              {items.length ? (
-                <button
-                  type="button"
-                  className="ui-btn--ghost ui-btn--sm"
-                  onClick={() => setSelected((current) => new Set([...current, ...items.map((item) => item.id)]))}
-                >
-                  选择本页
+              {total ? (
+                <button type="button" className="ui-btn--ghost ui-btn--sm" onClick={selectVisible}>
+                  选择可见
                 </button>
               ) : null}
-              <span className="gal-muted gal-hint">Ctrl 点击多选 · Shift 范围选择 · ←→ 切换 · 0–5 评分</span>
+              <span className="gal-muted gal-hint">Ctrl 点击多选 · Shift 范围选择 · 方向键切换 · 0–5 评分</span>
             </div>
           )}
 
@@ -530,47 +600,21 @@ export function GalleryPage({ active = true, onReady }: Props) {
             </div>
           ) : (
             <GalleryGrid
-              items={items}
+              containerRef={containerRef}
+              grid={grid}
+              total={data.total}
+              getItem={data.getItem}
               focusedId={focusedId}
               selected={selected}
               revealAll={prefs.revealAll}
               revealed={revealed}
-              tileSize={prefs.tileSize}
-              loading={pageLoading}
+              loading={data.loading}
               empty={emptyState}
-              onFocus={(id) => {
-                setFocusedId(id);
-                setAnchorId(id);
-              }}
+              onFocus={focusTile}
               onToggleSelect={toggleSelect}
               onRangeSelect={rangeSelect}
             />
           )}
-
-          {pageCount > 1 ? (
-            <nav className="gal-pager" aria-label="分页">
-              <button type="button" className="ui-btn--sm" onClick={() => setPageIndex(0)} disabled={pageIndex === 0}>
-                首页
-              </button>
-              <button type="button" className="ui-btn--sm" onClick={() => setPageIndex((value) => Math.max(0, value - 1))} disabled={pageIndex === 0}>
-                上一页
-              </button>
-              <span>
-                第 {pageIndex + 1} / {pageCount} 页
-              </span>
-              <button
-                type="button"
-                className="ui-btn--sm"
-                onClick={() => setPageIndex((value) => Math.min(pageCount - 1, value + 1))}
-                disabled={pageIndex >= pageCount - 1}
-              >
-                下一页
-              </button>
-              <button type="button" className="ui-btn--sm" onClick={() => setPageIndex(pageCount - 1)} disabled={pageIndex >= pageCount - 1}>
-                末页
-              </button>
-            </nav>
-          ) : null}
         </main>
 
         {asset && draft ? (

@@ -437,7 +437,7 @@
 
 .gal-center {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
   background: var(--c-bg) !important;
 }
 
@@ -463,30 +463,43 @@
   font-size: var(--fs-2xs);
 }
 
-.gal-grid {
-  display: grid;
-  grid-auto-rows: max-content;
-  align-content: start;
-  gap: 8px;
+/* Virtual grid: the spacer has the full height; only the window is rendered. */
+.gal-scroll {
   min-height: 0;
-  padding: var(--sp-3);
   overflow-y: auto;
-  transition: opacity var(--dur) var(--ease);
+  overflow-anchor: none;
 }
 
-.gal-grid.is-loading {
-  opacity: 0.6;
+.gal-grid-spacer {
+  position: relative;
+  contain: strict;
+  width: 100%;
+}
+
+.gal-grid {
+  display: grid;
+  will-change: transform;
+}
+
+.gal-scroll.is-loading .gal-tile--placeholder {
+  animation: gal-pulse 1.2s ease-in-out infinite;
+}
+
+.gal-tile--placeholder {
+  border-style: dashed;
+  background: var(--c-raised);
+}
+
+@keyframes gal-pulse {
+  50% {
+    opacity: 0.5;
+  }
 }
 
 .gal-grid-empty {
   display: grid;
   place-items: center;
-  min-height: 0;
-  overflow: auto;
-}
-
-.gal-grid-empty.is-loading {
-  color: var(--c-text-3);
+  height: 100%;
 }
 
 .gal-tile {
@@ -637,18 +650,6 @@ img.is-obscured {
 
 .gal-tile__rating svg {
   fill: currentColor;
-}
-
-.gal-pager {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-2);
-  padding: 8px;
-  border-top: 1px solid var(--c-line);
-  color: var(--c-text-2);
-  font-size: var(--fs-sm);
-  font-variant-numeric: tabular-nums;
 }
 
 /* ── Detail ─────────────────────────────────────────────────────────────── */
