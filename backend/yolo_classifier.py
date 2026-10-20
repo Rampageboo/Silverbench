@@ -132,7 +132,7 @@ def _class_names_from_metadata(session: Any) -> dict[int, str]:
             try:
                 names = parser(raw)
                 break
-            except Exception:
+            except (ValueError, SyntaxError, TypeError):
                 continue
     if isinstance(names, dict):
         return {int(key): str(value) for key, value in names.items()}
