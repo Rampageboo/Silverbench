@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import * as api from "../../api";
 import { assignVisualState, thumbMediaClasses } from "./metadata";
 import type { FilteredItem, JunkScope, MetadataRow } from "./types";
-import { computeVirtualGridLayout } from "./virtualGrid";
+import { computeVirtualGridLayout, sameVirtualGridLayout } from "./virtualGrid";
 
 type ImagePoolGridProps = {
   workspaceRoot: string;
@@ -164,7 +164,8 @@ export function ImagePoolGrid({
   const [layout, setLayout] = useState(() => computeVirtualGridLayout(null, 0));
 
   const recompute = useCallback(() => {
-    setLayout(computeVirtualGridLayout(wrapRef.current, items.length));
+    const next = computeVirtualGridLayout(wrapRef.current, items.length);
+    setLayout((prev) => (sameVirtualGridLayout(prev, next) ? prev : next));
   }, [items.length]);
 
   useLayoutEffect(() => {

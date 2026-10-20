@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { assignVisualState, thumbMediaClasses } from "../image-pool/metadata";
 import type { JunkScope, MetadataRow } from "../image-pool/types";
-import { computeVirtualGridLayout, scrollVirtualGridToIndex } from "../image-pool/virtualGrid";
+import { computeVirtualGridLayout, sameVirtualGridLayout, scrollVirtualGridToIndex } from "../image-pool/virtualGrid";
 import { datasetImageUrl } from "./datasetAssets";
 import type { DatasetPair } from "./datasetCore";
 
@@ -79,7 +79,8 @@ export function DatasetReviewGallery({
   const [layout, setLayout] = useState(() => computeVirtualGridLayout(null, 0, 138, 10, 36, 10 / 16));
 
   const recompute = useCallback(() => {
-    setLayout(computeVirtualGridLayout(wrapRef.current, pairs.length, 138, 10, 36, 10 / 16));
+    const next = computeVirtualGridLayout(wrapRef.current, pairs.length, 138, 10, 36, 10 / 16);
+    setLayout((prev) => (sameVirtualGridLayout(prev, next) ? prev : next));
   }, [pairs.length]);
 
   useLayoutEffect(() => {
@@ -114,7 +115,7 @@ export function DatasetReviewGallery({
     if (!el || currentIndex < 0 || !pairs.length || currentIndex === lastScrolledIndexRef.current) return;
     const { scrolled, layout: nextLayout } = scrollVirtualGridToIndex(el, currentIndex, pairs.length, DATASET_REVIEW_GRID_PARAMS);
     lastScrolledIndexRef.current = currentIndex;
-    if (scrolled) setLayout(nextLayout);
+    if (scrolled) setLayout((prev) => (sameVirtualGridLayout(prev, nextLayout) ? prev : nextLayout));
   }, [currentIndex, pairs.length]);
 
   const visibleItems = useMemo(

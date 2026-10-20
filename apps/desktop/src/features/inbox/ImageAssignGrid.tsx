@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import * as api from "../../api";
 import { assignVisualState, thumbMediaClasses } from "../image-pool/metadata";
 import type { JunkScope, MetadataRow } from "../image-pool/types";
-import { computeVirtualGridLayout } from "../image-pool/virtualGrid";
+import { computeVirtualGridLayout, sameVirtualGridLayout } from "../image-pool/virtualGrid";
 import { inboxClassTagForFile } from "./helpers";
 import type { InboxItem } from "./types";
 
@@ -68,7 +68,8 @@ export function ImageAssignGrid({
   const [layout, setLayout] = useState(() => computeVirtualGridLayout(null, 0, 148, 10, 58, 1));
 
   const recompute = useCallback(() => {
-    setLayout(computeVirtualGridLayout(wrapRef.current, items.length, 148, 10, 58, 1));
+    const next = computeVirtualGridLayout(wrapRef.current, items.length, 148, 10, 58, 1);
+    setLayout((prev) => (sameVirtualGridLayout(prev, next) ? prev : next));
   }, [items.length]);
 
   useLayoutEffect(() => {

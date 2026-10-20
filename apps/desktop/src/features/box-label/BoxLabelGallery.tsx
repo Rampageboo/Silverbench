@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { computeVirtualGridLayout, scrollVirtualGridToIndex } from "../image-pool/virtualGrid";
+import { computeVirtualGridLayout, sameVirtualGridLayout, scrollVirtualGridToIndex } from "../image-pool/virtualGrid";
 import { isFlaggedFile, isNextTrainingFile, isReviewedFile } from "../image-pool/metadata";
 import { datasetImageUrl } from "../dataset-review/datasetAssets";
 import type { MetadataRow } from "../image-pool/types";
@@ -131,7 +131,8 @@ export function BoxLabelGallery({
   const entrySignature = useMemo(() => entries.map((entry) => entry.imagePath).join("\n"), [entries]);
 
   const recompute = useCallback(() => {
-    setLayout(computeVirtualGridLayout(wrapRef.current, entries.length, 138, 10, 36, 10 / 16));
+    const next = computeVirtualGridLayout(wrapRef.current, entries.length, 138, 10, 36, 10 / 16);
+    setLayout((prev) => (sameVirtualGridLayout(prev, next) ? prev : next));
   }, [entries.length]);
 
   useLayoutEffect(() => {
@@ -208,7 +209,7 @@ export function BoxLabelGallery({
     const el = wrapRef.current;
     if (!el || currentIndex < 0 || !entries.length) return;
     const { scrolled, layout: nextLayout } = scrollVirtualGridToIndex(el, currentIndex, entries.length, BOX_LABEL_GRID_PARAMS);
-    if (scrolled) setLayout(nextLayout);
+    if (scrolled) setLayout((prev) => (sameVirtualGridLayout(prev, nextLayout) ? prev : nextLayout));
   }, [currentIndex, entries.length]);
 
   const visibleItems = useMemo(
