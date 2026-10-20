@@ -30,7 +30,6 @@ from .yolo_classifier import classify_dataset_images, model_info
 from .yolo_prep import (
     ensure_data_yaml,
     move_detect_val_back_to_train,
-    move_pairs_to_val,
     prepare_classification_validation_split,
     prepare_validation_split,
 )
@@ -38,7 +37,7 @@ from .yolo_pt_classifier import classify_folder_with_pt, classify_image_with_pt
 from .yolo_pt_detector import detect_folder_with_pt, detect_image_with_pt
 from .yolo_pt_model_info import pt_model_info
 from .image_preview import image_scaled_jpeg_base64
-from .image_pool import image_pool_thumbnail_base64, mark_image_pool_seen, scan_image_pool
+from .image_pool import mark_image_pool_seen, scan_image_pool
 from .media_import import import_media_files, list_workspace_videos
 from .metadata_assign import (
     _workspace_clf_out,
@@ -98,7 +97,6 @@ class BackendService:
         self,
         path_access: PathAccess,
         session_dir: Path,
-        session_file: Path,
         *,
         app_settings_dir: Path | None = None,
         choose_directory: Callable[[str], str] | None = None,
@@ -112,7 +110,6 @@ class BackendService:
     ) -> None:
         self.path_access = path_access
         self.session_dir = session_dir
-        self.session_file = session_file
         self.app_settings_dir = app_settings_dir or session_dir
         self.choose_directory = choose_directory
         self.choose_image_file = choose_image_file
@@ -145,7 +142,6 @@ class BackendService:
             "chooseVideoFiles": self._handle_chooseVideoFiles,
             "chooseVideoFolder": self._handle_chooseVideoFolder,
             "listWorkspaceVideos": self._handle_listWorkspaceVideos,
-            "videosFromPaths": self._handle_videosFromPaths,
             "getVideoInfo": self._handle_getVideoInfo,
             "getVideoFrameBase64": self._handle_getVideoFrameBase64,
             "saveVideoFrame": self._handle_saveVideoFrame,
@@ -154,7 +150,6 @@ class BackendService:
             "startCaptureVideoScreenshotJobs": self._handle_startCaptureVideoScreenshotJobs,
             "getCaptureVideoScreenshotJob": self._handle_getCaptureVideoScreenshotJob,
             "cancelCaptureVideoScreenshotJob": self._handle_cancelCaptureVideoScreenshotJob,
-            "writeBase64File": self._handle_writeBase64File,
             "readImageFileBase64": self._handle_readImageFileBase64,
             "openDirectory": self._handle_openDirectory,
             "listDatasetFiles": self._handle_listDatasetFiles,
@@ -190,7 +185,6 @@ class BackendService:
             "getBuildJob": self._handle_getBuildJob,
             "removeDetectDatasetLinks": self._handle_removeDetectDatasetLinks,
             "removeClfDatasetLinks": self._handle_removeClfDatasetLinks,
-            "readImagePoolThumb": self._handle_readImagePoolThumb,
             "ensureImagePoolBackup": self._handle_ensureImagePoolBackup,
             "ensureImagePoolLabelBackup": self._handle_ensureImagePoolLabelBackup,
             "restoreImagePoolBackup": self._handle_restoreImagePoolBackup,
@@ -200,15 +194,12 @@ class BackendService:
             "deletePoolImageCompletely": self._handle_deletePoolImageCompletely,
             "readWorkspaceSession": self._handle_readWorkspaceSession,
             "writeWorkspaceSession": self._handle_writeWorkspaceSession,
-            "readSessionFile": self._handle_readSessionFile,
-            "writeSessionFile": self._handle_writeSessionFile,
             "saveMaskNoiseTempImage": self._handle_saveMaskNoiseTempImage,
             "maskNoisePreview": self._handle_maskNoisePreview,
             "maskNoiseSaveOne": self._handle_maskNoiseSaveOne,
             "maskNoiseExportFolder": self._handle_maskNoiseExportFolder,
             "prepareValidationSplit": self._handle_prepareValidationSplit,
             "prepareClassificationValidationSplit": self._handle_prepareClassificationValidationSplit,
-            "movePairsToVal": self._handle_movePairsToVal,
             "ensureDataYaml": self._handle_ensureDataYaml,
             "findDuplicateImages": self._handle_findDuplicateImages,
             "duplicateImages": self._handle_duplicateImages,
@@ -284,10 +275,6 @@ class BackendService:
             root = self.path_access.require_path(args[0])
             return json.dumps(list_workspace_videos(Path(root)), ensure_ascii=False)
 
-    def _handle_videosFromPaths(self, args: list[Any]) -> object:
-            paths = [self.path_access.remember_parent(path) for path in json.loads(args[0] or "[]")]
-            return videos_json(paths)
-
     def _handle_getVideoInfo(self, args: list[Any]) -> object:
             return json.dumps(video_info(self.path_access.require_path(args[0])), ensure_ascii=False)
 
@@ -348,12 +335,6 @@ class BackendService:
 
     def _handle_cancelCaptureVideoScreenshotJob(self, args: list[Any]) -> object:
             return json.dumps(self._cancel_capture_job(str(args[0])), ensure_ascii=False)
-
-    def _handle_writeBase64File(self, args: list[Any]) -> object:
-            target = self._unique_path(self.path_access.require_path(args[0]))
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(base64.b64decode(args[1]))
-            return str(target)
 
     def _handle_readImageFileBase64(self, args: list[Any]) -> object:
             path = self.path_access.require_path(args[0])
@@ -772,19 +753,6 @@ class BackendService:
     def _build_job_snapshot(self, job_id: str) -> dict[str, Any]:
         return self._build_jobs.snapshot(job_id)
 
-    def _handle_readImagePoolThumb(self, args: list[Any]) -> object:
-            root = self.path_access.require_path(args[0])
-            max_size = int(args[2]) if len(args) > 2 else 128
-            quality = int(args[3]) if len(args) > 3 else 54
-            cache_dir = workspace_meta_dir(Path(root))
-            return image_pool_thumbnail_base64(
-                Path(root),
-                str(args[1]),
-                max_size=max_size,
-                quality=quality,
-                session_dir=cache_dir,
-            )
-
     def _handle_ensureImagePoolBackup(self, args: list[Any]) -> object:
             root = self.path_access.require_path(args[0])
             return json.dumps(ensure_image_pool_backup(Path(root), str(args[1])), ensure_ascii=False)
@@ -823,14 +791,6 @@ class BackendService:
     def _handle_writeWorkspaceSession(self, args: list[Any]) -> object:
             root = self.path_access.require_path(args[0])
             return write_workspace_session(root, str(args[1]))
-
-    def _handle_readSessionFile(self, args: list[Any]) -> object:
-            return self.session_file.read_text(encoding="utf-8") if self.session_file.exists() else ""
-
-    def _handle_writeSessionFile(self, args: list[Any]) -> object:
-            json.loads(args[0])
-            write_text_atomic(self.session_file, args[0])
-            return str(self.session_file)
 
     def _handle_saveMaskNoiseTempImage(self, args: list[Any]) -> object:
             session_dir = self.session_dir
@@ -878,9 +838,6 @@ class BackendService:
     def _handle_prepareClassificationValidationSplit(self, args: list[Any]) -> object:
             ratio = float(args[1]) if len(args) > 1 else 0.15
             return json.dumps(prepare_classification_validation_split(self.path_access.require_path(args[0]), ratio), ensure_ascii=False)
-
-    def _handle_movePairsToVal(self, args: list[Any]) -> object:
-            return json.dumps(move_pairs_to_val(self.path_access.require_path(args[0]), json.loads(args[1] or "[]")), ensure_ascii=False)
 
     def _handle_ensureDataYaml(self, args: list[Any]) -> object:
             return json.dumps(ensure_data_yaml(self.path_access.require_path(args[0])), ensure_ascii=False)

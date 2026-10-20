@@ -24,7 +24,7 @@ class ListDatasetFilesTests(unittest.TestCase):
             (root / "labels" / "train" / "empty.txt").write_text("", encoding="utf-8")
             (root / "data.yaml").write_text("names:\n  0: cat\n", encoding="utf-8")
 
-            service = BackendService(PathAccess([root]), Path(tmp), Path(tmp) / "session.json")
+            service = BackendService(PathAccess([root]), Path(tmp))
             raw = service.call("listDatasetFiles", [str(root)])
             paths = json.loads(raw)
 

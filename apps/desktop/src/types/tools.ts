@@ -4,8 +4,6 @@ export type PrimaryTab = "home" | "gallery" | "library" | "classes" | "label" | 
 /** Legacy tool tabs kept alive for KeepAlive rendering; not shown directly in nav. */
 export type LegacyToolTab =
   | "image-pool"
-  | "pool-label"
-  | "video"
   | "video-capture"
   | "train-prep"
   | "train"
@@ -106,32 +104,11 @@ export const PRIMARY_NAV_TOOLS: readonly WorkbenchTool[] = [
  */
 export const WORKBENCH_TOOLS: readonly WorkbenchTool[] = [
   {
-    tab: "video",
-    label: "Video Label",
-    labelZh: "视频标注",
-    keywords: "video label annotation timestamp frame",
-    group: "video",
-    keepAlive: true,
-    heavy: true,
-    requiresWorkspace: true,
-    primary: true
-  },
-  {
     tab: "video-capture",
     label: "Video Segments",
     labelZh: "视频片段",
     keywords: "video segment capture screenshot frame export",
     group: "video",
-    keepAlive: true,
-    heavy: true,
-    requiresWorkspace: true
-  },
-  {
-    tab: "pool-label",
-    label: "Image Box Label",
-    labelZh: "图片标注",
-    keywords: "image label box detection annotation track",
-    group: "image",
     keepAlive: true,
     heavy: true,
     requiresWorkspace: true

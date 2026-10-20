@@ -23,7 +23,7 @@
   execution target as unknown rather than assuming Codex is available.
 - **Retirement of `PROJECTCONTEXT.md`.** Delete it only after the V3 layout and
   the map have carried real work; that is an Owner call on timing.
-- **Legacy frontend disposition.** `legacy/qt/` and `legacy/web/` are excluded
-  from the map and off the main path, but no decision has been recorded on
-  whether to delete them. Removal is category C — it removes existing
-  capability.
+- **Legacy frontend disposition.** Decided 2026-10-20 by the Owner: `legacy/qt/`,
+  `legacy/web/`, the React classic video and image label pages, and the backend
+  code only they used are removed. The "Legacy assign" (hard-link assign) tool
+  is not part of that decision.

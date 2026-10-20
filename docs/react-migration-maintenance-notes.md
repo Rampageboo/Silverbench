@@ -1,6 +1,6 @@
 # React Migration Maintenance Notes
 
-This project has moved the desktop workbench to native React tabs. The old `legacy/web/*.js` files may still be useful as historical reference, but the React desktop app should be treated as the current source of truth for active workbench behavior.
+The desktop workbench is native React. The legacy web (`legacy/web`) and Qt (`legacy/qt`) frontends were removed in October 2026; git history keeps them for reference.
 
 ## Current scope
 
@@ -61,10 +61,6 @@ Do not run full validation after every small code edit. Batch the changes, then 
 ## BackendMethod typing (done)
 
 Feature API helpers (`videoCaptureApi`, `autoLabelApi`, `trainPrepApi`, `cropApi`) use `rpc(method: BackendMethod, …)` so every desktop RPC name is checked at compile time. When adding a new backend handler in `backend/service.py`, add the same string to the `BackendMethod` union in `apps/desktop/src/api.ts`.
-
-## Legacy web files
-
-Legacy web assets live under `legacy/web/`. The React desktop shell imports only `legacy/web/styles.css`; full `legacy/web` remains for `tauri:dev:legacy`, Qt, and standalone server flows.
 
 ## Reusable UI components (done for tool tabs)
 

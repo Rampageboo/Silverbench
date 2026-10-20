@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import random
 import re
 import shutil
@@ -294,70 +293,6 @@ def move_detect_val_back_to_train(root: Path) -> dict:
         **stats,
         "failures": failures,
     }
-
-
-def move_pairs_to_val(root: Path, image_paths: list[str]) -> dict:
-    root = root.resolve()
-    image_train = root / "images" / "train"
-    label_train = root / "labels" / "train"
-    image_val = root / "images" / "val"
-    label_val = root / "labels" / "val"
-    if not image_train.is_dir() or not label_train.is_dir():
-        return {
-            "ok": False,
-            "reason": "missing_train",
-            "message": "Expected images/train and labels/train folders.",
-            "moved": 0,
-        }
-
-    existing_val = []
-    for folder in (image_val, label_val):
-        if folder.exists():
-            existing_val.extend(path for path in folder.rglob("*") if path.is_file())
-    if existing_val:
-        return {
-            "ok": False,
-            "reason": "val_exists",
-            "message": "Validation folders already contain files. No files were moved.",
-            "moved": 0,
-        }
-
-    image_val.mkdir(parents=True, exist_ok=True)
-    label_val.mkdir(parents=True, exist_ok=True)
-    moved = 0
-    skipped = 0
-    for image_path_text in image_paths:
-        parts = Path(image_path_text).parts
-        if len(parts) < 3 or parts[0] != "images" or parts[1] != "train" or any(part == ".." for part in parts):
-            skipped += 1
-            continue
-        rel = Path(*parts[2:])
-        if rel.is_absolute() or any(part == ".." for part in rel.parts):
-            skipped += 1
-            continue
-        source_image = image_train / rel
-        source_label = (label_train / rel).with_suffix(".txt")
-        if not source_image.exists() or not source_label.exists():
-            skipped += 1
-            continue
-        target_image = image_val / rel
-        target_label = (label_val / rel).with_suffix(".txt")
-        target_image.parent.mkdir(parents=True, exist_ok=True)
-        target_label.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(source_image), str(target_image))
-        shutil.move(str(source_label), str(target_label))
-        moved += 1
-
-    cleanup_empty_dirs(image_train)
-    cleanup_empty_dirs(label_train)
-    result = {
-        "ok": moved > 0,
-        "reason": "created" if moved else "no_pairs_moved",
-        "message": f"Moved {moved} image/label pair(s) to val." if moved else "No image/label pairs were moved.",
-        "moved": moved,
-        "skipped": skipped,
-    }
-    return attach_data_yaml_update(root, result) if moved > 0 else result
 
 
 def attach_data_yaml_update(root: Path, result: dict) -> dict:

@@ -32,8 +32,8 @@ dataset work: image/video import, labeling (detection boxes + classification),
 auto-labeling with PT models, dataset prep/merge/export, and training runs.
 
 - **Frontend**: React + TypeScript + Vite inside a Tauri desktop shell
-  (`apps/desktop`). All tools are native React; no iframe embeds. Legacy Qt
-  shell exists (`run_legacy_qt.bat`) but Qt is not used in the main path.
+  (`apps/desktop`). All tools are native React. The legacy web and Qt
+  frontends were removed in October 2026.
 - **Backend**: Python FastAPI + uvicorn (`backend_api/main.py`, ~940 lines),
   localhost-only, JSON-RPC-style `/api/call` dispatch into `backend/` service
   modules. `API_SCHEMA_VERSION` (currently 25) must be bumped when `/health`
@@ -52,8 +52,7 @@ auto-labeling with PT models, dataset prep/merge/export, and training runs.
   training runner, multimodal entrypoint.
 - `apps/desktop/src/` — React app: `app/`, `features/`, `workbench/`,
   `workspace/`, `components/`, `hooks/`, `lib/`, `api.ts`.
-- `apps/desktop/src-tauri/` — Tauri (Rust) shell; legacy full-web config
-  available via `tauri:dev:legacy`.
+- `apps/desktop/src-tauri/` — Tauri (Rust) shell.
 - `tests/` — Python tests (pytest-style, `test_*.py`) covering safety,
   pool/snapshot, media import, PT jobs, tracker, workspace session; plus
   Playwright `smoke.spec.js` (`playwright.config.js` at root).

@@ -37,7 +37,7 @@ class DialogSecurityTests(unittest.TestCase):
     def test_desktop_backend_service_uses_hardened_subclass(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
-            service = dialogs.create_desktop_backend_service(root, root / "sessions", root / "session.json")
+            service = dialogs.create_desktop_backend_service(root, root / "sessions")
 
         self.assertIsInstance(service, dialogs.DesktopBackendService)
 

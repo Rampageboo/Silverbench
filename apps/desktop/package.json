@@ -16,7 +16,6 @@
     "backend:dev": "node scripts/start-backend-and-wait.mjs",
     "dev:shell": "node scripts/dev-shell.mjs",
     "tauri:dev": "tauri dev",
-    "tauri:dev:legacy": "tauri dev --config src-tauri/tauri.conf.legacy-web.json",
     "tauri:build": "tauri build"
   },
   "dependencies": {

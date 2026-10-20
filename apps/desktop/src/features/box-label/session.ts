@@ -120,7 +120,6 @@ export async function savePoolLabelSession(
   const shortcutSlots = fields.shortcutSlots;
   const payload: Record<string, unknown> = {
     ...existing,
-    activeTab: "pool-label",
     poolLabelSessionVersion: 1,
     currentImagePath: fields.currentImagePath,
     poolLabelCurrentImagePath: fields.currentImagePath,

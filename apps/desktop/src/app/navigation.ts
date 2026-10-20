@@ -206,22 +206,6 @@ export const SECONDARY_NAV_ITEMS: NavItem[] = [
     icon: IconInbox,
     target: { tab: "image-pool", imageTab: "inbox" },
     keywords: "inbox assign hard link legacy"
-  },
-  {
-    id: "video-label-classic",
-    label: "Video label (classic)",
-    labelZh: "视频标注（旧版）",
-    icon: IconVideo,
-    target: { tab: "video" },
-    keywords: "video label classic timestamp legacy"
-  },
-  {
-    id: "box-label-classic",
-    label: "Image label (classic)",
-    labelZh: "图片标注（旧版）",
-    icon: IconBox,
-    target: { tab: "pool-label" },
-    keywords: "image box label classic legacy"
   }
 ];
 
@@ -230,14 +214,7 @@ export const ALL_NAV_ITEMS: NavItem[] = [
   ...SECONDARY_NAV_ITEMS
 ];
 
-/** Tabs that render inside another nav item's context. */
-const NAV_ALIASES: Partial<Record<ToolTab, string>> = {
-  video: "label",
-  "pool-label": "label"
-};
-
 export function isNavItemActive(item: NavItem, activeTab: ToolTab, imageTab: ImageWorkspaceTab): boolean {
-  if (NAV_ALIASES[activeTab] === item.id) return true;
   if (item.target.tab !== activeTab) return false;
   return !item.target.imageTab || item.target.imageTab === imageTab;
 }

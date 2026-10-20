@@ -15,7 +15,6 @@ from typing import Any, Iterator
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
 from starlette.responses import Response
@@ -33,15 +32,9 @@ from backend_api.dialogs import create_desktop_backend_service
 
 
 APP_DIR = Path(__file__).resolve().parent.parent
-WEB_DIR = APP_DIR / "legacy" / "web"
 SESSION_DIR = APP_DIR / "Sessions"
-SESSION_FILE = SESSION_DIR / "yolo_label_viewer_session.json"
-HEARTBEAT_METHOD = "__heartbeat"
 # Bump when /health or /api/call routing changes so dev startup can restart stale backends.
 API_SCHEMA_VERSION = 25
-
-# Localhost-only desktop backend: allow any registered service method except heartbeat/private.
-BLOCKED_API_METHODS = frozenset({HEARTBEAT_METHOD})
 
 # Guards concurrent proxy transcodes for the same output file.
 _VIDEO_PROXY_LOCKS_GUARD = threading.Lock()
@@ -116,12 +109,6 @@ class MarkJunkRequest(BaseModel):
 
 @asynccontextmanager
 async def _lifespan(application: FastAPI):
-    # Mount static files during startup so that API routes registered by
-    # multimodal_main (which imports this module) are added first. A module-
-    # level mount would be inserted before those routes and would intercept
-    # all /api/multimodal/* requests before they could be matched.
-    if WEB_DIR.is_dir():
-        application.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
     try:
         yield
     finally:
@@ -133,7 +120,7 @@ app = FastAPI(title="RampageWorkbench API", lifespan=_lifespan)
 from backend_api.gallery import router as gallery_router
 
 app.include_router(gallery_router)
-service = create_desktop_backend_service(APP_DIR, SESSION_DIR, SESSION_FILE)
+service = create_desktop_backend_service(APP_DIR, SESSION_DIR)
 
 app.add_middleware(
     CORSMiddleware,
@@ -171,41 +158,6 @@ def health() -> dict[str, object]:
         "ui": "web",
         "apiSchemaVersion": API_SCHEMA_VERSION,
     }
-
-
-@app.post("/api")
-async def legacy_api(request: Request) -> JSONResponse:
-    try:
-        payload = await request.json()
-    except json.JSONDecodeError:
-        return JSONResponse({"ok": False, "error": "Invalid JSON payload."}, status_code=400)
-
-    method = str(payload.get("method") or "")
-    if method == HEARTBEAT_METHOD:
-        return JSONResponse({"ok": True, "result": "alive"})
-    if method.startswith("_"):
-        return JSONResponse({"ok": False, "error": "Private/internal API methods are not callable."}, status_code=403)
-    if method not in service.api_methods():
-        return JSONResponse({"ok": False, "error": f"Unknown API method: {method}"}, status_code=404)
-
-    try:
-        result = service.call(method, list(payload.get("args") or []))
-    except Exception as error:
-        return JSONResponse({"ok": False, "error": str(error)}, status_code=500)
-
-    # Keep legacy /api compatible with the old HTTP server and Qt bridge:
-    # many web/*.js callers expect string JSON in `result` and call JSON.parse().
-    if isinstance(result, (dict, list)):
-        result = json.dumps(result, ensure_ascii=False)
-    return JSONResponse({"ok": True, "result": result})
-
-
-@app.get("/yolo_app_settings.json")
-def yolo_app_settings_file() -> FileResponse:
-    path = APP_DIR / "yolo_app_settings.json"
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="App settings file not found.")
-    return FileResponse(path, media_type="application/json")
 
 
 @app.post("/api/app-settings")
@@ -263,8 +215,6 @@ def api_call(payload: ApiCallRequest) -> JSONResponse:
     method = payload.method.strip()
     if method.startswith("_"):
         return _error_response(403, method, "Private/internal API methods are not callable.")
-    if method in BLOCKED_API_METHODS:
-        return _error_response(403, method, f"API method is not callable: {method}")
     if method not in service.api_methods():
         return _error_response(404, method, f"Unknown API method: {method}")
 

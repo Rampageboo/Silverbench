@@ -4,7 +4,7 @@ This document lists non-test engineering improvements for the React desktop work
 
 ## Current state
 
-The desktop workbench now has a unified React shell and feature pages under `apps/desktop/src/features/*`. The old legacy web implementation is no longer the active source of truth for normal desktop workbench development.
+The desktop workbench now has a unified React shell and feature pages under `apps/desktop/src/features/*`. The legacy web and Qt implementations were removed in October 2026.
 
 The next phase should focus on incremental hardening rather than another broad migration.
 
@@ -357,29 +357,7 @@ Avoid persisting:
 
 ## P7 — Legacy boundary documentation
 
-### Problem
-
-Legacy web files may still exist for historical reference, Qt/legacy flows, or standalone server flows. Future agents or developers may accidentally edit legacy files thinking they are active desktop React code.
-
-### Desired direction
-
-Keep a clear boundary note in or near the legacy folder:
-
-```text
-legacy/web/README.md
-```
-
-Suggested message:
-
-```text
-These files are legacy/reference implementation.
-The active desktop workbench is implemented in apps/desktop/src/features/*.
-Do not add new desktop tool behavior here unless maintaining a legacy launch mode explicitly.
-```
-
-### Rule
-
-If a behavior differs between React and legacy, React desktop behavior should be treated as current unless the task explicitly targets legacy mode.
+Done by removal: the legacy web and Qt frontends were deleted in October 2026, so there is no longer a boundary to document.
 
 ---
 

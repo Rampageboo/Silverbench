@@ -113,8 +113,6 @@ echo.
 echo Tip: double-click RampageWorkbench.vbs to launch without a terminal window.
 echo      Run create-shortcut.vbs once to put a desktop shortcut on your desktop.
 echo Logs: logs\desktop.log, logs\backend.log
-echo Fallback full web shell: cd apps\desktop ^&^& npm run tauri:dev:legacy
-echo Qt is not used. For the old Qt shell specifically, use run_legacy_qt.bat.
 echo [%DATE% %TIME%] Starting RampageWorkbench desktop shell>>"..\..\%LOG_FILE%"
 powershell -NoProfile -Command "npm run tauri:dev 2>&1 | Tee-Object -FilePath '..\..\%LOG_FILE%' -Append"
 set "APP_EXIT_CODE=%ERRORLEVEL%"

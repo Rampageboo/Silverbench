@@ -68,13 +68,6 @@ const ImageWorkspaceTool = lazy(async () => {
   };
 });
 
-const VideoLabelTool = lazy(async () => {
-  const module = await import("../features/video/VideoLabelPage");
-  return {
-    default: (props: ToolPageProps) => <module.VideoLabelPage active={props.active} onReady={props.onReady} />
-  };
-});
-
 const VideoCaptureTool = lazy(async () => {
   const module = await import("../features/video/VideoCapturePage");
   return {
@@ -82,11 +75,6 @@ const VideoCaptureTool = lazy(async () => {
       <module.VideoCapturePage active={props.active} onReady={props.onReady} />
     )
   };
-});
-
-const ImageBoxLabelTool = lazy(async () => {
-  const module = await import("../features/box-label/BoxLabelPage");
-  return { default: (props: ToolPageProps) => <module.BoxLabelPage onReady={props.onReady} /> };
 });
 
 const TrainPrepTool = lazy(async () => {
@@ -123,9 +111,7 @@ const TOOL_COMPONENTS: Record<ToolTab, WorkbenchToolDefinition["component"]> = {
   classes: ClassesTool,
   gallery: GalleryTool,
   // Legacy keep-alive
-  video: VideoLabelTool,
   "video-capture": VideoCaptureTool,
-  "pool-label": ImageBoxLabelTool,
   "image-pool": ImageWorkspaceTool,
   "train-prep": TrainPrepTool,
   train: AutoLabelTool,

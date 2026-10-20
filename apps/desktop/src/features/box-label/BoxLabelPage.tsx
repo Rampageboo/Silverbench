@@ -1,30 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useWorkspace } from "../../app/useWorkspace";
 import { useToast } from "../../components/useToast";
-import { BoxLabelTopbar } from "../../components/BoxLabelTopbar";
 import { errMessage } from "../../lib/errors";
 import { isFlaggedFile, isNextTrainingFile, isReviewedFile } from "../image-pool/metadata";
-import { isLabelWorkbenchEmbedded, useLabelWorkbench } from "../label/useLabelWorkbench";
+import { useLabelWorkbench } from "../label/useLabelWorkbench";
 import type { LabelWorkbenchActionGroup } from "../label/labelWorkbenchTypes";
 import { useArchivedClassIds } from "../workspace/useArchivedClassIds";
 import { useWorkspaceClasses } from "../workspace/useWorkspaceClasses";
 import { activeDetectClassDefs, chooseClassificationManifest, classificationOptionsForNewAnnotations } from "../workspace/workspaceClassTaxonomy";
-import { BoxLabelGallery } from "./BoxLabelGallery";
 import { BoxLabelView } from "./BoxLabelView";
 import type { BoxLabelCanvasOverlay, BoxLabelViewProps, BoxLabelWorkbenchBridge } from "./boxLabelTypes";
-import { useBoxLabel, type BoxLabelModel } from "./useBoxLabel";
-
-type BoxLabelPageProps = {
-  onReady?: () => void;
-};
+import type { BoxLabelModel } from "./useBoxLabel";
 
 export type BoxLabelPageModel = BoxLabelModel;
 
 type BoxLabelSurfaceProps = {
   pool: BoxLabelPageModel;
-  showGallery?: boolean;
-  unifiedMedia?: boolean;
-  showSideStack?: boolean;
   onImageNavigate?: (index: number) => void;
   onNavigateBoundary?: (delta: -1 | 1) => void;
   classPanelSummaries?: BoxLabelViewProps["classPanelSummaries"];
@@ -33,23 +24,9 @@ type BoxLabelSurfaceProps = {
   previewHeaderActions?: BoxLabelViewProps["previewHeaderActions"];
 };
 
-export function BoxLabelPage({ onReady }: BoxLabelPageProps) {
-  const { workspaceRoot, poolLabelFocusFilename, clearPoolLabelFocus, chooseWorkspaceFolder } = useWorkspace();
-  const pool = useBoxLabel({
-    workspaceRoot,
-    focusFilename: poolLabelFocusFilename,
-    onFocusConsumed: clearPoolLabelFocus,
-    onReady
-  });
-
-  return <BoxLabelSurface pool={pool} />;
-}
-
+/** The image label surface inside the Label workbench. */
 export function BoxLabelSurface({
   pool,
-  showGallery = true,
-  unifiedMedia = false,
-  showSideStack = true,
   onImageNavigate,
   onNavigateBoundary,
   classPanelSummaries,
@@ -57,7 +34,7 @@ export function BoxLabelSurface({
   previewDock,
   previewHeaderActions,
 }: BoxLabelSurfaceProps) {
-  const { workspaceRoot, chooseWorkspaceFolder } = useWorkspace();
+  const { workspaceRoot } = useWorkspace();
   const { showToast } = useToast();
   const showError = useCallback((err: unknown) => showToast(errMessage(err), { variant: "error" }), [showToast]);
   const [workbenchBridge, setWorkbenchBridge] = useState<BoxLabelWorkbenchBridge | null>(null);
@@ -74,7 +51,6 @@ export function BoxLabelSurface({
   } = useWorkspaceClasses(workspaceRoot);
 
   const workbench = useLabelWorkbench();
-  const embedded = isLabelWorkbenchEmbedded(workbench);
   const currentMeta = pool.currentEntry ? pool.metadata.get(pool.currentEntry.basename) : undefined;
   const currentClassificationKey =
     currentMeta?.clf_enabled && currentMeta.clf_class ? currentMeta.clf_class : null;
@@ -291,54 +267,9 @@ export function BoxLabelSurface({
     imageActionGroups,
   ]);
 
-  const topbarStatus =
-    pool.statusText ||
-    (workspaceRoot.trim()
-      ? pool.entries.length
-        ? `${pool.entries.length} media image(s)`
-        : "detect_dataset is empty — send images to Detect first."
-      : "Open a workspace to label media.");
-
-  const mediaTopbarStatus =
-    pool.statusText ||
-    (workspaceRoot.trim()
-      ? pool.entries.length
-        ? `${pool.entries.length} media image(s)`
-        : "No media images found. Import images to start labeling."
-      : "Open a workspace to label media.");
-
-  const reviewNames =
-    pool.selectedBasenames.size > 0
-      ? [...pool.selectedBasenames]
-      : pool.currentEntry
-        ? [pool.currentEntry.basename]
-        : [];
-  const reviewedCount = reviewNames.filter((name) => isReviewedFile(pool.metadata.get(name))).length;
-  const reviewedLabel =
-    reviewNames.length > 1
-      ? `Reviewed ${reviewedCount}/${reviewNames.length}`
-      : pool.currentEntry && isReviewedFile(pool.metadata.get(pool.currentEntry.basename))
-        ? "Reviewed: Yes"
-        : "Reviewed";
-  const reviewedActive = reviewNames.length > 0 && reviewedCount === reviewNames.length;
-  const flagged =
-    reviewNames.length > 0 && reviewNames.some((name) => isFlaggedFile(pool.metadata.get(name)));
-  const nextTraining =
-    reviewNames.length > 0 && reviewNames.every((name) => isNextTrainingFile(pool.metadata.get(name)));
-
-  const topbarCommon = {
-    reviewedLabel,
-    reviewedActive,
-    flagged,
-    nextTraining,
-    onToggleReviewed: () => pool.toggleReviewed().catch(showError),
-    onToggleFlagged: () => pool.toggleFlagged().catch(showError),
-    onToggleNextTraining: () => pool.toggleNextTraining().catch(showError)
-  };
-
   if (pool.pending && !pool.entries.length) {
     return (
-      <div className={`app pool-label react-box-label-page react-box-label-page--loading${embedded ? " react-box-label-page--embedded" : ""}${unifiedMedia ? " react-box-label-page--unified-media" : ""}`}>
+      <div className={`app pool-label react-box-label-page react-box-label-page--loading react-box-label-page--embedded react-box-label-page--unified-media`}>
         <div className="page-loading" role="status" aria-live="polite">
           <span className="page-loading-spinner" aria-hidden="true" />
           <span className="page-loading-title">正在加载 Box Label</span>
@@ -350,57 +281,15 @@ export function BoxLabelSurface({
 
   if (!pool.currentEntry) {
     return (
-      <div className={`app pool-label react-box-label-page react-box-label-page--empty${embedded ? " react-box-label-page--embedded" : ""}${unifiedMedia ? " react-box-label-page--unified-media" : ""}`}>
-        {!embedded ? (
-          <BoxLabelTopbar
-            title="Box Label"
-            statusText={pool.error || mediaTopbarStatus}
-            canMarkJunk={Boolean(workspaceRoot.trim())}
-            junkLabel={pool.junkButtonLabel}
-            canUndoJunk={pool.canUndoJunk}
-            onOpenWorkspace={() => chooseWorkspaceFolder().catch(showError)}
-            onMarkJunk={() => pool.markJunk().catch(showError)}
-            onUndoJunk={() => pool.undoJunk().catch(showError)}
-            {...topbarCommon}
-          />
-        ) : null}
+      <div className={`app pool-label react-box-label-page react-box-label-page--empty react-box-label-page--embedded react-box-label-page--unified-media`}>
         <div className="empty">{pool.error || "No media images found."}</div>
       </div>
     );
   }
 
   return (
-    <div className={`app pool-label react-box-label-page${embedded ? " react-box-label-page--embedded" : ""}${unifiedMedia ? " react-box-label-page--unified-media" : ""}`}>
-      {!embedded ? (
-        <BoxLabelTopbar
-          title="Box Label"
-          statusText={mediaTopbarStatus}
-          canMarkJunk={Boolean(workspaceRoot.trim())}
-          junkLabel={pool.junkButtonLabel}
-          canUndoJunk={pool.canUndoJunk}
-          onOpenWorkspace={() => chooseWorkspaceFolder().catch(showError)}
-          onMarkJunk={() => pool.markJunk().catch(showError)}
-          onUndoJunk={() => pool.undoJunk().catch(showError)}
-          {...topbarCommon}
-        />
-      ) : null}
+    <div className={`app pool-label react-box-label-page react-box-label-page--embedded react-box-label-page--unified-media`}>
       <main className="workspace pool-label-workspace" id="poolLabelWorkspace">
-        {showGallery ? (
-          <BoxLabelGallery
-            datasetRoot={pool.datasetRoot}
-            entries={pool.entries}
-            currentIndex={pool.currentIndex}
-            shiftSelectedBasenames={pool.shiftSelectedBasenames}
-            metadata={pool.metadata}
-            imageViewMode={pool.imageViewMode}
-            restoreScrollTop={pool.restoreScrollTop}
-            restoreImagePath={pool.restoreImagePath}
-            onSelect={pool.selectGalleryImage}
-            onScrollChange={pool.onGalleryScroll}
-            onViewportRestored={pool.clearRestoreViewport}
-            onImageViewModeChange={pool.setImageViewMode}
-          />
-        ) : null}
         <BoxLabelView
           workspaceRoot={workspaceRoot}
           datasetRoot={pool.datasetRoot}
@@ -415,7 +304,7 @@ export function BoxLabelSurface({
             onImageNavigate?.(index);
           }}
           onNavigateBoundary={onNavigateBoundary}
-          showSideStack={showSideStack}
+          showSideStack
           initialShortcutSlots={pool.initialShortcutSlots}
           initialFixedBoxSlots={pool.initialFixedBoxSlots}
           initialPointerToolEnabled={pool.initialPointerToolEnabled}
@@ -447,7 +336,7 @@ export function BoxLabelSurface({
           classificationClasses={imageClassificationClasses}
           classificationClassesBusy={workspaceClassesLoading || workspaceClassesSaving}
           classificationClassesStatus={classificationClassStatus}
-          classificationClassesInWorkbenchSlot={embedded}
+          classificationClassesInWorkbenchSlot
           detectClassKeysById={detectClassKeysById}
           currentClassificationKey={currentClassificationKey}
           onAssignClassificationClass={pool.assignClassificationClass}

@@ -5,8 +5,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from .image_preview import image_thumbnail_jpeg_base64
-
 from .yolo_workspace import (
     IMAGE_EXTENSIONS,
     load_workspace_config,
@@ -353,29 +351,6 @@ def scan_image_pool(workspace_root: Path, *, fast: bool = False) -> dict[str, An
     if fingerprint:
         _write_snapshot_scan_cache(root, fingerprint, cache_payload)
     return result
-
-
-def image_pool_thumbnail_base64(
-    workspace_root: Path,
-    filename: str,
-    max_size: int = 128,
-    *,
-    quality: int = 54,
-    session_dir: Path | None = None,
-) -> str:
-    """Return a small JPEG preview to avoid loading full images in the UI."""
-    paths = load_workspace_config(workspace_root)
-    path = paths.image_pool / Path(filename).name
-    if not path.is_file() or path.suffix.lower() not in IMAGE_EXTENSIONS:
-        raise FileNotFoundError(f"Image not found in media: {filename}")
-    return image_thumbnail_jpeg_base64(
-        path,
-        max_size,
-        quality=quality,
-        session_dir=session_dir,
-        workspace_root=workspace_root,
-        filename=filename,
-    )
 
 
 def mark_image_pool_seen(workspace_root: Path) -> dict[str, Any]:

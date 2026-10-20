@@ -31,7 +31,6 @@ import {
   getDetectTask
 } from "../video/videoAnnotationDomain";
 import { planVideoExport } from "../video/videoExportPlanner";
-import { galleryRevealTargetForKey } from "../box-label/galleryNavigation";
 import type { LabelClass } from "../../api";
 
 // ---------------------------------------------------------------------------
@@ -460,31 +459,5 @@ describe("Task 16 — duplicate cluster type is available", () => {
     const a = { x: 0.1, y: 0.1, w: 0.1, h: 0.1 };
     const b = { x: 0.9, y: 0.9, w: 0.1, h: 0.1 };
     expect(predictionIou(a, b)).toBe(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// TEST 17: normal A/D navigation still works
-// ---------------------------------------------------------------------------
-
-describe("Task 17 — normal A/D gallery navigation still works", () => {
-  it("A key returns previous index", () => {
-    expect(galleryRevealTargetForKey({ key: "a" }, 3, 10)).toBe(2);
-  });
-
-  it("D key returns next index", () => {
-    expect(galleryRevealTargetForKey({ key: "d" }, 3, 10)).toBe(4);
-  });
-
-  it("D key at last index returns null (no wrap)", () => {
-    expect(galleryRevealTargetForKey({ key: "d" }, 9, 10)).toBeNull();
-  });
-
-  it("A key at first index returns null (no wrap)", () => {
-    expect(galleryRevealTargetForKey({ key: "a" }, 0, 10)).toBeNull();
-  });
-
-  it("other keys return null", () => {
-    expect(galleryRevealTargetForKey({ key: "w" }, 3, 10)).toBeNull();
   });
 });

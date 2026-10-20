@@ -20,7 +20,7 @@ class AutoLabelModelImportTests(unittest.TestCase):
             workspace = temp_root / "workspace"
             create_workspace(workspace)
 
-            service = BackendService(PathAccess([workspace]), temp_root, temp_root / "session.json")
+            service = BackendService(PathAccess([workspace]), temp_root)
             registry = json.loads(service.call("readAutoLabelModelRegistry", [str(workspace)]))
 
             self.assertEqual(registry, {})
@@ -43,7 +43,6 @@ class AutoLabelModelImportTests(unittest.TestCase):
             service = BackendService(
                 PathAccess([workspace, detect_source_dir, classify_source_dir]),
                 temp_root,
-                temp_root / "session.json",
             )
 
             detect_registry = json.loads(
@@ -84,7 +83,7 @@ class AutoLabelModelImportTests(unittest.TestCase):
             detect_model.write_bytes(b"detect")
             classify_model.write_bytes(b"classify")
 
-            service = BackendService(PathAccess([workspace]), temp_root, temp_root / "session.json")
+            service = BackendService(PathAccess([workspace]), temp_root)
             registry = json.loads(service.call("readAutoLabelModelRegistry", [str(workspace)]))
 
             self.assertEqual(registry["detect"]["activeModel"], "models/autolabel/detect/detect.pt")
@@ -116,7 +115,7 @@ class AutoLabelModelImportTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            service = BackendService(PathAccess([workspace]), temp_root, temp_root / "session.json")
+            service = BackendService(PathAccess([workspace]), temp_root)
             registry = json.loads(service.call("readAutoLabelModelRegistry", [str(workspace)]))
 
             self.assertEqual(registry["detect"]["activeModel"], "models/autolabel/detect/selected.pt")
@@ -132,7 +131,7 @@ class AutoLabelModelImportTests(unittest.TestCase):
             model = source_dir / "model.onnx"
             model.write_bytes(b"onnx")
 
-            service = BackendService(PathAccess([workspace, source_dir]), temp_root, temp_root / "session.json")
+            service = BackendService(PathAccess([workspace, source_dir]), temp_root)
 
             with self.assertRaisesRegex(ValueError, "Only .pt model files are accepted"):
                 service.call("importAutoLabelModel", [str(model), str(workspace), "detect", "2026-01-01T00:00:00.000Z"])

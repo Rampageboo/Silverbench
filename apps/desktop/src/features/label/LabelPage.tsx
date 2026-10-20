@@ -588,9 +588,6 @@ export function LabelPage({ active = true, onReady }: Props) {
             ) : (
               <BoxLabelSurface
                 pool={imagePool}
-                showGallery={false}
-                showSideStack
-                unifiedMedia
                 onImageNavigate={(index) => {
                   revealActiveMediaTile();
                   handleSelectionChange({ kind: "image", index });

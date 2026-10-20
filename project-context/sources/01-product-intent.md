@@ -22,6 +22,5 @@ rather than a pre-processing step that produces loose frames.
   that is a product decision, not a deployment detail.
 - Not a general annotation platform. Scope is YOLO detection and
   classification workflows.
-- The legacy Qt shell (`run_legacy_qt.bat`) and the legacy web frontend are
-  retained for reference only. They are not on the main path and are excluded
-  from the codebase map; do not extend them.
+- The legacy Qt shell and the legacy web frontend were removed in October
+  2026. The React desktop app is the only frontend.

@@ -2,11 +2,10 @@ import { describe, expect, it } from "vitest";
 import { WORKBENCH_TOOLS } from "./tools";
 
 describe("workbench tool catalogue", () => {
-  it("is unique and video-first while retaining image workflows", () => {
+  it("is unique and keeps the image and video tools", () => {
     const tabs = WORKBENCH_TOOLS.map((tool) => tool.tab);
     expect(new Set(tabs).size).toBe(tabs.length);
-    expect(WORKBENCH_TOOLS[0]).toMatchObject({ tab: "video", primary: true, requiresWorkspace: true });
-    expect(tabs).toContain("pool-label");
+    expect(tabs).toContain("video-capture");
     expect(tabs).toContain("image-pool");
   });
 

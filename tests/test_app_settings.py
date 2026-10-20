@@ -54,7 +54,6 @@ class AppSettingsTests(unittest.TestCase):
             service = BackendService(
                 PathAccess([session_dir]),
                 session_dir,
-                session_dir / "session.json",
                 app_settings_dir=app_settings_dir,
             )
 

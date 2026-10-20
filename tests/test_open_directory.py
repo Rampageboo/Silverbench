@@ -20,7 +20,6 @@ class OpenDirectoryTests(unittest.TestCase):
         return BackendService(
             PathAccess([root]),
             root,
-            root / "session.json",
             open_directory=open_directory,
         )
 
