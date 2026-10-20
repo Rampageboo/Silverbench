@@ -79,6 +79,11 @@ export function useBoxTracking({
   setStatus,
   pushBatchUndo
 }: UseBoxTrackingOptions) {
+  // Callers pass inline navigate handlers (a new function every render). Reading the
+  // latest one through a ref keeps the callbacks below stable; otherwise they rebuild
+  // the workbench bridge on every render, which loops through LabelPage's state.
+  const onNavigateRef = useRef(onNavigate);
+  onNavigateRef.current = onNavigate;
   const pendingBoxSelectionRef = useRef<{ boxIndex: number; classId: number } | null>(null);
   const pendingNearestBoxRef = useRef<api.LabelBox | null>(null);
   const duplicateIdCounterRef = useRef(0);
@@ -201,14 +206,13 @@ export function useBoxTracking({
       selectedItemId: selectedSelection ? state.selectedItemId : (activeItems[0]?.id ?? null)
     });
     setStatus(`Duplicated ${activeItems.length} box(es) to next image. Press T to add more, D to continue.`);
-    onNavigate(currentIndex + 1);
+    onNavigateRef.current(currentIndex + 1);
   }, [
     boxesRef,
     currentIndex,
     datasetRoot,
     entries,
     entry,
-    onNavigate,
     persistEntryLabels,
     setStatus,
     updateDuplicateState
@@ -385,7 +389,7 @@ export function useBoxTracking({
         selectedRef.current = null;
         setSelectedBoxId(null);
       }
-      if (stoppedIndex >= 0) onNavigate(stoppedIndex);
+      if (stoppedIndex >= 0) onNavigateRef.current(stoppedIndex);
       else if (result.lastBox) {
         const nearest = findNearestBoxIndex(boxesRef.current, result.lastBox);
         if (nearest >= 0) {
@@ -405,7 +409,6 @@ export function useBoxTracking({
     datasetRoot,
     entries,
     entry,
-    onNavigate,
     persistEntryLabels,
     selectedRef,
     setCurrentClass,
