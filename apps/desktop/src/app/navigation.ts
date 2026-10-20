@@ -5,6 +5,7 @@ import {
   IconBox,
   IconCrop,
   IconFlow,
+  IconGallery,
   IconImages,
   IconInbox,
   IconMask,
@@ -40,8 +41,22 @@ export type NavGroup = { id: string; label: string | null; items: NavItem[] };
  */
 export const NAV_GROUPS: NavGroup[] = [
   {
-    id: "workspace",
+    id: "gallery",
     label: null,
+    items: [
+      {
+        id: "gallery",
+        label: "图库与提示词",
+        labelZh: "Gallery & prompts — 全局图库，不需要工作区",
+        icon: IconGallery,
+        target: { tab: "gallery" },
+        keywords: "gallery prompts noobai anima tagger lora export 图库 提示词 反推 训练集"
+      }
+    ]
+  },
+  {
+    id: "workspace",
+    label: "Workspace",
     items: [
       {
         id: "overview",

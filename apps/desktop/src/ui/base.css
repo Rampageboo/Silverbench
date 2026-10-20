@@ -199,6 +199,13 @@ button.primary.ui-btn--solid:hover:not(:disabled) {
   color: var(--c-on-accent);
 }
 
+button.ui-btn--solid:disabled,
+button.primary.ui-btn--solid:disabled {
+  border-color: var(--c-line);
+  background: var(--c-raised);
+  color: var(--c-text-disabled);
+}
+
 button.danger,
 .btn--danger {
   border-color: color-mix(in srgb, var(--c-danger) 45%, transparent);

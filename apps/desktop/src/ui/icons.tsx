@@ -267,3 +267,62 @@ export const IconPencil = make(
     <path d="M12.5 7.5l4 4" />
   </>
 );
+
+export const IconStar = make(
+  "Star",
+  <path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z" />
+);
+
+export const IconEye = make(
+  "Eye",
+  <>
+    <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" />
+    <circle cx="12" cy="12" r="3" />
+  </>
+);
+
+export const IconEyeOff = make(
+  "EyeOff",
+  <>
+    <path d="M10.6 5.6A9.7 9.7 0 0112 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 01-2.7 3.4M6.6 6.6A16.6 16.6 0 002.5 12S6 18.5 12 18.5a9.6 9.6 0 005.4-1.7" />
+    <path d="M9.9 9.9a3 3 0 004.2 4.2M3.5 3.5l17 17" />
+  </>
+);
+
+export const IconCopy = make(
+  "Copy",
+  <>
+    <rect x="8.5" y="8.5" width="12" height="12" rx="2" />
+    <path d="M15.5 8.5V5a1.5 1.5 0 00-1.5-1.5H5A1.5 1.5 0 003.5 5v9A1.5 1.5 0 005 15.5h3.5" />
+  </>
+);
+
+export const IconDownload = make(
+  "Download",
+  <>
+    <path d="M12 4v11M7 10.5l5 5 5-5" />
+    <path d="M4.5 16v2.5A1.5 1.5 0 006 20h12a1.5 1.5 0 001.5-1.5V16" />
+  </>
+);
+
+export const IconPause = make("Pause", <path d="M8.5 5v14M15.5 5v14" />);
+export const IconPlay = make("Play", <path d="M7.5 5l11 7-11 7z" />);
+
+export const IconSliders = make(
+  "Sliders",
+  <>
+    <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
+    <circle cx="15" cy="7" r="2" />
+    <circle cx="9" cy="17" r="2" />
+  </>
+);
+
+export const IconGallery = make(
+  "Gallery",
+  <>
+    <rect x="6.5" y="6.5" width="14" height="13" rx="2" />
+    <path d="M3.5 15.5V5a1.5 1.5 0 011.5-1.5h11.5" />
+    <circle cx="11" cy="11" r="1.5" />
+    <path d="M20.5 16l-4-4-7 7.5" />
+  </>
+);

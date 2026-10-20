@@ -224,3 +224,26 @@ const result = await galleryApi.export({
 桌面 Rust 离线构建在清理旧路径缓存后通过，生成 `rampageworkbench-desktop.exe`。这是构建证据，尚未作为实际桌面窗口/GPU 模型验收。
 
 对应本地日志在 `logs/rampage-verifier-build-final.log`、`logs/rampage-verifier-frontend-tests-localtmp.log`、`logs/rampage-verifier-gallery-tests-host.log`、`logs/rampage-verifier-api-smoke-host.log`，均为忽略的运行产物，不随 GitHub 提交。沙箱环境中的空 FastAPI TestClient 也曾卡在 Windows socketpair；同一接口检查移到宿主执行后通过，未据此修改产品逻辑。
+
+## 11. 前端实现状态（Claude，2026-10-20）
+
+分支 `feat/ui-redesign`。入口：侧栏顶部「图库与提示词」（`gallery` ToolTab，不需要工作区，keep-alive）。代码在 `apps/desktop/src/features/gallery/`：`GalleryPage`（状态与轮询）、`GalleryNav` / `GalleryGrid` / `GalleryDetail`（三栏）、`GalleryDialogs`（添加位置、规则、批量整理、汇总、导出、原图查看）、`galleryDomain.ts`（纯逻辑，有单测）、`useGallery.ts`（带 AbortController 的请求钩子）。模型路径与能力状态在现有 Settings 对话框的「图库模型」一节。
+
+用隔离后端（worktree 自己的 `Sessions/gallery`）和合成样本（A1111 / ComfyUI 带诱饵文本节点 / 无元数据 JPG / 子目录 WEBP / 损坏文件）实测通过：
+
+- 空图库与后端不可达分开显示；后端恢复后页面自动恢复。
+- 添加位置 → 后台扫描（损坏文件计为错误并可展开）→ 分页 → 切图。
+- 来源标记：原始元数据 / 由元数据转换 / 模型反推 / 用户修改 / 无依据；元数据标签显示“元数据”而非百分比。
+- 草稿按图片 ID 保存，扫描完成触发的刷新不会覆盖编辑框；保存 NoobAI 负面与 Anima 正面后两者同时保留在 `userEdits`。
+- 切换训练集模式、调阈值只调用 `/preview`，不调用 `/process`；WD 未就绪时“打标”禁用并显示真实 blockers。
+- 选中集按 ID 跨页保留，选择栏显示不在当前页的数量。
+- 导出前确认目标/数量/用途/触发词；成功显示文件清单与 warnings；非空目录的 dataset 导出显示后端错误；原图哈希不变。
+- 未知/成人分级缩略图默认模糊，可一键切换或单张显示；Enter 不会绕过遮挡打开原图。
+- 快捷键：←→ 切图，0–5 评分（立即保存），Enter 看原图，Ctrl/Shift 多选。
+
+未做 / 待定：
+
+- 视觉上的列表/时间线视图、缩略图虚拟滚动（目前按页 120 张，5 万张靠分页而非虚拟滚动）。
+- 拖放/剪贴板导入、文件操作、多集合等后端未开放的能力，界面未提供入口。
+- 后端发现（未改）：Anima 写法的元数据（如 `@kantoku`）转成 NoobAI 版时仍保留 `@`，需求要求 NoobAI 画师写成普通 tag。
+- 尚未在 Tauri 窗口和真实 NAS / 大图库上验收。

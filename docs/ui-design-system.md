@@ -11,7 +11,8 @@ Replaces the earlier "liquid glass" layer. Applies to `apps/desktop`.
 - **Navigation model** (`src/app/navigation.ts`): the only place that lists nav items.
   Tool registration stays in `src/types/tools.ts` + `src/app/toolRegistry.tsx`.
 - **Pages**: Start (`features/home`), Overview and Classes (`features/library`),
-  Label workbench (`features/label`, layout in `labelWorkbench.css`).
+  Label workbench (`features/label`, layout in `labelWorkbench.css`), and the
+  workspace-independent 图库与提示词 page (`features/gallery`, Chinese UI).
 
 ## CSS layers (load order in `main.tsx`)
 

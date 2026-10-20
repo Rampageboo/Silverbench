@@ -168,3 +168,37 @@
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
 }
+
+.gset-fields {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.gset-caps {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.gset-adapter {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-md);
+  background: var(--c-sunken);
+}
+
+.gset-adapter__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--fs-sm);
+}
+
+.gset-adapter ul {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--c-text-3);
+  font-size: var(--fs-xs);
+}

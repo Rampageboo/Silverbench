@@ -145,7 +145,7 @@ export function LibraryPage({ onReady }: Props) {
     setActiveTab(item.target.tab);
   }
 
-  const stages = NAV_GROUPS.filter((group) => group.label);
+  const stages = NAV_GROUPS.filter((group) => group.id in STAGE_COPY);
 
   return (
     <div className="ui-page">

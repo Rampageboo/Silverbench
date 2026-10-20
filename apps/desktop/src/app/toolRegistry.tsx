@@ -40,6 +40,13 @@ const UiOrchestratorTool = lazy(async () => {
   };
 });
 
+const GalleryTool = lazy(async () => {
+  const { GalleryPage } = await import("../features/gallery/GalleryPage");
+  return {
+    default: (props: ToolPageProps) => <GalleryPage active={props.active} onReady={props.onReady} />
+  };
+});
+
 const ClassesTool = lazy(async () => {
   const { ClassesPage } = await import("../features/library/ClassesPage");
   return { default: (props: ToolPageProps) => <ClassesPage onReady={props.onReady} /> };
@@ -114,6 +121,7 @@ const TOOL_COMPONENTS: Record<ToolTab, WorkbenchToolDefinition["component"]> = {
   label: LabelTool,
   orchestrate: UiOrchestratorTool,
   classes: ClassesTool,
+  gallery: GalleryTool,
   // Legacy keep-alive
   video: VideoLabelTool,
   "video-capture": VideoCaptureTool,

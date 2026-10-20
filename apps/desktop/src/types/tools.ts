@@ -1,5 +1,5 @@
 /** Primary navigation tabs visible in the redesigned sidebar. */
-export type PrimaryTab = "home" | "library" | "classes" | "label" | "orchestrate";
+export type PrimaryTab = "home" | "gallery" | "library" | "classes" | "label" | "orchestrate";
 
 /** Legacy tool tabs kept alive for KeepAlive rendering; not shown directly in nav. */
 export type LegacyToolTab =
@@ -43,6 +43,17 @@ export const PRIMARY_NAV_TOOLS: readonly WorkbenchTool[] = [
     keywords: "home start welcome workspace create open recent",
     group: "primary",
     keepAlive: false,
+    navPrimary: true
+  },
+  {
+    tab: "gallery",
+    label: "Gallery",
+    labelZh: "图库与提示词",
+    keywords: "gallery prompts noobai anima tagger lora export library 图库 提示词",
+    group: "primary",
+    keepAlive: true,
+    heavy: true,
+    requiresWorkspace: false,
     navPrimary: true
   },
   {

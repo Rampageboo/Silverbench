@@ -8,6 +8,7 @@ import {
 } from "../app/startupOverlayMode";
 import { APP_THEME_OPTIONS, readAppTheme, writeAppTheme, type AppTheme } from "../app/appTheme";
 import { useWorkspaceArchitecture } from "../workspace/WorkspaceArchitectureProvider";
+import { GallerySettingsSection } from "../features/gallery/GallerySettingsSection";
 import "./settings.css";
 
 type SettingsModalProps = {
@@ -171,6 +172,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               ))}
             </div>
           </section>
+
+          <GallerySettingsSection open={open} />
 
           <section className="settings-group">
             <div className="settings-group__head settings-group__head--row">
