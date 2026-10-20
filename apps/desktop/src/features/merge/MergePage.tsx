@@ -8,6 +8,7 @@ import { errMessage } from "../../lib/errors";
 import { mergeDatasets, type MergeSource } from "./mergeLogic";
 import { chooseMergeDirectory, loadMergeWorkspace, moveMergeValBackToTrain, openMergeFolder, type MergeTask } from "./mergeApi";
 import { isZipFile, readFileArrayBuffer } from "./mergeZip";
+import "./merge.css";
 
 type Props = { onReady?: () => void };
 

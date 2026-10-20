@@ -18,6 +18,7 @@ import {
   type AutoLabelTask,
   type PtJob
 } from "./autoLabelApi";
+import "./autoLabel.css";
 
 type Props = { onReady?: () => void };
 

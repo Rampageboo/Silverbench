@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import * as api from "../../api";
 import type { DuplicateScan } from "./types";
+import "./imagePool.css";
 
 function naturalCompare(a: string, b: string) {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });

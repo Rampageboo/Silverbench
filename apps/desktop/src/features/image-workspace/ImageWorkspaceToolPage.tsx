@@ -4,6 +4,7 @@ import { DatasetReviewPage } from "../dataset-review/DatasetReviewPage";
 import { ImagePoolPage } from "../image-pool/ImagePoolPage";
 import type { ImageWorkspaceTab } from "../image-pool/imageWorkspaceMode";
 import { ImageAssignPage } from "../inbox/ImageAssignPage";
+import "./imageWorkspace.css";
 
 type Props = {
   active: boolean;

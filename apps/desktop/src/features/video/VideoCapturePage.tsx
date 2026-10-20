@@ -29,6 +29,7 @@ import {
   type VideoSegment as ManifestSegment
 } from "./videoSegmentApi";
 import { createVideoSegment } from "./videoSegmentDomain";
+import "./video.css";
 
 type Props = {
   onReady?: () => void;

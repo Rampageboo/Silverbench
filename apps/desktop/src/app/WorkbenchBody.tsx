@@ -20,6 +20,7 @@ import { WorkspaceLauncherProvider, useWorkspaceLauncher } from "./shell/Workspa
 import { WORKBENCH_TOOL_DEFINITIONS, type WorkbenchToolDefinition } from "./toolRegistry";
 import { useWorkspace } from "./useWorkspace";
 import "./shell/shell.css";
+import "./app.css";
 
 type WorkbenchBodyProps = { onNativeTabReady?: () => void; backendConnected: boolean };
 

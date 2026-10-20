@@ -9,6 +9,7 @@ import { ImageAssignGrid } from "./ImageAssignGrid";
 import { ImageAssignPanel } from "./ImageAssignPanel";
 import { useImageAssign } from "./useImageAssign";
 import { useImagePoolBadge } from "../image-pool/useImagePoolBadge";
+import "./inbox.css";
 
 type ImageAssignPageProps = {
   onReady?: () => void;

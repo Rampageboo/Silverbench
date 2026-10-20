@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { datasetImageUrl } from "./datasetAssets";
 import type { DatasetPair } from "./datasetCore";
+import "./datasetReview.css";
 
 type DatasetReviewLightboxProps = {
   open: boolean;

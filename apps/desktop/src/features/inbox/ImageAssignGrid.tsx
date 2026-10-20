@@ -5,6 +5,7 @@ import type { JunkScope, MetadataRow } from "../image-pool/types";
 import { computeVirtualGridLayout, sameVirtualGridLayout } from "../image-pool/virtualGrid";
 import { inboxClassTagForFile } from "./helpers";
 import type { InboxItem } from "./types";
+import "./inbox.css";
 
 type ImageAssignGridProps = {
   workspaceRoot: string;

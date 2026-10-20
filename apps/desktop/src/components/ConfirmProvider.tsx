@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { ConfirmContext, type ConfirmOptions } from "./confirmContext";
+import "./components.css";
 
 type ConfirmState = ConfirmOptions & {
   open: boolean;

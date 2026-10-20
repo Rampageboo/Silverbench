@@ -32,6 +32,7 @@ import {
   type SmartCropPair
 } from "./smartCropApply";
 import type { SmartCropSettings } from "./smartCropPlans";
+import "./crop.css";
 
 type CropPageProps = { onReady?: () => void };
 

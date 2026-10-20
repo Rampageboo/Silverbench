@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ToastContext, type ToastVariant } from "./toastContext";
+import "./components.css";
 
 type ToastItem = {
   id: number;

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import "./startup.css";
+import "./app.css";
 
 const STARTUP_FEATURES = [
   { title: "视频截帧", detail: "从视频批量截取训练图片" },

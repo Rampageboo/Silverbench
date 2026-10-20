@@ -1,3 +1,4 @@
+import "../components.css";
 type JobStatusPanelProps = {
   visible?: boolean;
   running: boolean;

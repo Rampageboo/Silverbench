@@ -11,6 +11,7 @@ import { activeDetectClassDefs, chooseClassificationManifest, classificationOpti
 import { BoxLabelView } from "./BoxLabelView";
 import type { BoxLabelCanvasOverlay, BoxLabelViewProps, BoxLabelWorkbenchBridge } from "./boxLabelTypes";
 import type { BoxLabelModel } from "./useBoxLabel";
+import "./boxLabel.css";
 
 export type BoxLabelPageModel = BoxLabelModel;
 

@@ -1,0 +1,229 @@
+.train-prep-workspace {
+  grid-column: 2;
+  min-height: 0;
+  display: none;
+  grid-template-columns: minmax(320px, 0.75fr) minmax(520px, 1.25fr);
+  gap: 12px;
+  padding: 12px;
+}
+
+.train-prep-workspace {
+  gap: 14px;
+  padding: 14px;
+}
+
+@media (max-width: 980px) {
+  .train-prep-workspace {
+    grid-column: 1;
+  }
+}
+
+.info-card {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line, var(--c-line));
+  border-radius: 8px;
+  background: var(--surface-subtle, var(--c-surface));
+  font-size: 13px;
+}
+
+.info-card p {
+  margin: 0;
+  color: var(--muted, var(--c-text-3));
+}
+
+.tp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tp-section-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted, var(--c-text-3));
+}
+
+.tp-divider {
+  height: 1px;
+  background: var(--line, var(--c-raised));
+  margin: 2px 0;
+}
+
+.tp-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.tp-stat-label {
+  color: var(--muted, var(--c-text-3));
+}
+
+.tp-stat-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.tp-stat-accent {
+  color: var(--text-1, var(--c-text));
+  font-weight: 600;
+}
+
+.tp-next-training-card {
+  display: grid;
+  gap: 6px;
+  border-color: rgba(250, 204, 21, 0.28);
+  background: linear-gradient(145deg, rgba(113, 63, 18, 0.16), var(--c-surface));
+}
+
+.tp-yaml-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.tp-yaml-ok {
+  background: var(--c-ok-soft);
+  color: var(--c-ok);
+  border: 1px solid var(--c-ok);
+}
+
+.tp-yaml-missing {
+  background: var(--c-danger-soft);
+  color: var(--c-danger);
+  border: 1px solid var(--c-danger);
+}
+
+.tp-cmd-wrap {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.tp-cmd-text {
+  flex: 1;
+  min-height: 60px;
+  font:
+    11px/1.5 "Cascadia Mono",
+    "Fira Code",
+    Consolas,
+    monospace;
+  resize: vertical;
+  background: var(--surface-subtle, var(--c-surface));
+  border: 1px solid var(--line, var(--c-line));
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--text-1, var(--c-text));
+  word-break: break-all;
+}
+
+.tp-op-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted, var(--c-text-3));
+  padding: 2px 0;
+}
+
+.tp-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--line, var(--c-line));
+  border-top-color: var(--accent, var(--c-accent-line));
+  border-radius: 50%;
+  animation: tp-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.tp-train-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tp-train-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.tp-train-badge.idle {
+  background: var(--c-hover);
+  color: var(--text-2, var(--c-text-3));
+}
+
+.tp-train-badge.running {
+  background: var(--c-ok-soft);
+  color: var(--c-ok);
+}
+
+.tp-train-badge.done {
+  background: var(--c-ok-soft);
+  color: var(--c-ok);
+}
+
+.tp-train-badge.error {
+  background: var(--c-danger-soft);
+  color: var(--c-danger);
+}
+
+.tp-train-badge.stopped {
+  background: rgba(234, 179, 8, 0.15);
+  color: #facc15;
+}
+
+.tp-train-elapsed {
+  font-size: 11px;
+  color: var(--text-2, var(--c-text-3));
+  font-variant-numeric: tabular-nums;
+}
+
+.tp-train-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 2px;
+}
+
+.tp-train-log {
+  min-height: 180px;
+  max-height: clamp(180px, calc(100vh - 520px), 500px);
+  overflow-y: auto;
+  overflow-x: auto;
+  background: var(--c-sunken);
+  border: 1px solid var(--c-line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--c-text-2);
+  white-space: pre;
+}
+
+.tp-train-line {
+  display: block;
+}
+
+.tp-train-placeholder {
+  color: var(--text-2, var(--c-text-3));
+  font-style: italic;
+  white-space: normal;
+}

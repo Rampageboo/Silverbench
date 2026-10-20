@@ -9,6 +9,7 @@ import { classNameFor, SLOT_ORDER } from "./geometry";
 import type { FixedBoxSlot } from "./session";
 import { useBoxLabelEditor } from "./useBoxLabelEditor";
 import { useLabelWorkbench } from "../label/useLabelWorkbench";
+import "./boxLabel.css";
 
 function fixedBoxReady(slot: FixedBoxSlot | null) {
   return Boolean(slot && slot.w > 0 && slot.h > 0);

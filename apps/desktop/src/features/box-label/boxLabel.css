@@ -1,0 +1,1527 @@
+.app {
+  height: 100vh;
+  display: grid;
+  grid-template-columns: var(--sidebar-rail-width, 76px) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.app.review .workspace {
+  grid-template-columns: minmax(180px, 20vw) minmax(520px, 1fr);
+}
+
+.app.review .side-stack {
+  display: none;
+}
+
+.app.review .viewer {
+  grid-template-rows: minmax(360px, 1fr);
+}
+
+.app.merge .workspace,
+.app.merge .video-workspace,
+.app.merge .image-pool-workspace,
+.app.merge .train-prep-workspace,
+.app.merge .train-workspace,
+.app.merge .crop-workspace,
+.app.merge .mask-noise-workspace,
+.app.merge .inbox-workspace,
+.app.video .workspace,
+.app.video .merge-workspace,
+.app.video .image-pool-workspace,
+.app.video .train-prep-workspace,
+.app.video .train-workspace,
+.app.video .crop-workspace,
+.app.video .mask-noise-workspace,
+.app.video .inbox-workspace,
+.app.train .workspace,
+.app.train .video-workspace,
+.app.train .merge-workspace,
+.app.train .image-pool-workspace,
+.app.train .train-prep-workspace,
+.app.train .crop-workspace,
+.app.train .mask-noise-workspace,
+.app.train .inbox-workspace,
+.app.train-prep .workspace,
+.app.train-prep .video-workspace,
+.app.train-prep .merge-workspace,
+.app.train-prep .image-pool-workspace,
+.app.train-prep .train-workspace,
+.app.train-prep .crop-workspace,
+.app.train-prep .mask-noise-workspace,
+.app.train-prep .inbox-workspace,
+.app.crop .workspace,
+.app.crop .video-workspace,
+.app.crop .merge-workspace,
+.app.crop .image-pool-workspace,
+.app.crop .train-prep-workspace,
+.app.crop .train-workspace,
+.app.crop .mask-noise-workspace,
+.app.crop .inbox-workspace,
+.app.mask-noise .workspace,
+.app.mask-noise .video-workspace,
+.app.mask-noise .image-pool-workspace,
+.app.mask-noise .train-prep-workspace,
+.app.mask-noise .train-workspace,
+.app.mask-noise .crop-workspace,
+.app.mask-noise .merge-workspace,
+.app.mask-noise .inbox-workspace,
+.app.pool-label .video-workspace,
+.app.pool-label .merge-workspace,
+.app.pool-label .image-pool-workspace,
+.app.pool-label .train-prep-workspace,
+.app.pool-label .train-workspace,
+.app.pool-label .crop-workspace,
+.app.pool-label .mask-noise-workspace,
+.app.pool-label .inbox-workspace,
+.app.image-pool .workspace,
+.app.image-pool .video-workspace,
+.app.image-pool .merge-workspace,
+.app.image-pool .train-prep-workspace,
+.app.image-pool .train-workspace,
+.app.image-pool .crop-workspace,
+.app.image-pool .mask-noise-workspace,
+.app.image-pool .inbox-workspace {
+  display: none;
+}
+
+.pool-label-workspace {
+  display: none;
+}
+
+.app.pool-label .yolo-workspace {
+  display: none;
+}
+
+.app.pool-label .pool-label-workspace {
+  display: grid;
+}
+
+.pool-label-preview-toolbar {
+  display: none;
+}
+
+.app.pool-label.pool-label-pointer-tool #previewCanvas {
+  cursor: default;
+}
+
+.app.pool-label.pool-label-subject-select #previewCanvas {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Crect x='5.5' y='5.5' width='13' height='13' fill='none' stroke='%23ef4444' stroke-width='2'/%3E%3C/svg%3E")
+      12 12,
+    crosshair;
+}
+
+.pool-label-zoom-side {
+  display: none;
+  min-height: 0;
+  min-width: 0;
+}
+
+.pool-label-zoom-view {
+  position: relative;
+  width: 500px;
+  height: 600px;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--c-surface);
+}
+
+#poolLabelZoomCanvas {
+  display: block;
+  width: 500px;
+  height: 600px;
+}
+
+.pool-label-zoom-class {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  max-width: calc(100% - 16px);
+  padding: 4px 8px;
+  background: var(--c-surface);
+  color: #ffffff;
+  font:
+    600 13px/1.25 "Segoe UI",
+    sans-serif;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.app:not(.pool-label) .pool-label-zoom-side {
+  display: none !important;
+}
+
+.pool-label-box-panel {
+  display: none;
+}
+
+.pool-label-box-panel-body {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.pool-label-shortcuts-panel {
+  display: none;
+}
+
+.app.pool-label .pool-label-workspace {
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(220px, 22vw) minmax(560px, 1fr) 340px;
+}
+
+.app.pool-label .pool-label-shortcuts-panel {
+  grid-column: 1 / -1;
+  display: grid;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 8px 10px;
+}
+
+.pool-label-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(86px, 1fr));
+  gap: 6px;
+}
+
+.pool-label-shortcut-slot {
+  min-width: 0;
+  border-radius: 8px;
+  padding: 4px;
+  display: grid;
+  grid-template-rows: 16px 1fr 1fr;
+  gap: 4px;
+  transition:
+    background-color 0.12s ease,
+    box-shadow 0.12s ease,
+    opacity 0.12s ease;
+}
+
+.pool-label-shortcut-number {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.pool-label-shortcut-dropdown {
+  position: relative;
+  min-width: 0;
+}
+
+.pool-label-shortcut-button {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pool-label-shortcut-button::after {
+  content: "";
+  float: right;
+  width: 7px;
+  height: 7px;
+  margin-top: 4px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  opacity: 0.75;
+}
+
+.pool-label-shortcut-menu {
+  position: fixed;
+  z-index: 2147483000;
+  width: max(100%, 230px);
+  max-height: 310px;
+  overflow: auto;
+  display: none;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.pool-label-shortcut-menu.open {
+  display: grid;
+  gap: 2px;
+}
+
+.pool-label-shortcut-option {
+  width: 100%;
+  min-height: 28px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.pool-label-shortcut-option:hover,
+.pool-label-shortcut-option.selected {
+  background: var(--surface-active);
+  color: var(--blue);
+}
+
+.pool-label-shortcut-empty {
+  padding: 7px 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pool-label-shortcut-dropdown.active .pool-label-shortcut-button {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.pool-label-shortcut-dropdown.active,
+.pool-label-shortcuts-panel.class-mode .pool-label-shortcut-dropdown.class-slot,
+.pool-label-shortcuts-panel.fixed-mode .pool-label-shortcut-dropdown.fixed-slot {
+  background: var(--surface-active);
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px var(--c-accent-line);
+}
+
+.pool-label-shortcuts-panel.fixed-mode .pool-label-shortcut-dropdown.class-slot,
+.pool-label-shortcuts-panel.class-mode .pool-label-shortcut-dropdown.fixed-slot {
+  opacity: 0.58;
+}
+
+.pool-label-shortcuts-panel.fixed-mode .pool-label-shortcut-dropdown.fixed-slot .pool-label-shortcut-button {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.pool-label-shortcut-dropdown.recording {
+  background: var(--c-warn-soft);
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px var(--c-warn);
+}
+
+.pool-label-shortcut-dropdown.recording .pool-label-shortcut-button {
+  border-color: var(--c-warn);
+}
+
+.app.pool-label #hideReviewedImagesBtn,
+.app.pool-label #showFlaggedImagesBtn,
+.app.pool-label #sendToCropBtn,
+.app.pool-label .yolo-filter-tools {
+  display: none;
+}
+
+.app.pool-label .pool-label-box-panel {
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.app.pool-label .viewer {
+  grid-template-columns: minmax(0, 1fr) 500px 48px;
+  grid-template-rows: minmax(360px, 1fr);
+  gap: 8px;
+}
+
+.app.pool-label .viewer .canvas-wrap {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.app.pool-label .viewer .pool-label-zoom-side {
+  display: flex;
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+  width: 500px;
+  flex-shrink: 0;
+}
+
+.app.pool-label .viewer .pool-label-preview-toolbar {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.app.pool-label .pool-label-preview-toolbar {
+  display: flex;
+  align-self: start;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+
+.pool-label-tools {
+  display: none;
+  min-height: 0;
+}
+
+.app.pool-label .pool-label-tools {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pool-label-icon-tool {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.pool-label-icon-tool svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#poolLabelBlackBoxToolBtn rect {
+  fill: currentColor;
+}
+
+.pool-label-adjust-tool {
+  position: relative;
+}
+
+.pool-label-adjust-icon {
+  display: none;
+}
+
+.pool-label-adjust-tool[data-mode="grow"] .pool-label-adjust-icon-grow,
+.pool-label-adjust-tool[data-mode="shrink"] .pool-label-adjust-icon-shrink {
+  display: block;
+}
+
+.pool-label-icon-tool.active {
+  border-color: var(--blue);
+  color: var(--blue);
+  background: var(--surface-active);
+  box-shadow: inset 0 0 0 1px var(--blue);
+}
+
+.pool-label-box-list {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  grid-auto-rows: max-content;
+  min-height: 150px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.pool-label-tools > .row input {
+  min-width: 160px;
+  flex: 1;
+}
+
+.pool-label-class-search {
+  width: 100%;
+}
+
+.pool-label-class-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 86px;
+  max-height: none;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--surface-subtle);
+}
+
+.pool-label-box-row {
+  width: 100%;
+  text-align: left;
+  font-size: 12px;
+  padding: 7px 8px;
+  overflow-wrap: anywhere;
+}
+
+.pool-label-box-row.selected {
+  border-color: var(--blue);
+  color: var(--blue);
+  background: var(--surface-active);
+}
+
+.pool-label-class-row {
+  width: auto;
+  max-width: 100%;
+  text-align: left;
+  font-size: 12px;
+  padding: 7px 9px;
+  overflow-wrap: anywhere;
+}
+
+.pool-label-class-row.selected {
+  border-color: var(--blue);
+  color: var(--blue);
+  background: var(--surface-active);
+}
+
+.app.image-pool .image-pool-workspace {
+  display: grid;
+}
+
+.app.inbox .inbox-workspace {
+  display: grid;
+}
+
+.app.inbox .workspace,
+.app.inbox .video-workspace,
+.app.inbox .image-pool-workspace,
+.app.inbox .merge-workspace,
+.app.inbox .train-prep-workspace,
+.app.inbox .train-workspace,
+.app.inbox .crop-workspace,
+.app.inbox .mask-noise-workspace {
+  display: none;
+}
+
+.app.merge .merge-workspace {
+  display: grid;
+}
+
+.app.train-prep .train-prep-workspace {
+  display: grid;
+}
+
+.app.train .train-workspace {
+  display: grid;
+}
+
+.app.crop .crop-workspace {
+  display: grid;
+}
+
+.app.mask-noise .mask-noise-workspace {
+  display: grid;
+}
+
+.app.video .video-workspace {
+  display: grid;
+}
+
+.app {
+  --sidebar-rail-width: 76px;
+  --sidebar-flyout-width: 248px;
+  grid-template-columns: var(--sidebar-rail-width) minmax(0, 1fr);
+}
+
+@media (max-width: 980px) {
+  .app {
+    min-height: 100vh;
+    height: auto;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+
+  .app {
+    grid-template-columns: 1fr;
+  }
+}
+
+.react-box-label-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.react-box-label-page--embedded {
+  grid-template-rows: minmax(0, 1fr);
+  background: transparent;
+}
+
+.react-box-label-page--unified-media {
+  width: 100%;
+  min-width: 0;
+  justify-self: stretch;
+  align-self: stretch;
+}
+
+.react-box-label-page .pool-label-workspace {
+  grid-column: 1;
+  grid-row: 2;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(220px, 22vw) minmax(560px, 1fr) 340px;
+}
+
+.react-box-label-page--embedded .pool-label-workspace {
+  grid-row: 1;
+  gap: 8px;
+  padding: 8px;
+}
+
+.react-box-label-page--embedded .pool-label-workspace > .panel,
+.react-box-label-page--embedded .pool-label-side-stack > .panel {
+  box-shadow: none;
+}
+
+.react-box-label-page #poolLabelShortcutsPanel {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.react-box-label-page #imagePanel {
+  grid-row: 2;
+  grid-column: 1;
+  min-height: 0;
+}
+
+.react-box-label-page #previewPanel {
+  grid-row: 2;
+  grid-column: 2;
+  min-height: 0;
+}
+
+.react-box-label-page .pool-label-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.react-box-label-page .pool-label-preview-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.react-box-label-page .pool-label-preview-title {
+  flex: 0 0 auto;
+}
+
+.react-box-label-page .pool-label-preview-source {
+  min-width: 0;
+  max-width: min(52vw, 720px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--glass-text-muted);
+  font-weight: 600;
+}
+
+.react-box-label-page .pool-label-preview-status-row {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.react-box-label-page .pool-label-preview-index,
+.react-box-label-page .pool-label-preview-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--c-accent-line);
+  background: var(--c-accent-soft);
+  color: var(--glass-accent-icon);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.react-box-label-page .pool-label-task-light {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.react-box-label-page .pool-label-preview-index {
+  border-color: var(--c-line);
+  background: var(--c-surface);
+  color: var(--glass-text-muted);
+}
+
+.react-box-label-page .pool-label-preview-box-count {
+  white-space: nowrap;
+}
+
+.react-box-label-page #poolLabelSideStack {
+  grid-row: 2;
+  grid-column: 3;
+  min-height: 0;
+}
+
+.react-box-label-page--unified-media .pool-label-workspace {
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px) !important;
+  gap: 8px;
+  padding: 8px 0 8px;
+  width: 100%;
+  inline-size: 100%;
+  min-width: 0;
+  justify-items: stretch;
+  align-items: stretch;
+}
+
+.react-box-label-page--unified-media #poolLabelShortcutsPanel {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.react-box-label-page--unified-media #previewPanel {
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  inline-size: 100%;
+  max-width: none;
+  min-width: 0;
+  min-height: 0;
+  justify-self: stretch;
+  align-self: stretch;
+}
+
+.react-box-label-page--unified-media #poolLabelSideStack {
+  display: flex;
+  grid-column: 2;
+  grid-row: 2;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.react-box-label-page .pool-label-side-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.react-box-label-page .pool-label-box-panel {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.react-box-label-page .pool-label-box-panel-body {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.react-box-label-page .pool-label-box-list {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  grid-auto-rows: max-content;
+  flex: 0 0 180px;
+  height: 180px;
+  min-height: 180px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.react-box-label-page .pool-label-box-list .empty {
+  margin: 0;
+  padding: 12px 8px;
+  color: var(--c-text-3);
+  font-size: 13px;
+}
+
+.react-box-label-page #poolLabelStatus {
+  flex: 0 0 auto;
+  min-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--c-text-3);
+}
+
+.pool-label-classes-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.react-box-label-page .pool-label-class-panels {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  overflow: hidden;
+}
+
+.react-box-label-page .pool-label-class-panels--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.react-box-label-page .pool-label-class-panels .pool-label-classes-panel {
+  min-width: 0;
+}
+
+.pool-label-classes-panel .panel-body {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pool-label-classes-panel .filter-panel-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.pool-label-classes-panel .pool-label-tools {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.pool-label-classes-panel .pool-label-class-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pool-label-classes-panel .pool-label-class-header-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.pool-label-classes-panel .pool-label-class-icon-btn {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--c-line-strong);
+  border-radius: 6px;
+  background: var(--c-surface);
+  color: var(--c-text-3);
+  box-shadow: none;
+}
+
+.pool-label-classes-panel .pool-label-class-icon-btn:hover:not(:disabled) {
+  border-color: var(--c-line-strong);
+  color: var(--c-text);
+  background: var(--c-surface);
+}
+
+.pool-label-classes-panel .pool-label-class-icon-btn.active {
+  border-color: var(--c-accent-line);
+  color: var(--c-accent-text);
+  background: var(--c-raised);
+}
+
+.pool-label-classes-panel .pool-label-class-inline-tool {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  min-width: 0;
+}
+
+.pool-label-classes-panel .pool-label-class-inline-tool input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pool-label-classes-panel .pool-label-class-inline-submit {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--c-accent-line);
+  border-radius: 6px;
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+}
+
+.pool-label-classes-panel .pool-label-class-inline-submit:hover:not(:disabled) {
+  border-color: var(--c-accent-line);
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+}
+
+.pool-label-classes-panel .pool-label-class-list {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: flex-start;
+  gap: 6px;
+  min-height: 86px;
+  overflow: auto;
+}
+
+.pool-label-classes-panel .pool-label-class-summary {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--c-line);
+}
+
+.pool-label-classes-panel .pool-label-class-summary-row {
+  display: grid;
+  grid-template-columns: minmax(48px, 0.36fr) minmax(0, 1fr) minmax(26px, auto);
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--lwb-text-muted);
+  font-size: 10.5px;
+  font-weight: 720;
+}
+
+.pool-label-classes-panel .pool-label-class-summary-row > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pool-label-classes-panel .pool-label-class-summary-row strong {
+  color: var(--c-text);
+  font-size: 10.5px;
+  text-align: right;
+}
+
+.pool-label-classes-panel .pool-label-class-summary-track {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--c-surface);
+}
+
+.pool-label-classes-panel .pool-label-class-summary-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--c-accent), var(--c-accent));
+}
+
+.pool-label-clf-classes-panel .pool-label-class-summary-fill {
+  background: linear-gradient(90deg, var(--c-accent), var(--c-accent));
+}
+
+.pool-label-classes-panel .pool-label-class-row {
+  position: relative;
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+
+.pool-label-classes-panel .pool-label-class-row:not(.pool-label-class-row--static) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 18px 4px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--glass-radius-sm);
+  color: var(--glass-text);
+  background: var(--c-hover);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  text-align: left;
+}
+
+.pool-label-classes-panel .pool-label-class-row--static {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--glass-radius-sm);
+  color: var(--glass-text);
+  background: var(--c-hover);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  text-align: left;
+}
+
+.pool-label-classes-panel .pool-label-class-row--static:hover:not(:disabled) {
+  border-color: var(--c-accent-line);
+  background: var(--c-accent-soft);
+  color: var(--c-text);
+}
+
+.pool-label-classes-panel .pool-label-class-row--static.selected {
+  border-color: var(--c-accent-line);
+  color: var(--c-text);
+  background: var(--c-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--c-accent-line);
+}
+
+.pool-label-classes-panel .pool-label-class-row--static:disabled {
+  cursor: default;
+}
+
+.pool-label-classes-panel .pool-label-clf-class-status {
+  flex: 0 0 auto;
+  font-size: 11px;
+}
+
+.pool-label-classes-panel .pool-label-class-row-count {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  padding: 0 3px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--c-ok);
+  background: var(--c-ok-soft);
+  pointer-events: none;
+}
+
+.pool-label-classes-panel .pool-label-class-row.selected .pool-label-class-row-count {
+  color: var(--c-ok);
+  background: var(--c-ok-soft);
+}
+
+[data-theme="graphite"] .pool-label-classes-panel .pool-label-class-row-count {
+  color: var(--c-ok);
+  background: var(--c-ok-soft);
+}
+
+.react-box-label-page .pool-label-shortcut-slot select.pool-label-shortcut-button {
+  appearance: auto;
+  cursor:
+    url("/assets/webview_cursor_pointer.png") 6 3,
+    default;
+}
+
+.react-box-label-page .pool-label-shortcut-class-row-wrap {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.react-box-label-page .pool-label-shortcut-class-row-wrap .class-slot {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.react-box-label-page .pool-label-shortcut-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid var(--c-line-strong);
+  background: var(--c-raised);
+  color: var(--c-text-3);
+  cursor:
+    url("/assets/webview_cursor_pointer.png") 6 3,
+    default;
+  flex-shrink: 0;
+  line-height: 1;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.react-box-label-page .pool-label-shortcut-mode-btn:hover:not(:disabled) {
+  border-color: var(--c-accent-line);
+  color: var(--c-accent-text);
+  background: var(--c-raised);
+}
+
+.react-box-label-page .pool-label-shortcut-mode-btn.mode-ss {
+  border-color: var(--c-warn);
+  color: var(--c-warn);
+  background: var(--c-warn-soft);
+}
+
+.react-box-label-page .pool-label-shortcut-mode-btn.mode-draw {
+  border-color: var(--c-line-strong);
+  color: var(--c-text-3);
+}
+
+.react-box-label-page .pool-label-shortcut-mode-btn:disabled {
+  opacity: 0.35;
+  cursor:
+    url("/assets/webview_cursor_default.png") 8 2,
+    default;
+}
+
+.pool-label-box-panel .pool-label-box-row {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid var(--c-line-strong);
+  border-radius: 6px;
+  background: var(--c-surface);
+  color: var(--c-text);
+}
+
+.pool-label-box-panel .pool-label-box-row.selected {
+  border-color: var(--c-accent-line);
+  background: var(--c-raised);
+}
+
+.react-box-label-page .pool-label-archived-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border: 1px solid var(--c-warn);
+  border-radius: 4px;
+  color: var(--c-warn);
+  background: var(--c-warn-soft);
+  font-size: 10px;
+  line-height: 1.2;
+  vertical-align: middle;
+}
+
+.react-box-label-page--loading {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  place-items: center;
+  height: 100%;
+  min-height: 320px;
+}
+
+.react-box-label-page--empty {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  place-items: stretch;
+  height: 100%;
+  min-height: 320px;
+}
+
+.react-box-label-page--empty .empty {
+  place-self: center;
+}
+
+.page-loading-spinner {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 3px solid var(--c-line);
+  border-top-color: var(--c-accent-line);
+  border-right-color: var(--c-accent-line);
+  animation: page-loading-spin 0.8s linear infinite;
+}
+
+.page-loading-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--c-text);
+}
+
+.page-loading-detail {
+  font-size: 13px;
+  color: var(--c-text-3);
+}
+
+.react-box-label-page .pool-label-adjust-tool {
+  position: relative;
+}
+
+.react-box-label-page .pool-label-adjust-tool .pool-label-adjust-icon {
+  display: none;
+}
+
+.react-box-label-page .pool-label-adjust-tool[data-mode="grow"] .pool-label-adjust-icon-grow,
+.react-box-label-page .pool-label-adjust-tool[data-mode="shrink"] .pool-label-adjust-icon-shrink {
+  display: block;
+}
+
+.react-box-label-page #previewViewer {
+  display: grid;
+  position: relative;
+  grid-template-columns: minmax(0, 1fr) 500px;
+  grid-template-rows: minmax(360px, 1fr);
+  gap: 8px;
+  min-height: 0;
+}
+
+.react-box-label-page--unified-media #previewViewer {
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 500px);
+  grid-template-rows: minmax(0, 1fr);
+  flex: 1 1 auto;
+  width: 100%;
+  inline-size: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  justify-self: stretch;
+  align-self: stretch;
+}
+
+.react-box-label-page.react-box-label-page--unified-media #previewViewer .pool-label-zoom-side {
+  display: flex;
+  flex-direction: column;
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.react-box-label-page.react-box-label-page--unified-media #previewViewer .canvas-wrap {
+  grid-column: 1;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  justify-self: stretch;
+  align-self: stretch;
+}
+
+.react-box-label-page.react-box-label-page--unified-media #previewViewer .pool-label-zoom-view,
+.react-box-label-page.react-box-label-page--unified-media #previewViewer #poolLabelZoomCanvas {
+  width: 100%;
+  max-width: 500px;
+}
+
+.react-box-label-page #previewViewer .canvas-wrap {
+  grid-column: 1;
+  grid-row: 1;
+  min-height: 0;
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--c-surface);
+}
+
+.react-box-label-page #previewViewer .canvas-wrap #previewCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.react-box-label-page #previewViewer .pool-label-zoom-side {
+  display: flex;
+  flex-direction: column;
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+  gap: 8px;
+}
+
+.react-box-label-page #previewViewer .pool-label-preview-toolbar {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 7px;
+  border: 1px solid var(--c-line-strong);
+  border-radius: 8px;
+  background: var(--c-surface);
+}
+
+.react-box-label-page #previewViewer .pool-label-keypad-guide {
+  flex: 1 0 100%;
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: 6px 8px;
+  align-items: center;
+  padding-top: 5px;
+  border-top: 1px solid rgba(51, 65, 85, 0.72);
+  color: var(--c-text-3);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.react-box-label-page #previewViewer .pool-label-keypad-multipliers,
+.react-box-label-page #previewViewer .pool-label-keypad-map {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.react-box-label-page #previewViewer .pool-label-keypad-multipliers > span {
+  color: var(--c-text-2);
+  font-weight: 800;
+}
+
+.react-box-label-page #previewViewer .pool-label-keypad-multipliers button {
+  min-height: 20px;
+  padding: 2px 6px;
+  border: 1px solid rgba(71, 85, 105, 0.86);
+  border-radius: 6px;
+  background: var(--c-surface);
+  color: var(--c-text-2);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.react-box-label-page #previewViewer .pool-label-keypad-multipliers button.active {
+  border-color: var(--c-accent-line);
+  background: var(--c-accent-soft);
+  color: var(--c-text);
+}
+
+.react-box-label-page #previewViewer .pool-label-keypad-map {
+  justify-content: flex-end;
+}
+
+.react-box-label-page #previewViewer .pool-label-keypad-map kbd {
+  padding: 1px 4px;
+  border: 1px solid rgba(71, 85, 105, 0.78);
+  border-radius: 4px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  font: inherit;
+  font-weight: 800;
+}
+
+.react-box-label-page .pool-label-canvas-class-menu {
+  position: absolute;
+  z-index: 30;
+  width: 272px;
+  max-width: calc(100% - 16px);
+  padding: 8px;
+  border: 1px solid var(--c-accent-line);
+  border-radius: 8px;
+  background: var(--c-surface);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(12px);
+}
+
+.react-box-label-page .pool-label-canvas-class-search {
+  width: 100%;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--c-line-strong);
+  border-radius: 6px;
+  color: var(--c-text);
+  background: var(--c-surface);
+  outline: none;
+}
+
+.react-box-label-page .pool-label-canvas-class-search:focus {
+  border-color: var(--c-accent-line);
+  box-shadow: 0 0 0 2px var(--c-accent-line);
+}
+
+.react-box-label-page .pool-label-canvas-class-results {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 270px;
+  margin-top: 7px;
+  overflow: auto;
+}
+
+.react-box-label-page .pool-label-canvas-class-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid rgba(51, 65, 85, 0.82);
+  border-radius: 6px;
+  color: var(--c-text);
+  background: var(--c-surface);
+  font-size: 12px;
+  font-weight: 650;
+  text-align: left;
+}
+
+.react-box-label-page .pool-label-canvas-class-option:hover,
+.react-box-label-page .pool-label-canvas-class-option.selected {
+  border-color: var(--c-accent-line);
+  color: var(--c-text);
+  background: var(--c-accent-soft);
+}
+
+.react-box-label-page .pool-label-canvas-class-option span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.react-box-label-page .pool-label-canvas-class-count {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border-radius: 4px;
+  color: var(--c-ok);
+  background: var(--c-ok-soft);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.react-box-label-page .pool-label-canvas-class-empty {
+  padding: 12px 8px;
+  color: var(--c-text-3);
+  font-size: 12px;
+  text-align: center;
+}
+
+.react-box-label-page .pool-label-icon-tool {
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex: 0 0 auto;
+  border: 1px solid var(--c-line-strong);
+  border-radius: 6px;
+  background: var(--c-surface);
+  color: var(--c-text-3);
+  box-shadow: none;
+}
+
+.react-box-label-page .pool-label-icon-tool svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.react-box-label-page .pool-label-icon-tool:hover:not(:disabled) {
+  border-color: var(--c-line-strong);
+  color: var(--c-text);
+  background: var(--c-surface);
+}
+
+.react-box-label-page .pool-label-icon-tool.active {
+  border-color: var(--c-accent-line);
+  color: var(--c-accent-text);
+  background: var(--c-raised);
+  box-shadow: inset 0 0 0 1px var(--c-accent-line);
+}
+
+.react-box-label-page .pool-label-icon-tool.primary {
+  border-color: var(--c-accent-line);
+  background: var(--c-accent-soft);
+  color: var(--c-text);
+}
+
+.react-box-label-page .pool-label-icon-tool.primary:hover:not(:disabled) {
+  border-color: var(--c-accent-line);
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+}
+
+.react-box-label-page .pool-label-icon-tool.danger {
+  border-color: var(--c-danger);
+  background: var(--c-danger-soft);
+  color: var(--c-danger);
+}
+
+.react-box-label-page .pool-label-icon-tool.danger:hover:not(:disabled) {
+  border-color: var(--c-danger);
+  background: var(--c-danger-soft);
+  color: var(--c-danger);
+}
+
+.react-box-label-page .canvas-wrap.pool-label-subject-select #previewCanvas {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Crect x='5.5' y='5.5' width='13' height='13' fill='none' stroke='%23ef4444' stroke-width='2'/%3E%3C/svg%3E")
+      12 12,
+    crosshair;
+}
+
+.react-box-label-page .canvas-wrap.pool-label-pointer-tool #previewCanvas {
+  cursor:
+    url("/assets/webview_cursor_default.png") 8 2,
+    default;
+}
+
+.react-box-label-page .canvas-wrap .cursor-aura {
+  position: absolute;
+  pointer-events: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+  transition: opacity 0.12s;
+}
+
+.react-box-label-page .canvas-wrap .cursor-aura[data-adjust="grow"] {
+  background: radial-gradient(circle, var(--c-ok-soft) 0%, transparent 70%);
+  box-shadow: 0 0 12px 4px var(--c-ok);
+}
+
+.react-box-label-page .canvas-wrap .cursor-aura[data-adjust="shrink"] {
+  background: radial-gradient(circle, var(--c-accent-soft) 0%, transparent 70%);
+  box-shadow: 0 0 12px 4px var(--c-accent-line);
+}

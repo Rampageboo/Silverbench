@@ -3,6 +3,7 @@ import * as api from "../../api";
 import { assignVisualState, thumbMediaClasses } from "./metadata";
 import type { FilteredItem, JunkScope, MetadataRow } from "./types";
 import { computeVirtualGridLayout, sameVirtualGridLayout } from "./virtualGrid";
+import "./imagePool.css";
 
 type ImagePoolGridProps = {
   workspaceRoot: string;

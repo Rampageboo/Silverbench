@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../../api";
 import { isJunkFile, junkLabelForFile } from "./metadata";
 import type { FilteredItem, JunkScope, MetadataRow } from "./types";
+import "./imagePool.css";
 
 const FILMSTRIP_ITEM_STEP = 72;
 type ImagePoolPreviewProps = {

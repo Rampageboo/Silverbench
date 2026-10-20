@@ -4,6 +4,7 @@ import type { JunkScope, MetadataRow } from "../image-pool/types";
 import { computeVirtualGridLayout, sameVirtualGridLayout, scrollVirtualGridToIndex } from "../image-pool/virtualGrid";
 import { datasetImageUrl } from "./datasetAssets";
 import type { DatasetPair } from "./datasetCore";
+import "./datasetReview.css";
 
 type DatasetReviewGalleryProps = {
   datasetRoot: string;

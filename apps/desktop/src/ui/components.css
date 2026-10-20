@@ -20,11 +20,6 @@
   font-size: var(--fs-sm);
 }
 
-.ui-btn--lg {
-  min-height: var(--h-control-lg);
-  padding: 0 16px;
-}
-
 .ui-btn--icon {
   width: var(--h-control);
   padding: 0;
@@ -55,26 +50,6 @@
 .ui-badge--accent {
   background: var(--c-accent-soft);
   color: var(--c-accent-text);
-}
-
-.ui-badge--solid {
-  background: var(--c-accent);
-  color: var(--c-on-accent);
-}
-
-.ui-badge--ok {
-  background: var(--c-ok-soft);
-  color: var(--c-ok);
-}
-
-.ui-badge--warn {
-  background: var(--c-warn-soft);
-  color: var(--c-warn);
-}
-
-.ui-badge--danger {
-  background: var(--c-danger-soft);
-  color: var(--c-danger);
 }
 
 .ui-badge--outline {
@@ -113,10 +88,6 @@
 .ui-dot--danger {
   background: var(--c-danger);
   box-shadow: 0 0 0 3px var(--c-danger-soft);
-}
-
-.ui-dot--warn {
-  background: var(--c-warn);
 }
 
 /* Eyebrow: small mono uppercase label used for section titles. */
@@ -379,10 +350,6 @@
 .ui-card__title {
   font-size: var(--fs-md);
   font-weight: 600;
-}
-
-.ui-card__body {
-  padding: var(--sp-4) var(--sp-5);
 }
 
 .ui-error {

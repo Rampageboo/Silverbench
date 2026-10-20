@@ -10,6 +10,8 @@ import { WorkbenchDock } from "./WorkbenchDock";
 import { AutoLabelModelPanel } from "./AutoLabelModelPanel";
 import { analysisClassPanelSummaries, type AnalysisStats } from "./labelAnalysisStats";
 import { adjacentVideoMarkerTime, useVideoPlaybackTimeline } from "./useVideoPlaybackTimeline";
+import "../box-label/boxLabel.css";
+import "./labelWorkbench.css";
 
 export {
   initialVideoAnnotationTargetTime,

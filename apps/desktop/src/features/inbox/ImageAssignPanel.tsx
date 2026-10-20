@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { detectClassChipLabel } from "./helpers";
 import type { AssignTarget, DetectClass } from "./types";
+import "./inbox.css";
 
 type ImageAssignPanelProps = {
   selectedCount: number;

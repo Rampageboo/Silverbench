@@ -1,4 +1,5 @@
 import type { ImagePoolFilter, JunkScope } from "./types";
+import "./imagePool.css";
 
 type ImagePoolToolbarProps = {
   statsText: string;

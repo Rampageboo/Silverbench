@@ -278,7 +278,8 @@
 .uio-canvas-stage {
   min-height: 0;
   padding: 8px;
-  background: linear-gradient(45deg, var(--c-hover) 25%, transparent 25%),
+  background:
+    linear-gradient(45deg, var(--c-hover) 25%, transparent 25%),
     linear-gradient(-45deg, var(--c-hover) 25%, transparent 25%), var(--c-sunken);
   background-size: 22px 22px;
 }

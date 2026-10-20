@@ -21,6 +21,7 @@ import {
   saveMaskNoiseTempImage,
   type MaskNoiseSettings
 } from "./maskNoiseApi";
+import "./maskNoise.css";
 
 type FolderItem = { path: string; name: string; backendPath: string };
 
@@ -369,7 +370,7 @@ export function MaskNoisePage({ onReady }: Props) {
             <div className="group-title">Mask Preview</div>
             <canvas ref={maskMapRef} id="maskMapCanvas" />
           </div>
-          <LogPanel className="mask-noise-log">{log}</LogPanel>
+          <LogPanel>{log}</LogPanel>
         </div>
       </section>
 

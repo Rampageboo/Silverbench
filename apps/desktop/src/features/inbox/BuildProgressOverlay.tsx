@@ -1,3 +1,4 @@
+import "./inbox.css";
 type BuildProgressOverlayProps = {
   open: boolean;
   done: number;

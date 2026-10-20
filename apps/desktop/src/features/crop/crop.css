@@ -1,0 +1,132 @@
+.crop-tool-log {
+  min-height: 56px;
+  max-height: 90px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font:
+    11px/1.35 Consolas,
+    "Cascadia Mono",
+    monospace;
+  color: var(--muted);
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.crop-workspace {
+  grid-column: 2;
+  min-height: 0;
+  display: none;
+  grid-template-columns: minmax(420px, 0.9fr) minmax(420px, 1.1fr);
+  gap: 12px;
+  padding: 12px;
+  overflow: auto;
+}
+
+.crop-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.crop-grid label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.crop-grid input,
+.crop-grid select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 9px;
+  background: var(--surface-subtle);
+  color: var(--ink);
+  font: inherit;
+}
+
+.batch-crop-queue-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.batch-crop-advanced summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+  user-select: none;
+}
+
+.crop-workspace {
+  gap: 14px;
+  padding: 14px;
+}
+
+.crop-tool-log {
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+
+.crop-tool-log {
+  font-family: "Cascadia Mono", Consolas, "SFMono-Regular", monospace;
+}
+
+@media (max-width: 980px) {
+  .crop-workspace {
+    grid-column: 1;
+  }
+}
+
+.batch-crop-queue-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.batch-crop-advanced summary {
+  cursor:
+    url("/assets/webview_cursor_pointer.png") 6 3,
+    default;
+  color: var(--muted);
+  font-size: 13px;
+  user-select: none;
+}
+
+.crop-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.crop-grid label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.smart-crop-preview-wrap {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--c-surface);
+}
+
+.smart-crop-preview-canvas {
+  max-width: 100%;
+  display: block;
+}
+
+.crop-tool-log {
+  min-height: 120px;
+  white-space: pre-wrap;
+  font:
+    12px/1.45 Consolas,
+    "Cascadia Mono",
+    monospace;
+}

@@ -22,6 +22,7 @@ import {
   type TrainPrepMetadataRow,
   type TrainPrepResult
 } from "./trainPrepApi";
+import "./trainPrep.css";
 
 type TrainPrepPageProps = {
   onReady?: () => void;

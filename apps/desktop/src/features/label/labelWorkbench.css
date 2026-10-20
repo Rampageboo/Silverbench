@@ -1,3 +1,203 @@
+.video-frame-box-label-page .video-frame-controls-panel {
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid rgba(51, 65, 85, 0.78);
+  border-radius: 8px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  backdrop-filter: blur(8px);
+}
+
+.video-frame-box-label-page .video-frame-controls-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.video-frame-box-label-page .video-frame-controls-head span:last-child {
+  color: var(--c-accent-text);
+  font-size: 11px;
+}
+
+.video-frame-box-label-page .video-frame-controls-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, auto);
+  gap: 7px;
+  align-items: center;
+}
+
+.video-frame-box-label-page .video-frame-controls-form label {
+  display: contents;
+}
+
+.video-frame-box-label-page .video-frame-controls-form label span {
+  min-width: 0;
+  color: var(--c-text-2);
+  font-size: 11.5px;
+}
+
+.video-frame-box-label-page .video-frame-controls-form select,
+.video-frame-box-label-page .video-frame-controls-form input {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--c-line);
+  border-radius: 6px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-size: 11.5px;
+  padding: 6px 8px;
+}
+
+.video-frame-box-label-page .video-frame-controls-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.video-frame-box-label-page .video-frame-controls-actions button {
+  min-width: 0;
+  border: 1px solid var(--c-line);
+  border-radius: 6px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 6px 8px;
+}
+
+.video-frame-box-label-page .video-frame-controls-actions button.primary {
+  border-color: var(--c-accent-line);
+  background: var(--c-accent-soft);
+  color: var(--c-text);
+}
+
+.video-frame-box-label-page .video-frame-controls-actions button.danger {
+  border-color: var(--c-danger);
+  color: var(--c-danger);
+}
+
+.video-frame-box-label-page .video-frame-controls-actions button:disabled {
+  opacity: 0.48;
+  cursor: default;
+}
+
+.video-frame-box-label-page .video-frame-timeline-overlay {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: end;
+  justify-self: stretch;
+  z-index: 20;
+  pointer-events: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 16px auto auto;
+  align-items: center;
+  row-gap: 4px;
+  padding: 6px 9px 7px;
+  margin: 0 12px 12px;
+  border: 1px solid rgba(51, 65, 85, 0.78);
+  border-radius: 7px;
+  background: var(--c-surface);
+  color: var(--c-text-2);
+  font-size: 11px;
+  backdrop-filter: blur(8px);
+}
+
+.video-frame-box-label-page .video-frame-playback-btn {
+  min-height: 20px;
+  padding: 2px 9px;
+  border: 1px solid var(--c-accent-line);
+  border-radius: 6px;
+  background: var(--c-accent-soft);
+  color: var(--c-text);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: auto;
+}
+
+.video-frame-box-label-page .video-frame-playback-btn:disabled {
+  opacity: 0.48;
+}
+
+.video-frame-box-label-page .video-frame-timeline-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 0;
+  pointer-events: auto;
+}
+
+.video-frame-box-label-page .video-frame-timeline-marker-row {
+  grid-column: 1 / -1;
+  position: relative;
+  height: 18px;
+  margin: 0 6px;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.video-frame-box-label-page .video-frame-timeline-marker {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 2px solid var(--c-sunken);
+  border-radius: 999px;
+  background: var(--c-ok-soft);
+  box-shadow: 0 0 0 1px var(--c-line-strong);
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+}
+
+.video-frame-box-label-page .video-frame-timeline-marker:hover,
+.video-frame-box-label-page .video-frame-timeline-marker:focus-visible {
+  box-shadow:
+    0 0 0 2px #ffffff,
+    0 0 10px var(--c-accent-line);
+}
+
+.video-frame-box-label-page .video-frame-timeline-marker--clf {
+  background: var(--c-warn-soft);
+}
+
+.video-frame-box-label-page .video-frame-timeline-marker--mixed {
+  background: linear-gradient(135deg, var(--c-ok-soft) 0 48%, var(--c-warn-soft) 52% 100%);
+}
+
+.video-frame-box-label-page .video-frame-timeline-marker--empty {
+  background: #64748b;
+}
+
+.video-frame-box-label-page .video-frame-timeline-marker--reviewed {
+  background: var(--c-accent);
+}
+
+.video-frame-box-label-page .video-frame-timeline-marker--marker {
+  background: #a78bfa;
+}
+
+.video-frame-box-label-page .video-frame-timeline-overlay input {
+  width: 100%;
+  min-width: 0;
+  pointer-events: auto;
+}
+
+.video-frame-box-label-page .video-frame-timeline-overlay span {
+  min-width: 0;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /*
  * Label workbench layout.
  *

@@ -1,5 +1,6 @@
 import type { BoxAdjustMode } from "./geometry";
 import { KEYBOARD_STEP_MULTIPLIERS, type KeyboardStepMultiplier } from "./boxLabelKeyboardShortcuts";
+import "./boxLabel.css";
 
 type BoxLabelPreviewToolbarProps = {
   pointerToolEnabled: boolean;

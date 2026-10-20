@@ -8,6 +8,7 @@ import { inTauri, revealMainWindow } from "./splashscreen";
 import { StartupOverlay } from "./StartupOverlay";
 import { WorkspaceProvider } from "./WorkspaceProvider";
 import { WorkbenchBody } from "./WorkbenchBody";
+import "./app.css";
 
 type StartupPhase = "active" | "done" | "hidden";
 

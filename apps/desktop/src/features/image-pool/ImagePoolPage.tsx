@@ -9,6 +9,7 @@ import { ImagePoolToolbar } from "./ImagePoolToolbar";
 import { useImagePool } from "./useImagePool";
 import { useImagePoolBadge } from "./useImagePoolBadge";
 import type { FilteredItem } from "./types";
+import "./imagePool.css";
 
 type ImagePoolPageProps = {
   onReady?: () => void;

@@ -7,6 +7,7 @@ import type {
   LabelWorkbenchMode,
   LabelWorkbenchSamplingControl,
 } from "./labelWorkbenchTypes";
+import "../box-label/boxLabel.css";
 
 type Props = {
   mode: LabelWorkbenchMode;

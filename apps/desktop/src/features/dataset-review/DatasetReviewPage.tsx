@@ -6,6 +6,7 @@ import { DatasetReviewGallery } from "./DatasetReviewGallery";
 import { DatasetReviewLightbox } from "./DatasetReviewLightbox";
 import { DatasetReviewPreview } from "./DatasetReviewPreview";
 import { useDatasetReview } from "./useDatasetReview";
+import "./datasetReview.css";
 
 type DatasetReviewPageProps = {
   onReady?: () => void;
