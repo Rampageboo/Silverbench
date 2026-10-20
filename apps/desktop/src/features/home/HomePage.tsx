@@ -25,8 +25,8 @@ export function HomePage({ onReady }: Props) {
         <header className="start__hero">
           <img src="/assets/app-icon.svg" width={40} height={40} alt="" />
           <div>
-            <h1 className="start__title">YoloWorkBench</h1>
-            <p className="start__sub">Local workbench for YOLO datasets — capture, label, curate, ship.</p>
+            <h1 className="start__title">RampageWorkbench</h1>
+            <p className="start__sub">视觉数据与创作工作台</p>
           </div>
         </header>
 

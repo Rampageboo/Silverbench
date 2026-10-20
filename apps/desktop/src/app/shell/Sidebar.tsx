@@ -51,7 +51,7 @@ export function Sidebar({
     <nav className={`shell-sidebar${collapsed ? " is-collapsed" : ""}`} aria-label="Workbench navigation">
       <div className="shell-brand">
         <img className="shell-brand__icon" src="/assets/app-icon.svg" width={20} height={20} alt="" />
-        {collapsed ? null : <span className="shell-brand__name">YoloWorkBench</span>}
+        {collapsed ? null : <span className="shell-brand__name">RampageWorkbench</span>}
         <button
           type="button"
           className="ui-btn--ghost ui-btn--icon ui-btn--sm shell-brand__toggle"
