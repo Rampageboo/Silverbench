@@ -1,14 +1,14 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { requireCurrentBackend, saveLabelClasses, writeTextFile } from "../../api";
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createWorkspace as createWorkspaceFolder, requireCurrentBackend } from "../../api";
 import {
   CreateWorkspaceDialog,
   type CreateWorkspaceOptions
 } from "../../features/home/CreateWorkspaceDialog";
-import { initializeSnapshotVersioning } from "../../features/workspace-versioning/workspaceSnapshotVersionApi";
 import { workspaceClassSetupToClassesManifest } from "../../features/workspace/workspaceClassTaxonomy";
+import { errMessage } from "../../lib/errors";
 import { chooseDirectory } from "../../lib/tauri";
-import { loadRecentWorkspaces, pushRecentWorkspace, removeRecentWorkspace } from "../recentWorkspaces";
 import { useWorkspace } from "../useWorkspace";
+import { PendingFolderDialog } from "./PendingFolderDialog";
 
 type WorkspaceLauncherValue = {
   recent: string[];
@@ -29,94 +29,71 @@ export function useWorkspaceLauncher() {
 }
 
 /**
- * Owns every way of getting into a workspace (open folder, recent, create) so
- * the start page, the sidebar switcher and the command palette share one flow.
+ * Owns every way of getting into a workspace (open folder, recent, create,
+ * migrate) so the start page, the sidebar switcher and the command palette
+ * share one flow.
  */
 export function WorkspaceLauncherProvider({ children }: { children: ReactNode }) {
-  const { workspaceRoot, workspaceRootPath, openWorkspacePath, setActiveTab } = useWorkspace();
-  const [recent, setRecent] = useState<string[]>(loadRecentWorkspaces);
+  const { recentWorkspaces, forgetRecentWorkspace, openWorkspacePath, adoptWorkspace, setActiveTab } = useWorkspace();
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
-
-  // Any workspace that ends up open (including one restored at startup) is recent.
-  const currentRoot = (workspaceRootPath || workspaceRoot).trim();
-  useEffect(() => {
-    if (currentRoot) setRecent(pushRecentWorkspace(currentRoot));
-  }, [currentRoot]);
 
   const openPath = useCallback(
     async (path: string) => {
       setError("");
-      try {
-        await openWorkspacePath(path);
-        setRecent(pushRecentWorkspace(path));
-        setActiveTab("label");
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
+      const opened = await openWorkspacePath(path);
+      if (opened?.kind === "workspace") setActiveTab("label");
     },
     [openWorkspacePath, setActiveTab]
   );
 
   const openFolder = useCallback(async () => {
-    const dir = await chooseDirectory("Choose YOLO workspace folder");
+    const dir = await chooseDirectory("Choose a workspace folder");
     if (dir) await openPath(dir);
   }, [openPath]);
 
-  const removeRecent = useCallback((path: string) => {
-    setRecent(removeRecentWorkspace(path));
-  }, []);
+  const removeRecent = useCallback(
+    (path: string) => {
+      forgetRecentWorkspace(path).catch((err) => setError(errMessage(err)));
+    },
+    [forgetRecentWorkspace]
+  );
 
   const createWorkspace = useCallback(
     async (opts: CreateWorkspaceOptions) => {
       const root = `${opts.location.replace(/[/\\]+$/, "")}/${opts.name.trim()}`;
       await requireCurrentBackend();
-      await openWorkspacePath(root);
-
-      // classes.txt + data.yaml (read by Box Label).
-      if (opts.detectClasses.length > 0) {
-        await saveLabelClasses(
-          root,
-          opts.detectClasses.map((name, id) => ({ id, name }))
-        );
-      }
-
-      // workspace/classes.json (class manifest).
-      const classesManifest = workspaceClassSetupToClassesManifest({
+      const classes = workspaceClassSetupToClassesManifest({
         taskType: opts.taskType,
         mediaMode: opts.mediaMode,
         detectClasses: opts.detectClasses.map((name) => ({ name })),
         clfClasses: opts.clfClasses.map((name) => ({ name })),
         setupMode: "manual"
       });
-      await writeTextFile(root, "workspace/classes.json", `${JSON.stringify(classesManifest, null, 2)}\n`);
-
-      await initializeSnapshotVersioning(root);
-      await openWorkspacePath(root);
-
-      setRecent(pushRecentWorkspace(root));
+      await adoptWorkspace(await createWorkspaceFolder(root, classes));
       setCreating(false);
       setActiveTab("label");
     },
-    [openWorkspacePath, setActiveTab]
+    [adoptWorkspace, setActiveTab]
   );
 
   const value = useMemo<WorkspaceLauncherValue>(
     () => ({
-      recent,
+      recent: recentWorkspaces,
       error,
       openFolder,
       openRecent: openPath,
       removeRecent,
       requestCreate: () => setCreating(true)
     }),
-    [error, openFolder, openPath, recent, removeRecent]
+    [error, openFolder, openPath, recentWorkspaces, removeRecent]
   );
 
   return (
     <WorkspaceLauncherContext.Provider value={value}>
       {children}
       <CreateWorkspaceDialog open={creating} onCreate={createWorkspace} onClose={() => setCreating(false)} />
+      <PendingFolderDialog />
     </WorkspaceLauncherContext.Provider>
   );
 }

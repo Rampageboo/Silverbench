@@ -400,8 +400,24 @@
     overflow: hidden;
   }
 
-  .shell-offline {
+  .shell-banners {
     grid-row: 1;
+    display: grid;
+  }
+
+  .shell-review {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-3);
+    padding: 6px var(--sp-4);
+    border-bottom: 1px solid color-mix(in srgb, var(--c-warn) 40%, transparent);
+    background: var(--c-warn-soft);
+    font-size: var(--fs-sm);
+  }
+
+  .shell-offline {
     padding: 6px var(--sp-4);
     border-bottom: 1px solid color-mix(in srgb, var(--c-danger) 40%, transparent);
     background: var(--c-danger-soft);
@@ -525,5 +541,37 @@
   .workbench-page .workbench-panel:not(.workbench-panel--hidden) > * {
     flex: 1 1 0;
     min-height: 0;
+  }
+
+  .pending-folder {
+    display: grid;
+    gap: var(--sp-3);
+    line-height: 1.5;
+  }
+
+  .pending-folder p {
+    margin: 0;
+  }
+
+  .pending-folder__facts,
+  .pending-folder__list ul {
+    margin: 0;
+    padding-left: 1.2em;
+    display: grid;
+    gap: 4px;
+    color: var(--c-text-2);
+  }
+
+  .pending-folder__list {
+    display: grid;
+    gap: 4px;
+    max-height: 180px;
+    overflow: auto;
+  }
+
+  .pending-folder__path {
+    font-size: var(--fs-sm);
+    color: var(--c-text-3);
+    word-break: break-all;
   }
 }

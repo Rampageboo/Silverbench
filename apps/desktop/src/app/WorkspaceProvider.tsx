@@ -9,20 +9,16 @@ import {
   normalizeImageWorkspaceTab,
   type ImageWorkspaceTab
 } from "../features/image-pool/imageWorkspaceMode";
-import {
-  validateWorkspaceVersionsManifest,
-  type WorkspaceVersionId,
-  type WorkspaceVersionsManifest
-} from "../features/workspace-versioning/workspaceSnapshotVersions";
 import { clearJunkUndoForWorkspace } from "../features/shared/junkUndo";
 import { useWorkspaceCache } from "../features/shared/useWorkspaceCache";
-import { WorkspaceContext } from "./workspaceContext";
+import { sameWorkspacePath } from "../workspace/layout";
+import { WorkspaceContext, type PendingFolder } from "./workspaceContext";
 
 type WorkspaceInitPhase = "idle" | "bootstrapping" | "ready";
 
-function readInitialWorkspaceRoot() {
-  const params = new URLSearchParams(window.location.search);
-  return params.get("workspaceRoot") || window.localStorage.getItem("ywb.workspaceRoot") || "";
+/** `?workspaceRoot=` opens a workspace directly (development and deep links). */
+function workspaceRootFromUrl() {
+  return new URLSearchParams(window.location.search).get("workspaceRoot") || "";
 }
 
 function applySessionTab(
@@ -36,41 +32,9 @@ function applySessionTab(
     setImageWorkspaceTabState(normalizeImageWorkspaceTab(tab));
     return;
   }
-  // Sessions saved before the classic label pages were retired.
-  if (tab === "video" || tab === "pool-label") {
-    setActiveTab("label");
-    return;
-  }
   if (ALL_TOOLS.some((tool) => tool.tab === tab)) {
     setActiveTab(tab as ToolTab);
   }
-}
-
-async function resolveStartupWorkspaceRoot(currentRoot: string) {
-  const trimmed = currentRoot.trim();
-  if (trimmed) return trimmed;
-  try {
-    const settings = await api.appSettings();
-    return (settings.lastOpenedWorkspace || settings.lastOpenedFolder || settings.lastOpenedYoloFolder || "").trim();
-  } catch {
-    return "";
-  }
-}
-
-function openedWorkspaceState(opened: api.OpenWorkspaceResponse, fallbackPath: string) {
-  const snapshotVersions = opened.workspaceVersions
-    ? validateWorkspaceVersionsManifest(opened.workspaceVersions)
-    : null;
-  const activeRoot = (opened.activeVersionPath || opened.root || fallbackPath).trim();
-  const containerRoot = (opened.workspaceRootPath || (snapshotVersions ? fallbackPath : activeRoot)).trim();
-  const activeVersionId = (opened.activeVersionId || snapshotVersions?.activeVersion || null) as WorkspaceVersionId | null;
-  return {
-    workspaceRoot: activeRoot,
-    workspaceRootPath: containerRoot || activeRoot,
-    activeVersionId,
-    activeVersionPath: snapshotVersions ? activeRoot : "",
-    snapshotVersions
-  };
 }
 
 export function WorkspaceProvider({
@@ -82,40 +46,40 @@ export function WorkspaceProvider({
 }) {
   const { invalidateImagePoolCache, invalidateBoxLabelCache } = useWorkspaceCache();
   const { showToast } = useToast();
-  const [workspaceRoot, setWorkspaceRootState] = useState(readInitialWorkspaceRoot);
-  const [workspaceRootPath, setWorkspaceRootPath] = useState(readInitialWorkspaceRoot);
-  const [activeVersionId, setActiveVersionId] = useState<WorkspaceVersionId | null>(null);
-  const [activeVersionPath, setActiveVersionPath] = useState("");
-  const [snapshotVersions, setSnapshotVersions] = useState<WorkspaceVersionsManifest | null>(null);
+  const [workspace, setWorkspace] = useState<api.WorkspacePayload | null>(null);
+  const [recentWorkspaces, setRecentWorkspaces] = useState<string[]>([]);
+  const [pendingFolder, setPendingFolder] = useState<PendingFolder | null>(null);
   const [activeTab, setActiveTab] = useState<ToolTab>("home");
   const [imageWorkspaceTab, setImageWorkspaceTabState] = useState<ImageWorkspaceTab>("image-pool");
   const [poolLabelFocusFilename, setPoolLabelFocusFilename] = useState<string | null>(null);
   const [initPhase, setInitPhase] = useState<WorkspaceInitPhase>("idle");
 
+  const workspaceRoot = workspace?.root ?? "";
   const bootstrappedRef = useRef(false);
   const prevWorkspaceRootRef = useRef(workspaceRoot);
-  const workspaceRootRef = useRef(workspaceRoot);
 
-  workspaceRootRef.current = workspaceRoot;
-
-  const setWorkspaceRoot = useCallback((value: string) => {
-    setWorkspaceRootState(value);
-    setWorkspaceRootPath(value);
-    setActiveVersionId(null);
-    setActiveVersionPath("");
-    setSnapshotVersions(null);
+  const refreshRecent = useCallback(async () => {
+    try {
+      const settings = await api.appSettings();
+      setRecentWorkspaces(settings.workspaces);
+      return settings;
+    } catch {
+      return null;
+    }
   }, []);
 
-  const setWorkspaceRootInput = useCallback((value: string) => {
-    setWorkspaceRoot(value);
-  }, [setWorkspaceRoot]);
+  const forgetRecentWorkspace = useCallback(async (path: string) => {
+    const settings = await api.appSettings();
+    const workspaces = settings.workspaces.filter((item) => !sameWorkspacePath(item, path));
+    const next = await api.writeAppSettings({ workspaces });
+    setRecentWorkspaces(next.workspaces);
+  }, []);
 
   const setImageWorkspaceTab = useCallback(
     (tab: ImageWorkspaceTab) => {
       setImageWorkspaceTabState(tab);
-      const root = workspaceRoot.trim();
-      if (root) {
-        saveActiveTabSession(root, tab).catch(() => {
+      if (workspaceRoot) {
+        saveActiveTabSession(workspaceRoot, tab).catch(() => {
           // Session persistence is best-effort.
         });
       }
@@ -123,60 +87,59 @@ export function WorkspaceProvider({
     [workspaceRoot]
   );
 
-  const afterWorkspaceOpened = useCallback(async (opened: api.OpenWorkspaceResponse, fallbackPath: string, options?: { restoreTab?: boolean }) => {
-    const { restoreTab = true } = options ?? {};
-    const next = openedWorkspaceState(opened, fallbackPath);
-    const root = next.workspaceRoot.trim();
-    const containerRoot = next.workspaceRootPath.trim();
-    if (!root) return;
-
-    window.localStorage.setItem("ywb.workspaceRoot", containerRoot || root);
-    setWorkspaceRootState(root);
-    setWorkspaceRootPath(containerRoot || root);
-    setActiveVersionId(next.activeVersionId);
-    setActiveVersionPath(next.activeVersionPath);
-    setSnapshotVersions(next.snapshotVersions);
-    await api.writeAppSettings({ lastOpenedWorkspace: containerRoot || root });
-
-    if (restoreTab) {
+  const adoptWorkspace = useCallback(
+    async (next: api.WorkspacePayload, options?: { restoreTab?: boolean }) => {
+      setPendingFolder(null);
+      setWorkspace(next);
+      void refreshRecent();
+      if (options?.restoreTab === false) return;
       try {
-        const session = await readWorkspaceSessionLite(root);
+        const session = await readWorkspaceSessionLite(next.root);
         applySessionTab(session, setActiveTab, setImageWorkspaceTabState);
       } catch {
-        // Session tab restore is best-effort.
+        // Tab restore is best-effort.
       }
-    }
-  }, []);
+    },
+    [refreshRecent]
+  );
+
+  const openFolder = useCallback(
+    async (path: string, options?: { restoreTab?: boolean }) => {
+      const opened = await api.openWorkspace(path.trim());
+      if (opened.kind === "workspace") await adoptWorkspace(opened, options);
+      else setPendingFolder(opened);
+      return opened;
+    },
+    [adoptWorkspace]
+  );
 
   const openWorkspacePath = useCallback(
     async (path: string) => {
-      const trimmed = path.trim();
-      if (!trimmed) return;
+      if (!path.trim()) return null;
       try {
-        const opened = await api.openWorkspace(trimmed);
-        await afterWorkspaceOpened(opened, trimmed);
+        const opened = await openFolder(path);
         bootstrappedRef.current = true;
         setInitPhase("ready");
+        return opened;
       } catch (err) {
         showToast(errMessage(err), { variant: "error" });
+        return null;
       }
     },
-    [afterWorkspaceOpened, showToast]
+    [openFolder, showToast]
   );
 
-  const clearPoolLabelFocus = useCallback(() => {
-    setPoolLabelFocusFilename(null);
-  }, []);
-
   const chooseWorkspaceFolder = useCallback(async () => {
-    const folder = await chooseDirectory("Choose YOLO workspace folder");
+    const folder = await chooseDirectory("Choose a workspace folder");
     if (folder) await openWorkspacePath(folder);
   }, [openWorkspacePath]);
 
+  const dismissPendingFolder = useCallback(() => setPendingFolder(null), []);
+  const clearPoolLabelFocus = useCallback(() => setPoolLabelFocusFilename(null), []);
+
   useEffect(() => {
-    const previous = prevWorkspaceRootRef.current.trim();
-    const current = workspaceRoot.trim();
-    if (previous && previous !== current) {
+    const previous = prevWorkspaceRootRef.current;
+    if (previous && previous !== workspaceRoot) {
       clearJunkUndoForWorkspace(previous);
       invalidateImagePoolCache(previous);
       invalidateBoxLabelCache(previous);
@@ -194,47 +157,31 @@ export function WorkspaceProvider({
 
     let cancelled = false;
     setInitPhase("bootstrapping");
-
     void (async () => {
+      const settings = await refreshRecent();
+      const candidate = (workspaceRootFromUrl() || settings?.lastWorkspace || "").trim();
       try {
-        const candidate = await resolveStartupWorkspaceRoot(workspaceRootRef.current);
-        if (cancelled) return;
-
-        if (!candidate) {
-          bootstrappedRef.current = true;
-          setInitPhase("ready");
-          return;
-        }
-
-        const opened = await api.openWorkspace(candidate);
-        if (cancelled) return;
-
-        await afterWorkspaceOpened(opened, candidate, { restoreTab: false });
-        if (cancelled) return;
-
-        bootstrappedRef.current = true;
-        setInitPhase("ready");
+        if (candidate && !cancelled) await openFolder(candidate, { restoreTab: false });
       } catch (err) {
+        // The last workspace may have been moved or deleted; start without one.
+        if (!cancelled) showToast(errMessage(err), { variant: "error" });
+      } finally {
         if (!cancelled) {
-          showToast(errMessage(err), { variant: "error" });
           bootstrappedRef.current = true;
           setInitPhase("ready");
         }
       }
     })();
-
     return () => {
       cancelled = true;
     };
-  }, [afterWorkspaceOpened, connected, showToast]);
+  }, [connected, openFolder, refreshRecent, showToast]);
 
   useEffect(() => {
-    const root = workspaceRoot.trim();
-    if (!root || initPhase !== "ready") return;
-    if (activeTab === "home") return;
+    if (!workspaceRoot || initPhase !== "ready" || activeTab === "home") return;
     // Image-pool sub-tabs are saved by name ("yolo", "inbox") so restore reopens the same tool.
     const sessionTab = activeTab === "image-pool" ? imageWorkspaceTab : activeTab;
-    saveActiveTabSession(root, sessionTab).catch(() => {
+    saveActiveTabSession(workspaceRoot, sessionTab).catch(() => {
       // Session persistence is best-effort.
     });
   }, [activeTab, imageWorkspaceTab, workspaceRoot, initPhase]);
@@ -247,38 +194,38 @@ export function WorkspaceProvider({
   const value = useMemo(
     () => ({
       workspaceRoot,
-      workspaceRootPath,
-      activeVersionId,
-      activeVersionPath,
-      snapshotVersions,
-      setWorkspaceRoot,
-      setWorkspaceRootInput,
+      workspace,
+      recentWorkspaces,
+      forgetRecentWorkspace,
+      openWorkspacePath,
+      chooseWorkspaceFolder,
+      adoptWorkspace,
+      pendingFolder,
+      dismissPendingFolder,
       activeTab,
       setActiveTab,
       imageWorkspaceTab,
       setImageWorkspaceTab,
-      openWorkspacePath,
-      chooseWorkspaceFolder,
       openBoxLabel,
       poolLabelFocusFilename,
       clearPoolLabelFocus
     }),
     [
       workspaceRoot,
-      workspaceRootPath,
-      activeVersionId,
-      activeVersionPath,
-      snapshotVersions,
+      workspace,
+      recentWorkspaces,
+      forgetRecentWorkspace,
+      openWorkspacePath,
+      chooseWorkspaceFolder,
+      adoptWorkspace,
+      pendingFolder,
+      dismissPendingFolder,
       activeTab,
       imageWorkspaceTab,
       setImageWorkspaceTab,
-      openWorkspacePath,
-      chooseWorkspaceFolder,
       openBoxLabel,
       poolLabelFocusFilename,
-      clearPoolLabelFocus,
-      setWorkspaceRoot,
-      setWorkspaceRootInput
+      clearPoolLabelFocus
     ]
   );
 

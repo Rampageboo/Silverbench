@@ -1,3 +1,4 @@
+import { WORKSPACE_PATHS } from "../../workspace/layout";
 export type AutoLabelModelKind = "detect" | "classify";
 
 export type AutoLabelModelEntry = {
@@ -10,7 +11,7 @@ export type AutoLabelModelRegistry = {
   classify?: AutoLabelModelEntry | null;
 };
 
-export const REGISTRY_REL_PATH = "workspace/autolabel_models.json";
+export const REGISTRY_REL_PATH = WORKSPACE_PATHS.modelRegistry;
 
 export function detectModelDestPath(filename: string): string {
   return `models/autolabel/detect/${filename}`;

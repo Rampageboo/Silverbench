@@ -1,27 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import * as api from "../../api";
-import {
-  dispatchWorkspaceClassesChanged,
-  isWorkspaceClassesChangedEvent,
-  WORKSPACE_CLASSES_CHANGED_EVENT,
-} from "../shared/workspaceClassEvents";
+import { sameWorkspacePath } from "../../workspace/layout";
+import { isWorkspaceClassesChangedEvent, WORKSPACE_CLASSES_CHANGED_EVENT } from "../shared/workspaceClassEvents";
 import { useArchivedClassIds } from "../workspace/useArchivedClassIds";
-import { normalizeClassesManifest, type ClassesManifest } from "../video/classDomain";
-import {
-  addDetectClassToManifest,
-  allDetectClassDefs,
-  manifestToLegacyClasses,
-  upgradeLegacyToManifest
-} from "../workspace/workspaceClassTaxonomy";
-import {
-  dispatchWorkspaceClassesChangedForRoots,
-  resolveActiveWorkspaceRoot,
-  sameWorkspacePath,
-} from "../workspace/activeWorkspaceRoot";
+import { readWorkspaceClasses, writeWorkspaceClasses } from "../workspace/useWorkspaceClasses";
+import type { ClassesManifest } from "../video/classDomain";
+import { addDetectClassToManifest, allDetectClassDefs } from "../workspace/workspaceClassTaxonomy";
 import { classNameFor, loadShortcutSlots, saveShortcutSlots, type DragState, type ToolMode } from "./geometry";
 import type { BoxLabelShortcutSlot, FixedBoxSlot } from "./session";
-
-const CLASSES_JSON_PATH = "workspace/classes.json";
 
 type ShortcutOption = {
   value: string;
@@ -60,23 +46,10 @@ function detectClassesFromManifest(manifest: ClassesManifest): api.LabelClass[] 
 }
 
 async function loadWorkspaceDetectClasses(workspaceRoot: string) {
-  const classRoot = await resolveActiveWorkspaceRoot(workspaceRoot);
-  try {
-    const text = await api.readTextFile(classRoot, CLASSES_JSON_PATH);
-    const manifest = normalizeClassesManifest(JSON.parse(text));
-    return { manifest, classes: detectClassesFromManifest(manifest), workspaceRoot: classRoot };
-  } catch {
-    const legacy = await api.loadLabelClasses(classRoot).catch(() => []);
-    const fallback = legacy.length ? legacy : [{ id: 0, name: "object" }];
-    return { manifest: upgradeLegacyToManifest(fallback), classes: fallback, workspaceRoot: classRoot };
-  }
-}
-
-async function saveWorkspaceDetectManifest(workspaceRoot: string, manifest: ClassesManifest) {
-  const classRoot = await resolveActiveWorkspaceRoot(workspaceRoot);
-  await api.writeTextFile(classRoot, CLASSES_JSON_PATH, `${JSON.stringify(manifest, null, 2)}\n`);
-  await api.saveLabelClasses(classRoot, manifestToLegacyClasses(manifest));
-  dispatchWorkspaceClassesChangedForRoots(dispatchWorkspaceClassesChanged, workspaceRoot, classRoot);
+  const manifest = await readWorkspaceClasses(workspaceRoot);
+  const classes = detectClassesFromManifest(manifest);
+  // A workspace without detect classes still needs one to draw with; it becomes YOLO id 0.
+  return { manifest, classes: classes.length ? classes : [{ id: 0, name: "object" }] };
 }
 
 export function useBoxLabelClasses({
@@ -103,7 +76,6 @@ export function useBoxLabelClasses({
   const classesRef = useRef(classes);
   classesRef.current = classes;
   const classManifestRef = useRef<ClassesManifest | null>(null);
-  const activeWorkspaceRootRef = useRef("");
 
   const [currentClass, setCurrentClass] = useState(0);
   const [mode, setMode] = useState<ToolMode>("draw");
@@ -170,9 +142,7 @@ export function useBoxLabelClasses({
 
   const reloadDetectClasses = useCallback(async () => {
     if (!workspaceRoot.trim()) return;
-    const { manifest, classes: nextClasses, workspaceRoot: activeWorkspaceRoot } =
-      await loadWorkspaceDetectClasses(workspaceRoot);
-    activeWorkspaceRootRef.current = activeWorkspaceRoot;
+    const { manifest, classes: nextClasses } = await loadWorkspaceDetectClasses(workspaceRoot);
     classManifestRef.current = manifest;
     setClasses(nextClasses);
   }, [workspaceRoot]);
@@ -185,12 +155,7 @@ export function useBoxLabelClasses({
     if (!workspaceRoot.trim()) return;
     const handleClassesChanged = (event: Event) => {
       if (!isWorkspaceClassesChangedEvent(event)) return;
-      if (
-        !sameWorkspacePath(event.detail.workspaceRoot, workspaceRoot) &&
-        !sameWorkspacePath(event.detail.workspaceRoot, activeWorkspaceRootRef.current)
-      ) {
-        return;
-      }
+      if (!sameWorkspacePath(event.detail.workspaceRoot, workspaceRoot)) return;
       void reloadDetectClasses();
     };
     window.addEventListener(WORKSPACE_CLASSES_CHANGED_EVENT, handleClassesChanged);
@@ -449,9 +414,9 @@ export function useBoxLabelClasses({
       setStatus(`Selected existing class ${classNameFor(classes, existing.id)}.`);
       return;
     }
-    const baseManifest = classManifestRef.current ?? upgradeLegacyToManifest(classes.length ? classes : [{ id: 0, name: "object" }]);
+    const baseManifest = classManifestRef.current ?? (await readWorkspaceClasses(workspaceRoot));
     const { manifest: next } = addDetectClassToManifest(baseManifest, name);
-    await saveWorkspaceDetectManifest(workspaceRoot, next);
+    await writeWorkspaceClasses(workspaceRoot, next);
     classManifestRef.current = next;
     const saved = detectClassesFromManifest(next);
     const nextId = saved.length - 1;

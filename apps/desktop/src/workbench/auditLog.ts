@@ -1,3 +1,4 @@
+import { WORKSPACE_PATHS } from "../workspace/layout";
 import { writeTextFile } from "../api";
 
 export type WorkspaceLogLevel = "debug" | "info" | "warning" | "error";
@@ -56,7 +57,7 @@ export async function recordWorkspaceEvent(workspaceRoot: string, input: Workspa
   if (!workspaceRoot.trim()) return null;
   const event = createWorkspaceEvent(input);
   const date = new Date(event.timestamp);
-  const relativePath = `workspace/logs/events/${dayKey(date)}/${pathSafeTimestamp(date)}-${event.id}.json`;
+  const relativePath = `${WORKSPACE_PATHS.logs}/events/${dayKey(date)}/${pathSafeTimestamp(date)}-${event.id}.json`;
   await writeTextFile(workspaceRoot, relativePath, `${JSON.stringify(event, null, 2)}\n`);
   return { event, relativePath };
 }
@@ -82,7 +83,7 @@ export async function recordWorkspaceOperation(workspaceRoot: string, input: Wor
     summary: input.summary || {},
     errors: input.errors || []
   };
-  const relativePath = `workspace/logs/operations/${operationId}.json`;
+  const relativePath = `${WORKSPACE_PATHS.logs}/operations/${operationId}.json`;
   await writeTextFile(workspaceRoot, relativePath, `${JSON.stringify(payload, null, 2)}\n`);
   return { payload, relativePath };
 }

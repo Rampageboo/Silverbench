@@ -269,43 +269,16 @@ describe("videoSegmentManifestPath", () => {
     expect(result).not.toContain("..");
   });
 
-  it("path starts with 'video_segments/'", () => {
-    const result = videoSegmentManifestPath("/videos/clip.mp4");
-    expect(result.startsWith("video_segments/")).toBe(true);
-  });
-
-  it("path ends with '.json'", () => {
-    const result = videoSegmentManifestPath("/videos/clip.mp4");
-    expect(result.endsWith(".json")).toBe(true);
-  });
-
-  it("safe filename contains only alphanumeric characters, underscores, and hyphens", () => {
-    const result = videoSegmentManifestPath("/videos/my clip (2024)!!.mp4");
-    const filename = result.replace("video_segments/", "").replace(".json", "");
-    // The filename portion (before the hash separator) should be safe
-    expect(/^[a-zA-Z0-9_-]+$/.test(filename)).toBe(true);
+  it("names the file after the video file under labels/segments", () => {
+    expect(videoSegmentManifestPath("/videos/my clip (2024)!!.mp4")).toBe("labels/segments/my clip (2024)!!.mp4.json");
   });
 
   it("handles Windows-style backslash separators", () => {
-    const result = videoSegmentManifestPath("C:\\Users\\user\\Videos\\clip.mp4");
-    expect(result.startsWith("video_segments/")).toBe(true);
-    // Safe filename should include "clip" from the stem
-    expect(result).toContain("clip");
+    expect(videoSegmentManifestPath("C:\\Users\\user\\Videos\\clip.mp4")).toBe("labels/segments/clip.mp4.json");
   });
 
-  it("falls back to 'video' as safe name when stem is empty", () => {
-    // A path where the stem after stripping extension is empty
-    const result = videoSegmentManifestPath(".mp4");
-    expect(result).toContain("video-");
-  });
-
-  it("hash portion contains only alphanumeric characters", () => {
-    const result = videoSegmentManifestPath("/videos/clip.mp4");
-    // Strip prefix and suffix, split on last '-' to get the hash
-    const filename = result.replace("video_segments/", "").replace(".json", "");
-    const parts = filename.split("-");
-    const hash = parts[parts.length - 1];
-    expect(/^[a-zA-Z0-9]+$/.test(hash)).toBe(true);
+  it("is the same for a workspace-relative and an absolute path to the same media file", () => {
+    expect(videoSegmentManifestPath("media/clip.mp4")).toBe(videoSegmentManifestPath("D:/ws/media/clip.mp4"));
   });
 });
 

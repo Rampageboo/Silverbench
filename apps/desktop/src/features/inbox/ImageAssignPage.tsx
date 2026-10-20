@@ -154,8 +154,6 @@ export function ImageAssignPage({ onReady, onStatusText }: ImageAssignPageProps)
           detectClasses={assign.detectClasses}
           clfClassCounts={assign.clfClassCounts}
           detectClassCounts={assign.detectClassCounts}
-          clfDatasetPath={assign.clfDatasetPath}
-          detectDatasetPath={assign.detectDatasetPath}
           selectedClass={assign.selectedClass}
           selectedDetectClassId={assign.selectedDetectClassId}
           classSearch={assign.classSearch}

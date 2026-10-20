@@ -15,8 +15,6 @@ type ImageAssignPanelProps = {
   detectClasses: DetectClass[];
   clfClassCounts: Map<string, number>;
   detectClassCounts: Map<number, number>;
-  clfDatasetPath: string;
-  detectDatasetPath: string;
   selectedClass: string;
   selectedDetectClassId: number | null;
   classSearch: string;
@@ -47,8 +45,6 @@ export function ImageAssignPanel({
   detectClasses,
   clfClassCounts,
   detectClassCounts,
-  clfDatasetPath,
-  detectDatasetPath,
   selectedClass,
   selectedDetectClassId,
   classSearch,
@@ -109,8 +105,8 @@ export function ImageAssignPanel({
                 <span>Clf Class</span>
                 <div className="hint" id="inboxClassHint">
                   {clfClasses.length
-                    ? `clf_dataset classes ${clfClasses.length}${clfDatasetPath ? ` | ${clfDatasetPath.split(/[\\/]/).slice(-2).join("/")}` : ""}`
-                    : "Classes load from clf_dataset folders"}
+                    ? `${clfClasses.length} classification classes (classes.json)`
+                    : "No classification classes yet — add them on the Classes page"}
                 </div>
                 <input
                   className="inbox-class-search-input"
@@ -180,8 +176,8 @@ export function ImageAssignPanel({
                 <span>Detect Classes</span>
                 <div className="hint" id="inboxDetectClassHint">
                   {detectClasses.length
-                    ? `detect classes ${detectClasses.length}${detectDatasetPath ? ` | ${detectDatasetPath.split(/[\\/]/).slice(-2).join("/")}/data.yaml` : ""}`
-                    : "Classes load from detect_dataset/data.yaml"}
+                    ? `${detectClasses.length} detection classes (classes.json)`
+                    : "No detection classes yet — add them on the Classes page"}
                 </div>
                 <input
                   id="inboxDetectClassSearchInput"
@@ -245,10 +241,10 @@ export function ImageAssignPanel({
             disabled={assigning || pendingFiles <= 0}
             onClick={onBuildPending}
           >
-            {pendingFiles > 0 ? `Build Pending (${pendingFiles})` : "Build Pending"}
+            {pendingFiles > 0 ? `Export Pending (${pendingFiles})` : "Export Pending"}
           </button>
           <button type="button" id="inboxBuildLinksBtn" disabled={assigning} onClick={onBuildAll}>
-            Build All
+            Export All
           </button>
           <label className="inbox-check">
             <input

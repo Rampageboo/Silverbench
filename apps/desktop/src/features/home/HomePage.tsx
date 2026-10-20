@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { workspaceDisplayName } from "../../app/recentWorkspaces";
+import { sameWorkspacePath, workspaceDisplayName } from "../../workspace/layout";
 import { useWorkspaceLauncher } from "../../app/shell/WorkspaceLauncher";
 import { useWorkspace } from "../../app/useWorkspace";
 import { IconChevronRight, IconClose, IconFolder, IconFolderPlus, IconHistory } from "../../ui/icons";
@@ -10,10 +10,9 @@ type Props = {
 };
 
 export function HomePage({ onReady }: Props) {
-  const { workspaceRoot, workspaceRootPath, setActiveTab } = useWorkspace();
+  const { workspaceRoot: currentRoot, setActiveTab } = useWorkspace();
   const launcher = useWorkspaceLauncher();
-  const currentRoot = (workspaceRootPath || workspaceRoot).trim();
-  const recent = launcher.recent.filter((path) => path !== currentRoot);
+  const recent = launcher.recent.filter((path) => !sameWorkspacePath(path, currentRoot));
 
   useEffect(() => {
     onReady?.();

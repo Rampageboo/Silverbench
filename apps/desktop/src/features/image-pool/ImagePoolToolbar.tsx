@@ -99,8 +99,8 @@ export function ImagePoolToolbar({
         </button>
       </div>
       <div className="hint image-pool-select-hint">
-        Click to select; use Ctrl/Shift for multi-select. Double-click to preview. Delete removes media
-        files, hard links, labels, and metadata.
+        Click to select; use Ctrl/Shift for multi-select. Double-click to preview. Delete removes the media
+        file with its labels and status (exported datasets are left as they are).
       </div>
       <div className="row image-pool-junk-toolbar">
         <div className="inbox-target-toggle" role="group" aria-label="Junk scope">

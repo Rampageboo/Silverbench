@@ -13,7 +13,6 @@ import { readAutoLabelRunKeys, writeAutoLabelRunKeys } from "../auto-label/autoL
 import type { BoxLabelEntry } from "../box-label/boxLabelCore";
 import type { BoxLabelAutoLabelResult } from "../box-label/boxLabelTypes";
 import { dispatchWorkspaceClassesChanged } from "../shared/workspaceClassEvents";
-import { resolveActiveWorkspaceRoot } from "../workspace/activeWorkspaceRoot";
 import { useWorkspaceClasses } from "../workspace/useWorkspaceClasses";
 import {
   AUTO_LABEL_IN_FLIGHT_KEYS,
@@ -126,7 +125,6 @@ export function AutoLabelModelPanel({
   const autoRunKeysRef = useRef<Set<string>>(new Set());
   const runTokenRef = useRef(0);
   const currentMediaKeyRef = useRef("");
-  const activeWorkspaceRootRef = useRef("");
   const workspaceClasses = useWorkspaceClasses(workspaceRoot);
 
   useEffect(() => {
@@ -134,20 +132,13 @@ export function AutoLabelModelPanel({
     if (!root) {
       setRegistry({});
       autoRunKeysRef.current = new Set();
-      activeWorkspaceRootRef.current = "";
       setAutoRunKeysLoaded(false);
       return;
     }
     let cancelled = false;
     setAutoRunKeysLoaded(false);
-    resolveActiveWorkspaceRoot(root)
-      .then(async (activeRoot) => {
-        if (cancelled) return;
-        activeWorkspaceRootRef.current = activeRoot;
-        const [registryResult, runKeysResult] = await Promise.allSettled([
-          readAutoLabelModelRegistry(activeRoot),
-          readAutoLabelRunKeys(activeRoot),
-        ]);
+    Promise.allSettled([readAutoLabelModelRegistry(root), readAutoLabelRunKeys(root)])
+      .then(([registryResult, runKeysResult]) => {
         if (cancelled) return;
         setRegistry(registryResult.status === "fulfilled" ? registryResult.value : {});
         autoRunKeysRef.current = runKeysResult.status === "fulfilled" ? runKeysResult.value : new Set();
@@ -218,9 +209,7 @@ export function AutoLabelModelPanel({
     setError(null);
     setStatus(null);
     try {
-      const activeRoot = await resolveActiveWorkspaceRoot(workspaceRoot);
-      activeWorkspaceRootRef.current = activeRoot;
-      const updated = await pickAndImportAutoLabelModel(activeRoot, kind);
+      const updated = await pickAndImportAutoLabelModel(workspaceRoot, kind);
       if (updated) setRegistry(updated);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed.");
@@ -237,9 +226,7 @@ export function AutoLabelModelPanel({
     setError(null);
     setStatus(null);
     try {
-      const activeRoot = await resolveActiveWorkspaceRoot(workspaceRoot);
-      activeWorkspaceRootRef.current = activeRoot;
-      const info = await api.ptModelInfo(activeRoot, entry.activeModel);
+      const info = await api.ptModelInfo(workspaceRoot, entry.activeModel);
       const names = classNamesFromModelInfo(info);
       if (!names.length) throw new Error("No classes found in this model.");
       const result = kind === "detect"
@@ -264,9 +251,7 @@ export function AutoLabelModelPanel({
     async (key: string) => {
       if (!workspaceRoot.trim()) return;
       autoRunKeysRef.current.add(key);
-      const activeRoot = await resolveActiveWorkspaceRoot(workspaceRoot);
-      activeWorkspaceRootRef.current = activeRoot;
-      await writeAutoLabelRunKeys(activeRoot, autoRunKeysRef.current);
+      await writeAutoLabelRunKeys(workspaceRoot, autoRunKeysRef.current);
     },
     [workspaceRoot]
   );
@@ -302,7 +287,6 @@ export function AutoLabelModelPanel({
     classByName,
     requireSourceImageBase64,
     sourceUnavailableMessage,
-    activeWorkspaceRootRef,
     runTokenRef,
     currentMediaKeyRef,
     resolveSourceBase64,

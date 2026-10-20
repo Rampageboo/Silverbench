@@ -1,4 +1,5 @@
 import { readTextFile, writeTextFile } from "../../api";
+import { videoLabelPath, workspaceRelative } from "../../workspace/layout";
 import {
   chooseVideoFiles,
   getVideoFrameBase64,
@@ -7,7 +8,6 @@ import {
   type VideoItem
 } from "./videoCaptureApi";
 
-export const DEFAULT_VIDEO_ANNOTATIONS_ROOT = "workspace/video_annotations";
 export const LABEL_VIDEO_PREVIEW_MAX_EDGE = 1280;
 export const LABEL_VIDEO_PREVIEW_QUALITY = 60;
 export const LABEL_VIDEO_PREVIEW_FAST_EDGE = 720;
@@ -267,45 +267,13 @@ function normalizeV2Manifest(
 // Path utilities
 // ---------------------------------------------------------------------------
 
-function hashPath(value: string) {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
-function safeStem(name: string) {
-  return (
-    String(name || "video")
-      .replace(/\.[^.]+$/, "")
-      .replace(/[^a-zA-Z0-9_-]+/g, "_")
-      .replace(/^_+|_+$/g, "")
-      .slice(0, 80) || "video"
-  );
-}
-
-export function normalizeVideoAnnotationsRoot(value: unknown) {
-  const raw = String(value || DEFAULT_VIDEO_ANNOTATIONS_ROOT).trim().replace(/\\/g, "/");
-  if (raw.startsWith("/") || raw.startsWith("//") || /^[a-zA-Z]:\//.test(raw)) {
-    throw new Error("Video annotation storage path must be workspace-relative.");
-  }
-  const text = raw.replace(/^\/+|\/+$/g, "");
-  const parts = text.split("/").filter(Boolean);
-  if (!parts.length || parts.some((part) => part === "." || part === ".." || part.includes(":"))) {
-    throw new Error("Video annotation storage path must stay inside the workspace.");
-  }
-  return parts.join("/");
-}
-
 export function timestampKey(seconds: number) {
   return String(Math.max(0, Math.round((Number(seconds) || 0) * 1000)));
 }
 
-export function videoManifestRelativePath(video: VideoSource, annotationsRoot = DEFAULT_VIDEO_ANNOTATIONS_ROOT) {
-  const root = normalizeVideoAnnotationsRoot(annotationsRoot);
-  return `${root}/${safeStem(video.name)}-${hashPath(video.path)}.json`;
+/** `labels/videos/<video file name>.json` — one annotation file per media video. */
+export function videoManifestRelativePath(video: VideoSource) {
+  return videoLabelPath(video.path || video.name);
 }
 
 export function normalizeVideoSource(item: VideoItem): VideoSource {
@@ -374,12 +342,8 @@ export async function prefetchAnnotationFrame(workspaceRoot: string, videoPath: 
   ]);
 }
 
-export async function loadVideoAnnotationManifest(
-  workspaceRoot: string,
-  video: VideoSource,
-  annotationsRoot = DEFAULT_VIDEO_ANNOTATIONS_ROOT
-) {
-  const relativePath = videoManifestRelativePath(video, annotationsRoot);
+export async function loadVideoAnnotationManifest(workspaceRoot: string, video: VideoSource) {
+  const relativePath = videoManifestRelativePath(video);
   let text: string;
   try {
     text = await readTextFile(workspaceRoot, relativePath);
@@ -395,12 +359,10 @@ export async function loadVideoAnnotationManifest(
   }
 }
 
-export async function saveVideoAnnotationManifest(
-  workspaceRoot: string,
-  manifest: VideoAnnotationManifest,
-  annotationsRoot = DEFAULT_VIDEO_ANNOTATIONS_ROOT
-) {
+export async function saveVideoAnnotationManifest(workspaceRoot: string, manifest: VideoAnnotationManifest) {
   const next: VideoAnnotationManifest = { ...manifest, updatedAt: new Date().toISOString() };
-  await writeTextFile(workspaceRoot, videoManifestRelativePath(next.video, annotationsRoot), `${JSON.stringify(next, null, 2)}\n`);
+  // On disk the video is referenced relative to the workspace (media/clip.mp4) so the folder can move.
+  const stored = { ...next, video: { ...next.video, path: workspaceRelative(workspaceRoot, next.video.path) } };
+  await writeTextFile(workspaceRoot, videoManifestRelativePath(next.video), `${JSON.stringify(stored, null, 2)}\n`);
   return next;
 }

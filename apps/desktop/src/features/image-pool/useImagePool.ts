@@ -11,9 +11,9 @@ import {
   loadMetadataMap,
   markJunkFilenames,
   passesHideJunk,
+  restoreMetadataSnapshots
 } from "./metadata";
 import { hasJunkUndo, popJunkUndo, pushJunkUndo } from "../shared/junkUndo";
-import { restoreJunkUndoWithLinks } from "../shared/junkMetadata";
 import { useWorkspaceCache } from "../shared/useWorkspaceCache";
 import { dispatchWorkspaceMediaChanged } from "../shared/mediaEvents";
 import {
@@ -367,7 +367,7 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
       if (
         !(await confirm({
           title: "Delete images",
-          message: `Permanently delete ${unique.length} image(s)?\n\nThis removes media files, all detect/clf hard links, detect_labels, and metadata records. This cannot be undone.\n\n${preview}${more}`,
+          message: `Permanently delete ${unique.length} image(s)?\n\nThis removes the media files with their labels, status and kept originals. Exported datasets are not touched. This cannot be undone.\n\n${preview}${more}`,
           confirmLabel: "Delete",
           danger: true
         }))
@@ -531,7 +531,7 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
     }
     setPending(true);
     try {
-      await restoreJunkUndoWithLinks(root, snapshots);
+      await restoreMetadataSnapshots(root, snapshots);
       await reloadMetadata();
       setStatus("已撤回上一步废片操作。");
     } catch (err) {
@@ -569,7 +569,7 @@ export function useImagePool({ workspaceRoot, onReady, onScanUpdate }: UseImageP
     if (
       !(await confirm({
         title: "Clear duplicates",
-        message: `清除 ${dupCount} 张重复图？\n\n每组保留 1 张（优先 metadata 中登记的），其余彻底删除（含硬链接）。`,
+        message: `清除 ${dupCount} 张重复图？\n\n每组保留 1 张（优先 metadata 中登记的），其余连同标注一起彻底删除。`,
         confirmLabel: "Clear",
         danger: true
       }))

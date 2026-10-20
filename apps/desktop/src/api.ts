@@ -1,9 +1,5 @@
 import { errMessage } from "./lib/errors";
 import { backendBaseUrl } from "./lib/backendConfig";
-import type {
-  WorkspaceVersionId,
-  WorkspaceVersionsManifest
-} from "./features/workspace-versioning/workspaceSnapshotVersions";
 import type { Predictions, UiOrchestrationDoc } from "./features/ui-orchestrator/schema";
 import type { UiOrchestrationDocV2 } from "./features/ui-orchestrator/schemaV2";
 
@@ -31,24 +27,26 @@ export type BackendMethod =
   | "listDatasetFiles"
   | "readMetadataRows"
   | "upsertMetadataRows"
-  | "removeDetectDatasetLinks"
-  | "removeClfDatasetLinks"
   | "readFileBase64"
   | "readFilePreviewBase64"
   | "readTextFile"
   | "writeTextFile"
   | "readLabelTextsBatch"
   | "listWorkspaceFiles"
-  | "startBuildYoloLinks"
+  | "startExportDataset"
   | "getBuildJob"
   | "importMediaFiles"
   | "writeWorkspaceSession"
   | "readWorkspaceSession"
-  | "readSnapshotVersions"
-  | "initializeSnapshotVersioning"
-  | "createSnapshotVersion"
-  | "setActiveSnapshotVersion"
-  | "resolveActiveSnapshotWorkspacePath"
+  | "listSnapshots"
+  | "createSnapshot"
+  | "restoreSnapshot"
+  | "deleteSnapshot"
+  | "createWorkspace"
+  | "planWorkspaceMigration"
+  | "migrateWorkspace"
+  | "rollbackWorkspaceMigration"
+  | "finishWorkspaceMigration"
   | "chooseDirectory"
   | "chooseImageFile"
   | "chooseImageFiles"
@@ -225,27 +223,45 @@ export type ImagePoolItem = {
   isUsed: boolean;
 };
 
+/** App-level settings (in the user's app-data folder): the workspaces used, plus UI preferences. */
 export type AppSettings = {
   ok: true;
-  lastOpenedWorkspace: string;
-  lastOpenedFolder: string;
-  lastOpenedYoloFolder: string;
-  startupOverlayMode?: "overview" | "minimal";
+  lastWorkspace: string;
+  workspaces: string[];
+  startupOverlayMode: "overview" | "minimal";
+  sidebarCollapsed: boolean;
 };
 
-export type OpenWorkspaceResponse = {
-  ok: boolean;
-  kind?: string;
-  root?: string;
-  name?: string;
-  initialized?: boolean;
-  snapshotVersioned?: boolean;
-  workspaceRootPath?: string;
-  activeVersionId?: WorkspaceVersionId;
-  activeVersionPath?: string;
-  workspaceVersions?: WorkspaceVersionsManifest;
-  error?: string;
+export type WorkspacePayload = {
+  ok: true;
+  kind: "workspace";
+  root: string;
+  id: string;
+  name: string;
+  formatVersion: number;
+  paths: Record<string, string>;
+  /** A migration finished but the user has not yet kept or undone it. */
+  migrationPending?: boolean;
 };
+
+export type MigrationSummary = {
+  ok: boolean;
+  root: string;
+  sourceKind: "snapshot" | "v2" | "v1";
+  activeVersion: string | null;
+  counts: Record<string, number>;
+  steps?: Array<Record<string, unknown>>;
+  warnings: string[];
+  conflicts: string[];
+  untouched: string[];
+};
+
+/** What a folder turned out to be when opened. Opening never creates anything. */
+export type OpenWorkspaceResponse =
+  | WorkspacePayload
+  | { ok: true; kind: "legacy"; root: string; name: string; migration: MigrationSummary }
+  | { ok: true; kind: "dataset"; root: string; name: string; task: "detect" | "classify" }
+  | { ok: true; kind: "folder"; root: string; name: string; empty: boolean };
 
 export type ImagePoolScan = {
   ok: true;
@@ -297,12 +313,6 @@ export type LabelBox = {
   y: number;
   w: number;
   h: number;
-};
-
-export type LabelClassesSaveResponse = {
-  ok: true;
-  workspaceRoot: string;
-  classes: LabelClass[];
 };
 
 function imagePoolParams(workspaceRoot: string, filename?: string) {
@@ -687,12 +697,7 @@ export async function appSettings() {
 }
 
 export async function writeAppSettings(
-  settings: Partial<
-    Pick<
-      AppSettings,
-      "lastOpenedWorkspace" | "lastOpenedFolder" | "lastOpenedYoloFolder" | "startupOverlayMode"
-    >
-  >
+  settings: Partial<Pick<AppSettings, "lastWorkspace" | "workspaces" | "startupOverlayMode" | "sidebarCollapsed">>
 ) {
   const response = await fetch(`${API_BASE_URL}/api/app-settings`, {
     method: "POST",
@@ -701,18 +706,69 @@ export async function writeAppSettings(
   });
   const data = await response.json();
   assertOk(data, response);
-  return data as { ok: true };
+  return data as AppSettings;
 }
 
-export async function openWorkspace(workspaceRoot: string, initIfNeeded = true) {
+export async function openWorkspace(workspaceRoot: string) {
   const response = await fetch(`${API_BASE_URL}/api/workspace/open`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ workspaceRoot, initIfNeeded })
+    body: JSON.stringify({ workspaceRoot })
   });
   const data = await response.json();
   assertOk(data, response);
   return data as OpenWorkspaceResponse;
+}
+
+/** Turn a new, empty or plain folder into a workspace (optionally with its classes.json document). */
+export async function createWorkspace(folder: string, classes?: unknown) {
+  return callJson<WorkspacePayload>("createWorkspace", classes ? [folder, JSON.stringify(classes)] : [folder]);
+}
+
+export async function planWorkspaceMigration(root: string) {
+  return callJson<MigrationSummary>("planWorkspaceMigration", [root]);
+}
+
+export async function migrateWorkspace(root: string) {
+  return callJson<{ ok: true; root: string; steps: number; workspace: WorkspacePayload }>("migrateWorkspace", [root]);
+}
+
+export async function rollbackWorkspaceMigration(root: string) {
+  return callJson<{ ok: true; root: string; undone: number }>("rollbackWorkspaceMigration", [root]);
+}
+
+export async function finishWorkspaceMigration(root: string) {
+  return callJson<{ ok: true }>("finishWorkspaceMigration", [root]);
+}
+
+/** An annotation snapshot in versions/ (labels and classes only, never media). */
+export type WorkspaceSnapshot = {
+  id: string;
+  createdAt: string;
+  note: string;
+  imageLabels: number;
+  videoLabels: number;
+};
+
+export type WorkspaceSnapshots = { ok: true; version: 1; snapshots: WorkspaceSnapshot[] };
+
+export async function listSnapshots(workspaceRoot: string) {
+  return callJson<WorkspaceSnapshots>("listSnapshots", [workspaceRoot]);
+}
+
+export async function createSnapshot(workspaceRoot: string, note = "") {
+  return callJson<WorkspaceSnapshots & { created: WorkspaceSnapshot }>("createSnapshot", [workspaceRoot, note]);
+}
+
+export async function restoreSnapshot(workspaceRoot: string, snapshotId: string) {
+  return callJson<WorkspaceSnapshots & { restored: string; backup: WorkspaceSnapshot }>("restoreSnapshot", [
+    workspaceRoot,
+    snapshotId
+  ]);
+}
+
+export async function deleteSnapshot(workspaceRoot: string, snapshotId: string) {
+  return callJson<WorkspaceSnapshots>("deleteSnapshot", [workspaceRoot, snapshotId]);
 }
 
 export function imagePoolThumbUrl(workspaceRoot: string, filename: string) {
@@ -735,19 +791,6 @@ export async function loadLabelClasses(workspaceRoot: string) {
   const data = await response.json();
   assertOk(data, response);
   return data.classes as LabelClass[];
-}
-
-export async function saveLabelClasses(workspaceRoot: string, classes: LabelClass[]) {
-  const response = await fetch(`${API_BASE_URL}/api/labels/classes`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ workspaceRoot, classes })
-  });
-  const data = await response.json();
-  assertOk(data, response);
-  return data as LabelClassesSaveResponse;
 }
 
 export type WorkspaceInfo = {
@@ -782,13 +825,33 @@ export type BuildJobState = {
   total?: number;
   detail?: string;
   errors?: string[];
-  result?: {
-    builtFilenames?: string[];
-    detectImagesLinked?: number;
-    clfImagesLinked?: number;
-    labelsPlaced?: number;
-    errors?: string[];
-  };
+  result?: ExportResult;
+};
+
+export type ExportResult = {
+  ok: boolean;
+  exportRoot: string;
+  detectDataset: string;
+  clfDataset: string;
+  builtFilenames?: string[];
+  detectImages?: number;
+  clfImages?: number;
+  labelsPlaced?: number;
+  skippedRows?: number;
+  warnings?: string[];
+  errors?: string[];
+};
+
+export type ExportOptions = {
+  /** Folder name under exports/ (default "dataset"). */
+  name?: string;
+  /** Write somewhere outside the workspace instead (must be empty or an earlier export). */
+  destination?: string;
+  /** Only (re)place these images; the rest of the export stays as it is. */
+  filenames?: string[];
+  rebuild?: boolean;
+  /** Hard-link images instead of copying them (same drive only; edits then reach media/). */
+  link?: boolean;
 };
 
 export async function getWorkspaceInfo(workspaceRoot: string) {
@@ -837,8 +900,9 @@ export async function readLabelTextsBatch(datasetRoot: string, labelPaths: strin
   return callJson<Record<string, string>>("readLabelTextsBatch", [datasetRoot, JSON.stringify(labelPaths)]);
 }
 
-export async function startBuildYoloLinks(workspaceRoot: string, rebuild: boolean, filenamesJson = "") {
-  return callJson<BuildJobState>("startBuildYoloLinks", [workspaceRoot, rebuild, filenamesJson]);
+/** Export the workspace's annotations as a YOLO dataset (runs as a background job). */
+export async function startExportDataset(workspaceRoot: string, options: ExportOptions = {}) {
+  return callJson<BuildJobState>("startExportDataset", [workspaceRoot, JSON.stringify(options)]);
 }
 
 export async function getBuildJob(jobId: string) {

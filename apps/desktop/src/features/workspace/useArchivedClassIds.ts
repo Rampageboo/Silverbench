@@ -1,11 +1,11 @@
 import { type MutableRefObject, useCallback, useEffect, useRef, useState } from "react";
-import { readTextFile } from "../../api";
+import { sameWorkspacePath } from "../../workspace/layout";
 import {
   isWorkspaceClassesChangedEvent,
   WORKSPACE_CLASSES_CHANGED_EVENT,
 } from "../shared/workspaceClassEvents";
-import { normalizeClassesManifest, type ClassesManifest } from "../video/classDomain";
-import { resolveActiveWorkspaceRoot, sameWorkspacePath } from "./activeWorkspaceRoot";
+import type { ClassesManifest } from "../video/classDomain";
+import { readWorkspaceClasses } from "./useWorkspaceClasses";
 import { archivedDetectClassIds } from "./workspaceClassTaxonomy";
 
 type ArchivedClassState = {
@@ -15,12 +15,10 @@ type ArchivedClassState = {
 };
 
 const EMPTY_STATE: ArchivedClassState = { manifest: null, detectIds: new Set(), classKeys: new Set() };
-const CLASSES_JSON_PATH = "workspace/classes.json";
 
 /**
- * Lightweight hook that reads workspace/classes.json and derives which detect
- * class IDs and clf class keys are archived. Falls back gracefully to an empty
- * set when the manifest is absent (legacy workspaces with only classes.txt).
+ * Lightweight hook that reads classes.json and derives which detect class IDs
+ * and clf class keys are archived.
  *
  * This is the single source of truth for archived state in label UIs.
  * Use archivedDetectIds to filter class pickers while keeping the full class
@@ -37,7 +35,6 @@ export function useArchivedClassIds(workspaceRoot: string): {
   const [state, setState] = useState<ArchivedClassState>(EMPTY_STATE);
   const detectIdsRef = useRef<Set<number>>(new Set());
   const classKeysRef = useRef<Set<string>>(new Set());
-  const activeRootRef = useRef("");
   detectIdsRef.current = state.detectIds;
   classKeysRef.current = state.classKeys;
 
@@ -47,10 +44,7 @@ export function useArchivedClassIds(workspaceRoot: string): {
       if (!options.cancelled?.()) setState(EMPTY_STATE);
       return;
     }
-    const activeRoot = await resolveActiveWorkspaceRoot(root);
-    activeRootRef.current = activeRoot;
-    const text = await readTextFile(activeRoot, CLASSES_JSON_PATH);
-    const manifest = normalizeClassesManifest(JSON.parse(text));
+    const manifest = await readWorkspaceClasses(root);
     const archivedKeys = new Set(
       manifest.classDefs.filter((d) => d.archived).map((d) => d.key)
     );
@@ -78,12 +72,7 @@ export function useArchivedClassIds(workspaceRoot: string): {
     if (!root) return;
     const handleClassesChanged = (event: Event) => {
       if (!isWorkspaceClassesChangedEvent(event)) return;
-      if (
-        !sameWorkspacePath(event.detail.workspaceRoot, root) &&
-        !sameWorkspacePath(event.detail.workspaceRoot, activeRootRef.current)
-      ) {
-        return;
-      }
+      if (!sameWorkspacePath(event.detail.workspaceRoot, root)) return;
       void load().catch(() => setState(EMPTY_STATE));
     };
     window.addEventListener(WORKSPACE_CLASSES_CHANGED_EVENT, handleClassesChanged);

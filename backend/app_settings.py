@@ -37,11 +37,17 @@ def app_data_dir() -> Path:
     return Path.home() / ".config" / "RampageWorkbench"
 
 
+def _path_key(path: str) -> str:
+    return os.path.normcase(os.path.normpath(path)) if path else ""
+
+
 def _normalize(data: dict[str, Any]) -> dict[str, Any]:
-    workspaces = []
+    workspaces: list[str] = []
+    seen: set[str] = set()
     for item in data.get("workspaces") or []:
         text = str(item or "").strip()
-        if text and text not in workspaces:
+        if text and _path_key(text) not in seen:
+            seen.add(_path_key(text))
             workspaces.append(text)
     mode = str(data.get("startupOverlayMode") or "overview").strip().lower()
     return {
@@ -102,5 +108,13 @@ def write_settings(changes: dict[str, Any], directory: Path | None = None, *, le
 def remember_workspace(root: str, directory: Path | None = None, *, legacy_dir: Path | None = None) -> dict[str, Any]:
     """Make ``root`` the last workspace and move it to the front of the recent list."""
     current = read_settings(directory, legacy_dir=legacy_dir)
-    workspaces = [root, *[item for item in current["workspaces"] if item != root]]
+    workspaces = [root, *[item for item in current["workspaces"] if _path_key(item) != _path_key(root)]]
     return write_settings({"lastWorkspace": root, "workspaces": workspaces}, directory, legacy_dir=legacy_dir)
+
+
+def forget_workspace(root: str, directory: Path | None = None, *, legacy_dir: Path | None = None) -> dict[str, Any]:
+    """Drop ``root`` from the recent list (and as the last workspace)."""
+    current = read_settings(directory, legacy_dir=legacy_dir)
+    workspaces = [item for item in current["workspaces"] if _path_key(item) != _path_key(root)]
+    last = "" if _path_key(current["lastWorkspace"]) == _path_key(root) else current["lastWorkspace"]
+    return write_settings({"lastWorkspace": last, "workspaces": workspaces}, directory, legacy_dir=legacy_dir)

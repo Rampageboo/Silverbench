@@ -1,3 +1,4 @@
+import { segmentLabelPath } from "../../workspace/layout";
 /**
  * Video Segment Domain
  *
@@ -184,28 +185,7 @@ export function createVideoSegment(
 // Path derivation
 // ---------------------------------------------------------------------------
 
-/**
- * Derive a deterministic workspace-relative path for a video's segment manifest.
- *
- * Format: "video_segments/<safe-name>-<8char-hash>.json"
- *
- * safe-name: basename of videoPath with extension stripped, non-alphanumeric
- *   characters replaced with "_", trimmed and truncated to 80 chars.
- *
- * hash: first 8 alphanumeric characters of btoa(encodeURIComponent(videoPath)).
- */
+/** `labels/segments/<video file name>.json` — one segment file per media video. */
 export function videoSegmentManifestPath(videoPath: string): string {
-  // Derive basename (handle both / and \ separators)
-  const basename = videoPath.replace(/\\/g, "/").split("/").pop() ?? videoPath;
-  // Strip extension
-  const stem = basename.replace(/\.[^.]+$/, "");
-  const safeName = (
-    stem.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 80) || "video"
-  );
-
-  const hash = btoa(encodeURIComponent(videoPath))
-    .replace(/[^a-zA-Z0-9]/g, "")
-    .slice(0, 8);
-
-  return `video_segments/${safeName}-${hash}.json`;
+  return segmentLabelPath(videoPath);
 }

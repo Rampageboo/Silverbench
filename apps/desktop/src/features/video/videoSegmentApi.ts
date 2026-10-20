@@ -1,4 +1,5 @@
 import { readTextFile, writeTextFile } from "../../api";
+import { workspaceRelative } from "../../workspace/layout";
 import {
   type VideoSegmentManifest,
   type VideoSegment,
@@ -46,7 +47,8 @@ export async function loadVideoSegmentManifest(
   if (!text.trim()) return createEmptyManifest(videoPath, videoDurationMs);
   try {
     const normalized = normalizeVideoSegmentManifest(JSON.parse(text));
-    return normalized ?? createEmptyManifest(videoPath, videoDurationMs);
+    // Stored relative to the workspace; callers work with the path they opened the video by.
+    return normalized ? { ...normalized, videoPath } : createEmptyManifest(videoPath, videoDurationMs);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Cannot read ${relPath}: ${message}`);
@@ -58,7 +60,11 @@ export async function saveVideoSegmentManifest(
   manifest: VideoSegmentManifest
 ): Promise<void> {
   const relPath = videoSegmentManifestPath(manifest.videoPath);
-  const next: VideoSegmentManifest = { ...manifest, updatedAt: new Date().toISOString() };
+  const next: VideoSegmentManifest = {
+    ...manifest,
+    videoPath: workspaceRelative(workspaceRoot, manifest.videoPath),
+    updatedAt: new Date().toISOString()
+  };
   await writeTextFile(workspaceRoot, relPath, `${JSON.stringify(next, null, 2)}\n`);
 }
 

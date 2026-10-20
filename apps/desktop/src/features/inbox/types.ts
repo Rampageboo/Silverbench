@@ -24,8 +24,8 @@ export type InboxBuildRun = {
   rebuild: boolean;
   batchIds: string[];
   filenames: string[];
-  detectImagesLinked: number;
-  clfImagesLinked: number;
+  detectImages: number;
+  clfImages: number;
   labelsPlaced: number;
   errors: string[];
 };

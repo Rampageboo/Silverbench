@@ -1047,7 +1047,7 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
               ) : null}
 
               <div className="hint" style={{ marginTop: 8 }}>
-                Segments are saved to <code>video_segments/</code> in your workspace and consumed by Video Label for random-frame sampling.
+                Segments are saved to <code>labels/segments/</code> in your workspace and consumed by Video Label for random-frame sampling.
               </div>
             </div>
           </aside>

@@ -13,11 +13,11 @@ import {
   loadMetadataMap,
   markJunkFilenames,
   setTaskExportEnabled,
-  setMetadataFlags
+  setMetadataFlags,
+  restoreMetadataSnapshots
 } from "../image-pool/metadata";
 import type { MetadataRow } from "../image-pool/types";
 import { hasJunkUndo, popJunkUndo, pushJunkUndo } from "../shared/junkUndo";
-import { restoreJunkUndoWithLinks } from "../shared/junkMetadata";
 import { useWorkspaceCache } from "../shared/useWorkspaceCache";
 import { isWorkspaceMediaChangedEvent, WORKSPACE_MEDIA_CHANGED_EVENT } from "../shared/mediaEvents";
 import { BOX_LABEL_CACHE_MS } from "../shared/workspaceCache";
@@ -374,11 +374,6 @@ export function useBoxLabel({
           patchBoxLabelCacheLabelIndex(root, indexMap);
         })
         .catch(() => {});
-      if (!list.length) {
-        setStatusText("detect_dataset 中没有图片。请先从 Image Assign 发送到 Detect。");
-      } else {
-        setStatusText(`${list.length} image(s) in detect_dataset`);
-      }
       setStatusText(
         list.length
           ? `${list.length} media image(s) ready for detect + clf labeling.`
@@ -428,7 +423,6 @@ export function useBoxLabel({
     setImageViewMode("all");
     const index = resolveIndex(entries, focus);
     if (index < 0 || !entries[index]) {
-      setStatusText(`「${focus}」不在 detect_dataset 中。请先从 Image Assign 发送到 Detect。`);
       setStatusText(`"${focus}" is not in workspace media. Import it before labeling.`);
       pendingFocusFilename.current = null;
       onFocusConsumed?.();
@@ -744,7 +738,7 @@ export function useBoxLabel({
       setStatusText("没有可撤回的废片操作。");
       return;
     }
-    await restoreJunkUndoWithLinks(root, snapshots);
+    await restoreMetadataSnapshots(root, snapshots);
     await reloadMetadata();
     await load({ background: true });
     setStatusText("已撤回上一步废片操作。");

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { loadLabelClasses, saveLabelClasses, writeTextFile, readTextFile } from "../../api";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { readTextFile, writeTextFile } from "../../api";
+import { sameWorkspacePath, WORKSPACE_PATHS } from "../../workspace/layout";
 import {
   dispatchWorkspaceClassesChanged,
   isWorkspaceClassesChangedEvent,
@@ -14,19 +15,10 @@ import {
   unarchiveDetectClassInManifest,
   archiveClfClassInManifest,
   unarchiveClfClassInManifest,
-  upgradeLegacyToManifest,
-  manifestToLegacyClasses,
   validateNewClassName,
   activeDetectClassDefs,
   activeClfClassDefs,
 } from "./workspaceClassTaxonomy";
-import {
-  dispatchWorkspaceClassesChangedForRoots,
-  resolveActiveWorkspaceRoot,
-  sameWorkspacePath,
-} from "./activeWorkspaceRoot";
-
-const CLASSES_JSON_PATH = "workspace/classes.json";
 
 function emptyManifest(): ClassesManifest {
   return {
@@ -53,21 +45,22 @@ function uniqueCleanNames(names: string[]) {
   return result;
 }
 
-async function readManifestForMutation(root: string, fallback: ClassesManifest | null): Promise<ClassesManifest> {
+/** Read classes.json — the only place classes live (datasets get data.yaml / classes.txt at export). */
+export async function readWorkspaceClasses(root: string): Promise<ClassesManifest> {
   try {
-    const text = await readTextFile(root, CLASSES_JSON_PATH);
-    return normalizeClassesManifest(JSON.parse(text));
+    return normalizeClassesManifest(JSON.parse(await readTextFile(root, WORKSPACE_PATHS.classes)));
   } catch {
-    const legacyClasses = await loadLabelClasses(root).catch(() => []);
-    if (legacyClasses.length > 0) return upgradeLegacyToManifest(legacyClasses);
-    return fallback ?? emptyManifest();
+    return emptyManifest();
   }
+}
+
+export async function writeWorkspaceClasses(root: string, manifest: ClassesManifest): Promise<void> {
+  await writeTextFile(root, WORKSPACE_PATHS.classes, `${JSON.stringify(manifest, null, 2)}\n`);
+  dispatchWorkspaceClassesChanged(root);
 }
 
 export type UseWorkspaceClassesResult = {
   manifest: ClassesManifest | null;
-  /** True when workspace has only classes.txt (no classes.json yet). */
-  legacyMode: boolean;
   loading: boolean;
   saving: boolean;
   loadError: string;
@@ -82,17 +75,14 @@ export type UseWorkspaceClassesResult = {
   unarchiveDetect: (classKey: string) => Promise<void>;
   archiveClf: (classKey: string) => Promise<void>;
   unarchiveClf: (classKey: string) => Promise<void>;
-  upgradeLegacy: () => Promise<void>;
 };
 
 export function useWorkspaceClasses(workspaceRoot: string): UseWorkspaceClassesResult {
   const [manifest, setManifest] = useState<ClassesManifest | null>(null);
-  const [legacyMode, setLegacyMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [saveError, setSaveError] = useState("");
-  const activeWorkspaceRootRef = useRef("");
 
   const load = useCallback(async () => {
     const root = workspaceRoot.trim();
@@ -100,26 +90,7 @@ export function useWorkspaceClasses(workspaceRoot: string): UseWorkspaceClassesR
     setLoading(true);
     setLoadError("");
     try {
-      const classRoot = await resolveActiveWorkspaceRoot(root);
-      activeWorkspaceRootRef.current = classRoot;
-      try {
-        const text = await readTextFile(classRoot, CLASSES_JSON_PATH);
-        const m = normalizeClassesManifest(JSON.parse(text));
-        setManifest(m);
-        setLegacyMode(false);
-      } catch {
-        // No classes.json — try legacy classes.txt.
-        const legacyClasses = await loadLabelClasses(classRoot);
-        if (legacyClasses.length > 0) {
-          // Read-only legacy mode: show data but don't auto-upgrade.
-          const m = upgradeLegacyToManifest(legacyClasses);
-          setManifest(m);
-          setLegacyMode(true);
-        } else {
-          setManifest(null);
-          setLegacyMode(false);
-        }
-      }
+      setManifest(await readWorkspaceClasses(root));
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : String(err));
       setManifest(null);
@@ -135,17 +106,8 @@ export function useWorkspaceClasses(workspaceRoot: string): UseWorkspaceClassesR
       setSaving(true);
       setSaveError("");
       try {
-        const classRoot = await resolveActiveWorkspaceRoot(root);
-        // Write classes.json (canonical source).
-        await writeTextFile(classRoot, CLASSES_JSON_PATH, `${JSON.stringify(next, null, 2)}\n`);
-        // Sync classes.txt (ALL detect classes including archived, to preserve IDs).
-        const legacyClasses = manifestToLegacyClasses(next);
-        if (legacyClasses.length > 0) {
-          await saveLabelClasses(classRoot, legacyClasses);
-        }
+        await writeWorkspaceClasses(root, next);
         setManifest(next);
-        setLegacyMode(false);
-        dispatchWorkspaceClassesChangedForRoots(dispatchWorkspaceClassesChanged, root, classRoot);
       } catch (err) {
         setSaveError(err instanceof Error ? err.message : String(err));
         throw err;
@@ -182,53 +144,33 @@ export function useWorkspaceClasses(workspaceRoot: string): UseWorkspaceClassesR
     [manifest, persist]
   );
 
-  const importDetectClasses = useCallback(
-    async (names: string[]) => {
+  const importClasses = useCallback(
+    async (names: string[], task: "detect" | "clf") => {
       const root = workspaceRoot.trim();
       if (!root) return { added: 0, skipped: 0 };
-      const clean = uniqueCleanNames(names);
-      const classRoot = await resolveActiveWorkspaceRoot(root);
-      let next = await readManifestForMutation(classRoot, manifest);
+      const active = task === "detect" ? activeDetectClassDefs : activeClfClassDefs;
+      const add = task === "detect" ? addDetectClassToManifest : addClfClassToManifest;
+      // Re-read so an import never overwrites a change made elsewhere since the last load.
+      let next = await readWorkspaceClasses(root);
       let added = 0;
       let skipped = 0;
-      for (const name of clean) {
-        const activeNames = activeDetectClassDefs(next).map((d) => d.name.trim().toLowerCase());
+      for (const name of uniqueCleanNames(names)) {
+        const activeNames = active(next).map((d) => d.name.trim().toLowerCase());
         if (activeNames.includes(name.toLowerCase())) {
           skipped += 1;
           continue;
         }
-        next = addDetectClassToManifest(next, name).manifest;
+        next = add(next, name).manifest;
         added += 1;
       }
       if (added > 0) await persist(next);
       return { added, skipped };
     },
-    [manifest, persist, workspaceRoot]
+    [persist, workspaceRoot]
   );
 
-  const importClfClasses = useCallback(
-    async (names: string[]) => {
-      const root = workspaceRoot.trim();
-      if (!root) return { added: 0, skipped: 0 };
-      const clean = uniqueCleanNames(names);
-      const classRoot = await resolveActiveWorkspaceRoot(root);
-      let next = await readManifestForMutation(classRoot, manifest);
-      let added = 0;
-      let skipped = 0;
-      for (const name of clean) {
-        const activeNames = activeClfClassDefs(next).map((d) => d.name.trim().toLowerCase());
-        if (activeNames.includes(name.toLowerCase())) {
-          skipped += 1;
-          continue;
-        }
-        next = addClfClassToManifest(next, name).manifest;
-        added += 1;
-      }
-      if (added > 0) await persist(next);
-      return { added, skipped };
-    },
-    [manifest, persist, workspaceRoot]
-  );
+  const importDetectClasses = useCallback((names: string[]) => importClasses(names, "detect"), [importClasses]);
+  const importClfClasses = useCallback((names: string[]) => importClasses(names, "clf"), [importClasses]);
 
   const rename = useCallback(
     async (classKey: string, newName: string) => {
@@ -243,44 +185,18 @@ export function useWorkspaceClasses(workspaceRoot: string): UseWorkspaceClassesR
     [manifest, persist]
   );
 
-  const archiveDetect = useCallback(
-    async (classKey: string) => {
+  const archiving = useMemo(() => {
+    const update = (change: (current: ClassesManifest, classKey: string) => ClassesManifest) => async (classKey: string) => {
       if (!manifest) return;
-      await persist(archiveDetectClassInManifest(manifest, classKey));
-    },
-    [manifest, persist]
-  );
-
-  const unarchiveDetect = useCallback(
-    async (classKey: string) => {
-      if (!manifest) return;
-      await persist(unarchiveDetectClassInManifest(manifest, classKey));
-    },
-    [manifest, persist]
-  );
-
-  const archiveClf = useCallback(
-    async (classKey: string) => {
-      if (!manifest) return;
-      await persist(archiveClfClassInManifest(manifest, classKey));
-    },
-    [manifest, persist]
-  );
-
-  const unarchiveClf = useCallback(
-    async (classKey: string) => {
-      if (!manifest) return;
-      await persist(unarchiveClfClassInManifest(manifest, classKey));
-    },
-    [manifest, persist]
-  );
-
-  const upgradeLegacy = useCallback(async () => {
-    const root = workspaceRoot.trim();
-    if (!root || !legacyMode || !manifest) return;
-    // Write manifest (converted from legacy) and sync classes.txt.
-    await persist(manifest);
-  }, [workspaceRoot, legacyMode, manifest, persist]);
+      await persist(change(manifest, classKey));
+    };
+    return {
+      archiveDetect: update(archiveDetectClassInManifest),
+      unarchiveDetect: update(unarchiveDetectClassInManifest),
+      archiveClf: update(archiveClfClassInManifest),
+      unarchiveClf: update(unarchiveClfClassInManifest),
+    };
+  }, [manifest, persist]);
 
   useEffect(() => {
     if (!workspaceRoot.trim()) return;
@@ -292,12 +208,7 @@ export function useWorkspaceClasses(workspaceRoot: string): UseWorkspaceClassesR
     if (!root) return;
     const handleClassesChanged = (event: Event) => {
       if (!isWorkspaceClassesChangedEvent(event)) return;
-      if (
-        !sameWorkspacePath(event.detail.workspaceRoot, root) &&
-        !sameWorkspacePath(event.detail.workspaceRoot, activeWorkspaceRootRef.current)
-      ) {
-        return;
-      }
+      if (!sameWorkspacePath(event.detail.workspaceRoot, root)) return;
       void load();
     };
     window.addEventListener(WORKSPACE_CLASSES_CHANGED_EVENT, handleClassesChanged);
@@ -306,7 +217,6 @@ export function useWorkspaceClasses(workspaceRoot: string): UseWorkspaceClassesR
 
   return {
     manifest,
-    legacyMode,
     loading,
     saving,
     loadError,
@@ -317,10 +227,6 @@ export function useWorkspaceClasses(workspaceRoot: string): UseWorkspaceClassesR
     importDetectClasses,
     importClfClasses,
     rename,
-    archiveDetect,
-    unarchiveDetect,
-    archiveClf,
-    unarchiveClf,
-    upgradeLegacy,
+    ...archiving,
   };
 }

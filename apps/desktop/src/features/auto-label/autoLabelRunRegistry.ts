@@ -1,6 +1,7 @@
+import { WORKSPACE_PATHS } from "../../workspace/layout";
 import { readTextFile, writeTextFile } from "../../api";
 
-export const AUTO_LABEL_RUNS_REL_PATH = "workspace/auto_label_runs.json";
+export const AUTO_LABEL_RUNS_REL_PATH = WORKSPACE_PATHS.autolabelRuns;
 
 type AutoLabelRunRegistry = {
   version: 1;

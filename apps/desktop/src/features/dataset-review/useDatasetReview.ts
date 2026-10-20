@@ -8,11 +8,11 @@ import {
   isJunkFile,
   loadMetadataMap,
   markJunkFilenames,
+  restoreMetadataSnapshots
 } from "../image-pool/metadata";
 import { hasJunkUndo, popJunkUndo, pushJunkUndo } from "../shared/junkUndo";
 import type { JunkScope, MetadataRow } from "../image-pool/types";
 import { revokeDatasetImageUrls } from "./datasetAssets";
-import { runBuildYoloLinksJob } from "../inbox/buildJob";
 import {
   buildLabelIndex,
   classDisplay,
@@ -24,7 +24,6 @@ import {
 } from "./datasetCore";
 import type { DatasetTask } from "./datasetCore";
 import { mergeCropQueue, pairToCropItem, readCropQueue, saveCropQueue } from "../shared/cropQueue";
-import { restoreJunkUndoWithLinks } from "../shared/junkMetadata";
 import { boxesToText, resolveLabelPathForWrite } from "./labelUtils";
 import { readDatasetReviewSession, saveDatasetReviewSession, type ImageViewMode, type YoloViewMode } from "./session";
 
@@ -498,7 +497,7 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
     if (
       !(await confirm({
         title: "Send to Detect",
-        message: `将 ${pending.length} 张图片发送到 Detect？\n\n会写入 metadata（detect_enabled=1）并构建 detect 硬链接。`,
+        message: `将 ${pending.length} 张图片发送到 Detect？\n\n会把它们标记为参与 Detect（detect_enabled=1）；下次导出数据集时生效。`,
         confirmLabel: "Send"
       }))
     ) {
@@ -508,9 +507,8 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
       root,
       pending.map((filename) => ({ filename, detect_enabled: true }))
     );
-    const buildResult = await runBuildYoloLinksJob(root, false, JSON.stringify(pending));
     setMetadata(await loadMetadataMap(root));
-    setStatus(`已发送 ${pending.length} 张到 Detect（detect 硬链接 ${buildResult.detectImagesLinked || 0}）。`);
+    setStatus(`已发送 ${pending.length} 张到 Detect，下次导出数据集时生效。`);
   }, [canSendToDetect, confirm, metadata, root, selectedPairs]);
 
   const addClassificationFolder = useCallback(
@@ -587,7 +585,7 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
     if (!root) return;
     const snapshots = popJunkUndo("yolo-review", root);
     if (!snapshots?.length) return;
-    await restoreJunkUndoWithLinks(root, snapshots);
+    await restoreMetadataSnapshots(root, snapshots);
     setMetadata(await loadMetadataMap(root));
     setCanUndoJunk(hasJunkUndo("yolo-review", root));
     await loadDataset(mode, { silent: true });

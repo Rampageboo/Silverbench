@@ -32,49 +32,20 @@ describe("blackoutOverlayApi", () => {
   });
 
   describe("blackoutManifestRelativePath", () => {
-    it("produces a .json file under the overlays root", () => {
-      const path = blackoutManifestRelativePath("vid-test-abc123");
-      expect(path).toMatch(/\.json$/);
-      expect(path).toMatch(/workspace\/overlays\/blackouts\//);
+    it("names the file after the media file under labels/overlays", () => {
+      expect(blackoutManifestRelativePath("clip.mp4")).toBe("labels/overlays/clip.mp4.json");
     });
 
-    it("sanitizes the source key so the filename portion has no special chars", () => {
-      const path = blackoutManifestRelativePath("vid/bad:key?here");
-      // Path will have slashes from the root prefix; only check the filename segment
-      const filename = path.split("/").pop()!;
-      expect(filename).not.toContain(":");
-      expect(filename).not.toContain("?");
-      expect(filename).not.toContain("/");
+    it("keeps only the file name of a path key", () => {
+      expect(blackoutManifestRelativePath("media/sub/photo.jpg")).toBe("labels/overlays/photo.jpg.json");
     });
   });
 
-  describe("videoBlackoutSourceKey", () => {
-    it("starts with vid- prefix", () => {
-      expect(videoBlackoutSourceKey("/videos/foo.mp4")).toMatch(/^vid-/);
-    });
-
-    it("produces the same key for the same path", () => {
-      const k1 = videoBlackoutSourceKey("/videos/foo.mp4");
-      const k2 = videoBlackoutSourceKey("/videos/foo.mp4");
-      expect(k1).toBe(k2);
-    });
-
-    it("produces different keys for different paths", () => {
-      const k1 = videoBlackoutSourceKey("/videos/foo.mp4");
-      const k2 = videoBlackoutSourceKey("/videos/bar.mp4");
-      expect(k1).not.toBe(k2);
-    });
-  });
-
-  describe("imageBlackoutSourceKey", () => {
-    it("starts with img- prefix", () => {
-      expect(imageBlackoutSourceKey("/images/photo.jpg")).toMatch(/^img-/);
-    });
-
-    it("produces stable keys", () => {
-      expect(imageBlackoutSourceKey("/images/photo.jpg")).toBe(
-        imageBlackoutSourceKey("/images/photo.jpg")
-      );
+  describe("source keys", () => {
+    it("are the media file name, the same for relative and absolute paths", () => {
+      expect(videoBlackoutSourceKey("D:\\ws\\media\\foo.mp4")).toBe("foo.mp4");
+      expect(videoBlackoutSourceKey("media/foo.mp4")).toBe("foo.mp4");
+      expect(imageBlackoutSourceKey("/images/photo.jpg")).toBe("photo.jpg");
     });
   });
 });

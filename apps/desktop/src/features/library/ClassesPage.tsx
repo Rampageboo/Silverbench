@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useWorkspace } from "../../app/useWorkspace";
-import { IconAlert, IconArchive, IconPencil, IconRefresh, IconSearch } from "../../ui/icons";
+import { IconArchive, IconPencil, IconRefresh, IconSearch } from "../../ui/icons";
 import type { ClassDef } from "../video/classDomain";
 import { useWorkspaceClasses } from "../workspace/useWorkspaceClasses";
 import {
@@ -234,9 +234,8 @@ function matches(def: ClassDef, code: string, query: string) {
 export function ClassesPage({ onReady }: Props) {
   const { workspaceRoot } = useWorkspace();
   const classes = useWorkspaceClasses(workspaceRoot);
-  const { manifest, legacyMode, loading, saving, loadError, saveError, load } = classes;
+  const { manifest, loading, saving, loadError, saveError, load } = classes;
   const [query, setQuery] = useState("");
-  const [upgrading, setUpgrading] = useState(false);
 
   useEffect(() => {
     onReady?.();
@@ -249,7 +248,7 @@ export function ClassesPage({ onReady }: Props) {
   const taskType = manifest ? derivedTaskType(manifest) : null;
   const showDetect = !taskType || taskType !== "classify";
   const showClf = !taskType || taskType !== "detect";
-  const disabled = loading || saving || legacyMode;
+  const disabled = loading || saving;
 
   const detectDefs = useMemo(() => (manifest ? allDetectClassDefs(manifest) : []), [manifest]);
   const clfDefs = useMemo(() => {
@@ -264,15 +263,6 @@ export function ClassesPage({ onReady }: Props) {
   const visibleClf = clfDefs.filter((def) => matches(def, def.key, query));
   const detectArchived = detectDefs.filter((def) => def.archived).length;
   const clfArchived = clfDefs.filter((def) => def.archived).length;
-
-  async function upgrade() {
-    setUpgrading(true);
-    try {
-      await classes.upgradeLegacy();
-    } finally {
-      setUpgrading(false);
-    }
-  }
 
   return (
     <div className="ui-page">
@@ -300,23 +290,6 @@ export function ClassesPage({ onReady }: Props) {
           </div>
         </header>
 
-        {legacyMode ? (
-          <div className="cls-notice">
-            <IconAlert size={16} />
-            <span>
-              <strong>Legacy format.</strong> This workspace only has <code>classes.txt</code>; editing is
-              locked until it is saved as <code>workspace/classes.json</code>.
-            </span>
-            <button
-              type="button"
-              className="primary ui-btn--sm"
-              onClick={() => void upgrade()}
-              disabled={upgrading || saving}
-            >
-              {upgrading ? "Saving…" : "Convert to classes.json"}
-            </button>
-          </div>
-        ) : null}
         {loadError ? <div className="ui-error">{loadError}</div> : null}
         {saveError ? <div className="ui-error">{saveError}</div> : null}
 
@@ -359,13 +332,11 @@ export function ClassesPage({ onReady }: Props) {
                     </div>
                   )}
                 </div>
-                {!legacyMode ? (
-                  <AddClassRow
-                    placeholder="New detection class"
-                    disabled={loading || saving}
-                    onAdd={(name) => classes.addDetect(name).then(() => {})}
-                  />
-                ) : null}
+                <AddClassRow
+                  placeholder="New detection class"
+                  disabled={loading || saving}
+                  onAdd={(name) => classes.addDetect(name).then(() => {})}
+                />
                 <p className="cls-card__note">
                   IDs are positional: new classes are appended and archived classes keep their slot, so
                   existing label files stay valid.
@@ -404,13 +375,11 @@ export function ClassesPage({ onReady }: Props) {
                     </div>
                   )}
                 </div>
-                {!legacyMode ? (
-                  <AddClassRow
-                    placeholder="New classification class"
-                    disabled={loading || saving}
-                    onAdd={(name) => classes.addClf(name).then(() => {})}
-                  />
-                ) : null}
+                <AddClassRow
+                  placeholder="New classification class"
+                  disabled={loading || saving}
+                  onAdd={(name) => classes.addClf(name).then(() => {})}
+                />
                 <p className="cls-card__note">
                   Names become folder-safe keys. Renaming changes the display name only; the key stays stable.
                 </p>

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   normalizeVideoAnnotationManifest,
-  normalizeVideoAnnotationsRoot,
   videoManifestRelativePath,
   createVideoAnnotationManifest,
   type VideoSource
@@ -16,16 +15,8 @@ const video: VideoSource = {
 };
 
 describe("video annotation persistence", () => {
-  it("keeps storage inside the workspace", () => {
-    expect(normalizeVideoAnnotationsRoot("workspace/custom\\labels/")).toBe("workspace/custom/labels");
-    expect(() => normalizeVideoAnnotationsRoot("../outside")).toThrow(/inside the workspace/i);
-  });
-
-  it("creates a deterministic manifest path without screenshot output", () => {
-    const first = videoManifestRelativePath(video, "workspace/video_annotations");
-    const second = videoManifestRelativePath(video, "workspace/video_annotations");
-    expect(first).toBe(second);
-    expect(first).toMatch(/^workspace\/video_annotations\/session_1-[a-f0-9]{8}\.json$/);
+  it("names the annotation file after the video file", () => {
+    expect(videoManifestRelativePath(video)).toBe("labels/videos/session 1.mp4.json");
   });
 
   it("createVideoAnnotationManifest produces a v2 manifest", () => {

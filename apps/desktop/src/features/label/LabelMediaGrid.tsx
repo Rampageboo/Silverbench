@@ -190,7 +190,6 @@ export function LabelMediaGrid({
           onClick={() => {
             void videoSession.addVideos();
           }}
-          disabled={!videoSession.annotationsRoot}
           title="Add video"
           aria-label="Add video"
         >

@@ -1,4 +1,5 @@
 import * as api from "../../api";
+import { imageLabelPath } from "../../workspace/layout";
 import type { LabelBox } from "../../api";
 import { buildLabelIndex, parseLabels } from "../dataset-review/datasetCore";
 import { boxesToText } from "../dataset-review/labelUtils";
@@ -14,8 +15,7 @@ export function entryBasename(imagePath: string) {
 }
 
 export function detectLabelPathForMediaFilename(filename: string) {
-  const stem = entryBasename(filename).replace(/\.[^.]+$/, "");
-  return `detect_labels/${stem}.txt`;
+  return imageLabelPath(entryBasename(filename));
 }
 
 export function mediaBoxLabelEntry(mediaDir: string, filename: string, imagePath?: string): BoxLabelEntry {

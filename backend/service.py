@@ -39,7 +39,7 @@ from .yolo_pt_model_info import pt_model_info
 from .image_preview import image_scaled_jpeg_base64
 from .image_pool import mark_image_pool_seen
 from .media_import import import_media_files, list_workspace_videos
-from .app_settings import read_settings, remember_workspace, write_settings
+from .app_settings import forget_workspace, read_settings, remember_workspace, write_settings
 from .classes_store import classify_classes, read_classes
 from .dataset_export import export_dataset, export_dirs
 from .image_status import status_payload, upsert_status_rows
@@ -50,7 +50,7 @@ from .image_pool_cleanup import (
     find_image_pool_duplicates,
 )
 from .workspace import infer_dataset_task, list_dataset_files, list_workspace_files, open_folder, workspace_info
-from .workspace_layout import WorkspaceLayout, layout_payload, open_workspace
+from .workspace_layout import WorkspaceLayout, create_workspace, layout_payload, open_workspace
 from .workspace_migration import execute_migration, finish_migration, has_pending_migration, plan_migration, rollback_migration
 from .workspace_session import lite_session, read_session, write_session
 from .workspace_versions import create_snapshot, delete_snapshot, read_versions, restore_snapshot
@@ -472,19 +472,24 @@ class BackendService:
 
     def _handle_createWorkspace(self, args: list[Any]) -> object:
         folder = self.path_access.remember_path(str(args[0]))
-        payload = open_folder(folder, create=True)
-        if payload.get("kind") != "workspace":
-            raise ValueError(f"{folder} is not an empty folder or plain folder ({payload.get('kind')}).")
-        self._remember_workspace(payload["root"])
-        return payload
+        classes = json.loads(args[1]) if len(args) > 1 and args[1] else None
+        if folder.exists():
+            kind = open_folder(folder)["kind"]
+            if kind != "folder":
+                raise ValueError(f"{folder} already holds a {kind}; open it instead.")
+        layout = create_workspace(folder, classes=classes)
+        self._remember_workspace(str(layout.root))
+        return layout_payload(layout)
 
     def _handle_planWorkspaceMigration(self, args: list[Any]) -> object:
         return plan_migration(self.path_access.require_path(str(args[0]))).summary()
 
     def _handle_migrateWorkspace(self, args: list[Any]) -> object:
-        plan = plan_migration(self.path_access.require_path(str(args[0])))
+        source = self.path_access.require_path(str(args[0]))
+        plan = plan_migration(source)
         result = execute_migration(plan)
         layout = open_workspace(plan.root)
+        forget_workspace(str(source), self.app_settings_dir, legacy_dir=self.legacy_settings_dir)
         self._remember_workspace(str(layout.root))
         return {**result, "workspace": layout_payload(layout)}
 

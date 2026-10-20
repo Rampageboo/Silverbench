@@ -7,7 +7,7 @@ import {
   type StartupOverlayMode
 } from "../app/startupOverlayMode";
 import { APP_THEME_OPTIONS, readAppTheme, writeAppTheme, type AppTheme } from "../app/appTheme";
-import { useWorkspaceArchitecture } from "../workspace/WorkspaceArchitectureProvider";
+import { useWorkspace } from "../app/useWorkspace";
 import { GallerySettingsSection } from "../features/gallery/GallerySettingsSection";
 import "./settings.css";
 
@@ -32,7 +32,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [theme, setTheme] = useState<AppTheme>(readAppTheme);
   const [render, setRender] = useState(open);
   const [visible, setVisible] = useState(false);
-  const { workspaceRoot, manifest, phase, error, migrated, refresh } = useWorkspaceArchitecture();
+  const { workspace } = useWorkspace();
 
   useEffect(() => {
     if (open) {
@@ -85,15 +85,15 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   if (!render) return null;
 
-  const manifestRows: Array<[string, string]> = manifest
+  const workspaceRows: Array<[string, string]> = workspace
     ? [
-        ["Name", manifest.name],
-        ["Manifest", `v${manifest.version}`],
-        ["App mode", "video-first · timestamp manifest · no extracted frames"],
-        ["Video annotations", String(manifest.paths.video_annotations)],
-        ["Video segments", String(manifest.paths.video_segments)],
-        ["Structured logs", String(manifest.paths.logs)],
-        ["Disposable cache", String(manifest.paths.cache)]
+        ["Name", workspace.name],
+        ["Folder", workspace.root],
+        ["Format", `v${workspace.formatVersion}`],
+        ["Annotations", "labels/ and classes.json — the only source of truth"],
+        ["Datasets", "exports/ — generated from the annotations, safe to delete"],
+        ["Snapshots", "versions/ — labels and classes only"],
+        ["Local state", ".rwb/ — session and caches for this machine, safe to delete"]
       ]
     : [];
 
@@ -176,43 +176,21 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           <GallerySettingsSection open={open} />
 
           <section className="settings-group">
-            <div className="settings-group__head settings-group__head--row">
-              <div>
-                <h3>Workspace architecture</h3>
-                <p>Read from the open workspace manifest.</p>
-              </div>
-              <button
-                type="button"
-                className="ui-btn--sm"
-                onClick={() => void refresh()}
-                disabled={!workspaceRoot.trim() || phase === "loading"}
-              >
-                Refresh
-              </button>
+            <div className="settings-group__head">
+              <h3>Workspace</h3>
+              <p>How the open workspace is stored on disk.</p>
             </div>
-            {!workspaceRoot.trim() ? (
-              <p className="settings-muted">No workspace is open.</p>
-            ) : manifest ? (
+            {workspace ? (
               <dl className="settings-kv">
-                {manifestRows.map(([key, value]) => (
+                {workspaceRows.map(([key, value]) => (
                   <div key={key}>
                     <dt>{key}</dt>
                     <dd>{value}</dd>
                   </div>
                 ))}
-                {migrated ? (
-                  <div>
-                    <dt>Note</dt>
-                    <dd>Manifest upgraded during this session.</dd>
-                  </div>
-                ) : null}
               </dl>
             ) : (
-              <p className="settings-muted">
-                {phase === "loading"
-                  ? "Loading workspace manifest…"
-                  : error || "Workspace manifest unavailable."}
-              </p>
+              <p className="settings-muted">No workspace is open.</p>
             )}
           </section>
         </div>

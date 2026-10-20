@@ -7,13 +7,13 @@ import {
   junkLabelForFile,
   loadMetadataMap,
   markJunkFilenames,
+  restoreMetadataSnapshots
 } from "../image-pool/metadata";
 import { hasJunkUndo, popJunkUndo, pushJunkUndo } from "../shared/junkUndo";
-import { restoreJunkUndoWithLinks } from "../shared/junkMetadata";
 import { useWorkspaceCache } from "../shared/useWorkspaceCache";
 import { errMessage } from "../../lib/errors";
 import type { JunkScope, MetadataRow } from "../image-pool/types";
-import { runBuildYoloLinksJob } from "./buildJob";
+import { runExportDatasetJob } from "./exportJob";
 import {
   chooseRandomUnusedSample,
   filterInboxItems,
@@ -51,8 +51,6 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
   const [anchorIndex, setAnchorIndex] = useState<number | null>(null);
   const [clfClasses, setClfClasses] = useState<string[]>([]);
   const [detectClasses, setDetectClasses] = useState<DetectClass[]>([]);
-  const [clfDatasetPath, setClfDatasetPath] = useState("");
-  const [detectDatasetPath, setDetectDatasetPath] = useState("");
   const [selectedClass, setSelectedClass] = useState("");
   const [selectedDetectClassId, setSelectedDetectClassId] = useState<number | null>(null);
   const [classSearch, setClassSearch] = useState("");
@@ -152,8 +150,6 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
     if (payload.ok === false && payload.error) throw new Error(payload.error);
     setClfClasses(payload.classes || payload.clfClasses || payload.metadataClasses || []);
     setDetectClasses(Array.isArray(payload.detectClasses) ? payload.detectClasses : []);
-    setClfDatasetPath(payload.clfDataset || "");
-    setDetectDatasetPath(payload.detectDataset || "");
   }, [root]);
 
   const reloadMetadata = useCallback(async () => {
@@ -463,7 +459,7 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
     if (!snapshots?.length) return;
     setAssigning(true);
     try {
-      await restoreJunkUndoWithLinks(root, snapshots);
+      await restoreMetadataSnapshots(root, snapshots);
       await reloadMetadata();
       if (scan) {
         const refreshed = await api.scanImagePool(root, { fast: false });
@@ -485,12 +481,12 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
         setLog("There are no pending assignment batches.");
         return;
       }
-      const filenamesJson = scope === "pending" ? JSON.stringify(pendingNames) : "";
       const batchIds = scope === "pending" ? pendingBatchIds(inboxSession) : [];
       setAssigning(true);
-      setBuildProgress({ open: true, done: 0, total: 1, detail: "Preparing build..." });
+      setBuildProgress({ open: true, done: 0, total: 1, detail: "Preparing export..." });
       try {
-        const result = await runBuildYoloLinksJob(root, rebuild, filenamesJson, (done, total, detail) => {
+        const options = scope === "pending" ? { filenames: pendingNames, rebuild: false } : { rebuild };
+        const result = await runExportDatasetJob(root, options, (done, total, detail) => {
           setBuildProgress({ open: true, done, total, detail });
         });
         const next = markInboxBatchesBuilt(normalizeInboxSession(inboxSession), {
@@ -507,8 +503,8 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
             rebuild,
             batchIds,
             filenames: result.builtFilenames || pendingNames,
-            detectImagesLinked: result.detectImagesLinked || 0,
-            clfImagesLinked: result.clfImagesLinked || 0,
+            detectImages: result.detectImages || 0,
+            clfImages: result.clfImages || 0,
             labelsPlaced: result.labelsPlaced || 0,
             errors: (result.errors || []).slice(0, 20)
           }
@@ -520,8 +516,8 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
         onScanUpdate?.(refreshed.newCount);
         setLog(
           result.errors?.length
-            ? `Build completed with errors:\n${result.errors.join("\n")}`
-            : `Build complete: detect ${result.detectImagesLinked || 0}, clf ${result.clfImagesLinked || 0}, labels ${result.labelsPlaced || 0}.`
+            ? `Export completed with errors:\n${result.errors.join("\n")}`
+            : `Exported to ${result.exportRoot || "exports/dataset"}: detect ${result.detectImages || 0}, clf ${result.clfImages || 0}, labels ${result.labelsPlaced || 0}.`
         );
       } finally {
         setAssigning(false);
@@ -609,8 +605,6 @@ export function useImageAssign({ workspaceRoot, onReady, onScanUpdate }: UseImag
     detectClasses: filteredDetectClasses,
     clfClassCounts,
     detectClassCounts,
-    clfDatasetPath,
-    detectDatasetPath,
     selectedClass,
     selectedDetectClassId,
     classSearch,

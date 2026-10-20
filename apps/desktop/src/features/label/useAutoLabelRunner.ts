@@ -168,7 +168,6 @@ type UseAutoLabelRunnerOptions = {
   classByName: Map<string, ClassificationClass>;
   requireSourceImageBase64: boolean;
   sourceUnavailableMessage?: string;
-  activeWorkspaceRootRef: MutableRefObject<string>;
   runTokenRef: MutableRefObject<number>;
   currentMediaKeyRef: MutableRefObject<string>;
   resolveSourceBase64: (target: BoxLabelEntry) => Promise<string>;
@@ -191,7 +190,6 @@ export function useAutoLabelRunner({
   classByName,
   requireSourceImageBase64,
   sourceUnavailableMessage,
-  activeWorkspaceRootRef,
   runTokenRef,
   currentMediaKeyRef,
   resolveSourceBase64,
@@ -218,7 +216,7 @@ export function useAutoLabelRunner({
       setAutoBusy("detect", true);
       if (runIsCurrent()) setStatus("Detect: preparing source...");
       try {
-        const modelRoot = activeWorkspaceRootRef.current || workspaceRoot;
+        const modelRoot = workspaceRoot;
         const preparedBase64 = await withTimeout(
           resolveSourceBase64(target),
           SOURCE_PREP_TIMEOUT_MS,
@@ -274,7 +272,6 @@ export function useAutoLabelRunner({
       }
     },
     [
-      activeWorkspaceRootRef,
       currentMediaKeyRef,
       detectModel,
       onApplyDetectPredictions,
@@ -306,7 +303,7 @@ export function useAutoLabelRunner({
       setAutoBusy("classify", true);
       if (runIsCurrent()) setStatus("Clf: preparing source...");
       try {
-        const modelRoot = activeWorkspaceRootRef.current || workspaceRoot;
+        const modelRoot = workspaceRoot;
         const preparedBase64 = await withTimeout(
           resolveSourceBase64(target),
           SOURCE_PREP_TIMEOUT_MS,
@@ -378,7 +375,6 @@ export function useAutoLabelRunner({
       }
     },
     [
-      activeWorkspaceRootRef,
       classByName,
       classifyModel,
       currentMediaKeyRef,

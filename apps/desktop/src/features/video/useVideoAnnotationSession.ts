@@ -4,7 +4,6 @@ import { useToast } from "../../components/useToast";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { errMessage } from "../../lib/errors";
 import { recordWorkspaceEventBestEffort, recordWorkspaceOperation } from "../../workbench/auditLog";
-import { useWorkspaceArchitecture } from "../../workspace/WorkspaceArchitectureProvider";
 import { isDetectJunk, loadMetadataMap, markJunkFilenames } from "../image-pool/metadata";
 import type { MetadataRow } from "../image-pool/types";
 import { WORKSPACE_MEDIA_CHANGED_EVENT, isSameWorkspaceRoot, isWorkspaceMediaChangedEvent } from "../shared/mediaEvents";
@@ -17,7 +16,6 @@ import {
 import {
   chooseAnnotationVideos,
   createVideoAnnotationManifest,
-  DEFAULT_VIDEO_ANNOTATIONS_ROOT,
   getAnnotationFrameBase64,
   getAnnotationFrameUrl,
   loadVideoAnnotationManifest,
@@ -88,15 +86,11 @@ export function useVideoAnnotationSession({
   handleArrowKeys?: boolean;
 }) {
   const { showToast } = useToast();
-  const { manifest: workspaceManifest } = useWorkspaceArchitecture();
   const {
     manifest: classManifest,
     archivedDetectIds,
     archivedClassKeys
   } = useArchivedClassIds(workspaceRoot);
-  const annotationsRoot = String(
-    workspaceManifest?.paths.video_annotations || DEFAULT_VIDEO_ANNOTATIONS_ROOT
-  );
   const [videos, setVideos] = useState<VideoSource[]>([]);
   const [currentIndex, setCurrentIndex] = useState(-1);
   const [time, setTime] = useState(0);
@@ -297,7 +291,7 @@ export function useVideoAnnotationSession({
       return;
     }
     setManifestLoading(true);
-    loadVideoAnnotationManifest(workspaceRoot, current, annotationsRoot)
+    loadVideoAnnotationManifest(workspaceRoot, current)
       .then((next) => {
         if (requestId !== manifestRequestRef.current) return;
         manifestRef.current = next;
@@ -314,7 +308,6 @@ export function useVideoAnnotationSession({
           action: "annotation.opened",
           details: {
             videoPath: current.path,
-            annotationRoot: annotationsRoot,
             reviewedFrames: Object.keys(next.frames).length
           }
         });
@@ -325,7 +318,7 @@ export function useVideoAnnotationSession({
       .finally(() => {
         if (requestId === manifestRequestRef.current) setManifestLoading(false);
       });
-  }, [annotationsRoot, current, showError, workspaceRoot]);
+  }, [current, showError, workspaceRoot]);
 
   useEffect(() => {
     if (!active || !current) {
@@ -402,7 +395,7 @@ export function useVideoAnnotationSession({
       saveQueueRef.current = saveQueueRef.current
         .catch(() => undefined)
         .then(async () => {
-          await saveVideoAnnotationManifest(workspaceRoot, next, annotationsRoot);
+          await saveVideoAnnotationManifest(workspaceRoot, next);
           if (revision === saveRevisionRef.current) setSaveState("saved");
         })
         .catch((reason) => {
@@ -410,7 +403,7 @@ export function useVideoAnnotationSession({
           showError(reason, "annotation.save");
         });
     },
-    [annotationsRoot, showError, workspaceRoot]
+    [showError, workspaceRoot]
   );
 
   // Update detect boxes on the current timestamp (canvas onChange handler).
@@ -558,7 +551,7 @@ export function useVideoAnnotationSession({
     saveQueueRef.current = saveQueueRef.current
       .catch(() => undefined)
       .then(async () => {
-        await saveVideoAnnotationManifest(root, emptyManifest, annotationsRoot);
+        await saveVideoAnnotationManifest(root, emptyManifest);
         if (revision === saveRevisionRef.current) setSaveState("saved");
       });
     try {
@@ -593,7 +586,7 @@ export function useVideoAnnotationSession({
       showError(reason, "video.mark-junk");
       throw reason;
     }
-  }, [annotationsRoot, showError, workspaceRoot]);
+  }, [showError, workspaceRoot]);
 
   const assignClass = useCallback(
     (classId: number) => {
@@ -857,7 +850,6 @@ export function useVideoAnnotationSession({
   }, [current, enqueueSave, time]);
 
   return {
-    annotationsRoot,
     videos,
     currentIndex,
     setCurrentIndex,

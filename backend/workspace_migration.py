@@ -236,7 +236,8 @@ class _Planner:
         self._video_annotations(self.legacy("video_annotations", "workspace/video_annotations"))
         self._segments(self.legacy("video_segments", "video_segments"))
         self._proposals(meta / "proposals", media_names)
-        self.move(meta / "overlays", self.target("overlays"), "Blackout overlays")
+        # Old overlays were keyed by a hash of the absolute path and never wired into the UI.
+        self.retire(meta / "overlays", "Old blackout overlays (unused format)")
         self.move(meta / "auto_label_runs.json", self.target("autolabelRuns"), "Auto-label history")
         self._classes(meta)
         self.move(self.base / "models", self.target("models"), "Imported models")

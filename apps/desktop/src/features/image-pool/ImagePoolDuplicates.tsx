@@ -83,7 +83,7 @@ export function ImagePoolDuplicates({
               Clear Duplicates
             </button>
           </div>
-          <div className="hint">Scans media only. Deleting duplicates removes hard links and updates metadata.csv.</div>
+          <div className="hint">Scans media only. Each group keeps one image (an annotated one when there is one); the rest are deleted with their labels and status.</div>
           <div className="duplicate-photo-results">
             {!scan?.groups?.length ? (
               <div className="empty">

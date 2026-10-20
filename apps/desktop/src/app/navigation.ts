@@ -205,7 +205,7 @@ export const SECONDARY_NAV_ITEMS: NavItem[] = [
     labelZh: "旧版分配",
     icon: IconInbox,
     target: { tab: "image-pool", imageTab: "inbox" },
-    keywords: "inbox assign hard link legacy"
+    keywords: "inbox assign export dataset"
   }
 ];
 

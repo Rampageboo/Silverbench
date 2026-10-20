@@ -14,7 +14,7 @@ describe("media box label entries", () => {
   it("maps media filenames to workspace media images and detect label files", () => {
     expect(mediaBoxLabelEntry("media", "sample.image.png")).toEqual({
       imagePath: "media/sample.image.png",
-      labelPath: "detect_labels/sample.image.txt",
+      labelPath: "labels/images/sample.image.txt",
       basename: "sample.image.png"
     });
   });
@@ -24,7 +24,7 @@ describe("media box label entries", () => {
   });
 
   it("builds detect label paths from basenames", () => {
-    expect(detectLabelPathForMediaFilename("nested/a.webp")).toBe("detect_labels/a.txt");
+    expect(detectLabelPathForMediaFilename("nested/a.webp")).toBe("labels/images/a.txt");
   });
 
   it("returns empty labels when a media image has no label file yet", async () => {

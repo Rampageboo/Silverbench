@@ -143,13 +143,7 @@ describe("markJunkFilenames", () => {
         },
       ]),
     ]);
-    expect(callJson).toHaveBeenNthCalledWith(2, "removeDetectDatasetLinks", [
-      "/workspace",
-      JSON.stringify(["img.jpg"]),
-    ]);
-    expect(callJson).toHaveBeenNthCalledWith(3, "removeClfDatasetLinks", [
-      "/workspace",
-      JSON.stringify(["img.jpg"]),
-    ]);
+    // Status only: exported datasets are regenerated on the next export.
+    expect(callJson).toHaveBeenCalledTimes(1);
   });
 });

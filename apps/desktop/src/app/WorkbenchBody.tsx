@@ -4,17 +4,15 @@ import { KeepAlivePanel, KeepAliveProvider } from "../components/KeepAlivePanel"
 import { SettingsModal } from "../components/SettingsModal";
 import { ImagePoolBadgeProvider } from "../features/image-pool/ImagePoolBadgeProvider";
 import { useImagePoolBadge } from "../features/image-pool/useImagePoolBadge";
-import { setActiveSnapshotVersion } from "../features/workspace-versioning/workspaceSnapshotVersionApi";
-import { listSnapshotVersions } from "../features/workspace-versioning/workspaceSnapshotVersions";
 import { MultimodalControlDock } from "../input/MultimodalControlDock";
 import { MultimodalControlProvider } from "../input/MultimodalControlProvider";
 import { ALL_TOOLS } from "../types/tools";
-import { IconFolder, IconFolderPlus, IconHistory, IconLayers, IconSettings, IconSidebar } from "../ui/icons";
-import { WorkspaceArchitectureProvider } from "../workspace/WorkspaceArchitectureProvider";
+import { IconFolder, IconFolderPlus, IconHistory, IconSettings, IconSidebar } from "../ui/icons";
 import { readAppTheme, writeAppTheme } from "./appTheme";
 import { NAV_GROUPS, SECONDARY_NAV_ITEMS, type NavItem } from "./navigation";
-import { workspaceDisplayName } from "./recentWorkspaces";
+import { sameWorkspacePath, workspaceDisplayName } from "../workspace/layout";
 import { CommandPalette, type PaletteCommand } from "./shell/CommandPalette";
+import { MigrationReviewBar } from "./shell/PendingFolderDialog";
 import { Sidebar } from "./shell/Sidebar";
 import { WorkspaceLauncherProvider, useWorkspaceLauncher } from "./shell/WorkspaceLauncher";
 import { WORKBENCH_TOOL_DEFINITIONS, type WorkbenchToolDefinition } from "./toolRegistry";
@@ -39,17 +37,15 @@ function toolRequiresWorkspace(tab: string) {
 }
 
 export function WorkbenchBody(props: WorkbenchBodyProps) {
-  const { workspaceRoot, setActiveTab } = useWorkspace();
+  const { workspaceRoot } = useWorkspace();
   return (
-    <WorkspaceArchitectureProvider workspaceRoot={workspaceRoot} onMigrated={() => setActiveTab("label")}>
-      <MultimodalControlProvider>
-        <ImagePoolBadgeProvider workspaceRoot={workspaceRoot}>
-          <WorkspaceLauncherProvider>
-            <WorkbenchShell {...props} />
-          </WorkspaceLauncherProvider>
-        </ImagePoolBadgeProvider>
-      </MultimodalControlProvider>
-    </WorkspaceArchitectureProvider>
+    <MultimodalControlProvider>
+      <ImagePoolBadgeProvider workspaceRoot={workspaceRoot}>
+        <WorkspaceLauncherProvider>
+          <WorkbenchShell {...props} />
+        </WorkspaceLauncherProvider>
+      </ImagePoolBadgeProvider>
+    </MultimodalControlProvider>
   );
 }
 
@@ -127,17 +123,7 @@ function RegisteredToolPanel({
 }
 
 function WorkbenchShell({ onNativeTabReady, backendConnected }: WorkbenchBodyProps) {
-  const {
-    workspaceRoot,
-    workspaceRootPath,
-    activeTab,
-    setActiveTab,
-    imageWorkspaceTab,
-    setImageWorkspaceTab,
-    snapshotVersions,
-    activeVersionId,
-    openWorkspacePath
-  } = useWorkspace();
+  const { workspaceRoot, activeTab, setActiveTab, imageWorkspaceTab, setImageWorkspaceTab } = useWorkspace();
   const launcher = useWorkspaceLauncher();
   const { imagePoolNewCount } = useImagePoolBadge();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -193,7 +179,6 @@ function WorkbenchShell({ onNativeTabReady, backendConnected }: WorkbenchBodyPro
   );
 
   const commands = useMemo<PaletteCommand[]>(() => {
-    const root = (workspaceRootPath || workspaceRoot).trim();
     const list: PaletteCommand[] = [];
     const navCommand = (item: NavItem, section: string, hint: string): PaletteCommand => {
       const Icon = item.icon;
@@ -233,25 +218,8 @@ function WorkbenchShell({ onNativeTabReady, backendConnected }: WorkbenchBodyPro
         run: launcher.requestCreate
       }
     );
-    if (snapshotVersions && root) {
-      const active = activeVersionId || snapshotVersions.activeVersion;
-      for (const version of listSnapshotVersions(snapshotVersions)) {
-        if (version.id === active) continue;
-        list.push({
-          id: `ws-version-${version.id}`,
-          section: "Workspace",
-          label: `Switch to version ${version.id}`,
-          hint: version.source || "snapshot",
-          keywords: "version snapshot switch",
-          icon: <IconLayers />,
-          run: () => {
-            void setActiveSnapshotVersion(root, version.id).then(() => openWorkspacePath(root));
-          }
-        });
-      }
-    }
     for (const path of launcher.recent) {
-      if (path === root) continue;
+      if (sameWorkspacePath(path, workspaceRoot)) continue;
       list.push({
         id: `ws-recent-${path}`,
         section: "Recent workspaces",
@@ -289,18 +257,7 @@ function WorkbenchShell({ onNativeTabReady, backendConnected }: WorkbenchBodyPro
       }
     );
     return list;
-  }, [
-    activeVersionId,
-    collapsed,
-    isItemEnabled,
-    launcher,
-    navigate,
-    openWorkspacePath,
-    snapshotVersions,
-    toggleCollapsed,
-    workspaceRoot,
-    workspaceRootPath
-  ]);
+  }, [collapsed, isItemEnabled, launcher, navigate, toggleCollapsed, workspaceRoot]);
 
   // workbench--shell / workbench-page keep the legacy tool layout rules applying.
   return (
@@ -320,11 +277,14 @@ function WorkbenchShell({ onNativeTabReady, backendConnected }: WorkbenchBodyPro
         onToggleControls={() => setControlsOpen((value) => !value)}
       />
       <main className="shell-main">
-        {!backendConnected ? (
-          <div className="shell-offline" role="status" aria-live="polite">
-            后端连接已断开，正在重试…（若长时间无法恢复，请重启应用）
-          </div>
-        ) : null}
+        <div className="shell-banners">
+          {!backendConnected ? (
+            <div className="shell-offline" role="status" aria-live="polite">
+              后端连接已断开，正在重试…（若长时间无法恢复，请重启应用）
+            </div>
+          ) : null}
+          <MigrationReviewBar />
+        </div>
         <div className="shell-page workbench-page">
           <KeepAliveProvider>
             {WORKBENCH_TOOL_DEFINITIONS.map((definition) => (

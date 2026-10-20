@@ -5,7 +5,7 @@ import { useRunWithConfirm } from "../../components/workbench/useRunWithConfirm"
 import { useToast } from "../../components/useToast";
 import { errMessage } from "../../lib/errors";
 import type { WorkspaceInfo } from "../../api";
-import { runBuildYoloLinksJob } from "../inbox/buildJob";
+import { runExportDatasetJob } from "../inbox/exportJob";
 import {
   datasetRootForTask,
   ensureTrainPrepDataYaml,
@@ -411,10 +411,9 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
     void runOperation(
       `Preparing ${readyNextTraining.length} starred image(s)…`,
       async () => {
-        const result = await runBuildYoloLinksJob(
+        const result = await runExportDatasetJob(
           workspaceRoot,
-          false,
-          JSON.stringify(readyNextTraining),
+          { filenames: readyNextTraining, rebuild: false },
           (done, total, detail) => {
             setOpStatus(`Starred batch ${done}/${total}${detail ? ` · ${detail}` : ""}`);
           }

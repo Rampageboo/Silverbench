@@ -1,19 +1,17 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import {
+  createSnapshot,
+  deleteSnapshot,
+  listSnapshots,
+  restoreSnapshot,
+  type WorkspaceSnapshot
+} from "../../api";
 import { NAV_GROUPS, type NavItem } from "../../app/navigation";
-import { workspaceDisplayName } from "../../app/recentWorkspaces";
+import { workspaceDisplayName } from "../../workspace/layout";
 import { useWorkspace } from "../../app/useWorkspace";
 import { IconChevronRight, IconLayers } from "../../ui/icons";
 import { useImagePoolBadge } from "../image-pool/useImagePoolBadge";
-import {
-  createSnapshotVersion,
-  initializeSnapshotVersioning,
-  setActiveSnapshotVersion
-} from "../workspace-versioning/workspaceSnapshotVersionApi";
-import {
-  listSnapshotVersions,
-  nextSnapshotVersionId,
-  type WorkspaceVersionId
-} from "../workspace-versioning/workspaceSnapshotVersions";
+import { errMessage } from "../../lib/errors";
 import { useWorkspaceClasses } from "../workspace/useWorkspaceClasses";
 import { activeClfClassDefs, activeDetectClassDefs } from "../workspace/workspaceClassTaxonomy";
 import "./library.css";
@@ -31,100 +29,139 @@ const STAGE_COPY: Record<string, string> = {
   automate: "Author UI maps and decision flows from trained models."
 };
 
-function WorkspaceVersionsCard() {
-  const { workspaceRoot, workspaceRootPath, activeVersionId, snapshotVersions, openWorkspacePath } =
-    useWorkspace();
-  const [busy, setBusy] = useState<"" | "init" | "create" | WorkspaceVersionId>("");
-  const [error, setError] = useState("");
-  const root = (workspaceRootPath || workspaceRoot).trim();
-  const versions = snapshotVersions ? listSnapshotVersions(snapshotVersions) : [];
-  const activeVersion = activeVersionId || snapshotVersions?.activeVersion || null;
-  const nextVersion = snapshotVersions ? nextSnapshotVersionId(snapshotVersions) : "V1";
+function formatTime(iso: string) {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
+}
 
-  async function run(action: "init" | "create" | WorkspaceVersionId, callback: () => Promise<void>) {
-    if (!root || busy) return;
+/** Annotation snapshots: labels and classes only, so they are cheap to take often. */
+function SnapshotsCard({ root }: { root: string }) {
+  const [snapshots, setSnapshots] = useState<WorkspaceSnapshot[] | null>(null);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  const refresh = useCallback(async () => {
+    try {
+      setSnapshots((await listSnapshots(root)).snapshots);
+    } catch (err) {
+      setError(errMessage(err));
+    }
+  }, [root]);
+
+  useEffect(() => {
+    setSnapshots(null);
+    setNotice("");
+    void refresh();
+  }, [refresh]);
+
+  async function run(action: string, callback: () => Promise<void>) {
+    if (busy) return;
     setBusy(action);
     setError("");
+    setNotice("");
     try {
       await callback();
-      await openWorkspacePath(root);
+      await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMessage(err));
     } finally {
       setBusy("");
     }
   }
 
+  const restore = (id: string) =>
+    run(id, async () => {
+      if (!window.confirm(`Replace the current labels and classes with ${id}? The current state is snapshotted first.`)) return;
+      await restoreSnapshot(root, id);
+      // Open editors hold labels in memory; reload so nothing stale is saved over the restored files.
+      window.location.reload();
+    });
+
+  const remove = (id: string) =>
+    run(id, async () => {
+      if (!window.confirm(`Delete snapshot ${id}? This cannot be undone.`)) return;
+      await deleteSnapshot(root, id);
+    });
+
+  const list = snapshots ? [...snapshots].reverse() : [];
+
   return (
     <section className="ui-card ov-versions">
       <div className="ui-card__head">
         <div>
-          <div className="ui-card__title">Versions</div>
+          <div className="ui-card__title">Snapshots</div>
           <div className="ui-field__hint">
-            Each version is a full copy of the workspace. Copying takes time and disk space.
+            A snapshot saves the labels and classes (not the media), so it takes a moment and little space.
           </div>
         </div>
-        {snapshotVersions ? (
-          <button
-            type="button"
-            onClick={() =>
-              activeVersion &&
-              void run("create", () => createSnapshotVersion(root, activeVersion).then(() => {}))
-            }
-            disabled={!activeVersion || busy !== ""}
-          >
-            {busy === "create" ? "Copying…" : `Branch ${nextVersion} from ${activeVersion}`}
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => void run("init", () => initializeSnapshotVersioning(root).then(() => {}))}
-            disabled={!root || busy !== ""}
-          >
-            {busy === "init" ? "Initializing…" : "Enable versioning"}
-          </button>
-        )}
       </div>
+      <form
+        className="ov-versions__new"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void run("create", async () => {
+            const created = await createSnapshot(root, note.trim());
+            setNote("");
+            setNotice(`Saved ${created.created.id}.`);
+          });
+        }}
+      >
+        <input
+          type="text"
+          value={note}
+          placeholder="Note (optional), e.g. before relabeling cars"
+          onChange={(event) => setNote(event.target.value)}
+          disabled={busy !== ""}
+        />
+        <button type="submit" disabled={busy !== ""}>
+          {busy === "create" ? "Saving…" : "Take snapshot"}
+        </button>
+      </form>
       <div className="ov-versions__list">
-        {snapshotVersions ? (
-          versions.map((version) => {
-            const isActive = version.id === activeVersion;
-            return (
-              <div key={version.id} className={`ov-version${isActive ? " is-active" : ""}`}>
-                <IconLayers size={15} />
-                <strong>{version.id}</strong>
-                <span className="ov-version__src">{version.source || "snapshot"}</span>
-                {isActive ? (
-                  <span className="ui-badge ui-badge--accent">Active</span>
-                ) : (
-                  <button
-                    type="button"
-                    className="ui-btn--ghost ui-btn--sm"
-                    onClick={() =>
-                      void run(version.id, () => setActiveSnapshotVersion(root, version.id).then(() => {}))
-                    }
-                    disabled={busy !== ""}
-                  >
-                    {busy === version.id ? "Switching…" : "Switch"}
-                  </button>
-                )}
-              </div>
-            );
-          })
+        {snapshots === null ? (
+          <div className="ov-versions__empty">Loading…</div>
+        ) : list.length === 0 ? (
+          <div className="ov-versions__empty">No snapshots yet.</div>
         ) : (
-          <div className="ov-versions__empty">
-            Not versioned yet. Enabling versioning creates V1 as a full copy of the current workspace.
-          </div>
+          list.map((snapshot) => (
+            <div key={snapshot.id} className="ov-version">
+              <IconLayers size={15} />
+              <strong>{snapshot.id}</strong>
+              <span className="ov-version__src">
+                {snapshot.note || formatTime(snapshot.createdAt)}
+                {snapshot.note ? ` · ${formatTime(snapshot.createdAt)}` : ""} · {snapshot.imageLabels} image labels
+                {snapshot.videoLabels ? `, ${snapshot.videoLabels} videos` : ""}
+              </span>
+              <button
+                type="button"
+                className="ui-btn--ghost ui-btn--sm"
+                onClick={() => void restore(snapshot.id)}
+                disabled={busy !== ""}
+              >
+                {busy === snapshot.id ? "Working…" : "Restore"}
+              </button>
+              <button
+                type="button"
+                className="ui-btn--ghost ui-btn--sm"
+                onClick={() => void remove(snapshot.id)}
+                disabled={busy !== ""}
+              >
+                Delete
+              </button>
+            </div>
+          ))
         )}
       </div>
+      {notice ? <div className="ui-field__hint">{notice}</div> : null}
       {error ? <div className="ui-error ov-versions__error">{error}</div> : null}
     </section>
   );
 }
 
 export function LibraryPage({ onReady }: Props) {
-  const { workspaceRoot, workspaceRootPath, activeVersionId, setActiveTab, setImageWorkspaceTab } =
-    useWorkspace();
+  const { workspaceRoot, setActiveTab, setImageWorkspaceTab } = useWorkspace();
   const { imagePoolNewCount } = useImagePoolBadge();
   const { manifest, load } = useWorkspaceClasses(workspaceRoot);
 
@@ -136,7 +173,6 @@ export function LibraryPage({ onReady }: Props) {
     if (workspaceRoot.trim()) void load();
   }, [load, workspaceRoot]);
 
-  const root = (workspaceRootPath || workspaceRoot).trim();
   const detectCount = manifest ? activeDetectClassDefs(manifest).length : null;
   const clfCount = manifest ? activeClfClassDefs(manifest).length : null;
 
@@ -151,8 +187,8 @@ export function LibraryPage({ onReady }: Props) {
     <div className="ui-page">
       <div className="ui-page__inner ov-page">
         <header className="ov-hero">
-          <div className="ui-eyebrow">Workspace{activeVersionId ? ` · ${activeVersionId}` : ""}</div>
-          <h1 className="ov-hero__name">{workspaceDisplayName(root)}</h1>
+          <div className="ui-eyebrow">Workspace</div>
+          <h1 className="ov-hero__name">{workspaceDisplayName(workspaceRoot)}</h1>
           <code className="ov-hero__path">{workspaceRoot}</code>
           <div className="ov-hero__stats">
             <button type="button" className="ov-stat" onClick={() => setActiveTab("classes")}>
@@ -201,7 +237,7 @@ export function LibraryPage({ onReady }: Props) {
           ))}
         </section>
 
-        <WorkspaceVersionsCard />
+        {workspaceRoot ? <SnapshotsCard root={workspaceRoot} /> : null}
       </div>
     </div>
   );

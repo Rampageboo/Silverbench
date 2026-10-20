@@ -2,7 +2,7 @@
  * Blackout Overlay Persistence API
  *
  * Stores non-destructive overlay metadata at:
- *   workspace/overlays/blackouts/{safe-source-key}.json
+ *   labels/overlays/<media file name>.json
  *
  * Source images and videos are NEVER modified by this module.
  *
@@ -11,6 +11,7 @@
  */
 
 import { readTextFile, writeTextFile } from "../../api";
+import { fileName, WORKSPACE_PATHS } from "../../workspace/layout";
 import {
   addOverlayToManifest,
   emptyBlackoutManifest,
@@ -22,43 +23,19 @@ import {
   type BlackoutOverlayManifest
 } from "./blackoutOverlayDomain";
 
-export const DEFAULT_OVERLAYS_ROOT = "workspace/overlays/blackouts";
+export const DEFAULT_OVERLAYS_ROOT: string = WORKSPACE_PATHS.overlays;
 
 // ---------------------------------------------------------------------------
 // Path helpers
 // ---------------------------------------------------------------------------
 
-function safeStem(value: string, maxLength = 60): string {
-  return (
-    String(value || "source")
-      .replace(/[^a-zA-Z0-9_-]+/g, "_")
-      .replace(/^_+|_+$/g, "")
-      .slice(0, maxLength) || "source"
-  );
-}
-
-/** Derive a stable string key for a video source path. */
+/** Overlays are keyed by the media file name (unique within a workspace's media folder). */
 export function videoBlackoutSourceKey(videoPath: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < videoPath.length; i++) {
-    hash ^= videoPath.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  const basename = videoPath.replace(/\\/g, "/").split("/").pop() ?? "video";
-  const stem = basename.replace(/\.[^.]+$/, "");
-  return `vid-${safeStem(stem, 40)}-${(hash >>> 0).toString(16).slice(0, 6)}`;
+  return fileName(videoPath);
 }
 
-/** Derive a stable string key for an image source path. */
 export function imageBlackoutSourceKey(imagePath: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < imagePath.length; i++) {
-    hash ^= imagePath.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  const basename = imagePath.replace(/\\/g, "/").split("/").pop() ?? "image";
-  const stem = basename.replace(/\.[^.]+$/, "");
-  return `img-${safeStem(stem, 40)}-${(hash >>> 0).toString(16).slice(0, 6)}`;
+  return fileName(imagePath);
 }
 
 /**
@@ -84,8 +61,9 @@ export function blackoutManifestRelativePath(
   overlaysRoot = DEFAULT_OVERLAYS_ROOT
 ): string {
   const root = normalizeOverlaysRoot(overlaysRoot);
-  const safe = safeStem(sourceKey, 80);
-  return `${root}/${safe}.json`;
+  const key = fileName(sourceKey);
+  if (!key || key === "." || key === "..") throw new Error("Blackout overlay key must be a file name.");
+  return `${root}/${key}.json`;
 }
 
 // ---------------------------------------------------------------------------

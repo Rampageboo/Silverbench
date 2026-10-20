@@ -152,25 +152,8 @@ export async function markJunkFilenames(
       ? { filename, detect_junk: true, detect_enabled: false, detect_export_enabled: false }
       : { filename, clf_enabled: false, clf_class: INBOX_JUNK_CLASS, clf_export_enabled: false };
   });
+  // Exported datasets pick this up the next time they are exported.
   await callJson("upsertMetadataRows", [workspaceRoot, JSON.stringify(updates)]);
-  if (scope === "detect") {
-    await callJson("removeDetectDatasetLinks", [workspaceRoot, JSON.stringify(filenames)]);
-    return;
-  }
-  if (scope === "clf") {
-    await callJson("removeClfDatasetLinks", [workspaceRoot, JSON.stringify(filenames)]);
-    return;
-  }
-  const cleanupResults = await Promise.allSettled([
-    callJson("removeDetectDatasetLinks", [workspaceRoot, JSON.stringify(filenames)]),
-    callJson("removeClfDatasetLinks", [workspaceRoot, JSON.stringify(filenames)]),
-  ]);
-  const failedCleanup = cleanupResults.find((result): result is PromiseRejectedResult => result.status === "rejected");
-  if (failedCleanup) {
-    throw failedCleanup.reason instanceof Error
-      ? failedCleanup.reason
-      : new Error(String(failedCleanup.reason || "Failed to remove dataset links."));
-  }
 }
 
 export async function clearJunkFilenames(
@@ -196,11 +179,6 @@ export async function setTaskExportEnabled(
   if (!cleanName) return;
   const field = task === "detect" ? "detect_export_enabled" : "clf_export_enabled";
   await callJson("upsertMetadataRows", [workspaceRoot, JSON.stringify([{ filename: cleanName, [field]: enabled }])]);
-  if (enabled) return;
-  await callJson(task === "detect" ? "removeDetectDatasetLinks" : "removeClfDatasetLinks", [
-    workspaceRoot,
-    JSON.stringify([cleanName]),
-  ]);
 }
 
 export async function restoreMetadataSnapshots(
