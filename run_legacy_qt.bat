@@ -25,14 +25,10 @@ if not exist "%VENV_DIR%\Scripts\python.exe" (
     )
 )
 
-call "%VENV_DIR%\Scripts\activate.bat"
-if errorlevel 1 (
-    echo Failed to activate virtual environment.
-    pause
-    exit /b 1
-)
+rem Direct interpreter survives project folder renames.
+set "RWB_PYTHON=%CD%\%VENV_DIR%\Scripts\python.exe"
 
-python -m pip install --upgrade pip
+"%RWB_PYTHON%" -m pip install --upgrade pip
 if errorlevel 1 (
     echo Failed to update pip.
     pause
@@ -40,13 +36,13 @@ if errorlevel 1 (
 )
 
 if exist "requirements.txt" (
-    python -m pip install --upgrade -r "requirements.txt"
+    "%RWB_PYTHON%" -m pip install --upgrade -r "requirements.txt"
     if errorlevel 1 (
         echo Failed to install requirements.txt.
         pause
         exit /b 1
     )
-    python -m pip install ultralytics --no-deps
+    "%RWB_PYTHON%" -m pip install ultralytics --no-deps
     if errorlevel 1 (
         echo Failed to install ultralytics.
         pause
@@ -54,7 +50,7 @@ if exist "requirements.txt" (
     )
 )
 
-python "%ENTRY_FILE%"
+"%RWB_PYTHON%" "%ENTRY_FILE%"
 set "APP_EXIT_CODE=%ERRORLEVEL%"
 
 echo.

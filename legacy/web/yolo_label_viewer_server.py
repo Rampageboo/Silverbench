@@ -183,7 +183,7 @@ def start_heartbeat_watchdog(server: ThreadingHTTPServer) -> threading.Thread:
         while True:
             time.sleep(HEARTBEAT_CHECK_SECONDS)
             if should_shutdown_for_browser_state():
-                print("Browser page closed or idle timeout reached; shutting down YoloWorkBench server.")
+                print("Browser page closed or idle timeout reached; shutting down RampageWorkbench server.")
                 server.shutdown()
                 return
 
@@ -254,7 +254,7 @@ def main() -> None:
     port = int(sys.argv[1]) if len(sys.argv) > 1 else free_port()
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     url = f"http://127.0.0.1:{port}/?apiToken={API_TOKEN}"
-    print(f"YoloWorkBench server: {url}")
+    print(f"RampageWorkbench server: {url}")
     torch_info = torch_runtime_info()
     print(
         "Torch runtime: "

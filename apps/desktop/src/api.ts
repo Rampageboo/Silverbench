@@ -8,7 +8,7 @@ import type { Predictions, UiOrchestrationDoc } from "./features/ui-orchestrator
 import type { UiOrchestrationDocV2 } from "./features/ui-orchestrator/schemaV2";
 
 export const API_BASE_URL = backendBaseUrl();
-export const REQUIRED_API_SCHEMA_VERSION = 24;
+export const REQUIRED_API_SCHEMA_VERSION = 25;
 
 export type BackendMethod =
   | "markImagePoolSeen"
@@ -212,7 +212,7 @@ export async function requireCurrentBackend() {
   const schema = Number(data.apiSchemaVersion || 0);
   if (!data.ok || schema < REQUIRED_API_SCHEMA_VERSION) {
     throw new Error(
-      `Backend is out of date (API schema ${schema || "unknown"}; need ${REQUIRED_API_SCHEMA_VERSION}). Restart YoloWorkBench or the backend process before creating a workspace.`
+      `Backend is out of date (API schema ${schema || "unknown"}; need ${REQUIRED_API_SCHEMA_VERSION}). Restart RampageWorkbench or the backend process before creating a workspace.`
     );
   }
   return data;

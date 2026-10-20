@@ -1,6 +1,6 @@
 schema_version: 3
 project:
-  name: "YoloWorkBench"
+  name: "RampageWorkbench"
   summary: "Local-first desktop workbench for YOLO dataset work: import, labeling, auto-labeling, dataset prep/export, and training runs. React + Tauri front end over a localhost-only Python FastAPI backend."
   context_confidence: current
 metadata:

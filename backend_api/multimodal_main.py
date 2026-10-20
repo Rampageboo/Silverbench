@@ -79,6 +79,6 @@ def apriltag_sheet(dpi: int = Query(default=150, ge=96, le=600)) -> StreamingRes
         media_type="image/png",
         headers={
             "Cache-Control": "no-store",
-            "Content-Disposition": 'inline; filename="yoloworkbench-apriltag-calibration.png"',
+            "Content-Disposition": 'inline; filename="rampageworkbench-apriltag-calibration.png"',
         },
     )

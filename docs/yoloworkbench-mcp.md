@@ -1,13 +1,13 @@
-# YoloWorkBench MCP
+# RampageWorkbench MCP
 
-YoloWorkBench exposes a project-scoped stdio MCP server for Codex. The MCP
+RampageWorkbench exposes a project-scoped stdio MCP server for Codex. The MCP
 process is only an adapter: it calls the existing localhost FastAPI backend at
 `http://127.0.0.1:8765` and does not duplicate dataset or inference logic.
 
 ## Setup
 
 1. Run `run.bat` once. This creates `.venv` and installs `requirements.txt`.
-2. Keep YoloWorkBench running while using its MCP tools.
+2. Keep RampageWorkbench running while using its MCP tools.
 3. Trust this repository in Codex so `.codex/config.toml` is loaded.
 4. Restart Codex after the first dependency installation.
 

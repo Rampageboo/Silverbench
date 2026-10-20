@@ -12,8 +12,8 @@ $ErrorActionPreference = "SilentlyContinue"
 
 $stringsPath = Join-Path $Root "scripts\launch-splash.strings.json"
 $strings = @{
-    title = "YoloWorkBench"
-    tagline = "YOLO WorkBench"
+    title = "RampageWorkbench"
+    tagline = "RampageWorkbench"
     stages = @("Starting...")
     timeoutHint = "Startup is taking longer than expected. See logs\desktop.log"
 }
@@ -117,7 +117,7 @@ function Test-MainWorkbenchReady {
     foreach ($proc in Get-Process -ErrorAction SilentlyContinue) {
         if ($proc.Id -eq $PID) { continue }
         if ($proc.MainWindowHandle -eq 0) { continue }
-        if ($proc.MainWindowTitle -ne "YoloWorkBench") { continue }
+        if ($proc.MainWindowTitle -ne "RampageWorkbench") { continue }
         $rect = New-Object YwbWin32+RECT
         if (-not [YwbWin32]::GetWindowRect($proc.MainWindowHandle, [ref]$rect)) { continue }
         $width = $rect.Right - $rect.Left

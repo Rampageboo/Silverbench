@@ -66,7 +66,7 @@ function hasText(value: unknown): value is string {
 
 function workspaceNameFromPath(workspaceRoot: string) {
   const parts = workspaceRoot.replace(/[\\/]+$/, "").split(/[\\/]/);
-  return parts.at(-1) || "YoloWorkBench Workspace";
+  return parts.at(-1) || "RampageWorkbench Workspace";
 }
 
 function defaultPaths(): WorkspaceManifestPaths {

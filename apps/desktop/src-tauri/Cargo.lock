@@ -2328,6 +2328,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
+name = "rampageworkbench-desktop"
+version = "0.1.0"
+dependencies = [
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-window-state",
+]
+
+[[package]]
 name = "raw-window-handle"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4665,16 +4675,6 @@ dependencies = [
  "quote",
  "syn 2.0.117",
  "synstructure",
-]
-
-[[package]]
-name = "yoloworkbench-desktop"
-version = "0.1.0"
-dependencies = [
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-window-state",
 ]
 
 [[package]]

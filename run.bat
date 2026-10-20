@@ -41,24 +41,20 @@ if not exist "%VENV_DIR%\Scripts\python.exe" (
     )
 )
 
-call "%VENV_DIR%\Scripts\activate.bat"
-if errorlevel 1 (
-    echo Failed to activate virtual environment.
-    pause
-    exit /b 1
-)
+rem Use the local interpreter directly: venv activation embeds its old folder.
+set "RWB_PYTHON=%CD%\%VENV_DIR%\Scripts\python.exe"
 
-python -c "import fastapi, uvicorn, ultralytics, mcp" >nul 2>nul
+"%RWB_PYTHON%" -c "import fastapi, uvicorn, ultralytics, mcp" >nul 2>nul
 if errorlevel 1 (
     echo Installing Python dependencies ^(first run or missing packages^)...
-    python -m pip install -r "requirements.txt"
+    "%RWB_PYTHON%" -m pip install -r "requirements.txt"
     if errorlevel 1 (
         echo Failed to install requirements.txt.
         pause
         exit /b 1
     )
     rem requirements.txt owns heavy runtime deps; keep this from replacing torch/cv2.
-    python -m pip install ultralytics --no-deps
+    "%RWB_PYTHON%" -m pip install ultralytics --no-deps
     if errorlevel 1 (
         echo Failed to install ultralytics.
         pause
@@ -110,16 +106,16 @@ if not exist "node_modules" (
     )
 )
 
-echo Starting YoloWorkBench desktop shell...
+echo Starting RampageWorkbench desktop shell...
 echo React shell on http://127.0.0.1:5173
 echo All tools are native React — no iframe embeds
 echo.
-echo Tip: double-click YoloWorkBench.vbs to launch without a terminal window.
+echo Tip: double-click RampageWorkbench.vbs to launch without a terminal window.
 echo      Run create-shortcut.vbs once to put a desktop shortcut on your desktop.
 echo Logs: logs\desktop.log, logs\backend.log
 echo Fallback full web shell: cd apps\desktop ^&^& npm run tauri:dev:legacy
 echo Qt is not used. For the old Qt shell specifically, use run_legacy_qt.bat.
-echo [%DATE% %TIME%] Starting YoloWorkBench desktop shell>>"..\..\%LOG_FILE%"
+echo [%DATE% %TIME%] Starting RampageWorkbench desktop shell>>"..\..\%LOG_FILE%"
 powershell -NoProfile -Command "npm run tauri:dev 2>&1 | Tee-Object -FilePath '..\..\%LOG_FILE%' -Append"
 set "APP_EXIT_CODE=%ERRORLEVEL%"
 

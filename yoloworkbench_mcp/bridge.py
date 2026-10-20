@@ -19,11 +19,11 @@ DatasetKind = Literal["detect", "classify"]
 
 
 class BackendError(RuntimeError):
-    """Raised when the local YoloWorkBench backend rejects a request."""
+    """Raised when the local RampageWorkbench backend rejects a request."""
 
 
 class BackendUnavailableError(BackendError):
-    """Raised when the local YoloWorkBench backend cannot be reached."""
+    """Raised when the local RampageWorkbench backend cannot be reached."""
 
 
 def _validated_backend_url(raw_url: str) -> str:
@@ -46,7 +46,7 @@ class BackendClient:
     def health(self) -> dict[str, Any]:
         payload = self._request("GET", "/health")
         if not isinstance(payload, dict):
-            raise BackendError("YoloWorkBench /health returned an invalid response.")
+            raise BackendError("RampageWorkbench /health returned an invalid response.")
         return payload
 
     def call(self, method: str, args: list[Any]) -> Any:
@@ -56,10 +56,10 @@ class BackendClient:
             {"method": str(method), "args": args},
         )
         if not isinstance(payload, dict):
-            raise BackendError(f"YoloWorkBench method {method} returned an invalid response.")
+            raise BackendError(f"RampageWorkbench method {method} returned an invalid response.")
         if not payload.get("ok"):
             message = str(payload.get("error") or payload.get("detail") or "Unknown backend error.")
-            raise BackendError(f"YoloWorkBench method {method} failed: {message}")
+            raise BackendError(f"RampageWorkbench method {method} failed: {message}")
         return payload.get("result")
 
     def _request(self, method: str, path: str, body: dict[str, Any] | None = None) -> Any:
@@ -75,19 +75,19 @@ class BackendClient:
         except HTTPError as error:
             raw = error.read(MAX_RESPONSE_BYTES + 1)
             message = _response_error_message(raw) or str(error.reason)
-            raise BackendError(f"YoloWorkBench HTTP {error.code}: {message}") from error
+            raise BackendError(f"RampageWorkbench HTTP {error.code}: {message}") from error
         except (URLError, TimeoutError, socket.timeout, ConnectionError, OSError) as error:
             raise BackendUnavailableError(
-                f"YoloWorkBench backend is not reachable at {self.base_url}. "
-                "Start YoloWorkBench with run.bat, then retry."
+                f"RampageWorkbench backend is not reachable at {self.base_url}. "
+                "Start RampageWorkbench with run.bat, then retry."
             ) from error
 
         if len(raw) > MAX_RESPONSE_BYTES:
-            raise BackendError(f"YoloWorkBench response exceeded {MAX_RESPONSE_BYTES // (1024 * 1024)} MB.")
+            raise BackendError(f"RampageWorkbench response exceeded {MAX_RESPONSE_BYTES // (1024 * 1024)} MB.")
         try:
             return json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise BackendError("YoloWorkBench returned malformed JSON.") from error
+            raise BackendError("RampageWorkbench returned malformed JSON.") from error
 
 
 def _response_error_message(raw: bytes) -> str:
@@ -203,7 +203,7 @@ class YoloWorkBenchBridge:
         root = self._workspace_ready(workspace_root)
         result = self.backend.call("listWorkspaceVideos", [str(root)])
         if not isinstance(result, list) or not all(isinstance(item, dict) for item in result):
-            raise BackendError("YoloWorkBench method listWorkspaceVideos returned an invalid list.")
+            raise BackendError("RampageWorkbench method listWorkspaceVideos returned an invalid list.")
         return result
 
     def list_dataset_files(self, workspace_root: str, dataset: DatasetKind = "detect") -> list[str]:
@@ -358,21 +358,21 @@ class YoloWorkBenchBridge:
         )
         result = self.backend.call("openFolder", [str(root), False])
         if isinstance(result, dict) and not result.get("ok", True):
-            raise BackendError(str(result.get("error") or "YoloWorkBench could not open the workspace."))
+            raise BackendError(str(result.get("error") or "RampageWorkbench could not open the workspace."))
         return root
 
 
 def _dict_result(result: Any, method: str) -> dict[str, Any]:
     if not isinstance(result, dict):
-        raise BackendError(f"YoloWorkBench method {method} returned an invalid object.")
+        raise BackendError(f"RampageWorkbench method {method} returned an invalid object.")
     if result.get("ok") is False:
-        raise BackendError(str(result.get("error") or f"YoloWorkBench method {method} failed."))
+        raise BackendError(str(result.get("error") or f"RampageWorkbench method {method} failed."))
     return result
 
 
 def _string_list(result: Any, method: str) -> list[str]:
     if not isinstance(result, list) or not all(isinstance(item, str) for item in result):
-        raise BackendError(f"YoloWorkBench method {method} returned an invalid list.")
+        raise BackendError(f"RampageWorkbench method {method} returned an invalid list.")
     return result
 
 

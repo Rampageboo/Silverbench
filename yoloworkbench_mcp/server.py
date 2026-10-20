@@ -9,8 +9,8 @@ from .bridge import YoloWorkBenchBridge
 
 
 SERVER_INSTRUCTIONS = (
-    "YoloWorkBench tools operate only on configured local workspace roots. "
-    "Start YoloWorkBench before calling backend tools. Inspect workspace and model state before inference. "
+    "RampageWorkbench tools operate only on configured local workspace roots. "
+    "Start RampageWorkbench before calling backend tools. Inspect workspace and model state before inference. "
     "Inference starts asynchronously: retain the returned jobId, poll get_inference_job, and cancel only when requested. "
     "Never treat output paths as disposable; this server exposes no delete, overwrite, training, export, or model-promotion tool."
 )
@@ -32,11 +32,11 @@ def _stateful(title: str, *, idempotent: bool = False) -> ToolAnnotations:
 
 def create_server(bridge: YoloWorkBenchBridge | None = None) -> FastMCP:
     tools = bridge or YoloWorkBenchBridge.from_environment()
-    server = FastMCP("YoloWorkBench", instructions=SERVER_INSTRUCTIONS)
+    server = FastMCP("RampageWorkbench", instructions=SERVER_INSTRUCTIONS)
 
     @server.tool(annotations=_read_only("Backend health"))
     def backend_health() -> dict[str, Any]:
-        """Check whether the localhost YoloWorkBench FastAPI backend is ready."""
+        """Check whether the localhost RampageWorkbench FastAPI backend is ready."""
         return tools.backend_health()
 
     @server.tool(annotations=_read_only("Torch and CUDA runtime"))

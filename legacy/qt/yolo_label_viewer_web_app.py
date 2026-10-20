@@ -23,7 +23,7 @@ from backend.yolo_workspace import read_app_settings
 
 ICON_ICO_PATH = ROOT / "assets" / "app-icon.ico"
 ICON_PNG_PATH = ROOT / "assets" / "app-icon.png"
-WINDOWS_APP_ID = "YoloWorkBench.Desktop.1"
+WINDOWS_APP_ID = "RampageWorkbench.Desktop.1"
 HTML_PATH = ROOT / "legacy" / "web" / "index.html"
 
 
@@ -135,7 +135,7 @@ class WebPage(QWebEnginePage):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("YoloWorkBench")
+        self.setWindowTitle("RampageWorkbench")
         self.resize(1440, 900)
         self.setAcceptDrops(True)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
@@ -212,8 +212,8 @@ def main() -> None:
     _configure_webengine()
     _configure_windows_taskbar_icon()
     app = QtWidgets.QApplication(sys.argv)
-    app.setApplicationName("YoloWorkBench")
-    app.setApplicationDisplayName("YoloWorkBench")
+    app.setApplicationName("RampageWorkbench")
+    app.setApplicationDisplayName("RampageWorkbench")
     window = MainWindow()
     _apply_app_icon(app, window)
     window.show()

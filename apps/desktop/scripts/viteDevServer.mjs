@@ -30,7 +30,7 @@ async function readText(url, timeoutMs = 1500) {
 
 export async function isCurrentFrontend() {
   const html = await readText(viteUrl);
-  return Boolean(html?.includes("<title>YoloWorkBench</title>") && html.includes("/src/main.tsx"));
+  return Boolean(html?.includes("<title>RampageWorkbench</title>") && html.includes("/src/main.tsx"));
 }
 
 async function isPortOpen(timeoutMs = 1000) {
@@ -70,7 +70,7 @@ async function stopFrontendOnPort() {
     );
   }
   if (process.platform !== "win32") {
-    throw new Error(`${viteUrl} is occupied by a different service. Stop it before starting YoloWorkBench.`);
+    throw new Error(`${viteUrl} is occupied by a different service. Stop it before starting RampageWorkbench.`);
   }
   await runCommand(
     "powershell",

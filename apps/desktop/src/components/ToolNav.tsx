@@ -77,9 +77,9 @@ export function ToolNav({ activeTab, imagePoolNewCount = 0, onSelectTab }: ToolN
     >
       <div className="tabbar-surface">
         <div className="tabbar-head">
-          <div className="brand" title="YoloWorkBench">
+          <div className="brand" title="RampageWorkbench">
             <img className="brand-icon" src="/assets/app-icon.svg" width={22} height={22} alt="" />
-            <span className="brand-text">YoloWorkBench</span>
+            <span className="brand-text">RampageWorkbench</span>
           </div>
         </div>
         <div className="tool-nav-list" role="listbox" aria-label="Navigation">

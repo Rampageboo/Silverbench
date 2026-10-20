@@ -208,7 +208,7 @@ def generate_calibration_sheet_png(dpi: int = 150) -> bytes:
     cy = height // 2
     line_h = round(dpi // 6)
 
-    draw.text((cx, cy - line_h), "YoloWorkBench 标定板", fill=(15, 23, 42),
+    draw.text((cx, cy - line_h), "RampageWorkbench 标定板", fill=(15, 23, 42),
               font=font_title, anchor="mm")
     draw.text((cx, cy), "AprilTag 36h11  ·  ID 0左上 / 1右上 / 2右下 / 3左下",
               fill=(51, 65, 85), font=font_sub, anchor="mm")

@@ -1,4 +1,6 @@
-# PROJECTCONTEXT.md — YoloWorkBench Living Project Context
+# PROJECTCONTEXT.md — RampageWorkbench Living Project Context
+
+2026-10-20 update: product/repository/folder renamed to RampageWorkbench. Global gallery backend and typed frontend contract are in `docs/plans/rampageworkbench-frontend-handoff.md`; Claude owns the new page design. Earlier dated verification notes below are historical.
 
 Compact cross-session memory. Not authority above current Owner instructions,
 the active brief, repository code, or verified tests (see
@@ -25,7 +27,7 @@ Git execution environments:
 
 ## Project summary
 
-YoloWorkBench is a local-first desktop workbench for YOLO computer-vision
+RampageWorkbench is a local-first desktop workbench for YOLO computer-vision
 dataset work: image/video import, labeling (detection boxes + classification),
 auto-labeling with PT models, dataset prep/merge/export, and training runs.
 
@@ -34,7 +36,7 @@ auto-labeling with PT models, dataset prep/merge/export, and training runs.
   shell exists (`run_legacy_qt.bat`) but Qt is not used in the main path.
 - **Backend**: Python FastAPI + uvicorn (`backend_api/main.py`, ~940 lines),
   localhost-only, JSON-RPC-style `/api/call` dispatch into `backend/` service
-  modules. `API_SCHEMA_VERSION` (currently 24) must be bumped when `/health`
+  modules. `API_SCHEMA_VERSION` (currently 25) must be bumped when `/health`
   or `/api/call` routing changes so dev startup restarts stale backends.
 - **ML runtime**: torch/torchvision + ultralytics (installed `--no-deps` by
   `run.bat` so it never replaces pinned torch/cv2).
@@ -67,7 +69,7 @@ auto-labeling with PT models, dataset prep/merge/export, and training runs.
 
 - Full dev launch: `run.bat` (creates `.venv`, installs `requirements.txt` +
   `ultralytics --no-deps`, then `npm run tauri:dev` in `apps/desktop`).
-  Silent launch: `YoloWorkBench.vbs`. Logs: `logs/desktop.log`,
+  Silent launch: `RampageWorkbench.vbs`. Logs: `logs/desktop.log`,
   `logs/backend.log`.
 - Frontend: `npm run dev` (Vite on 127.0.0.1:5173), `npm run build`
   (tsc + vite), `npm run test` (vitest), `npm run lint`, `npm run format`.

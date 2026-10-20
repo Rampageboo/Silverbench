@@ -1,4 +1,4 @@
-"""YoloWorkBench MCP integration."""
+"""RampageWorkbench MCP integration."""
 
 from .bridge import BackendClient, PathPolicy, YoloWorkBenchBridge
 

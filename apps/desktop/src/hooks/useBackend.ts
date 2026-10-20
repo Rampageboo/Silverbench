@@ -31,7 +31,7 @@ export function useBackend(pollMs = 1500, disconnectGraceMs = 4500) {
           } else {
             setConnected(false);
             setError(
-              `Backend is out of date (API schema ${schema || "unknown"}; need ${api.REQUIRED_API_SCHEMA_VERSION}). Restart YoloWorkBench.`
+              `Backend is out of date (API schema ${schema || "unknown"}; need ${api.REQUIRED_API_SCHEMA_VERSION}). Restart RampageWorkbench.`
             );
           }
         }

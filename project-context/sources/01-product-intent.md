@@ -1,6 +1,6 @@
 # Product Intent
 
-YoloWorkBench is a local-first desktop workbench for YOLO computer-vision
+RampageWorkbench is a local-first desktop workbench for YOLO computer-vision
 dataset work: image and video import, labeling (detection boxes plus
 classification), auto-labeling with PT models, dataset prep/merge/export, and
 training runs.

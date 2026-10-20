@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "YoloWorkBench",
+  "productName": "RampageWorkbench",
   "version": "0.1.0",
   "identifier": "local.yoloworkbench.desktop",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "YoloWorkBench",
+        "title": "RampageWorkbench",
         "width": 1200,
         "height": 800,
         "resizable": true,

@@ -1,4 +1,4 @@
-# YoloWorkBench Desktop 打包与分发
+# RampageWorkbench Desktop 打包与分发
 
 本文档描述当前 **Tauri 桌面壳 + 外部 Python FastAPI 后端** 的架构，以及后续 sidecar / PyInstaller 的接入点。
 

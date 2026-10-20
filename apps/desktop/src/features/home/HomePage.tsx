@@ -114,8 +114,8 @@ export function HomePage({ onReady }: Props) {
           <div className="home-brand">
             <img src="/assets/app-icon.svg" width={44} height={44} alt="" className="home-brand-icon" />
             <div>
-              <h1 className="home-title">YoloWorkBench</h1>
-              <p className="home-subtitle">Object detection annotation workbench</p>
+              <h1 className="home-title">RampageWorkbench</h1>
+              <p className="home-subtitle">视觉数据与创作工作台</p>
             </div>
           </div>
           <div className="home-actions">

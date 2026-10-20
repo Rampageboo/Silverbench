@@ -586,7 +586,7 @@ exports/             Generated video/image export outputs.
 App workflow
 ------------
 1. Add images to {media_dir}/
-2. Annotate in YoloWorkBench (labels save to detect_labels/)
+2. Annotate in RampageWorkbench (labels save to detect_labels/)
 3. Edit metadata.csv
 4. Build datasets:
    python build_yolo_links.py build --workspace "{workspace_root}" --rebuild

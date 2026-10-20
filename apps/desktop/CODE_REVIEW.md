@@ -1,4 +1,4 @@
-# YoloWorkBench 桌面端（React）代码评审与重构指南
+# RampageWorkbench 桌面端（React）代码评审与重构指南
 
 > 适用范围：仅 `apps/desktop`（React + Tauri 外壳）。遗留 `legacy/web/` 旧版引擎不在本次重构范围，仅在与 React 交互处提及。
 > 本文面向后续执行重构的 agent。每个问题给出：**位置 / 为什么 / 怎么改 / 验收标准**。

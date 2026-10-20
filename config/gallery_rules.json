@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "thresholds": {
+    "prompt": {"general": 0.3, "character": 0.75},
+    "train": {"general": 0.45, "character": 0.85}
+  },
+  "categoryOrder": ["quality", "rating", "count", "character", "copyright", "artist", "general"],
+  "quality": {
+    "noobai": ["masterpiece", "best quality", "newest", "absurdres", "highres"],
+    "anima": ["masterpiece", "best quality", "newest"]
+  },
+  "negative": {"noobai": [], "anima": ["signature", "artist name"]},
+  "aliases": {},
+  "corrections": {},
+  "categories": {
+    "masterpiece": "quality", "best quality": "quality", "newest": "quality",
+    "absurdres": "quality", "highres": "quality", "low quality": "quality",
+    "worst quality": "quality", "normal quality": "quality",
+    "score 9": "quality", "score 8 up": "quality", "score 7 up": "quality",
+    "general": "rating", "sensitive": "rating", "questionable": "rating", "explicit": "rating",
+    "safe": "rating", "nsfw": "rating"
+  },
+  "characterCopyright": {},
+  "fixedFeatures": [],
+  "outfitFeatures": [],
+  "removeTags": [],
+  "sdxlResolutions": [[1024, 1024], [1152, 896], [1216, 832], [1344, 768], [1536, 640], [896, 1152], [832, 1216], [768, 1344], [640, 1536]],
+  "recommendations": {
+    "noobai": {"sampler": "Euler a", "cfg": [5, 6], "steps": [25, 30]},
+    "anima": {"sampler": "er_sde", "scheduler": "simple", "cfg": [4, 5], "steps": [30, 30]}
+  }
+}

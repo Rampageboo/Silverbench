@@ -25,17 +25,14 @@ if not exist "%VENV_DIR%\Scripts\python.exe" (
     if errorlevel 1 python -m venv "%VENV_DIR%" >>"%LOG_FILE%" 2>&1
 )
 
-call "%VENV_DIR%\Scripts\activate.bat" >>"%LOG_FILE%" 2>&1
-if errorlevel 1 (
-    call :notify_failure "无法激活 Python 虚拟环境，请查看 logs\desktop.log"
-    exit /b 1
-)
+rem Use the local interpreter directly: venv activation embeds its old folder.
+set "RWB_PYTHON=%CD%\%VENV_DIR%\Scripts\python.exe"
 
-python -c "import fastapi, uvicorn, ultralytics, mcp" >nul 2>nul
+"%RWB_PYTHON%" -c "import fastapi, uvicorn, ultralytics, mcp" >nul 2>nul
 if errorlevel 1 (
-    python -m pip install -r "requirements.txt" >>"%LOG_FILE%" 2>&1
+    "%RWB_PYTHON%" -m pip install -r "requirements.txt" >>"%LOG_FILE%" 2>&1
     rem requirements.txt owns heavy runtime deps; keep this from replacing torch/cv2.
-    python -m pip install ultralytics --no-deps >>"%LOG_FILE%" 2>&1
+    "%RWB_PYTHON%" -m pip install ultralytics --no-deps >>"%LOG_FILE%" 2>&1
 )
 
 if exist "C:\Program Files\nodejs\node.exe" set "PATH=C:\Program Files\nodejs;%PATH%"
@@ -60,19 +57,19 @@ if errorlevel 1 (
 pushd "%DESKTOP_DIR%"
 if not exist "node_modules" npm install >>"..\..\%LOG_FILE%" 2>&1
 
-echo [%DATE% %TIME%] Starting YoloWorkBench desktop shell>>"..\..\%LOG_FILE%"
+echo [%DATE% %TIME%] Starting RampageWorkbench desktop shell>>"..\..\%LOG_FILE%"
 npm run tauri:dev >>"..\..\%LOG_FILE%" 2>&1
 set "APP_EXIT_CODE=%ERRORLEVEL%"
 echo [%DATE% %TIME%] Exit code %APP_EXIT_CODE%>>"..\..\%LOG_FILE%"
 popd
 
-if not "%APP_EXIT_CODE%"=="0" call :notify_failure "YoloWorkBench 启动失败，请查看 logs\desktop.log"
+if not "%APP_EXIT_CODE%"=="0" call :notify_failure "RampageWorkbench 启动失败，请查看 logs\desktop.log"
 call :stop_launch_splash
 exit /b %APP_EXIT_CODE%
 
 :notify_failure
 call :stop_launch_splash
-powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('%~1','YoloWorkBench',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null"
+powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('%~1','RampageWorkbench',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null"
 exit /b 0
 
 :stop_launch_splash

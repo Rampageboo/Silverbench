@@ -38,7 +38,7 @@ SESSION_DIR = APP_DIR / "Sessions"
 SESSION_FILE = SESSION_DIR / "yolo_label_viewer_session.json"
 HEARTBEAT_METHOD = "__heartbeat"
 # Bump when /health or /api/call routing changes so dev startup can restart stale backends.
-API_SCHEMA_VERSION = 24
+API_SCHEMA_VERSION = 25
 
 # Localhost-only desktop backend: allow any registered service method except heartbeat/private.
 BLOCKED_API_METHODS = frozenset({HEARTBEAT_METHOD})
@@ -122,10 +122,17 @@ async def _lifespan(application: FastAPI):
     # all /api/multimodal/* requests before they could be matched.
     if WEB_DIR.is_dir():
         application.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
-    yield
+    try:
+        yield
+    finally:
+        from backend_api.gallery import close_library
+        close_library()
 
 
-app = FastAPI(title="YoloWorkBench API", lifespan=_lifespan)
+app = FastAPI(title="RampageWorkbench API", lifespan=_lifespan)
+from backend_api.gallery import router as gallery_router
+
+app.include_router(gallery_router)
 service = create_desktop_backend_service(APP_DIR, SESSION_DIR, SESSION_FILE)
 
 app.add_middleware(
@@ -159,7 +166,7 @@ app.add_middleware(NoStoreWebAssetsMiddleware)
 def health() -> dict[str, object]:
     return {
         "ok": True,
-        "app": "yoloworkbench",
+        "app": "rampageworkbench",
         "backend": "fastapi",
         "ui": "web",
         "apiSchemaVersion": API_SCHEMA_VERSION,

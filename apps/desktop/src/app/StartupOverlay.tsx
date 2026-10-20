@@ -73,7 +73,7 @@ export function StartupOverlay({
       aria-live="polite"
       aria-busy={!done}
     >
-      <section className="startup-panel" aria-label="YoloWorkBench startup">
+      <section className="startup-panel" aria-label="RampageWorkbench startup">
         <header className="startup-hero">
           <img
             className="startup-brand-mark startup-brand-image"
@@ -83,11 +83,11 @@ export function StartupOverlay({
             alt=""
           />
           <div className="startup-brand-mark startup-brand-abbrev" aria-hidden="true">
-            YWB
+            RW
           </div>
           <div className="startup-copy">
-            <h1>YoloWorkBench</h1>
-            {!isMinimal ? <p className="startup-tagline">YOLO 数据集全流程工作台</p> : null}
+            <h1>RampageWorkbench</h1>
+            {!isMinimal ? <p className="startup-tagline">视觉数据与创作工作台</p> : null}
           </div>
         </header>
         {!isMinimal ? (

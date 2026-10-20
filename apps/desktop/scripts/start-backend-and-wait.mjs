@@ -213,7 +213,7 @@ async function main() {
     console.log(`Stopping unresponsive process on ${backend.origin}...`);
     await stopBackendOnPort();
     if (!(await waitForPortToClear())) {
-      throw new Error(`Port ${backend.port} is occupied by an unresponsive process. Close it and start YoloWorkBench again.`);
+      throw new Error(`Port ${backend.port} is occupied by an unresponsive process. Close it and start RampageWorkbench again.`);
     }
   }
 
