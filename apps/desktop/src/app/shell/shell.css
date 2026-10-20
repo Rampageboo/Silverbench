@@ -391,6 +391,8 @@
 }
 
 .shell-page {
+  /* Row 2 always: row 1 holds the offline banner, which is usually absent. */
+  grid-row: 2;
   position: relative;
   min-width: 0;
   min-height: 0;
@@ -398,6 +400,7 @@
 }
 
 .shell-offline {
+  grid-row: 1;
   padding: 6px var(--sp-4);
   border-bottom: 1px solid color-mix(in srgb, var(--c-danger) 40%, transparent);
   background: var(--c-danger-soft);
