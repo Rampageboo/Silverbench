@@ -521,3 +521,21 @@
   color: var(--c-text-3);
   font-size: var(--fs-xs);
 }
+
+/*
+ * Keep-alive panels fill their parent at every depth. Some tools nest their own
+ * panels (image pool / assign / dataset review); without this the inner panel
+ * grows to its content, so the tool's scroll container is never bounded and
+ * its virtual grid ends up rendering every row.
+ */
+.workbench-page .workbench-panel:not(.workbench-panel--hidden) {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.workbench-page .workbench-panel:not(.workbench-panel--hidden) > * {
+  flex: 1 1 0;
+  min-height: 0;
+}
