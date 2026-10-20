@@ -44,7 +44,8 @@ MyProject\
     images.csv              每张图的状态：split、任务开关、分类、废片、已审、标记、下次训练
     videos\<视频名>.json     视频标注：按时间戳存框和分类；视频用 media 下的相对路径引用
     segments\<视频名>.json   视频片段
-    proposals\              自动标注提议（未确认的预测）
+    proposals\<图片名>.json  自动标注提议（未确认的预测）
+    overlays\<媒体名>.json   涂黑遮罩（尚未接入界面）
     autolabel-runs.json     哪些图已用哪个模型自动标注过（防止重复）
   models\                   导入的 .pt 模型 + registry.json（当前启用的自动标注模型）
   runs\                     训练输出（Ultralytics）
@@ -61,10 +62,15 @@ MyProject\
 
 ### 关键决定
 
-- **YOLO 数据集不再常驻工作区。** “导出数据集”从 `labels\` + `images.csv` + `classes.json` + `media\` 生成一个标准 YOLO 文件夹（`images/`、`labels/`、`data.yaml`），视频按标注时间戳临时抽帧写入；附 `rwb-export.json` 记录来源工作区、版本与时间。数据集准备、合并、训练都针对导出的文件夹进行。
+- **YOLO 数据集不再常驻工作区。** “导出数据集”（总览页）从 `labels\` + `images.csv` + `classes.json` + `media\` 生成 `exports\dataset\{detect,classify}`，附 `rwb-export.json` 记录来源。数据集准备、合并、训练都针对导出的文件夹进行。
+  - 图片默认**复制**：导出是快照，改导出里的图不会改到 `media\`（硬链接会）。可选 `link` 省空间。
+  - 重建只清理带 `rwb-export.json` 的文件夹；指向一个非空的陌生文件夹会被拒绝。
+  - `data.yaml` 不写 `path:`，Ultralytics 会以 yaml 所在目录解析 `train/val`（写 `path: .` 会按当前工作目录解析）。
+  - 废片、取消导出等开关只改 `images.csv`，下次导出生效；不再有“删除链接”。
+  - 视频按时间戳抽帧导出尚未接入（规划器/执行器代码已在，待接线）。
 - **类别只认 `classes.json`。** `classes.txt`、`data.yaml` 里的名字都是导出时生成的；分配页和标注页不再从数据集文件夹反推类别。
 - **框继续用 YOLO txt 存。** 格式简单、通用；类别 id 由 `classes.json` 的稳定 yoloId 保证，改名不影响。
-- **版本只快照标注。** 新建版本 = 复制 `labels\` 和 `classes.json`（几 MB）；切换版本 = 把快照换回 `labels\`。素材始终只有一份。
+- **版本只快照标注。** 新建快照 = 复制 `labels\` 和 `classes.json`（几 MB）；恢复 = 先自动快照当前状态，再换回。素材始终只有一份。恢复后界面重新加载，避免编辑器把内存里的旧标注写回去。
 - **视频分帧不落盘。** 抽出的帧只进 `.rwb\cache\frames\`，用完即删。“视频截图”页是主动把画面导入为图片，保存到 `media\`，属于导入而不是分帧缓存。
 
 ## 迁移（v2 → v3）
@@ -74,7 +80,10 @@ MyProject\
 - 旧的 `V1\` 容器被展开为工作区根目录；如果有多个 V*，非当前版本只保留其标注作为快照。
 - 视频标注里的绝对路径改写为 `media\` 相对路径。
 - 旧的 `detect_dataset\`、`clf_dataset\`、`auto_label\` 是由硬链接/拷贝生成的产物：移到 `exports\legacy-<日期>\` 保留，不删除。
-- 缓存、代理、临时帧移入 `.rwb\cache\`；`sources.json`、`workspace\annotations\` 这类空占位直接删除。
+- 缓存、代理、临时帧移入 `.rwb\cache\`；`sources.json`、`workspace\annotations\`、旧格式 overlays 移到 `.rwb\migrated\`（不删除）。
+- 非当前版本（如 V2）只把标注做成 `versions\V2` 快照（视频标注同样改写）；它的完整副本原地保留，提示用户确认后自行删除。
+- 迁移后顶部出现“保留 / 撤销迁移”。撤销按日志逐步复原（测试中与原目录逐字节一致，唯一差异是期间界面写入的 session.json）；保留后删除日志。
+- 最近列表里旧的版本路径（如 `...\V1`）替换为新的根目录。
 - 不处理真实数据：迁移代码在测试工作区上验证，Owner 确认后再对 `D:\Yolo\ZZZ` 执行。
 
 ## 实施顺序
@@ -85,4 +94,4 @@ MyProject\
 4. 数据集导出（含视频按时间戳抽帧）；数据集工具改为读写导出文件夹。
 5. 版本改为标注快照。
 6. 应用层数据移到 `%APPDATA%`；会话状态与缓存移到 `.rwb\`。
-7. 前端：路径全部来自后端返回的布局；新的打开/迁移流程。
+7. 前端：路径集中在 `workspace/layout.ts`（与后端 `RELATIVE_PATHS` 有一致性测试）；新的打开/迁移流程。
