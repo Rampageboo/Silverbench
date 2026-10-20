@@ -135,6 +135,10 @@ export function WorkspaceProvider({
   }, [openWorkspacePath]);
 
   const dismissPendingFolder = useCallback(() => setPendingFolder(null), []);
+  const closeWorkspace = useCallback(() => {
+    setWorkspace(null);
+    setActiveTab("home");
+  }, []);
   const clearPoolLabelFocus = useCallback(() => setPoolLabelFocusFilename(null), []);
 
   useEffect(() => {
@@ -200,6 +204,7 @@ export function WorkspaceProvider({
       openWorkspacePath,
       chooseWorkspaceFolder,
       adoptWorkspace,
+      closeWorkspace,
       pendingFolder,
       dismissPendingFolder,
       activeTab,
@@ -218,6 +223,7 @@ export function WorkspaceProvider({
       openWorkspacePath,
       chooseWorkspaceFolder,
       adoptWorkspace,
+      closeWorkspace,
       pendingFolder,
       dismissPendingFolder,
       activeTab,

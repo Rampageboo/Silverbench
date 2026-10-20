@@ -489,9 +489,13 @@ class BackendService:
         plan = plan_migration(source)
         result = execute_migration(plan)
         layout = open_workspace(plan.root)
-        forget_workspace(str(source), self.app_settings_dir, legacy_dir=self.legacy_settings_dir)
+        # The old version folders are gone (or left only as copies to delete): drop them from recents.
+        former = [source, plan.source["base"], *(Path(v["path"]) for v in plan.source.get("otherVersions") or [])]
+        for path in former:
+            if Path(path).resolve() != layout.root.resolve():
+                forget_workspace(str(path), self.app_settings_dir, legacy_dir=self.legacy_settings_dir)
         self._remember_workspace(str(layout.root))
-        return {**result, "workspace": layout_payload(layout)}
+        return {**result, "workspace": {**layout_payload(layout), "migrationPending": True}}
 
     def _handle_rollbackWorkspaceMigration(self, args: list[Any]) -> object:
         return rollback_migration(self.path_access.require_path(str(args[0])))

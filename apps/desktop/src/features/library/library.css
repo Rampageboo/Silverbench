@@ -180,6 +180,23 @@
     font-size: var(--fs-xs);
   }
 
+  .ov-export {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-5) var(--sp-4);
+    color: var(--c-text-2);
+    font-size: var(--fs-sm);
+  }
+
+  .ov-export__warnings {
+    flex-basis: 100%;
+    margin: 0;
+    padding-left: 1.2em;
+    color: var(--c-text-3);
+  }
+
   .ov-versions__empty {
     padding: var(--sp-3) var(--sp-2);
     color: var(--c-text-3);

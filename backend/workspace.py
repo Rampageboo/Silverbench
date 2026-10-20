@@ -107,7 +107,7 @@ def open_folder(path: Path | str, *, create: bool = False) -> dict[str, Any]:
             "kind": "legacy",
             "root": str(legacy["root"]),
             "name": Path(legacy["root"]).name,
-            "migration": {key: summary[key] for key in ("sourceKind", "activeVersion", "counts", "warnings", "conflicts", "untouched")},
+            "migration": {key: summary[key] for key in ("ok", "root", "sourceKind", "activeVersion", "counts", "warnings", "conflicts", "untouched")},
         }
 
     if looks_like_yolo_dataset(folder):

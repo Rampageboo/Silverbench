@@ -21,7 +21,7 @@ import os
 import re
 import shutil
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -82,7 +82,11 @@ def detect_legacy_workspace(path: Path | str) -> dict[str, Any] | None:
                 "configFile": config[0] if config else None,
                 "activeVersion": active_id,
                 "otherVersions": [
-                    {"id": v["id"], "path": (root / str(v.get("path") or v["id"])).resolve()}
+                    {
+                        "id": v["id"],
+                        "path": (root / str(v.get("path") or v["id"])).resolve(),
+                        "createdAt": v.get("createdAt"),
+                    }
                     for v in versions
                     if v["id"] != active_id
                 ],
@@ -283,9 +287,10 @@ class _Planner:
         self._conflicts()
         return self.plan
 
-    def _video_annotations(self, folder: Path) -> None:
+    def _video_annotations(self, folder: Path, destination: Path | None = None) -> int:
         if not folder.is_dir():
-            return
+            return 0
+        written = 0
         self.claim(folder)
         for file in sorted(folder.glob("*.json")):
             data = _read_json(file)
@@ -295,7 +300,9 @@ class _Planner:
                 self.retire(file, "Video annotation without a video name")
                 continue
             video["path"] = f"{RELATIVE_PATHS['media']}/{name}"
-            self.rewrite(file, self.target("videoLabels") / f"{name}.json", data, "Video annotations (relative video path)")
+            self.rewrite(file, (destination or self.target("videoLabels")) / f"{name}.json", data, "Video annotations (relative video path)")
+            written += 1
+        return written
 
     def _segments(self, folder: Path) -> None:
         if not folder.is_dir():
@@ -380,9 +387,20 @@ class _Planner:
 
             self.move(legacy("detect_labels", "detect_labels"), dest / "labels/images", f"{vid} box labels")
             self.move(legacy("metadata", "metadata.csv"), dest / "labels/images.csv", f"{vid} image status")
-            self.move(legacy("video_annotations", "workspace/video_annotations"), dest / "labels/videos-legacy", f"{vid} video annotations")
+            labels = legacy("detect_labels", "detect_labels")
+            image_labels = sum(1 for _ in labels.glob("*.txt")) if labels.is_dir() else 0
+            video_labels = self._video_annotations(legacy("video_annotations", "workspace/video_annotations"), dest / "labels/videos")
             self.move(legacy("classes", "workspace/classes.json"), dest / "classes.json", f"{vid} classes")
-            entries.append({"id": vid, "createdAt": None, "note": f"Annotations of former version {vid}"})
+            created = version.get("createdAt") or datetime.fromtimestamp(folder.stat().st_mtime, timezone.utc).isoformat()
+            entries.append(
+                {
+                    "id": vid,
+                    "createdAt": created,
+                    "note": f"Annotations of former version {vid}",
+                    "imageLabels": image_labels,
+                    "videoLabels": video_labels,
+                }
+            )
             self.plan.warnings.append(
                 f"Former version {vid} kept only its annotations under versions/{vid}; "
                 f"its full copy at {folder} is left untouched — delete it once you have checked the migration."

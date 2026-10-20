@@ -88,6 +88,7 @@ export type BackendMethod =
   | "batchCropImages"
   | "batchCropFiles"
   | "openFolder"
+  | "openDirectory"
   | "moveValBackToTrain"
   | "copyModelToWorkspace";
 
@@ -898,6 +899,11 @@ export async function writeTextFile(root: string, relativePath: string, text: st
 
 export async function readLabelTextsBatch(datasetRoot: string, labelPaths: string[]) {
   return callJson<Record<string, string>>("readLabelTextsBatch", [datasetRoot, JSON.stringify(labelPaths)]);
+}
+
+/** Show a folder in the system file manager. */
+export async function openDirectory(path: string) {
+  return callJson<boolean>("openDirectory", [path]);
 }
 
 /** Export the workspace's annotations as a YOLO dataset (runs as a background job). */

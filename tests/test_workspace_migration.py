@@ -165,6 +165,11 @@ def test_migrates_snapshot_container_to_v3(container: Path) -> None:
     assert not (root / "V1").exists()
     assert (root / "V2" / "media" / "clip.mp4").exists()
     assert (root / "versions" / "V2" / "labels/images" / "shot one.txt").exists()
+    snapshot_video = json.loads((root / "versions" / "V2" / "labels/videos" / "clip.mp4.json").read_text())
+    assert snapshot_video["video"]["path"] == "media/clip.mp4"
+    entry = json.loads((root / "versions" / "versions.json").read_text())["snapshots"][0]
+    assert (entry["id"], entry["imageLabels"], entry["videoLabels"]) == ("V2", 1, 1)
+    assert entry["createdAt"]
     assert not (root / "workspace").exists()
     assert any("V2" in warning for warning in plan.warnings)
 

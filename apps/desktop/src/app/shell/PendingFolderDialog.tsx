@@ -139,7 +139,7 @@ export function PendingFolderDialog() {
             <button
               type="button"
               className="ui-btn--solid"
-              disabled={busy || !folder.migration.ok}
+              disabled={busy || folder.migration.conflicts.length > 0}
               onClick={() => void run(async () => (await api.migrateWorkspace(folder.root)).workspace)}
             >
               {busy ? "Migrating…" : "Migrate"}
@@ -206,7 +206,7 @@ export function PendingFolderDialog() {
 
 /** Shown after a migration until the user keeps or undoes it. */
 export function MigrationReviewBar() {
-  const { workspace, adoptWorkspace, openWorkspacePath } = useWorkspace();
+  const { workspace, adoptWorkspace, closeWorkspace, openWorkspacePath } = useWorkspace();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   if (!workspace?.migrationPending) return null;
@@ -228,6 +228,7 @@ export function MigrationReviewBar() {
     setBusy(true);
     try {
       await api.rollbackWorkspaceMigration(root);
+      closeWorkspace();
       await openWorkspacePath(root);
     } catch (err) {
       setError(errMessage(err));

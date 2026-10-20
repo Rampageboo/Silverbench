@@ -3,7 +3,9 @@ import {
   createSnapshot,
   deleteSnapshot,
   listSnapshots,
+  openDirectory,
   restoreSnapshot,
+  type ExportResult,
   type WorkspaceSnapshot
 } from "../../api";
 import { NAV_GROUPS, type NavItem } from "../../app/navigation";
@@ -11,6 +13,7 @@ import { workspaceDisplayName } from "../../workspace/layout";
 import { useWorkspace } from "../../app/useWorkspace";
 import { IconChevronRight, IconLayers } from "../../ui/icons";
 import { useImagePoolBadge } from "../image-pool/useImagePoolBadge";
+import { runExportDatasetJob } from "../inbox/exportJob";
 import { errMessage } from "../../lib/errors";
 import { useWorkspaceClasses } from "../workspace/useWorkspaceClasses";
 import { activeClfClassDefs, activeDetectClassDefs } from "../workspace/workspaceClassTaxonomy";
@@ -32,6 +35,65 @@ const STAGE_COPY: Record<string, string> = {
 function formatTime(iso: string) {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
+}
+
+/** Datasets are products of the workspace: written fresh into exports/dataset on demand. */
+function ExportCard({ root }: { root: string }) {
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [result, setResult] = useState<Partial<ExportResult> | null>(null);
+  const [error, setError] = useState("");
+
+  async function exportDataset() {
+    setError("");
+    setResult(null);
+    setProgress({ done: 0, total: 1 });
+    try {
+      setResult(await runExportDatasetJob(root, { rebuild: true }, (done, total) => setProgress({ done, total })));
+    } catch (err) {
+      setError(errMessage(err));
+    } finally {
+      setProgress(null);
+    }
+  }
+
+  return (
+    <section className="ui-card ov-versions">
+      <div className="ui-card__head">
+        <div>
+          <div className="ui-card__title">Dataset export</div>
+          <div className="ui-field__hint">
+            Writes a YOLO detect + classify dataset to exports/dataset from the current labels and classes. Edit the
+            workspace, then export again — the export is rebuilt each time.
+          </div>
+        </div>
+        <button type="button" onClick={() => void exportDataset()} disabled={progress !== null}>
+          {progress ? `Exporting ${progress.done}/${progress.total}…` : "Export dataset"}
+        </button>
+      </div>
+      {result ? (
+        <div className="ov-export">
+          <span>
+            {result.detectImages ?? 0} detect images · {result.clfImages ?? 0} classify images ·{" "}
+            {result.labelsPlaced ?? 0} labels
+            {result.skippedRows ? ` · ${result.skippedRows} skipped` : ""}
+          </span>
+          {result.exportRoot ? (
+            <button type="button" className="ui-btn--ghost ui-btn--sm" onClick={() => void openDirectory(result.exportRoot!)}>
+              Open folder
+            </button>
+          ) : null}
+          {result.warnings?.length ? (
+            <ul className="ov-export__warnings">
+              {result.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+      {error ? <div className="ui-error ov-versions__error">{error}</div> : null}
+    </section>
+  );
 }
 
 /** Annotation snapshots: labels and classes only, so they are cheap to take often. */
@@ -237,6 +299,7 @@ export function LibraryPage({ onReady }: Props) {
           ))}
         </section>
 
+        {workspaceRoot ? <ExportCard root={workspaceRoot} /> : null}
         {workspaceRoot ? <SnapshotsCard root={workspaceRoot} /> : null}
       </div>
     </div>

@@ -18,6 +18,8 @@ export type WorkspaceContextValue = {
   chooseWorkspaceFolder: () => Promise<void>;
   /** Switch to a workspace the backend just created or migrated. */
   adoptWorkspace: (workspace: api.WorkspacePayload) => Promise<void>;
+  /** Leave the open workspace (e.g. after its migration was undone). */
+  closeWorkspace: () => void;
   pendingFolder: PendingFolder | null;
   dismissPendingFolder: () => void;
   activeTab: ToolTab;
