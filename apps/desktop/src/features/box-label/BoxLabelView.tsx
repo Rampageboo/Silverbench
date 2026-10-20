@@ -7,8 +7,7 @@ import { BoxLabelPreviewToolbar } from "./BoxLabelPreviewToolbar";
 import { BoxLabelShortcutDropdown } from "./BoxLabelShortcutDropdown";
 import { classNameFor, SLOT_ORDER } from "./geometry";
 import type { FixedBoxSlot } from "./session";
-import { useBoxLabelEditor } from "./useBoxLabelEditor";
-import { useLabelWorkbench } from "../label/useLabelWorkbench";
+import type { BoxLabelEditor } from "./useBoxLabelEditor";
 import "./boxLabel.css";
 
 function fixedBoxReady(slot: FixedBoxSlot | null) {
@@ -21,7 +20,15 @@ const CANVAS_CONTEXT_DRAG_THRESHOLD_PX = 5;
 
 function AddIcon() {
   return (
-    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+    <svg
+      viewBox="0 0 24 24"
+      width="13"
+      height="13"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      aria-hidden="true"
+    >
       <path d="M12 5v14M5 12h14" />
     </svg>
   );
@@ -29,28 +36,39 @@ function AddIcon() {
 
 function SearchIcon() {
   return (
-    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+    <svg
+      viewBox="0 0 24 24"
+      width="13"
+      height="13"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      aria-hidden="true"
+    >
       <circle cx="11" cy="11" r="6" />
       <path d="M16 16l4 4" />
     </svg>
   );
 }
 
-export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelViewProps) {
-  const editor = useBoxLabelEditor(props);
+type Props = BoxLabelViewProps & {
+  /** Editor state, owned by the surface so it can also drive the workbench inspector. */
+  editor: BoxLabelEditor;
+};
+
+export const BoxLabelView = React.memo(function BoxLabelView({ editor, ...props }: Props) {
   const {
     classImageCounts,
     classificationClasses = [],
     classificationClassesBusy = false,
     classificationClassesStatus,
-    classificationClassesInWorkbenchSlot,
+    classificationSlot = null,
     detectClassKeysById,
     currentClassificationKey,
     onAssignClassificationClass,
     onAddClassificationClass,
     onRenameClass,
     onWorkspaceClassesChanged,
-    onWorkbenchBridgeChange,
     showSideStack = true,
     canvasOverlay,
     canvasOverlayPlacement = "canvas",
@@ -58,12 +76,11 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     clfTaskEnabled = true,
     onToggleDetectTaskEnabled,
     onToggleClfTaskEnabled,
-    classPanelSummaries,
+    classPanelSummaries
   } = props;
-  const workbenchClassificationSlot = useLabelWorkbench()?.classificationSlot ?? null;
   // Falls back to rendering the panel inline (side stack) until the slot exists,
   // so it can never silently disappear.
-  const classificationPortalTarget = classificationClassesInWorkbenchSlot ? workbenchClassificationSlot : null;
+  const classificationPortalTarget = classificationSlot;
   const auraRef = useRef<HTMLDivElement | null>(null);
   const canvasClassSearchInputRef = useRef<HTMLInputElement | null>(null);
   const canvasRightPointerRef = useRef<{ startX: number; startY: number; moved: boolean } | null>(null);
@@ -73,23 +90,6 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
   const [detectClassToolMode, setDetectClassToolMode] = useState<ClassToolMode>("none");
   const [classificationClassToolMode, setClassificationClassToolMode] = useState<ClassToolMode>("none");
   const [canvasClassSearchMenu, setCanvasClassSearchMenu] = useState<CanvasClassSearchMenu | null>(null);
-  const selectedProposal = editor.selectedProposalId
-    ? editor.proposals.find((p) => p.id === editor.selectedProposalId)
-    : null;
-  const selectedProposalArchived =
-    (selectedProposal?.classId != null && editor.isArchivedDetectClass(selectedProposal.classId)) ||
-    (Boolean(selectedProposal?.classKey) && editor.isArchivedClassKey(selectedProposal!.classKey!));
-  const activeProposalCount = useMemo(
-    () =>
-      editor.proposals.filter(
-        (proposal) =>
-          !(
-            (proposal.classId != null && editor.isArchivedDetectClass(proposal.classId)) ||
-            (Boolean(proposal.classKey) && editor.isArchivedClassKey(proposal.classKey!))
-          )
-      ).length,
-    [editor.proposals, editor.isArchivedDetectClass, editor.isArchivedClassKey]
-  );
   const filteredClassificationClasses = useMemo(() => {
     const activeClasses = classificationClasses
       .filter((item) => !item.archived)
@@ -122,7 +122,10 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
   }, [canvasClassSearchMenu, editor.classes, editor.isArchivedDetectClass]);
   const currentClassificationName = useMemo(() => {
     if (!currentClassificationKey) return "";
-    return classificationClasses.find((item) => item.key === currentClassificationKey)?.name ?? currentClassificationKey;
+    return (
+      classificationClasses.find((item) => item.key === currentClassificationKey)?.name ??
+      currentClassificationKey
+    );
   }, [classificationClasses, currentClassificationKey]);
 
   const handleAddClassificationClass = useCallback(() => {
@@ -205,7 +208,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
       setCanvasClassSearchMenu({
         x: Math.max(8, Math.min(rawX, maxX)),
         y: Math.max(8, Math.min(rawY, maxY)),
-        query: "",
+        query: ""
       });
       window.requestAnimationFrame(() => canvasClassSearchInputRef.current?.focus());
       editor.setStatus("Search detect classes.");
@@ -233,7 +236,10 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
       if (rightPointer) {
         const dx = event.clientX - rightPointer.startX;
         const dy = event.clientY - rightPointer.startY;
-        if (Math.abs(dx) > CANVAS_CONTEXT_DRAG_THRESHOLD_PX || Math.abs(dy) > CANVAS_CONTEXT_DRAG_THRESHOLD_PX) {
+        if (
+          Math.abs(dx) > CANVAS_CONTEXT_DRAG_THRESHOLD_PX ||
+          Math.abs(dy) > CANVAS_CONTEXT_DRAG_THRESHOLD_PX
+        ) {
           rightPointer.moved = true;
         }
       }
@@ -260,31 +266,33 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     [editor]
   );
 
-  const renderClassPanelSummary = useCallback((summary: NonNullable<BoxLabelViewProps["classPanelSummaries"]>["detect"] | undefined) => {
-    if (!summary?.metrics.length) return null;
-    const maxValue = Math.max(1, ...summary.metrics.map((item) => item.value));
-    return (
-      <div className="pool-label-class-summary" aria-label="Class panel summary">
-        {summary.metrics.map((item) => (
-          <div key={item.label} className="pool-label-class-summary-row">
-            <span>{item.label}</span>
-            <div className="pool-label-class-summary-track" aria-hidden="true">
-              <div
-                className="pool-label-class-summary-fill"
-                style={{ width: `${item.value ? Math.max(3, (item.value / maxValue) * 100) : 3}%` }}
-              />
+  const renderClassPanelSummary = useCallback(
+    (summary: NonNullable<BoxLabelViewProps["classPanelSummaries"]>["detect"] | undefined) => {
+      if (!summary?.metrics.length) return null;
+      const maxValue = Math.max(1, ...summary.metrics.map((item) => item.value));
+      return (
+        <div className="pool-label-class-summary" aria-label="Class panel summary">
+          {summary.metrics.map((item) => (
+            <div key={item.label} className="pool-label-class-summary-row">
+              <span>{item.label}</span>
+              <div className="pool-label-class-summary-track" aria-hidden="true">
+                <div
+                  className="pool-label-class-summary-fill"
+                  style={{ width: `${item.value ? Math.max(3, (item.value / maxValue) * 100) : 3}%` }}
+                />
+              </div>
+              <strong>{item.value}</strong>
             </div>
-            <strong>{item.value}</strong>
-          </div>
-        ))}
-      </div>
-    );
-  }, []);
+          ))}
+        </div>
+      );
+    },
+    []
+  );
 
   useEffect(() => {
     setCanvasClassSearchMenu(null);
   }, [props.entry?.basename]);
-
 
   const classificationClassesPanel = (
     <section className="panel filter-panel pool-label-classes-panel pool-label-clf-classes-panel">
@@ -302,9 +310,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
             title="Add classify class"
             aria-label="Add classify class"
             aria-pressed={classificationClassToolMode === "add"}
-            onClick={() =>
-              setClassificationClassToolMode((mode) => (mode === "add" ? "none" : "add"))
-            }
+            onClick={() => setClassificationClassToolMode((mode) => (mode === "add" ? "none" : "add"))}
           >
             <AddIcon />
           </button>
@@ -314,9 +320,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
             title="Search classify classes"
             aria-label="Search classify classes"
             aria-pressed={showClassificationSearchTool}
-            onClick={() =>
-              setClassificationClassToolMode((mode) => (mode === "search" ? "none" : "search"))
-            }
+            onClick={() => setClassificationClassToolMode((mode) => (mode === "search" ? "none" : "search"))}
           >
             <SearchIcon />
           </button>
@@ -406,105 +410,9 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
       </div>
     </section>
   );
-  const classificationClassesPortal =
-    classificationPortalTarget
-      ? createPortal(classificationClassesPanel, classificationPortalTarget)
-      : null;
-
-  const handleWorkbenchAcceptSelectedProposal = useCallback(() => {
-    if (!editor.selectedProposalId) return;
-    editor.materializeProposal(editor.selectedProposalId).catch((err) => editor.setError(errMessage(err)));
-  }, [editor.materializeProposal, editor.selectedProposalId, editor.setError]);
-
-  const handleWorkbenchRejectSelectedProposal = useCallback(() => {
-    if (!editor.selectedProposalId) return;
-    editor.rejectProposal(editor.selectedProposalId).catch((err) => editor.setError(errMessage(err)));
-  }, [editor.rejectProposal, editor.selectedProposalId, editor.setError]);
-
-  const handleWorkbenchAcceptAllProposals = useCallback(() => {
-    editor.acceptAllProposals().catch((err) => editor.setError(errMessage(err)));
-  }, [editor.acceptAllProposals, editor.setError]);
-
-  const handleWorkbenchRejectAllProposals = useCallback(() => {
-    editor.rejectAllProposals().catch((err) => editor.setError(errMessage(err)));
-  }, [editor.rejectAllProposals, editor.setError]);
-
-  const handleWorkbenchStartDuplicate = useCallback(() => {
-    editor.copySelectedBoxToNext().catch((err) => editor.setError(errMessage(err)));
-  }, [editor.copySelectedBoxToNext, editor.setError]);
-
-  const handleWorkbenchAdvanceDuplicate = useCallback(() => {
-    editor.advanceDuplicateToNext().catch((err) => editor.setError(errMessage(err)));
-  }, [editor.advanceDuplicateToNext, editor.setError]);
-
-  const handleWorkbenchSelectDuplicate = useCallback((id: string) => {
-    editor.selectDuplicateItem(id);
-  }, [editor.selectDuplicateItem]);
-
-  const handleWorkbenchPauseDuplicate = useCallback((id?: string) => {
-    editor.pauseDuplicateFlow(id).catch((err) => editor.setError(errMessage(err)));
-  }, [editor.pauseDuplicateFlow, editor.setError]);
-
-  const handleWorkbenchResumeDuplicate = useCallback((id?: string) => {
-    editor.resumeDuplicateFlow(id).catch((err) => editor.setError(errMessage(err)));
-  }, [editor.resumeDuplicateFlow, editor.setError]);
-
-  const handleWorkbenchDeleteDuplicate = useCallback((id?: string) => {
-    editor.deleteDuplicateFlow(id).catch((err) => editor.setError(errMessage(err)));
-  }, [editor.deleteDuplicateFlow, editor.setError]);
-
-  useEffect(() => {
-    onWorkbenchBridgeChange?.({
-      proposalCount: editor.proposals.length,
-      activeProposalCount,
-      selectedProposalId: editor.selectedProposalId,
-      selectedProposalArchived,
-      selectedProposalClassId: selectedProposal?.classId ?? null,
-      selectedProposalClassKey: selectedProposal?.classKey ?? null,
-      selectedProposalClassName:
-        selectedProposal?.classId != null
-          ? classNameFor(editor.classes, selectedProposal.classId)
-          : (selectedProposal?.classKey ?? null),
-      selectedProposalConfidence: selectedProposal?.confidence ?? null,
-      activeDetectClasses: editor.classes.map((item) => ({ id: item.id, name: item.name })),
-      currentClassId: editor.currentClass,
-      acceptSelectedProposal: editor.selectedProposalId ? handleWorkbenchAcceptSelectedProposal : null,
-      rejectSelectedProposal: editor.selectedProposalId ? handleWorkbenchRejectSelectedProposal : null,
-      acceptAllProposals: handleWorkbenchAcceptAllProposals,
-      rejectAllProposals: handleWorkbenchRejectAllProposals,
-      duplicateFlow: editor.duplicateFlow,
-      startDuplicateToNext: handleWorkbenchStartDuplicate,
-      advanceDuplicateToNext: handleWorkbenchAdvanceDuplicate,
-      selectDuplicateItem: handleWorkbenchSelectDuplicate,
-      pauseDuplicateFlow: handleWorkbenchPauseDuplicate,
-      resumeDuplicateFlow: handleWorkbenchResumeDuplicate,
-      deleteDuplicateFlow: handleWorkbenchDeleteDuplicate
-    });
-  }, [
-    activeProposalCount,
-    editor.proposals.length,
-    editor.selectedProposalId,
-    editor.classes,
-    editor.currentClass,
-    handleWorkbenchAcceptAllProposals,
-    handleWorkbenchAcceptSelectedProposal,
-    handleWorkbenchAdvanceDuplicate,
-    handleWorkbenchDeleteDuplicate,
-    handleWorkbenchPauseDuplicate,
-    handleWorkbenchResumeDuplicate,
-    handleWorkbenchSelectDuplicate,
-    handleWorkbenchRejectAllProposals,
-    handleWorkbenchRejectSelectedProposal,
-    handleWorkbenchStartDuplicate,
-    onWorkbenchBridgeChange,
-    editor.duplicateFlow,
-    selectedProposal,
-    selectedProposalArchived
-  ]);
-
-  useEffect(() => {
-    return () => onWorkbenchBridgeChange?.(null);
-  }, [onWorkbenchBridgeChange]);
+  const classificationClassesPortal = classificationPortalTarget
+    ? createPortal(classificationClassesPanel, classificationPortalTarget)
+    : null;
 
   const handleCanvasWrapMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const aura = auraRef.current;
@@ -537,7 +445,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
           addProposals: editor.addProposals,
           applyAutoLabelPredictions: editor.applyAutoLabelPredictions,
           assignClassificationClass: onAssignClassificationClass,
-          reloadWorkspaceClasses: onWorkspaceClassesChanged,
+          reloadWorkspaceClasses: onWorkspaceClassesChanged
         })
       : canvasOverlay;
   const canvasOverlayInZoomSide = canvasOverlayPlacement === "zoom-side";
@@ -558,19 +466,25 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
           addProposals: editor.addProposals,
           applyAutoLabelPredictions: editor.applyAutoLabelPredictions,
           assignClassificationClass: onAssignClassificationClass,
-          reloadWorkspaceClasses: onWorkspaceClassesChanged,
+          reloadWorkspaceClasses: onWorkspaceClassesChanged
         })
       : props.previewDock;
   const currentMetadata = props.entry ? props.metadata.get(props.entry.basename) : undefined;
   const previewSourceName = props.previewSourceName ?? props.entry?.basename ?? "No media selected";
   const previewIndexText =
-    props.previewIndexText ?? (props.entry && props.entries.length > 0 ? `${props.currentIndex + 1} / ${props.entries.length}` : "0 / 0");
-  const previewReviewLabel = props.previewReviewLabel ?? (isFlaggedFile(currentMetadata)
-    ? "Flagged"
-    : isReviewedFile(currentMetadata)
-      ? "Reviewed"
-      : "Unreviewed");
-  const previewStatusItems = props.previewStatusItems ?? (isNextTrainingFile(currentMetadata) ? ["★ Next training"] : []);
+    props.previewIndexText ??
+    (props.entry && props.entries.length > 0
+      ? `${props.currentIndex + 1} / ${props.entries.length}`
+      : "0 / 0");
+  const previewReviewLabel =
+    props.previewReviewLabel ??
+    (isFlaggedFile(currentMetadata)
+      ? "Flagged"
+      : isReviewedFile(currentMetadata)
+        ? "Reviewed"
+        : "Unreviewed");
+  const previewStatusItems =
+    props.previewStatusItems ?? (isNextTrainingFile(currentMetadata) ? ["★ Next training"] : []);
   function renderTaskLight(
     label: string,
     titleText: string,
@@ -586,7 +500,10 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
     );
     if (!onToggle) {
       return (
-        <span className={`pool-label-task-light-btn pool-label-task-title-chip${enabled ? " is-on" : " is-off"}`} title={title}>
+        <span
+          className={`pool-label-task-light-btn pool-label-task-title-chip${enabled ? " is-on" : " is-off"}`}
+          title={title}
+        >
           {content}
         </span>
       );
@@ -727,7 +644,9 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
             <span className="pool-label-preview-index">{previewIndexText}</span>
             <span className="pool-label-preview-chip">{previewReviewLabel}</span>
             {previewStatusItems.map((item) => (
-              <span key={item} className="pool-label-preview-chip">{item}</span>
+              <span key={item} className="pool-label-preview-chip">
+                {item}
+              </span>
             ))}
             <span id="boxCount" className="status pool-label-preview-box-count">
               {editor.boxes.length} box(es)
@@ -764,7 +683,12 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
           </div>
           <aside className="pool-label-zoom-side" id="poolLabelZoomSide">
             <div className="pool-label-zoom-view" id="poolLabelZoomView">
-              <canvas className="pool-label-zoom-canvas" ref={editor.zoomCanvasRef} width={500} height={600} />
+              <canvas
+                className="pool-label-zoom-canvas"
+                ref={editor.zoomCanvasRef}
+                width={500}
+                height={600}
+              />
               <div className="pool-label-zoom-class" id="poolLabelZoomClass">
                 {editor.selectedBox
                   ? classNameFor(editor.classes, editor.selectedBox.classId)
@@ -787,7 +711,9 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
                 editor.setBoxAdjustMode((value) => (value === "grow" ? "shrink" : "grow"))
               }
               onKeyboardStepMultiplierChange={editor.setKeyboardStepMultiplier}
-              onCopyNext={() => editor.copySelectedBoxToNext().catch((err) => editor.setError(errMessage(err)))}
+              onCopyNext={() =>
+                editor.copySelectedBoxToNext().catch((err) => editor.setError(errMessage(err)))
+              }
               onCsrtTrack={() => editor.trackCsrtForward().catch((err) => editor.setError(errMessage(err)))}
             />
             {canvasOverlayInZoomSide ? renderedCanvasOverlay : null}
@@ -807,9 +733,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
                 placeholder="Search detect class"
                 value={canvasClassSearchMenu.query}
                 onChange={(event) =>
-                  setCanvasClassSearchMenu((menu) =>
-                    menu ? { ...menu, query: event.target.value } : menu
-                  )
+                  setCanvasClassSearchMenu((menu) => (menu ? { ...menu, query: event.target.value } : menu))
                 }
                 onKeyDown={(event) => {
                   if (event.key === "Escape") {
@@ -831,8 +755,12 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
                       className={`pool-label-canvas-class-option${item.id === editor.currentClass ? " selected" : ""}`}
                       onClick={() => handleCanvasClassSearchSelect(item.id)}
                     >
-                      <span>{item.id}: {item.name}</span>
-                      <span className="pool-label-canvas-class-count">{classImageCounts.get(item.id) || 0}</span>
+                      <span>
+                        {item.id}: {item.name}
+                      </span>
+                      <span className="pool-label-canvas-class-count">
+                        {classImageCounts.get(item.id) || 0}
+                      </span>
                     </button>
                   ))
                 ) : (
@@ -909,9 +837,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
                     title="Search detect classes"
                     aria-label="Search detect classes"
                     aria-pressed={showDetectSearchTool}
-                    onClick={() =>
-                      setDetectClassToolMode((mode) => (mode === "search" ? "none" : "search"))
-                    }
+                    onClick={() => setDetectClassToolMode((mode) => (mode === "search" ? "none" : "search"))}
                   >
                     <SearchIcon />
                   </button>

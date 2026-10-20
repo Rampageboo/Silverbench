@@ -76,6 +76,8 @@ function capturePreviewSourceBase64(
   }
 }
 
+export type BoxLabelEditor = ReturnType<typeof useBoxLabelEditor>;
+
 export function useBoxLabelEditor({
   workspaceRoot,
   datasetRoot,

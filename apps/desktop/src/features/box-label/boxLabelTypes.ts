@@ -32,30 +32,6 @@ export type BoxLabelDuplicateFlow = {
   message: string;
 };
 
-export type BoxLabelWorkbenchBridge = {
-  proposalCount: number;
-  activeProposalCount: number;
-  selectedProposalId: string | null;
-  selectedProposalArchived: boolean;
-  selectedProposalClassId: number | null;
-  selectedProposalClassKey: string | null;
-  selectedProposalClassName: string | null;
-  selectedProposalConfidence: number | null;
-  activeDetectClasses: Array<{ id: number; name: string }>;
-  currentClassId: number | null;
-  acceptSelectedProposal: (() => void) | null;
-  rejectSelectedProposal: (() => void) | null;
-  acceptAllProposals: () => void;
-  rejectAllProposals: () => void;
-  duplicateFlow: BoxLabelDuplicateFlow | null;
-  startDuplicateToNext: (() => void) | null;
-  advanceDuplicateToNext: (() => void) | null;
-  selectDuplicateItem: ((id: string) => void) | null;
-  pauseDuplicateFlow: ((id?: string) => void) | null;
-  resumeDuplicateFlow: ((id?: string) => void) | null;
-  deleteDuplicateFlow: ((id?: string) => void) | null;
-};
-
 export type BoxLabelAutoLabelResult = {
   total: number;
   boxesAdded: number;
@@ -148,7 +124,6 @@ export type BoxLabelViewProps = {
   onLabelsChanged: (filename: string, boxes: api.LabelBox[]) => void;
   onMetadataChanged?: () => Promise<void>;
   onStatusText?: (text: string) => void;
-  onWorkbenchBridgeChange?: (bridge: BoxLabelWorkbenchBridge | null) => void;
   previewSourceName?: string;
   previewIndexText?: string;
   previewReviewLabel?: string;
@@ -159,8 +134,8 @@ export type BoxLabelViewProps = {
   classificationClasses?: Array<{ key: string; name: string; archived?: boolean }>;
   classificationClassesBusy?: boolean;
   classificationClassesStatus?: string;
-  /** Render the classification panel into the label workbench inspector slot. */
-  classificationClassesInWorkbenchSlot?: boolean;
+  /** Element the classification panel renders into (the workbench inspector); inline when null. */
+  classificationSlot?: HTMLElement | null;
   detectClassKeysById?: Record<number, string>;
   currentClassificationKey?: string | null;
   onAssignClassificationClass?: (classKey: string | null, basename?: string) => Promise<void>;

@@ -1,18 +1,16 @@
 import type {
-  LabelSourceSummary,
   LabelWorkbenchAction,
   LabelWorkbenchActionGroup,
   LabelWorkbenchClassPalette,
   LabelWorkbenchInspectorState,
   LabelWorkbenchMode,
-  LabelWorkbenchSamplingControl,
+  LabelWorkbenchSamplingControl
 } from "./labelWorkbenchTypes";
 import "../box-label/boxLabel.css";
 
 type Props = {
   mode: LabelWorkbenchMode;
   /** Accepted for compatibility; the canvas header shows the source now. */
-  sourceSummary?: LabelSourceSummary | null;
   inspectorState: LabelWorkbenchInspectorState | null;
   actionGroups: LabelWorkbenchActionGroup[];
   /** Receives the element the classification class panel is portaled into. */
@@ -101,12 +99,21 @@ function ResumeIcon() {
 function DeleteIcon() {
   return (
     <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-      <path fill="currentColor" d="M6 2h4l.6 1.2H14v1.4H2V3.2h3.4L6 2Zm-2.8 4h9.6l-.5 8H3.7l-.5-8Zm2.2 1.2.3 5.6h1.2l-.3-5.6H5.4Zm4 0-.3 5.6h1.2l.3-5.6H9.4Z" />
+      <path
+        fill="currentColor"
+        d="M6 2h4l.6 1.2H14v1.4H2V3.2h3.4L6 2Zm-2.8 4h9.6l-.5 8H3.7l-.5-8Zm2.2 1.2.3 5.6h1.2l-.3-5.6H5.4Zm4 0-.3 5.6h1.2l.3-5.6H9.4Z"
+      />
     </svg>
   );
 }
 
-function ActionGroupsView({ groups, hideGroupTitles = false }: { groups: LabelWorkbenchActionGroup[]; hideGroupTitles?: boolean }) {
+function ActionGroupsView({
+  groups,
+  hideGroupTitles = false
+}: {
+  groups: LabelWorkbenchActionGroup[];
+  hideGroupTitles?: boolean;
+}) {
   return (
     <div className="lwb-inspector-actions">
       {groups.map((group) =>
@@ -126,7 +133,7 @@ function ActionGroupsView({ groups, hideGroupTitles = false }: { groups: LabelWo
 /** Review actions (mark reviewed / junk) rendered in the canvas header. */
 export function LabelReviewActions({
   mode,
-  actionGroups,
+  actionGroups
 }: {
   mode: LabelWorkbenchMode;
   actionGroups: LabelWorkbenchActionGroup[];
@@ -174,81 +181,85 @@ function DuplicateActionsView({ group }: { group: LabelWorkbenchActionGroup | nu
           {group?.description ?? "Select a box and press T to add it to duplicate list."}
         </div>
         {group?.actions.length ? <ActionGroupsView groups={[group]} hideGroupTitles /> : null}
-        {showItemList ? <div className="lwb-inspector-duplicate-list">
-          {items.length ? (
-            items.map((item) => {
-              const handleSelect = () => {
-                void item.run?.();
-              };
-              return (
-                <div
-                  key={item.id}
-                  role="button"
-                  tabIndex={0}
-                  className={`pool-label-box-row lwb-inspector-duplicate-row${item.selected ? " selected" : ""}${item.tone === "muted" ? " muted" : ""}`}
-                  onClick={handleSelect}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      handleSelect();
-                    }
-                  }}
-                >
-                  <span className="lwb-inspector-duplicate-row-main">
-                    <span>{item.label}</span>
-                    {item.detail ? <span className="lwb-inspector-duplicate-row-detail">{item.detail}</span> : null}
-                  </span>
-                  <span className="lwb-inspector-duplicate-row-icons" aria-label="Duplicate box actions">
-                    {item.onPause ? (
-                      <button
-                        type="button"
-                        className="lwb-inspector-duplicate-icon"
-                        title="Pause duplicate box"
-                        aria-label="Pause duplicate box"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void item.onPause?.();
-                        }}
-                      >
-                        <PauseIcon />
-                      </button>
-                    ) : null}
-                    {item.onResume ? (
-                      <button
-                        type="button"
-                        className="lwb-inspector-duplicate-icon"
-                        title="Resume duplicate box"
-                        aria-label="Resume duplicate box"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void item.onResume?.();
-                        }}
-                      >
-                        <ResumeIcon />
-                      </button>
-                    ) : null}
-                    {item.onDelete ? (
-                      <button
-                        type="button"
-                        className="lwb-inspector-duplicate-icon lwb-inspector-duplicate-icon--danger"
-                        title="Delete duplicate box"
-                        aria-label="Delete duplicate box"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void item.onDelete?.();
-                        }}
-                      >
-                        <DeleteIcon />
-                      </button>
-                    ) : null}
-                  </span>
-                </div>
-              );
-            })
-          ) : (
-            <div className="empty">No duplicate boxes queued.</div>
-          )}
-        </div> : null}
+        {showItemList ? (
+          <div className="lwb-inspector-duplicate-list">
+            {items.length ? (
+              items.map((item) => {
+                const handleSelect = () => {
+                  void item.run?.();
+                };
+                return (
+                  <div
+                    key={item.id}
+                    role="button"
+                    tabIndex={0}
+                    className={`pool-label-box-row lwb-inspector-duplicate-row${item.selected ? " selected" : ""}${item.tone === "muted" ? " muted" : ""}`}
+                    onClick={handleSelect}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        handleSelect();
+                      }
+                    }}
+                  >
+                    <span className="lwb-inspector-duplicate-row-main">
+                      <span>{item.label}</span>
+                      {item.detail ? (
+                        <span className="lwb-inspector-duplicate-row-detail">{item.detail}</span>
+                      ) : null}
+                    </span>
+                    <span className="lwb-inspector-duplicate-row-icons" aria-label="Duplicate box actions">
+                      {item.onPause ? (
+                        <button
+                          type="button"
+                          className="lwb-inspector-duplicate-icon"
+                          title="Pause duplicate box"
+                          aria-label="Pause duplicate box"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void item.onPause?.();
+                          }}
+                        >
+                          <PauseIcon />
+                        </button>
+                      ) : null}
+                      {item.onResume ? (
+                        <button
+                          type="button"
+                          className="lwb-inspector-duplicate-icon"
+                          title="Resume duplicate box"
+                          aria-label="Resume duplicate box"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void item.onResume?.();
+                          }}
+                        >
+                          <ResumeIcon />
+                        </button>
+                      ) : null}
+                      {item.onDelete ? (
+                        <button
+                          type="button"
+                          className="lwb-inspector-duplicate-icon lwb-inspector-duplicate-icon--danger"
+                          title="Delete duplicate box"
+                          aria-label="Delete duplicate box"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void item.onDelete?.();
+                          }}
+                        >
+                          <DeleteIcon />
+                        </button>
+                      ) : null}
+                    </span>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="empty">No duplicate boxes queued.</div>
+            )}
+          </div>
+        ) : null}
       </div>
     </section>
   );
@@ -318,7 +329,8 @@ function DetectClassPaletteView({ palette }: { palette: LabelWorkbenchClassPalet
                   if (classId !== null) void palette.onSelectDetectClass?.(classId);
                 }}
               >
-                {classId !== null ? `${classId}: ` : null}{item.name}
+                {classId !== null ? `${classId}: ` : null}
+                {item.name}
               </button>
             );
           })}
@@ -332,7 +344,7 @@ export function LabelWorkbenchInspector({
   mode,
   inspectorState,
   actionGroups,
-  classificationSlotRef,
+  classificationSlotRef
 }: Props) {
   const overlayCount = safeNumber(inspectorState?.overlaySummary?.activeCount);
   const segment = inspectorState?.segmentSummary;
@@ -340,25 +352,27 @@ export function LabelWorkbenchInspector({
   const classPalette = inspectorState?.classPalette ?? null;
   const warnings = inspectorState?.warnings ?? [];
 
-  const duplicateActionGroup = actionGroups.find((group) => group.id === `${mode}-duplicate`)
-    ?? (mode === "image"
+  const duplicateActionGroup =
+    actionGroups.find((group) => group.id === `${mode}-duplicate`) ??
+    (mode === "image"
       ? {
           id: "image-duplicate",
           label: "Duplicate to Next Frame",
           description: "Select a box and press T to add it to duplicate list.",
           items: [],
-          actions: [],
+          actions: []
         }
       : null);
   const reviewActionGroups = actionGroups.filter((group) => group.id === `${mode}-review`);
-  const remainingActionGroups = mode === "image"
-    ? actionGroups
-        .filter((group) => group.id !== "image-review" && group.id !== "image-duplicate")
-        .map((group) => ({
-          ...group,
-          actions: group.actions.filter((action) => !isProposalAction(action)),
-        }))
-    : actionGroups.filter((group) => group.id !== `${mode}-review` && group.id !== `${mode}-duplicate`);
+  const remainingActionGroups =
+    mode === "image"
+      ? actionGroups
+          .filter((group) => group.id !== "image-review" && group.id !== "image-duplicate")
+          .map((group) => ({
+            ...group,
+            actions: group.actions.filter((action) => !isProposalAction(action))
+          }))
+      : actionGroups.filter((group) => group.id !== `${mode}-review` && group.id !== `${mode}-duplicate`);
   const hasReviewActions = reviewActionGroups.some((group) => group.actions.length > 0);
   const hasActions = remainingActionGroups.some((group) => group.actions.length > 0);
   const hasDuplicatePanel = Boolean(duplicateActionGroup);
@@ -377,7 +391,13 @@ export function LabelWorkbenchInspector({
     <aside className="lwb-inspector" aria-label="Label workbench inspector">
       {duplicateActionGroup ? <DuplicateActionsView group={duplicateActionGroup} /> : null}
 
-      {mode === "image" ? <div id="lwbClassifyClassesSlot" ref={classificationSlotRef} className="lwb-inspector-classify-slot" /> : null}
+      {mode === "image" ? (
+        <div
+          id="lwbClassifyClassesSlot"
+          ref={classificationSlotRef}
+          className="lwb-inspector-classify-slot"
+        />
+      ) : null}
 
       {mode === "video" && samplingControl ? <SamplingControlsView control={samplingControl} /> : null}
 
@@ -385,7 +405,13 @@ export function LabelWorkbenchInspector({
 
       {mode === "video" && classPalette ? <DetectClassPaletteView palette={classPalette} /> : null}
 
-      {mode === "video" ? <div id="lwbClassifyClassesSlot" ref={classificationSlotRef} className="lwb-inspector-classify-slot" /> : null}
+      {mode === "video" ? (
+        <div
+          id="lwbClassifyClassesSlot"
+          ref={classificationSlotRef}
+          className="lwb-inspector-classify-slot"
+        />
+      ) : null}
 
       {overlayCount !== null || segment ? (
         <section className="lwb-inspector-section">
@@ -408,7 +434,10 @@ export function LabelWorkbenchInspector({
         <section className="lwb-inspector-section">
           <div className="lwb-inspector-kicker">Warnings</div>
           {warnings.map((warning) => (
-            <div key={warning.id} className={`lwb-inspector-warning lwb-inspector-warning--${warning.tone ?? "warning"}`}>
+            <div
+              key={warning.id}
+              className={`lwb-inspector-warning lwb-inspector-warning--${warning.tone ?? "warning"}`}
+            >
               <strong>{warning.label}</strong>
               {warning.detail ? <span>{warning.detail}</span> : null}
             </div>
