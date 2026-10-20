@@ -199,9 +199,3 @@ export function useMultimodalControls() {
   return value;
 }
 
-export function useWorkbenchCommands(listener: CommandListener) {
-  const { subscribe } = useMultimodalControls();
-  const listenerRef = useRef(listener);
-  listenerRef.current = listener;
-  useEffect(() => subscribe((envelope) => listenerRef.current(envelope)), [subscribe]);
-}

@@ -209,16 +209,8 @@ export const SECONDARY_NAV_ITEMS: NavItem[] = [
   }
 ];
 
-export const ALL_NAV_ITEMS: NavItem[] = [
-  ...NAV_GROUPS.flatMap((group) => group.items),
-  ...SECONDARY_NAV_ITEMS
-];
-
 export function isNavItemActive(item: NavItem, activeTab: ToolTab, imageTab: ImageWorkspaceTab): boolean {
   if (item.target.tab !== activeTab) return false;
   return !item.target.imageTab || item.target.imageTab === imageTab;
 }
 
-export function activeNavItem(activeTab: ToolTab, imageTab: ImageWorkspaceTab): NavItem | null {
-  return ALL_NAV_ITEMS.find((item) => isNavItemActive(item, activeTab, imageTab)) ?? null;
-}

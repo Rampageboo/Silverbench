@@ -156,7 +156,6 @@ export type BoxLabelViewProps = {
   /** Extra controls rendered at the end of the preview header (e.g. review actions). */
   previewHeaderActions?: ReactNode;
   onMarkJunk?: () => Promise<void>;
-  onUndoJunk?: () => Promise<void>;
   classificationClasses?: Array<{ key: string; name: string; archived?: boolean }>;
   classificationClassesBusy?: boolean;
   classificationClassesStatus?: string;

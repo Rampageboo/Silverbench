@@ -12,7 +12,7 @@ from typing import Any
 from .atomic_write import write_text_atomic
 from .batch_crop import batch_crop_files, batch_crop_images
 from .classification_dataset import create_class_folder, move_images_to_class, move_val_back_to_train
-from .duplicate_images import delete_images, duplicate_images, find_duplicate_images
+from .duplicate_images import delete_images, duplicate_images
 from .job_store import JobStore
 from .mask_noise import export_folder as mask_noise_export_folder
 from .mask_noise import preview_base64 as mask_noise_preview_base64
@@ -37,7 +37,7 @@ from .yolo_pt_classifier import classify_folder_with_pt, classify_image_with_pt
 from .yolo_pt_detector import detect_folder_with_pt, detect_image_with_pt
 from .yolo_pt_model_info import pt_model_info
 from .image_preview import image_scaled_jpeg_base64
-from .image_pool import mark_image_pool_seen, scan_image_pool
+from .image_pool import mark_image_pool_seen
 from .media_import import import_media_files, list_workspace_videos
 from .metadata_assign import (
     _workspace_clf_out,
@@ -62,15 +62,10 @@ from .image_pool_cleanup import (
 )
 from .yolo_workspace import (
     infer_dataset_task,
-    create_workspace,
-    init_stats_payload,
-    is_workspace_root,
     list_dataset_files,
     list_workspace_files,
     load_workspace_config,
     looks_like_workspace,
-    parse_class_names,
-    read_app_settings,
     read_workspace_session,
     resolve_open_folder,
     workspace_info,
@@ -159,13 +154,11 @@ class BackendService:
             "readFileBase64": self._handle_readFileBase64,
             "readFilePreviewBase64": self._handle_readFilePreviewBase64,
             "writeFileBase64": self._handle_writeFileBase64,
-            "readAppSettings": self._handle_readAppSettings,
             "writeAppSettings": self._handle_writeAppSettings,
             "loadUiMap": self._handle_loadUiMap,
             "saveUiMap": self._handle_saveUiMap,
             "runReferencePredictions": self._handle_runReferencePredictions,
             "openFolder": self._handle_openFolder,
-            "createWorkspace": self._handle_createWorkspace,
             "readSnapshotVersions": self._handle_readSnapshotVersions,
             "initializeSnapshotVersioning": self._handle_initializeSnapshotVersioning,
             "createSnapshotVersion": self._handle_createSnapshotVersion,
@@ -173,14 +166,12 @@ class BackendService:
             "resolveActiveSnapshotWorkspacePath": self._handle_resolveActiveSnapshotWorkspacePath,
             "getWorkspaceInfo": self._handle_getWorkspaceInfo,
             "listWorkspaceFiles": self._handle_listWorkspaceFiles,
-            "scanImagePool": self._handle_scanImagePool,
             "importMediaFiles": self._handle_importMediaFiles,
             "markImagePoolSeen": self._handle_markImagePoolSeen,
             "readMetadataRows": self._handle_readMetadataRows,
             "listClfDatasetClasses": self._handle_listClfDatasetClasses,
             "upsertMetadataRows": self._handle_upsertMetadataRows,
             "getWorkspaceClasses": self._handle_getWorkspaceClasses,
-            "buildYoloLinks": self._handle_buildYoloLinks,
             "startBuildYoloLinks": self._handle_startBuildYoloLinks,
             "getBuildJob": self._handle_getBuildJob,
             "removeDetectDatasetLinks": self._handle_removeDetectDatasetLinks,
@@ -201,7 +192,6 @@ class BackendService:
             "prepareValidationSplit": self._handle_prepareValidationSplit,
             "prepareClassificationValidationSplit": self._handle_prepareClassificationValidationSplit,
             "ensureDataYaml": self._handle_ensureDataYaml,
-            "findDuplicateImages": self._handle_findDuplicateImages,
             "duplicateImages": self._handle_duplicateImages,
             "deleteImages": self._handle_deleteImages,
             "batchCropImages": self._handle_batchCropImages,
@@ -213,8 +203,6 @@ class BackendService:
             "classifierModelInfo": self._handle_classifierModelInfo,
             "ptModelInfo": self._handle_ptModelInfo,
             "classifyDatasetImages": self._handle_classifyDatasetImages,
-            "classifyFolderWithPt": self._handle_classifyFolderWithPt,
-            "detectFolderWithPt": self._handle_detectFolderWithPt,
             "startClassifyFolderWithPt": self._handle_startClassifyFolderWithPt,
             "startDetectFolderWithPt": self._handle_startDetectFolderWithPt,
             "startClassifyImageWithPt": self._handle_startClassifyImageWithPt,
@@ -415,9 +403,6 @@ class BackendService:
             path.write_bytes(base64.b64decode(args[2]))
             return True
 
-    def _handle_readAppSettings(self, args: list[Any]) -> object:
-            return json.dumps(read_app_settings(self.app_settings_dir), ensure_ascii=False)
-
     def _handle_writeAppSettings(self, args: list[Any]) -> object:
             payload = args[0] if args else {}
             if isinstance(payload, str):
@@ -515,17 +500,6 @@ class BackendService:
                 payload = {"ok": False, "error": str(error), "root": str(root)}
             return json.dumps(payload, ensure_ascii=False)
 
-    def _handle_createWorkspace(self, args: list[Any]) -> object:
-            root = self.path_access.remember_parent(str(args[0]))
-            classes_raw = str(args[1]) if len(args) > 1 else ""
-            classes = parse_class_names(classes_raw) if classes_raw else None
-            stats = create_workspace(Path(root), classes=classes)
-            payload = init_stats_payload(stats)
-            payload["root"] = str(Path(root).resolve())
-            payload["kind"] = "workspace"
-            payload["isWorkspace"] = is_workspace_root(Path(root))
-            return json.dumps(payload, ensure_ascii=False)
-
     def _snapshot_root_arg(self, args: list[Any]) -> Path:
             if not args:
                 raise ValueError("Workspace root is required.")
@@ -594,13 +568,6 @@ class BackendService:
             root = self.path_access.require_path(args[0])
             return json.dumps(list_workspace_files(root), ensure_ascii=False)
 
-    def _handle_scanImagePool(self, args: list[Any]) -> object:
-            root = self.path_access.require_path(args[0])
-            fast = False
-            if len(args) > 1:
-                fast = str(args[1]).lower() in {"1", "true", "yes", "fast"}
-            return json.dumps(scan_image_pool(Path(root), fast=fast), ensure_ascii=False)
-
     def _handle_importMediaFiles(self, args: list[Any]) -> object:
             root = self.path_access.require_path(args[0])
             raw_sources = args[1] if len(args) > 1 else []
@@ -665,17 +632,6 @@ class BackendService:
                 )
             except (PermissionError, FileNotFoundError, ValueError, OSError) as error:
                 return json.dumps({"ok": False, "error": str(error), "classes": []}, ensure_ascii=False)
-
-    def _handle_buildYoloLinks(self, args: list[Any]) -> object:
-            root = self.path_access.require_path(args[0])
-            rebuild = bool(args[1]) if len(args) > 1 else False
-            filenames = None
-            if len(args) > 2 and args[2]:
-                filenames = json.loads(args[2] or "[]")
-            return json.dumps(
-                build_workspace_links(Path(root), rebuild=rebuild, filenames=filenames),
-                ensure_ascii=False,
-            )
 
     def _handle_removeDetectDatasetLinks(self, args: list[Any]) -> object:
             root = self.path_access.require_path(args[0])
@@ -842,9 +798,6 @@ class BackendService:
     def _handle_ensureDataYaml(self, args: list[Any]) -> object:
             return json.dumps(ensure_data_yaml(self.path_access.require_path(args[0])), ensure_ascii=False)
 
-    def _handle_findDuplicateImages(self, args: list[Any]) -> object:
-            return json.dumps(find_duplicate_images(self.path_access.require_path(args[0])), ensure_ascii=False)
-
     def _handle_duplicateImages(self, args: list[Any]) -> object:
             return json.dumps(
                 duplicate_images(self.path_access.require_path(args[0]), json.loads(args[1] or "[]"), float(args[2]), float(args[3])),
@@ -929,42 +882,6 @@ class BackendService:
             top_k = int(args[3]) if len(args) > 3 else 5
             return json.dumps(
                 classify_dataset_images(self.path_access.require_path(args[0]), self.path_access.require_path(args[1]), paths, top_k),
-                ensure_ascii=False,
-            )
-
-    def _handle_classifyFolderWithPt(self, args: list[Any]) -> object:
-            image_size = int(args[3]) if len(args) > 3 else 224
-            device = str(args[4]) if len(args) > 4 else "0"
-            confidence_prefix = bool(args[5]) if len(args) > 5 else True
-            include_filenames = json.loads(args[6] or "[]") if len(args) > 6 else None
-            return json.dumps(
-                classify_folder_with_pt(
-                    self.path_access.require_path(args[0]),
-                    self.path_access.require_path(args[1]),
-                    self.path_access.require_path(args[2]),
-                    image_size,
-                    device,
-                    confidence_prefix,
-                    include_filenames,
-                ),
-                ensure_ascii=False,
-            )
-
-    def _handle_detectFolderWithPt(self, args: list[Any]) -> object:
-            image_size = int(args[3]) if len(args) > 3 else 640
-            confidence = float(args[4]) if len(args) > 4 else 0.25
-            device = str(args[5]) if len(args) > 5 else "0"
-            include_filenames = json.loads(args[6] or "[]") if len(args) > 6 else None
-            return json.dumps(
-                detect_folder_with_pt(
-                    self.path_access.require_path(args[0]),
-                    self.path_access.require_path(args[1]),
-                    self.path_access.require_path(args[2]),
-                    image_size,
-                    confidence,
-                    device,
-                    include_filenames,
-                ),
                 ensure_ascii=False,
             )
 

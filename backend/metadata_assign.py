@@ -12,7 +12,6 @@ from .atomic_write import write_text_atomic
 from .path_access import _normalize_path
 from .yolo_workspace import (
     DEFAULT_CLF_CLASSES,
-    METADATA_HEADER,
     load_workspace_config,
     sanitize_class_name,
     workspace_config_file,

@@ -20,7 +20,6 @@ type UseBoxLabelKeyboardOptions = {
   onToggleReviewed: () => Promise<void>;
   onToggleFlagged: () => Promise<void>;
   onMarkJunk?: () => Promise<void>;
-  onUndoJunk?: () => Promise<void>;
   undoLast: () => Promise<void>;
   redoLast: () => Promise<void>;
   copySelectedBoxToNext: () => Promise<void>;
@@ -53,7 +52,6 @@ export function useBoxLabelKeyboard({
   onToggleReviewed,
   onToggleFlagged,
   onMarkJunk,
-  onUndoJunk,
   undoLast,
   redoLast,
   copySelectedBoxToNext,

@@ -332,7 +332,6 @@ export function BoxLabelSurface({
           onStatusText={pool.setStatusText}
           onWorkbenchBridgeChange={setWorkbenchBridge}
           onMarkJunk={pool.markJunk}
-          onUndoJunk={pool.undoJunk}
           classificationClasses={imageClassificationClasses}
           classificationClassesBusy={workspaceClassesLoading || workspaceClassesSaving}
           classificationClassesStatus={classificationClassStatus}

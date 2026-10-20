@@ -19,7 +19,6 @@ export type UseBoxLabelInteractionOptions = {
   onToggleReviewed: () => Promise<void>;
   onToggleFlagged: () => Promise<void>;
   onMarkJunk?: () => Promise<void>;
-  onUndoJunk?: () => Promise<void>;
   onLabelsChanged: (basename: string, boxes: api.LabelBox[]) => void;
   persistEntryLabels: (target: BoxLabelEntry, nextBoxes: api.LabelBox[]) => Promise<api.LabelBox[]>;
   boxesRef: MutableRefObject<api.LabelBox[]>;

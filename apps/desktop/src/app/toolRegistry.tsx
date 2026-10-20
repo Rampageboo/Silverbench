@@ -52,7 +52,7 @@ const ClassesTool = lazy(async () => {
   return { default: (props: ToolPageProps) => <ClassesPage onReady={props.onReady} /> };
 });
 
-// ── Legacy keep-alive tools ───────────────────────────────────────────────────
+// ── Tool pages ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 const ImageWorkspaceTool = lazy(async () => {
   const module = await import("../features/image-workspace/ImageWorkspaceToolPage");
@@ -110,7 +110,7 @@ const TOOL_COMPONENTS: Record<ToolTab, WorkbenchToolDefinition["component"]> = {
   orchestrate: UiOrchestratorTool,
   classes: ClassesTool,
   gallery: GalleryTool,
-  // Legacy keep-alive
+  // Tool pages
   "video-capture": VideoCaptureTool,
   "image-pool": ImageWorkspaceTool,
   "train-prep": TrainPrepTool,
@@ -126,6 +126,3 @@ export const WORKBENCH_TOOL_DEFINITIONS: readonly WorkbenchToolDefinition[] = AL
   component: TOOL_COMPONENTS[tool.tab]
 }));
 
-export function workbenchTool(tab: ToolTab) {
-  return WORKBENCH_TOOL_DEFINITIONS.find((tool) => tool.tab === tab) || null;
-}

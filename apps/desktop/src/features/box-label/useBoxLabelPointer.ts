@@ -3,7 +3,6 @@ import * as api from "../../api";
 import { errMessage } from "../../lib/errors";
 import { autoFitSubjectFromImage, selectionLooksLikeColorPick, selectionTooSmallPixels } from "./autoFitSubject";
 import {
-  boxCenterPixel,
   boxToImagePixelRect,
   canvasToImagePoint,
   classNameFor,

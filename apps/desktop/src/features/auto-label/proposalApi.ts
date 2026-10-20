@@ -109,35 +109,3 @@ export async function saveImageProposals(
 // Mutations (load → mutate → save)
 // ---------------------------------------------------------------------------
 
-export async function addImageProposal(
-  workspaceRoot: string,
-  imageKey: string,
-  proposal: DetectProposal
-): Promise<ImageProposalManifest> {
-  const manifest = await loadImageProposals(workspaceRoot, imageKey);
-  if (manifest.proposals.some((p) => p.id === proposal.id)) return manifest;
-  return saveImageProposals(workspaceRoot, {
-    ...manifest,
-    proposals: [...manifest.proposals, proposal]
-  });
-}
-
-export async function removeImageProposal(
-  workspaceRoot: string,
-  imageKey: string,
-  proposalId: string
-): Promise<ImageProposalManifest> {
-  const manifest = await loadImageProposals(workspaceRoot, imageKey);
-  return saveImageProposals(workspaceRoot, {
-    ...manifest,
-    proposals: manifest.proposals.filter((p) => p.id !== proposalId)
-  });
-}
-
-export async function clearImageProposals(
-  workspaceRoot: string,
-  imageKey: string
-): Promise<ImageProposalManifest> {
-  const manifest = await loadImageProposals(workspaceRoot, imageKey);
-  return saveImageProposals(workspaceRoot, { ...manifest, proposals: [] });
-}

@@ -3,7 +3,7 @@ import * as api from "../api";
 import { chooseDirectory } from "../lib/tauri";
 import { errMessage } from "../lib/errors";
 import { useToast } from "../components/useToast";
-import { ALL_TOOLS, PRIMARY_NAV_TOOLS, type ToolTab } from "../types/tools";
+import { ALL_TOOLS, type ToolTab } from "../types/tools";
 import { readWorkspaceSessionLite, saveActiveTabSession } from "../features/image-pool/session";
 import {
   normalizeImageWorkspaceTab,

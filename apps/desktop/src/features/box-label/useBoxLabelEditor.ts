@@ -108,7 +108,6 @@ export function useBoxLabelEditor({
   onMetadataChanged: _onMetadataChanged,
   onStatusText,
   onMarkJunk,
-  onUndoJunk,
   imageUrlOverride = null,
   reloadLabelsOnImageUrlChange = true,
   labelsReloadKey = "",
@@ -193,11 +192,6 @@ export function useBoxLabelEditor({
   const persistLabelsProxy = useCallback(
     (statusMessage?: string) => persistLabelsRef.current(statusMessage),
     []
-  );
-
-  const findEntryByBasename = useCallback(
-    (basename: string) => entries.find((item) => item.basename === basename) || null,
-    [entries]
   );
 
   const persistEntryLabels = useCallback(
@@ -686,7 +680,6 @@ export function useBoxLabelEditor({
     onToggleReviewed,
     onToggleFlagged,
     onMarkJunk,
-    onUndoJunk,
     onLabelsChanged,
     persistEntryLabels,
     boxesRef,

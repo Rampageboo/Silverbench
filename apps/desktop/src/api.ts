@@ -299,27 +299,6 @@ export type LabelBox = {
   h: number;
 };
 
-export type LabelLoadResponse = {
-  ok: true;
-  workspaceRoot: string;
-  filename: string;
-  labelPath: string;
-  sourceLabelPath: string;
-  imageWidth: number;
-  imageHeight: number;
-  classes: LabelClass[];
-  boxes: LabelBox[];
-};
-
-export type LabelSaveResponse = {
-  ok: true;
-  workspaceRoot: string;
-  filename: string;
-  labelPath: string;
-  savedCount: number;
-  boxes: LabelBox[];
-};
-
 export type LabelClassesSaveResponse = {
   ok: true;
   workspaceRoot: string;
@@ -748,16 +727,6 @@ export function imagePoolPreviewUrl(workspaceRoot: string, filename: string) {
   return `${API_BASE_URL}/api/images/preview?${params.toString()}`;
 }
 
-export async function loadLabels(workspaceRoot: string, filename: string) {
-  const params = imagePoolParams(workspaceRoot, filename);
-  const response = await fetch(`${API_BASE_URL}/api/labels/load?${params.toString()}`, {
-    cache: "no-store"
-  });
-  const data = await response.json();
-  assertOk(data, response);
-  return data as LabelLoadResponse;
-}
-
 export async function loadLabelClasses(workspaceRoot: string) {
   const params = imagePoolParams(workspaceRoot);
   const response = await fetch(`${API_BASE_URL}/api/labels/classes?${params.toString()}`, {
@@ -779,32 +748,6 @@ export async function saveLabelClasses(workspaceRoot: string, classes: LabelClas
   const data = await response.json();
   assertOk(data, response);
   return data as LabelClassesSaveResponse;
-}
-
-export async function saveLabels(workspaceRoot: string, filename: string, boxes: LabelBox[]) {
-  const response = await fetch(`${API_BASE_URL}/api/labels/save`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ workspaceRoot, filename, boxes })
-  });
-  const data = await response.json();
-  assertOk(data, response);
-  return data as LabelSaveResponse;
-}
-
-export async function markDetectJunk(workspaceRoot: string, filename: string, detectJunk = true) {
-  const response = await fetch(`${API_BASE_URL}/api/image-pool/junk`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ workspaceRoot, filename, detectJunk })
-  });
-  const data = await response.json();
-  assertOk(data, response);
-  return data as { ok: true; workspaceRoot: string; filename: string; detectJunk: boolean };
 }
 
 export type WorkspaceInfo = {
@@ -892,30 +835,6 @@ export async function writeTextFile(root: string, relativePath: string, text: st
 
 export async function readLabelTextsBatch(datasetRoot: string, labelPaths: string[]) {
   return callJson<Record<string, string>>("readLabelTextsBatch", [datasetRoot, JSON.stringify(labelPaths)]);
-}
-
-function parseClassIdsFromLabelText(text: string) {
-  const ids = new Set<number>();
-  for (const line of text.split(/\r?\n/)) {
-    const parts = line.trim().split(/\s+/);
-    if (!parts[0]) continue;
-    const id = Number(parts[0]);
-    if (!Number.isNaN(id)) ids.add(Math.trunc(id));
-  }
-  return ids;
-}
-
-export async function loadPoolLabelClassIndex(workspaceRoot: string) {
-  const files = await callJson<string[]>("listWorkspaceFiles", [workspaceRoot]);
-  const labelPaths = files.filter((path) => path.startsWith("detect_labels/") && path.endsWith(".txt"));
-  if (!labelPaths.length) return new Map<string, Set<number>>();
-  const texts = await readLabelTextsBatch(workspaceRoot, labelPaths);
-  const index = new Map<string, Set<number>>();
-  for (const [labelPath, text] of Object.entries(texts)) {
-    const filename = labelPath.replace(/^detect_labels\//, "");
-    index.set(filename, parseClassIdsFromLabelText(text));
-  }
-  return index;
 }
 
 export async function startBuildYoloLinks(workspaceRoot: string, rebuild: boolean, filenamesJson = "") {

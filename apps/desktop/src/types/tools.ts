@@ -1,8 +1,8 @@
 /** Primary navigation tabs visible in the redesigned sidebar. */
 export type PrimaryTab = "home" | "gallery" | "library" | "classes" | "label" | "orchestrate";
 
-/** Legacy tool tabs kept alive for KeepAlive rendering; not shown directly in nav. */
-export type LegacyToolTab =
+/** Tool pages reached from the sidebar groups and the command palette. */
+export type ToolPageTab =
   | "image-pool"
   | "video-capture"
   | "train-prep"
@@ -12,7 +12,7 @@ export type LegacyToolTab =
   | "merge";
 
 /** Union of all addressable tabs. */
-export type ToolTab = PrimaryTab | LegacyToolTab;
+export type ToolTab = PrimaryTab | ToolPageTab;
 
 export type WorkbenchToolGroup = "primary" | "video" | "image" | "dataset" | "utility";
 
@@ -100,7 +100,7 @@ export const PRIMARY_NAV_TOOLS: readonly WorkbenchTool[] = [
 ] as const;
 
 /**
- * Legacy tool definitions — kept alive for KeepAlive panels, not shown in primary nav.
+ * Tool pages outside the primary navigation.
  */
 export const WORKBENCH_TOOLS: readonly WorkbenchTool[] = [
   {
@@ -169,5 +169,5 @@ export const WORKBENCH_TOOLS: readonly WorkbenchTool[] = [
   }
 ] as const;
 
-/** All tools combined — primary nav + legacy tools. */
+/** All tools: primary navigation, then tool pages. */
 export const ALL_TOOLS: readonly WorkbenchTool[] = [...PRIMARY_NAV_TOOLS, ...WORKBENCH_TOOLS] as const;

@@ -51,18 +51,6 @@ export type ArchivedDetectClassFilter = {
   archivedClassKeys?: ReadonlySet<string>;
 };
 
-/**
- * A cluster of near-duplicate images grouped by perceptual hash distance.
- * The review queue shows the representative first; members can be expanded.
- */
-export type DuplicateCluster = {
-  id: string;
-  representativeKey: string;
-  memberKeys: string[];
-  method: "ahash" | "dhash" | "phash";
-  threshold: number;
-};
-
 export type ReviewQueueEntry = {
   index: number;
   key: string;

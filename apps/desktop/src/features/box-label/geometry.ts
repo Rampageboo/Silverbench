@@ -151,26 +151,6 @@ export function pointerImagePointFromCanvas(
   return { x: Math.round(rawX), y: Math.round(rawY) };
 }
 
-export function pointerImagePointFromEvent(
-  event: React.PointerEvent<HTMLCanvasElement>,
-  canvas: HTMLCanvasElement,
-  display: DisplayRect,
-  imageWidth: number,
-  imageHeight: number,
-  options: { clamp?: boolean } = {}
-) {
-  return pointerImagePointFromCanvas(eventCanvasPoint(event, canvas), display, imageWidth, imageHeight, options);
-}
-
-export function imagePixelRectToCanvasRect(rect: ImageRect, display: DisplayRect, imageWidth: number, imageHeight: number): ImageRect {
-  return {
-    x1: display.x + (rect.x1 * display.w) / imageWidth,
-    y1: display.y + (rect.y1 * display.h) / imageHeight,
-    x2: display.x + (rect.x2 * display.w) / imageWidth,
-    y2: display.y + (rect.y2 * display.h) / imageHeight
-  };
-}
-
 export function boxToImagePixelRect(box: api.LabelBox, imageWidth: number, imageHeight: number): ImageRect {
   return {
     x1: Math.round((box.x - box.w / 2) * imageWidth),
@@ -580,10 +560,6 @@ export function drawCornerHandles(ctx: CanvasRenderingContext2D, rect: ImageRect
   ctx.restore();
 }
 
-export function drawHandles(ctx: CanvasRenderingContext2D, rect: ImageRect) {
-  drawCornerHandles(ctx, rect);
-}
-
 export function drawCenteredText(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, text: string) {
   ctx.fillStyle = "#94a3b8";
   ctx.font = "14px Segoe UI";
@@ -618,11 +594,6 @@ export function rectToBox(rect: ImageRect, classId: number): api.LabelBox {
     w: clamp01(normalized.x2 - normalized.x1),
     h: clamp01(normalized.y2 - normalized.y1)
   };
-}
-
-export function boxCenter(box: api.LabelBox | undefined): ImagePoint {
-  if (!box) return { x: 0.5, y: 0.5 };
-  return { x: clamp01(box.x), y: clamp01(box.y) };
 }
 
 export function normalizedImageRect(a: ImagePoint, b: ImagePoint): ImageRect {

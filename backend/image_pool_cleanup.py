@@ -7,7 +7,7 @@ from typing import Any
 
 from .image_pool import _build_hardlink_index, _file_identity, _list_pool_images
 from .image_pool_backup import image_pool_backup_file, image_pool_label_backup_file
-from .yolo_workspace import IMAGE_EXTENSIONS, load_workspace_config, workspace_media_relative_dir
+from .yolo_workspace import load_workspace_config, workspace_media_relative_dir
 
 
 def _sha256_file(path: Path) -> str:

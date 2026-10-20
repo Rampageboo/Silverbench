@@ -97,10 +97,6 @@ def is_snapshot_versioned_workspace(workspace_root: Path) -> bool:
     return True
 
 
-def list_snapshot_versions(workspace_root: Path) -> list[dict[str, Any]]:
-    return list(read_snapshot_versions(workspace_root)["versions"])
-
-
 def resolve_version_path(workspace_root: Path, version_id: str) -> Path:
     root = workspace_root.expanduser().resolve()
     normalized_id = normalize_version_id(version_id)

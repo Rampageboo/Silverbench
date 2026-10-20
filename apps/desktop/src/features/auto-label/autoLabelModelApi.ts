@@ -1,8 +1,6 @@
-import { callJson, readTextFile, writeTextFile } from "../../api";
+import { callJson, readTextFile } from "../../api";
 import {
   REGISTRY_REL_PATH,
-  modelDestPath,
-  modelFilename,
   parseModelRegistry,
   validatePtExtension,
   type AutoLabelModelKind,
@@ -24,21 +22,6 @@ export async function readAutoLabelModelRegistry(workspaceRoot: string): Promise
   }
 }
 
-export async function writeAutoLabelModelRegistry(
-  workspaceRoot: string,
-  registry: AutoLabelModelRegistry
-): Promise<void> {
-  await writeTextFile(workspaceRoot, REGISTRY_REL_PATH, JSON.stringify(registry, null, 2));
-}
-
-async function copyModelToWorkspace(
-  sourcePath: string,
-  workspaceRoot: string,
-  relDest: string
-): Promise<void> {
-  await callJson<string>("copyModelToWorkspace", [sourcePath, workspaceRoot, relDest]);
-}
-
 async function importModelViaBackend(
   workspaceRoot: string,
   sourcePath: string,
@@ -50,26 +33,6 @@ async function importModelViaBackend(
     kind,
     new Date().toISOString(),
   ]);
-}
-
-export async function importAutoLabelDetectModel(
-  workspaceRoot: string,
-  sourcePath: string
-): Promise<string> {
-  if (!validatePtExtension(sourcePath)) throw new Error("Only .pt model files are supported.");
-  const relDest = modelDestPath("detect", modelFilename(sourcePath));
-  await copyModelToWorkspace(sourcePath, workspaceRoot, relDest);
-  return relDest;
-}
-
-export async function importAutoLabelClassifyModel(
-  workspaceRoot: string,
-  sourcePath: string
-): Promise<string> {
-  if (!validatePtExtension(sourcePath)) throw new Error("Only .pt model files are supported.");
-  const relDest = modelDestPath("classify", modelFilename(sourcePath));
-  await copyModelToWorkspace(sourcePath, workspaceRoot, relDest);
-  return relDest;
 }
 
 export async function pickAndImportAutoLabelModel(

@@ -19,13 +19,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
 from starlette.responses import Response
 from PIL import Image, ImageOps
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from backend.atomic_write import write_text_atomic
 from backend.image_safety import ImageTooLargeError, ensure_safe_image_size
 from backend.image_pool import scan_image_pool
 from backend.dataset_merge import VIDEO_EXTENSIONS
-from backend.metadata_assign import get_workspace_classes, upsert_metadata_rows
+from backend.metadata_assign import get_workspace_classes
 from backend.video_screenshot import frame_bytes
 from backend.yolo_workspace import IMAGE_EXTENSIONS, load_workspace_config, workspace_meta_dir
 from backend_api.dialogs import create_desktop_backend_service
@@ -51,27 +51,6 @@ class LabelClass(BaseModel):
     name: str = Field(min_length=1)
 
 
-class LabelBox(BaseModel):
-    classId: int = Field(ge=0)
-    x: float = Field(ge=0, le=1)
-    y: float = Field(ge=0, le=1)
-    w: float = Field(gt=0, le=1)
-    h: float = Field(gt=0, le=1)
-
-
-class SaveLabelsRequest(BaseModel):
-    workspaceRoot: str = Field(min_length=1)
-    filename: str = Field(min_length=1)
-    boxes: list[LabelBox] = Field(default_factory=list, max_length=10000)
-
-    @field_validator("filename")
-    @classmethod
-    def validate_filename(cls, value: str) -> str:
-        if Path(value).name != value:
-            raise ValueError("filename must be a file name inside media.")
-        return value
-
-
 class SaveClassesRequest(BaseModel):
     workspaceRoot: str = Field(min_length=1)
     classes: list[LabelClass] = Field(default_factory=list, max_length=10000)
@@ -92,19 +71,6 @@ class WriteAppSettingsRequest(BaseModel):
     lastOpenedFolder: str = ""
     lastOpenedYoloFolder: str = ""
     startupOverlayMode: str = ""
-
-
-class MarkJunkRequest(BaseModel):
-    workspaceRoot: str = Field(min_length=1)
-    filename: str = Field(min_length=1)
-    detectJunk: bool = True
-
-    @field_validator("filename")
-    @classmethod
-    def validate_filename(cls, value: str) -> str:
-        if Path(value).name != value:
-            raise ValueError("filename must be a file name inside media.")
-        return value
 
 
 @asynccontextmanager
@@ -516,62 +482,6 @@ def label_classes_save(payload: SaveClassesRequest) -> JSONResponse:
     return JSONResponse({"ok": True, "workspaceRoot": str(paths.root), "classes": saved})
 
 
-@app.get("/api/labels/load")
-def label_load(
-    workspaceRoot: str = Query(min_length=1),
-    filename: str = Query(min_length=1),
-) -> JSONResponse:
-    paths = _workspace_paths_for_http(workspaceRoot)
-    image_path = _image_pool_file_from_paths(paths, filename)
-    label_path = _primary_label_path(paths, image_path.name)
-    text, source_path = _read_label_text(paths, image_path.name)
-    try:
-        with Image.open(image_path) as image:
-            image_width, image_height = image.size
-    except OSError as error:
-        raise HTTPException(status_code=500, detail=f"Failed to read image metadata: {error}") from error
-    return JSONResponse(
-        {
-            "ok": True,
-            "workspaceRoot": str(paths.root),
-            "filename": image_path.name,
-            "labelPath": _relative_to_workspace(paths.root, label_path),
-            "sourceLabelPath": _relative_to_workspace(paths.root, source_path) if source_path else "",
-            "imageWidth": image_width,
-            "imageHeight": image_height,
-            "classes": _workspace_label_classes(paths.root),
-            "boxes": _parse_yolo_label_text(text),
-        }
-    )
-
-
-@app.post("/api/labels/save")
-def label_save(payload: SaveLabelsRequest) -> JSONResponse:
-    paths = _workspace_paths_for_http(payload.workspaceRoot)
-    image_path = _image_pool_file_from_paths(paths, payload.filename)
-    label_path = _primary_label_path(paths, image_path.name)
-    text = _boxes_to_yolo_text(payload.boxes)
-    write_text_atomic(label_path, text)
-    return JSONResponse(
-        {
-            "ok": True,
-            "workspaceRoot": str(paths.root),
-            "filename": image_path.name,
-            "labelPath": _relative_to_workspace(paths.root, label_path),
-            "savedCount": len(payload.boxes),
-            "boxes": [box.model_dump() for box in payload.boxes],
-        }
-    )
-
-
-@app.post("/api/image-pool/junk")
-def image_pool_junk(payload: MarkJunkRequest) -> JSONResponse:
-    paths = _workspace_paths_for_http(payload.workspaceRoot)
-    image_path = _image_pool_file_from_paths(paths, payload.filename)
-    result = upsert_metadata_rows(paths.root, [{"filename": image_path.name, "detect_junk": payload.detectJunk}])
-    return JSONResponse({"ok": True, "workspaceRoot": str(paths.root), "filename": image_path.name, "detectJunk": payload.detectJunk, "metadata": result})
-
-
 def _args_for_backend_call(args: list[Any] | dict[str, Any] | None) -> list[Any]:
     if args is None:
         return []
@@ -664,63 +574,6 @@ def _thumb_cache_path(workspace_root: Path, source_path: Path, *, size: int, qua
     return workspace_meta_dir(workspace_root) / "thumb_cache" / "fastapi" / f"{safe_stem}_{key}.jpg"
 
 
-def _primary_label_path(paths, filename: str) -> Path:
-    stem = Path(filename).stem
-    path = (paths.label_source / f"{stem}.txt").resolve()
-    _ensure_workspace_child(paths.root, path)
-    return path
-
-
-def _label_read_paths(paths, filename: str) -> list[Path]:
-    stem = Path(filename).stem
-    return [
-        _primary_label_path(paths, filename),
-        (paths.detect_out / "labels" / "train" / f"{stem}.txt").resolve(),
-        (paths.detect_out / "labels" / "val" / f"{stem}.txt").resolve(),
-    ]
-
-
-def _read_label_text(paths, filename: str) -> tuple[str, Path | None]:
-    for path in _label_read_paths(paths, filename):
-        try:
-            _ensure_workspace_child(paths.root, path)
-        except HTTPException:
-            continue
-        if path.is_file():
-            text = path.read_text(encoding="utf-8", errors="replace")
-            if text.strip():
-                return text, path
-    primary = _primary_label_path(paths, filename)
-    return (primary.read_text(encoding="utf-8", errors="replace") if primary.is_file() else ""), primary
-
-
-def _parse_yolo_label_text(text: str) -> list[dict[str, float | int]]:
-    boxes: list[dict[str, float | int]] = []
-    for line in text.splitlines():
-        parts = line.strip().split()
-        if len(parts) < 5:
-            continue
-        try:
-            class_id = int(float(parts[0]))
-            x, y, w, h = (float(value) for value in parts[1:5])
-        except ValueError:
-            continue
-        if class_id < 0 or not (0 <= x <= 1 and 0 <= y <= 1 and 0 < w <= 1 and 0 < h <= 1):
-            continue
-        boxes.append({"classId": class_id, "x": x, "y": y, "w": w, "h": h})
-    return boxes
-
-
-def _boxes_to_yolo_text(boxes: list[LabelBox]) -> str:
-    if not boxes:
-        return ""
-    lines = [
-        f"{box.classId} {box.x:.6f} {box.y:.6f} {box.w:.6f} {box.h:.6f}"
-        for box in boxes
-    ]
-    return "\n".join(lines) + "\n"
-
-
 def _workspace_label_classes(workspace_root: Path) -> list[dict[str, int | str]]:
     names = _read_detect_class_names(workspace_root)
     if not names:
@@ -795,13 +648,6 @@ def _yaml_scalar(value: str) -> str:
         except json.JSONDecodeError:
             return cleaned[1:-1]
     return cleaned
-
-
-def _relative_to_workspace(workspace_root: Path, path: Path) -> str:
-    try:
-        return path.resolve().relative_to(workspace_root.resolve()).as_posix()
-    except ValueError:
-        return ""
 
 
 def _ensure_workspace_child(workspace_root: Path, path: Path) -> None:

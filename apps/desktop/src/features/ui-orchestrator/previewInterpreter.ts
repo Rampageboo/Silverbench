@@ -267,20 +267,6 @@ export function evaluateConditionSnapshot(
   return evalCondition(condition, indexPage(page), predictions);
 }
 
-export function resolveClickSnapshot(
-  page: Page,
-  target: { element: string; select?: Selector; child?: string },
-  predictions: Predictions
-): DecisionResult["intended"] | undefined {
-  const resolution = resolveRef(indexPage(page), target, predictions);
-  if (resolution.status !== "resolved") return undefined;
-  return {
-    element: target.child ?? target.element,
-    box: resolution.box,
-    point: center(resolution.box)
-  };
-}
-
 export function interpretFlow(
   doc: UiOrchestrationDoc,
   flow: Flow,

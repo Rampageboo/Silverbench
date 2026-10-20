@@ -16,6 +16,3 @@ export function isLabelWorkbenchEmbedded(workbench: LabelWorkbenchContextValue |
   return workbench?.renderMode === "workbench-embedded";
 }
 
-export function useIsLabelWorkbenchEmbedded(): boolean {
-  return isLabelWorkbenchEmbedded(useLabelWorkbench());
-}

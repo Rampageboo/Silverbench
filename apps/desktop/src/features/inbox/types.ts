@@ -1,5 +1,5 @@
 import type { ImagePoolItem } from "../../api";
-import type { JunkScope, MetadataRow } from "../image-pool/types";
+import type { MetadataRow } from "../image-pool/types";
 import { isClfJunk, isDetectJunk } from "../image-pool/metadata";
 
 export type InboxFilter = "new" | "unassigned" | "random-unused" | "all";
@@ -51,12 +51,6 @@ export type InboxSessionSummary = {
 export type DetectClass = { id: number; name: string };
 
 export type InboxItem = ImagePoolItem & { imagePath: string };
-
-export type InboxUiState = {
-  filter: InboxFilter;
-  assignTarget: AssignTarget;
-  junkScope: JunkScope;
-};
 
 export function metadataSideState(row: MetadataRow | undefined) {
   const detectRejected = isDetectJunk(row);

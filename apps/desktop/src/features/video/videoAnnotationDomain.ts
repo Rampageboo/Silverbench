@@ -149,11 +149,6 @@ export function cloneDetectBoxes(boxes: DetectBoxAnnotation[]): DetectBoxAnnotat
   return boxes.map((box) => ({ ...box }));
 }
 
-/** @deprecated Use cloneDetectBoxes — kept for existing callers. */
-export function cloneBoxes(boxes: DetectBoxAnnotation[]): DetectBoxAnnotation[] {
-  return cloneDetectBoxes(boxes);
-}
-
 // ---------------------------------------------------------------------------
 // Frame navigation
 // ---------------------------------------------------------------------------
@@ -243,30 +238,6 @@ export function updateVideoDetectBoxes(
     tasks: {
       ...(existing?.tasks ?? {}),
       detect
-    },
-    updatedAt: now
-  };
-  return { ...manifest, video, updatedAt: now, frames };
-}
-
-export function markVideoDetectReviewed(
-  manifest: VideoAnnotationManifest,
-  video: VideoSource,
-  seconds: number,
-  now = new Date().toISOString()
-): VideoAnnotationManifest {
-  const timestampMs = Number(timestampKey(seconds));
-  const key = String(timestampMs);
-  const frames = { ...manifest.frames };
-  const existing = frames[key];
-  const currentDetect = existing?.tasks.detect ?? { boxes: [], reviewed: false };
-  frames[key] = {
-    ...(existing ?? {}),
-    timestampMs,
-    time: timestampMs / 1000,
-    tasks: {
-      ...(existing?.tasks ?? {}),
-      detect: { ...currentDetect, reviewed: true }
     },
     updatedAt: now
   };

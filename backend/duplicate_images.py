@@ -10,53 +10,6 @@ from typing import Any
 from .dataset_merge import IMAGE_EXTENSIONS, unique_path
 
 
-def find_duplicate_images(root: Path) -> dict[str, Any]:
-    root = root.resolve()
-    if not root.is_dir():
-        raise ValueError(f"Dataset root does not exist: {root}")
-
-    by_size: dict[int, list[Path]] = {}
-    total_images = 0
-    for path in sorted(root.rglob("*")):
-        if not path.is_file() or path.suffix.lower() not in IMAGE_EXTENSIONS:
-            continue
-        relative = path.relative_to(root).as_posix()
-        if "originals_before_edit" in relative.lower():
-            continue
-        total_images += 1
-        by_size.setdefault(path.stat().st_size, []).append(path)
-
-    groups: list[dict[str, Any]] = []
-    for size, paths in by_size.items():
-        if len(paths) < 2:
-            continue
-        by_hash: dict[str, list[Path]] = {}
-        for path in paths:
-            digest = _sha256_file(path)
-            by_hash.setdefault(digest, []).append(path)
-        for digest, matches in by_hash.items():
-            if len(matches) < 2:
-                continue
-            rel_paths = sorted(path.relative_to(root).as_posix() for path in matches)
-            groups.append(
-                {
-                    "hash": digest,
-                    "size": size,
-                    "count": len(rel_paths),
-                    "paths": rel_paths,
-                }
-            )
-
-    groups.sort(key=lambda group: (-int(group["count"]), group["paths"][0]))
-    duplicate_files = sum(int(group["count"]) - 1 for group in groups)
-    return {
-        "totalImages": total_images,
-        "groupCount": len(groups),
-        "duplicateFiles": duplicate_files,
-        "groups": groups,
-    }
-
-
 def duplicate_images(
     root: Path,
     image_paths: list[str],

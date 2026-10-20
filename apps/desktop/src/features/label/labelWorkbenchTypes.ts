@@ -12,9 +12,6 @@
 // Enum-like literals
 // ---------------------------------------------------------------------------
 
-/** What kind of source is being labeled. */
-export type LabelSourceKind = "image" | "video-timestamp";
-
 /** Which annotation task(s) are active in the current context. */
 export type LabelTaskKind = "detect" | "classify" | "both";
 
@@ -26,19 +23,6 @@ export type LabelWorkbenchRenderMode = "standalone" | "workbench-embedded";
 
 /** Review state of the current source or frame. */
 export type LabelReviewStatus = "unreviewed" | "approved" | "flagged" | "unknown";
-
-/** Optional workbench feature flags reported by the active child page. */
-export type LabelWorkbenchCapability =
-  | "image-source"
-  | "video-source"
-  | "detect"
-  | "classify"
-  | "review"
-  | "proposals"
-  | "overlays"
-  | "segments"
-  | "class-management"
-  | "export";
 
 export type LabelWorkbenchActionId =
   | "review.markReviewed"
@@ -82,11 +66,6 @@ export type LabelWorkbenchActionGroup = {
     onDelete?: () => void | Promise<void>;
   }>;
   actions: LabelWorkbenchAction[];
-};
-
-export type LabelWorkbenchControlState = {
-  capabilities?: LabelWorkbenchCapability[];
-  actionGroups?: LabelWorkbenchActionGroup[];
 };
 
 // ---------------------------------------------------------------------------

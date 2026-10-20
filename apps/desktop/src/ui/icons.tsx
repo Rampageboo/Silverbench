@@ -151,8 +151,6 @@ export const IconSearch = make(
 
 export const IconChevronDown = make("ChevronDown", <path d="M6 9l6 6 6-6" />);
 export const IconChevronRight = make("ChevronRight", <path d="M9 6l6 6-6 6" />);
-export const IconChevronLeft = make("ChevronLeft", <path d="M15 6l-6 6 6 6" />);
-
 export const IconFolder = make(
   "Folder",
   <path d="M3.5 7a1.5 1.5 0 011.5-1.5h4.4l2 2H19a1.5 1.5 0 011.5 1.5v8.5A1.5 1.5 0 0119 19H5a1.5 1.5 0 01-1.5-1.5z" />
@@ -228,35 +226,11 @@ export const IconAlert = make(
   </>
 );
 
-export const IconExternal = make(
-  "External",
-  <>
-    <path d="M14 4.5h5.5V10M19.5 4.5L11 13" />
-    <path d="M18 14v4.5a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 014 18.5v-11A1.5 1.5 0 015.5 6H10" />
-  </>
-);
-
-export const IconPanelBottom = make(
-  "PanelBottom",
-  <>
-    <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
-    <path d="M3.5 14.5h17" />
-  </>
-);
-
 export const IconArchive = make(
   "Archive",
   <>
     <rect x="3.5" y="4.5" width="17" height="4" rx="1" />
     <path d="M5 8.5v10a1.5 1.5 0 001.5 1.5h11a1.5 1.5 0 001.5-1.5v-10M10 12.5h4" />
-  </>
-);
-
-export const IconTrash = make(
-  "Trash",
-  <>
-    <path d="M4.5 7h15M9.5 7V5a1 1 0 011-1h3a1 1 0 011 1v2" />
-    <path d="M6.5 7l.8 12a1.5 1.5 0 001.5 1.4h6.4a1.5 1.5 0 001.5-1.4l.8-12" />
   </>
 );
 

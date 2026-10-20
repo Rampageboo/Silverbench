@@ -1,15 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
-
-
-@dataclass(frozen=True)
-class MergeStats:
-    copied: int = 0
-    renamed: int = 0
-    skipped: int = 0
-    failed: int = 0
 
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm", ".wmv", ".mpeg", ".mpg"}

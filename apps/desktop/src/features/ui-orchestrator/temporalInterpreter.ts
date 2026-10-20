@@ -8,7 +8,6 @@ import {
   type EndEvidence,
   type FrameEvent,
   type RuntimeOutcome,
-  type TemporalActNode,
   type TemporalEdgeOutcome,
   type TemporalEvent,
   type TemporalFlow,
@@ -423,13 +422,3 @@ export class TemporalInterpreter {
   }
 }
 
-export function runTemporalTrace(
-  doc: UiOrchestrationDocV2,
-  events: TemporalEvent[],
-  flowId?: string
-): TemporalSnapshot {
-  const interpreter = new TemporalInterpreter(doc, flowId);
-  let snapshot = interpreter.getSnapshot();
-  for (const event of events) snapshot = interpreter.dispatch(event);
-  return snapshot;
-}

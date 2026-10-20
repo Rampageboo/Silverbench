@@ -1,5 +1,4 @@
-import { callJson, listDatasetFiles, type WorkspaceInfo } from "../../api";
-import { getWorkspaceInfo } from "../../api";
+import { callJson, listDatasetFiles } from "../../api";
 
 export type MaskNoiseSettings = {
   threshold: number;
@@ -74,10 +73,6 @@ export function serializeMaskNoiseSettings(settings: MaskNoiseSettings) {
     grayMax: Math.max(0, Math.min(255, Math.round(settings.grayMax))),
     grayMix: Math.max(0, Math.min(1, Number(settings.grayMix) || 0))
   });
-}
-
-export function loadMaskNoiseWorkspace(workspaceRoot: string): Promise<WorkspaceInfo> {
-  return getWorkspaceInfo(workspaceRoot);
 }
 
 export function chooseMaskDirectory(title: string) {
