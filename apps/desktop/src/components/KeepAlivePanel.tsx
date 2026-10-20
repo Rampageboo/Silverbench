@@ -33,7 +33,7 @@ export function KeepAlivePanel({ panelKey, active, persist = true, className, ch
     if (!active) return null;
     const classNames = ["workbench-panel", className, "workbench-panel--active"].filter(Boolean).join(" ");
     return (
-      <div className={classNames} aria-hidden={false}>
+      <div className={classNames}>
         {children}
       </div>
     );
@@ -49,7 +49,7 @@ export function KeepAlivePanel({ panelKey, active, persist = true, className, ch
     .filter(Boolean)
     .join(" ");
   return (
-    <div className={classNames} aria-hidden={!active}>
+    <div className={classNames} hidden={!active}>
       {children}
     </div>
   );

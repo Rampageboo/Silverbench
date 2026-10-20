@@ -70,9 +70,8 @@ export function BoxLabelPreviewToolbar({
         </svg>
       </button>
       <button
-        id="poolLabelBlackBoxToolBtn"
         type="button"
-        className={`pool-label-icon-tool${blackBoxEnabled ? " active" : ""}`}
+        className={`pool-label-black-box-tool-btn pool-label-icon-tool${blackBoxEnabled ? " active" : ""}`}
         title="Black box"
         aria-label="Black box"
         aria-pressed={blackBoxEnabled}

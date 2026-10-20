@@ -1,0 +1,9 @@
+/*
+ * Cascade layer order. Every stylesheet declares its layer:
+ *   app   - tokens, base element styles, shared components and every feature page
+ *   label - the label workbench, which restyles the box-label editor it embeds
+ * A later layer wins over an earlier one regardless of selector specificity,
+ * so no stylesheet needs ids or !important to take precedence.
+ */
+
+@layer app, label;

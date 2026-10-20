@@ -196,7 +196,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
         canvasRightPointerRef.current = null;
         return;
       }
-      const viewer = event.currentTarget.closest("#previewViewer") as HTMLElement | null;
+      const viewer = event.currentTarget.closest(".preview-viewer") as HTMLElement | null;
       const rect = viewer?.getBoundingClientRect();
       const rawX = rect ? event.clientX - rect.left : event.clientX;
       const rawY = rect ? event.clientY - rect.top : event.clientY;
@@ -611,10 +611,9 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
   return (
     <>
       <section
-        className={`pool-label-shortcuts-panel${editor.fixedShortcutMode ? " fixed-mode" : " class-mode"}`}
-        id="poolLabelShortcutsPanel"
+        className={`pool-label-shortcuts-panel pool-label-shortcuts-panel${editor.fixedShortcutMode ? " fixed-mode" : " class-mode"}`}
       >
-        <div className="pool-label-shortcuts" id="poolLabelShortcuts">
+        <div className="pool-label-shortcuts">
           {SLOT_ORDER.map((slot) => {
             const slotData = editor.shortcutSlots[slot];
             const bound = slotData != null && editor.classes.some((item) => item.id === slotData.classId);
@@ -716,7 +715,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
         </div>
       </section>
 
-      <section className="panel" id="previewPanel">
+      <section className="panel preview-panel">
         <div className="panel-header pool-label-preview-header">
           <div className="pool-label-preview-heading">
             <span className="pool-label-preview-title">Preview</span>
@@ -736,7 +735,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
           </div>
           {props.previewHeaderActions}
         </div>
-        <div className="panel-body viewer" id="previewViewer">
+        <div className="panel-body viewer preview-viewer">
           {editor.error ? <div className="error-banner">{editor.error}</div> : null}
           <div
             className={`canvas-wrap${editor.pointerToolEnabled ? " pool-label-pointer-tool" : ""}${editor.autoFitEnabled ? " pool-label-subject-select" : ""}${editor.blackBoxEnabled ? " pool-label-black-box-tool" : ""}`}
@@ -746,7 +745,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
             onMouseLeave={handleCanvasWrapMouseLeave}
           >
             <canvas
-              id="previewCanvas"
+              className="preview-canvas"
               ref={editor.canvasRef}
               onPointerDown={handleCanvasPointerDown}
               onPointerMove={handleCanvasPointerMove}
@@ -765,7 +764,7 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
           </div>
           <aside className="pool-label-zoom-side" id="poolLabelZoomSide">
             <div className="pool-label-zoom-view" id="poolLabelZoomView">
-              <canvas id="poolLabelZoomCanvas" ref={editor.zoomCanvasRef} width={500} height={600} />
+              <canvas className="pool-label-zoom-canvas" ref={editor.zoomCanvasRef} width={500} height={600} />
               <div className="pool-label-zoom-class" id="poolLabelZoomClass">
                 {editor.selectedBox
                   ? classNameFor(editor.classes, editor.selectedBox.classId)
@@ -848,13 +847,13 @@ export const BoxLabelView = React.memo(function BoxLabelView(props: BoxLabelView
 
       {classificationClassesPortal}
       {showSideStack ? (
-        <aside className="side-stack pool-label-side-stack" id="poolLabelSideStack">
-          <section className="panel pool-label-box-panel" id="poolLabelBoxPanel">
+        <aside className="side-stack pool-label-side-stack">
+          <section className="panel pool-label-box-panel pool-label-box-panel--side">
             <div className="panel-header">
               <span>Current Boxes</span>
             </div>
             <div className="panel-body pool-label-box-panel-body">
-              <div className="hint" id="poolLabelStatus">
+              <div className="hint pool-label-status">
                 {editor.status}
                 {editor.filterText ? ` | ${editor.filterText}` : ""}
                 {editor.shiftSelectedFilenames.size

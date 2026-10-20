@@ -14,21 +14,32 @@ Replaces the earlier "liquid glass" layer. Applies to `apps/desktop`.
   Label workbench (`features/label`, layout in `labelWorkbench.css`), and the
   workspace-independent 图库与提示词 page (`features/gallery`, Chinese UI).
 
-## CSS layers (load order in `main.tsx`)
+## Stylesheets
 
-1. `legacy-web.css` — vendored copy of `legacy/web/styles.css` (the legacy web/Qt
-   mode keeps its own file). Layout rules for older tool pages.
-2. `styles.css` — legacy React tool page layouts.
-3. `ui/tokens.css` — all colors, type, spacing, radii. Also maps the old variable
-   names (`--bg`, `--panel`, `--ink`, `--blue`…) onto the tokens.
-4. `ui/base.css` — element defaults and the generic legacy classes (`.panel`,
-   `.hint`, `button.primary`…).
-5. `ui/components.css` — `ui-*` components (dialog, menu, seg, badge, field, page).
-6. Feature CSS imported by the feature (`shell.css`, `library.css`, …).
+Every stylesheet sits in a cascade layer, declared once in `ui/layers.css`:
 
-New code uses tokens only — no hex values. Legacy files were swept from hard-coded
-slate/blue colors to tokens; remaining literals are intentional (e.g. text on
-image thumbnails).
+- `app` — tokens, base element styles, shared components and every feature page.
+- `label` — the label workbench (`features/label/labelWorkbench.css`), which
+  restyles the box-label editor it embeds. A later layer wins regardless of
+  specificity, so no rule needs ids or `!important` to take precedence.
+
+Load order: `main.tsx` imports the global sheets first (`ui/tokens.css`, `ui/base.css`,
+`ui/components.css`, and `ui/tool-page.css` for the classes shared by the older tool
+pages), so every component and feature stylesheet loads after them. Each component
+imports its own folder's stylesheet (`shell.css`, `gallery.css`, `boxLabel.css`, …);
+the image workspace pages share `features/image-workspace/imageWorkspace.css`.
+
+Rules of thumb:
+
+- A rule belongs to the folder that renders its first class; no stylesheet restyles
+  another feature's classes.
+- `ui/base.css` keeps element defaults at element-level specificity (`:where()` for
+  its `:not()` chains), so any component class overrides them.
+- `!important` is reserved for policies that must beat everything: the `[hidden]`
+  attribute, the arrow cursor on controls, reduced motion, and print.
+
+New code uses tokens only — no hex values. Remaining literals are intentional (e.g.
+text on image thumbnails).
 
 ## Tokens
 
@@ -51,7 +62,7 @@ Older stored values (`dark`, `obsidian`) map to graphite.
 
 ## Label workbench
 
-One CSS grid (`#labelWorkbench .label-workbench-body`): media rail | canvas column |
+One CSS grid (`.label-workbench-body`): media rail | canvas column |
 right column. The surface wrappers (`.label-content`, `.app`, `main.workspace`) use
 `display: contents` so `BoxLabelView`'s sections land in that grid. Review actions
 render in the canvas header via `previewHeaderActions`; sampling / auto-label /

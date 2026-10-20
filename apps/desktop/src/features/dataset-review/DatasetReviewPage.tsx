@@ -140,23 +140,21 @@ export function DatasetReviewPage({ onReady, onStatusText }: DatasetReviewPagePr
             </button>
             <button
               type="button"
-              id="hideReviewedImagesBtn"
-              className={review.imageViewMode === "hideReviewed" ? "active" : ""}
+              className={`hide-reviewed-images-btn${review.imageViewMode === "hideReviewed" ? " active" : ""}`}
               onClick={() => review.changeImageViewMode("hideReviewed")}
             >
               Hide Reviewed
             </button>
             <button
               type="button"
-              id="showFlaggedImagesBtn"
-              className={review.imageViewMode === "flagged" ? "active" : ""}
+              className={`show-flagged-images-btn${review.imageViewMode === "flagged" ? " active" : ""}`}
               onClick={() => review.changeImageViewMode("flagged")}
             >
               Show Flagged
             </button>
             <button
               type="button"
-              id="sendToCropBtn"
+              className="send-to-crop-btn"
               disabled={!review.canSendToCrop}
               onClick={() =>
                 review.sendFilteredToCrop().then(() => setActiveTab("crop")).catch(showError)
@@ -222,7 +220,7 @@ export function DatasetReviewPage({ onReady, onStatusText }: DatasetReviewPagePr
         />
 
         {!reviewMode ? (
-          <aside className="side-stack yolo-side-stack" id="yoloSideStack">
+          <aside className="side-stack yolo-side-stack">
             <section className="panel filter-panel">
               <div className="panel-header">
                 <span>Filter</span>

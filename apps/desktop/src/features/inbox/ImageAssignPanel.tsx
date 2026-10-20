@@ -113,7 +113,7 @@ export function ImageAssignPanel({
                     : "Classes load from clf_dataset folders"}
                 </div>
                 <input
-                  id="inboxClassSearchInput"
+                  className="inbox-class-search-input"
                   type="search"
                   placeholder="Search classes..."
                   value={classSearch}

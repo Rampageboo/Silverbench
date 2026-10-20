@@ -68,17 +68,17 @@ export function DatasetReviewPreview({
   }, [boxes, datasetRoot, pair]);
 
   return (
-    <section className="panel" id="previewPanel">
+    <section className="panel preview-panel">
       <div className="panel-header">
         <span>Preview</span>
         <span id="boxCount" className="status">
           {boxes.length} box(es)
         </span>
       </div>
-      <div className="panel-body viewer" id="previewViewer">
+      <div className="panel-body viewer preview-viewer">
         {error ? <div className="error-banner">{error}</div> : null}
         <div className="canvas-wrap" id="dropZone" ref={wrapRef}>
-          <canvas id="previewCanvas" ref={canvasRef} />
+          <canvas className="preview-canvas" ref={canvasRef} />
         </div>
         <div className="row" style={{ marginTop: 8 }}>
           <button type="button" disabled={!canPrev} onClick={onPrev}>

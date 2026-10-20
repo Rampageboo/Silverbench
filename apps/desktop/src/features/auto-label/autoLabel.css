@@ -1,34 +1,14 @@
-.inline-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  margin: 0 4px;
-  white-space: nowrap;
-}
+@layer app {
+  .inline-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 32px;
+    margin: 0 4px;
+    white-space: nowrap;
+  }
 
-.inline-check input {
-  margin: 0;
-}
-
-.train-workspace {
-  grid-column: 2;
-  min-height: 0;
-  display: none;
-  grid-template-columns: minmax(520px, 960px);
-  grid-auto-rows: max-content;
-  gap: 12px;
-  padding: 12px;
-  overflow: auto;
-}
-
-.train-workspace {
-  gap: 14px;
-  padding: 14px;
-}
-
-@media (max-width: 980px) {
-  .train-workspace {
-    grid-column: 1;
+  .inline-check input {
+    margin: 0;
   }
 }

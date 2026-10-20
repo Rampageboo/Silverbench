@@ -6,11 +6,14 @@
     <meta name="color-scheme" content="dark" />
     <title>RampageWorkbench</title>
     <style>
-      html,
-      body {
-        margin: 0;
-        background: #0f172a;
-        color: #e5e7eb;
+      /* Pre-boot fallback; it shares the app layer so the stylesheets override it. */
+      @layer app {
+        html,
+        body {
+          margin: 0;
+          background: #0f172a;
+          color: #e5e7eb;
+        }
       }
     </style>
   </head>

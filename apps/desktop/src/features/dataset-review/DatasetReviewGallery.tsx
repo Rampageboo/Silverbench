@@ -126,11 +126,11 @@ export function DatasetReviewGallery({
 
   if (!pairs.length) {
     return (
-      <section className="panel" id="imagePanel">
+      <section className="panel image-panel">
         <div className="panel-header">
           <span>Images</span>
         </div>
-        <div className="panel-body" id="galleryScroll">
+        <div className="panel-body gallery-scroll">
           <div className="empty">No images match the current filter.</div>
         </div>
       </section>
@@ -138,7 +138,7 @@ export function DatasetReviewGallery({
   }
 
   return (
-    <section className="panel" id="imagePanel">
+    <section className="panel image-panel">
       <div className="panel-header">
         <span>Images</span>
         <span id="imageCount" className="status">
@@ -146,8 +146,7 @@ export function DatasetReviewGallery({
         </span>
       </div>
       <div
-        className="panel-body"
-        id="galleryScroll"
+        className="panel-body gallery-scroll"
         ref={wrapRef}
         onScroll={(event) => {
           recompute();
