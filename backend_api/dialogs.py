@@ -180,6 +180,19 @@ def choose_image_files(title: str) -> list[Path]:
     return _run_topmost_dialog(choose)
 
 
+def choose_file(title: str, filters: list[tuple[str, str]] | None = None) -> str:
+    """One file of any kind. ``filters`` are (label, "*.ext *.ext") pairs; "All Files" is always offered."""
+    from tkinter import filedialog
+
+    filetypes = [*(filters or []), ("All Files", "*.*")]
+
+    def choose(root: Any) -> str:
+        path = filedialog.askopenfilename(title=title, parent=root, filetypes=filetypes)
+        return str(Path(path)) if path else ""
+
+    return _run_topmost_dialog(choose)
+
+
 def choose_onnx_file(title: str) -> str:
     from tkinter import filedialog
 
@@ -226,6 +239,7 @@ def create_desktop_backend_service(app_dir: Path, session_dir: Path, settings_di
         app_settings_dir=settings_dir,
         legacy_settings_dir=app_dir,
         choose_directory=choose_directory,
+        choose_file=choose_file,
         choose_image_file=choose_image_file,
         choose_image_files=choose_image_files,
         choose_media_files=choose_media_files,

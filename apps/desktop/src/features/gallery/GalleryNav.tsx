@@ -1,4 +1,5 @@
-import type { GalleryJob, GalleryRoot } from "./galleryApi";
+import { useEffect, useState } from "react";
+import { galleryApi, type GalleryJob, type GalleryRoot, type ReverseStatus } from "./galleryApi";
 import { JOB_STATUS_LABELS, JOB_TYPE_LABELS, isActiveJob, jobProgressText } from "./galleryDomain";
 import { IconClose, IconFolder, IconPause, IconPlay, IconPlus, IconRefresh, IconStar } from "../../ui/icons";
 
@@ -8,6 +9,8 @@ export type GalleryFilters = {
   collection: string | undefined;
   minRating: number;
   hasMetadata: boolean | undefined;
+  /** Images without generation metadata that no model has tagged yet. */
+  needsReverse: boolean;
 };
 
 type Props = {
@@ -20,7 +23,62 @@ type Props = {
   onRescan: (rootId?: string) => void;
   onAddCollection: () => void;
   onJobAction: (job: GalleryJob, action: "pause" | "resume" | "cancel") => void;
+  onMessage: (message: string) => void;
 };
+
+/**
+ * Metadata first: images that carry no generation metadata wait here for the tagger.
+ * Refreshes whenever the job list changes (a scan or a tagging run finished).
+ */
+function ReverseQueue({ jobs, onShow, onMessage }: { jobs: GalleryJob[]; onShow: () => void; onMessage: (message: string) => void }) {
+  const [status, setStatus] = useState<ReverseStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const jobKey = jobs.map((job) => `${job.id}:${job.status}`).join(",");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    galleryApi
+      .reverseStatus(controller.signal)
+      .then(setStatus)
+      .catch(() => setStatus(null));
+    return () => controller.abort();
+  }, [jobKey]);
+
+  if (!status || !status.pending) return null;
+  const waiting = status.pending - status.queued;
+
+  async function start() {
+    setBusy(true);
+    try {
+      const result = await galleryApi.queueReverse();
+      setStatus(result);
+      onMessage(result.job ? `已加入反推：${result.job.progress.total ?? waiting} 张` : "没有需要反推的图。");
+    } catch (err) {
+      onMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="gal-reverse">
+      <button type="button" className="gal-reverse__count" onClick={onShow} title="只看这些图">
+        {status.pending} 张无元数据{status.queued ? `（${status.queued} 张反推中）` : ""}
+      </button>
+      {waiting > 0 ? (
+        status.ready ? (
+          <button type="button" className="ui-btn--sm" onClick={() => void start()} disabled={busy}>
+            {busy ? "加入中…" : "开始反推"}
+          </button>
+        ) : (
+          <span className="gal-muted" title={status.blockers.join("\n")}>
+            打标模型未就绪，在设置里配置后自动开始
+          </span>
+        )
+      ) : null}
+    </div>
+  );
+}
 
 function rootLabel(path: string) {
   return path.replace(/[/\\]+$/, "").split(/[/\\]/).at(-1) || path;
@@ -35,7 +93,8 @@ export function GalleryNav({
   onAddRoot,
   onRescan,
   onAddCollection,
-  onJobAction
+  onJobAction,
+  onMessage
 }: Props) {
   const set = (patch: Partial<GalleryFilters>) => onFiltersChange({ ...filters, ...patch });
   const activeJobs = jobs.filter(isActiveJob);
@@ -120,11 +179,11 @@ export function GalleryNav({
       <section className="gal-nav__section">
         <header className="gal-nav__head">
           <span className="ui-eyebrow">筛选</span>
-          {filters.minRating || filters.hasMetadata !== undefined ? (
+          {filters.minRating || filters.hasMetadata !== undefined || filters.needsReverse ? (
             <button
               type="button"
               className="ui-btn--ghost ui-btn--sm"
-              onClick={() => set({ minRating: 0, hasMetadata: undefined })}
+              onClick={() => set({ minRating: 0, hasMetadata: undefined, needsReverse: false })}
             >
               清除
             </button>
@@ -158,10 +217,23 @@ export function GalleryNav({
                 [false, "无"]
               ] as const
             ).map(([value, label]) => (
-              <button key={label} type="button" aria-pressed={filters.hasMetadata === value} onClick={() => set({ hasMetadata: value })}>
+              <button
+                key={label}
+                type="button"
+                aria-pressed={!filters.needsReverse && filters.hasMetadata === value}
+                onClick={() => set({ hasMetadata: value, needsReverse: false })}
+              >
                 {label}
               </button>
             ))}
+            <button
+              type="button"
+              aria-pressed={filters.needsReverse}
+              title="没有生成元数据、也还没被模型打标的图"
+              onClick={() => set({ hasMetadata: undefined, needsReverse: true })}
+            >
+              待反推
+            </button>
           </div>
         </div>
       </section>
@@ -175,6 +247,11 @@ export function GalleryNav({
             </button>
           ) : null}
         </header>
+        <ReverseQueue
+          jobs={jobs}
+          onShow={() => set({ hasMetadata: undefined, needsReverse: true })}
+          onMessage={onMessage}
+        />
         {activeJobs.length || recentJobs.length ? (
           [...activeJobs, ...recentJobs].map((job) => (
             <div key={job.id} className={`gal-job gal-job--${job.status}`}>

@@ -47,7 +47,7 @@ export type GalleryJob = {
   processed: number; createdAt: string; modifiedAt: string;
   progress: {
     scanned: number; processed: number; imported: number; skipped: number; errors: string[];
-    missing?: number; currentPath?: string; completedRoots?: string[]; nextIndex?: number;
+    missing?: number; currentPath?: string; completedRoots?: string[]; nextIndex?: number; total?: number;
   };
 };
 export type GalleryCapabilities = JsonObject & {
@@ -66,7 +66,34 @@ export type GallerySettings = JsonObject & {
   wdModelPath?: string; wdTagsPath?: string; wdModelId?: string; wdProfile?: "wd-v3";
   wdModelSha256?: string; wdTagsSha256?: string; deviceId?: number;
   pixaiModelPath?: string; captionModelPath?: string; rules?: JsonObject;
+  /** This computer's ComfyUI folder (portable bundle or the ComfyUI folder itself). */
+  comfyuiPath?: string;
+  /** Queue images without generation metadata for the tagger after each scan (default on). */
+  autoReverse?: boolean;
 };
+export type ComfyUiCheck = {
+  ok: boolean; configured: boolean; error?: string;
+  root?: string; portable?: boolean; inputDir?: string; outputDir?: string; modelsDir?: string;
+};
+export type ReferenceImage = { node: string; filename: string; found: boolean; path: string } | null;
+export type GalleryBreakdown = {
+  format: GalleryMetadata["format"]; hasMetadata: boolean; comfyuiConfigured: boolean; workflowAvailable: boolean;
+  nodeCount?: number; nodeTypes?: Record<string, number>;
+  checkpoints?: Array<{ node: string; name: string; loader: string }>;
+  vae?: Array<{ node: string; name: string }>;
+  loras?: Array<{ node: string; name: string; strength_model?: number; strength_clip?: number }>;
+  samplers?: Array<JsonObject & { node: string; type: string }>;
+  controlnets?: Array<JsonObject & {
+    node?: string; unit?: number; type?: string; model: string; preprocessor?: string; preprocessors?: string[];
+    strength?: number; weight?: string; start_percent?: number; end_percent?: number; start?: string; end?: string;
+    image: ReferenceImage;
+  }>;
+  ipadapters?: Array<JsonObject & { node: string; type: string; preprocessors: string[]; image: ReferenceImage }>;
+  upscalers?: Array<{ node: string; name: string }>;
+  inputImages?: Array<{ node: string; filename: string; found: boolean; path: string }>;
+  adetailer?: Record<string, string>; hires?: Record<string, string>;
+};
+export type ReverseStatus = { pending: number; queued: number; ready: boolean; blockers: string[]; auto: boolean };
 export type GalleryStatus = {
   total: number; roots: GalleryRoot[]; collections: string[]; jobs: GalleryJob[];
   capabilities: GalleryCapabilities;
@@ -78,7 +105,7 @@ export type PromptOptions = {
 };
 export type AssetQuery = {
   q?: string; rootId?: string; collection?: string; minRating?: number;
-  hasMetadata?: boolean; offset?: number; limit?: number;
+  hasMetadata?: boolean; needsReverse?: boolean; offset?: number; limit?: number;
 };
 export type GalleryPageResult = { items: GalleryAssetSummary[]; total: number; offset: number; limit: number };
 export type GallerySummary = {
@@ -118,6 +145,14 @@ const assetPath = (id: string) => `/assets/${encodeURIComponent(id)}`;
 export function galleryImageUrl(id: string, full = false) {
   return `${backendBaseUrl()}/api/gallery${assetPath(id)}/${full ? "image" : "thumbnail"}`;
 }
+/** workflow.json download: drop it into ComfyUI to get the nodes back. */
+export function galleryWorkflowUrl(id: string) {
+  return `${backendBaseUrl()}/api/gallery${assetPath(id)}/workflow`;
+}
+/** A ControlNet / IPAdapter / img2img input image found in this computer's ComfyUI input folder. */
+export function galleryReferenceUrl(id: string, node: string) {
+  return `${backendBaseUrl()}/api/gallery${assetPath(id)}/reference/${encodeURIComponent(node)}`;
+}
 
 /** Thin typed calls only. State, selection, polling, drafts and layout belong to the frontend. */
 export const galleryApi = {
@@ -142,5 +177,11 @@ export const galleryApi = {
   controlJob: (id: string, action: "pause" | "resume" | "cancel", signal?: AbortSignal) => galleryRequest<GalleryJob>(`/jobs/${encodeURIComponent(id)}/${action}`, {}, signal),
   process: (ids: string[], signal?: AbortSignal) => galleryRequest<GalleryJob>("/process", { ids, model: "wd" }, signal),
   summary: (ids: string[], options: PromptOptions = {}, signal?: AbortSignal) => galleryRequest<GallerySummary>("/summary", { ids, options }, signal),
-  export: (request: GalleryExportRequest, signal?: AbortSignal) => galleryRequest<GalleryExportResult>("/export", request, signal)
+  export: (request: GalleryExportRequest, signal?: AbortSignal) => galleryRequest<GalleryExportResult>("/export", request, signal),
+  breakdown: (id: string, signal?: AbortSignal) => galleryRequest<GalleryBreakdown>(`${assetPath(id)}/breakdown`, undefined, signal),
+  workflow: (id: string, signal?: AbortSignal) => galleryRequest<JsonObject>(`${assetPath(id)}/workflow`, undefined, signal),
+  checkComfyUi: (path?: string, signal?: AbortSignal) =>
+    galleryRequest<ComfyUiCheck>(`/comfyui${path === undefined ? "" : `?${new URLSearchParams({ path })}`}`, undefined, signal),
+  reverseStatus: (signal?: AbortSignal) => galleryRequest<ReverseStatus>("/reverse", undefined, signal),
+  queueReverse: (signal?: AbortSignal) => galleryRequest<ReverseStatus & { job: GalleryJob | null }>("/reverse", {}, signal)
 };

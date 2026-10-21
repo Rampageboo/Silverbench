@@ -170,6 +170,14 @@
     gap: var(--sp-3);
   }
 
+  .gset-ok {
+    color: var(--c-ok);
+  }
+
+  .gset-bad {
+    color: var(--c-danger);
+  }
+
   .gset-caps {
     display: grid;
     gap: var(--sp-2);

@@ -48,6 +48,7 @@ export type BackendMethod =
   | "rollbackWorkspaceMigration"
   | "finishWorkspaceMigration"
   | "chooseDirectory"
+  | "chooseFile"
   | "chooseImageFile"
   | "chooseImageFiles"
   | "chooseMediaFiles"

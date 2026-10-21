@@ -25,6 +25,8 @@ from backend.gallery_metadata import extract_metadata
 IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif"})
 MAX_PAGE = 200
 MAX_EXPORT = 10000
+# No generation metadata and no model tags yet: these wait for reverse inference.
+_NEEDS_REVERSE = "a.has_metadata=0 AND a.model_tags='{}'"
 MAX_PIXELS = 100_000_000
 
 
@@ -364,6 +366,14 @@ class GalleryLibrary:
         except Exception as error:
             progress["errors"] = [*progress["errors"], str(error)][-20:]
             self._progress(job_id, progress, "failed")
+            return
+        # Metadata first: what has none after a scan goes to the reverse queue (when enabled and ready).
+        if self.get_settings().get("autoReverse", True) is not False:
+            try:
+                self.queue_reverse(quiet=True)
+            except Exception as error:  # never fail a finished scan over the follow-up
+                progress["errors"] = [*progress["errors"], f"reverse queue: {error}"][-20:]
+                self._progress(job_id, progress)
 
     @staticmethod
     def _search_text(record: dict) -> str:
@@ -430,7 +440,8 @@ class GalleryLibrary:
         return record
 
     def list_assets(self, *, q: str = "", root_id: str | None = None, collection: str | None = None,
-                    min_rating: int = 0, has_metadata: bool | None = None, offset: int = 0, limit: int = 60) -> dict:
+                    min_rating: int = 0, has_metadata: bool | None = None, needs_reverse: bool = False,
+                    offset: int = 0, limit: int = 60) -> dict:
         if offset < 0 or limit < 1 or limit > MAX_PAGE or not 0 <= min_rating <= 5:
             raise GalleryError(f"Use offset >= 0, limit 1..{MAX_PAGE}, and minRating 0..5.")
         conditions, params = ["a.rating>=?"], [min_rating]
@@ -443,6 +454,8 @@ class GalleryLibrary:
         if has_metadata is not None:
             conditions.append("a.has_metadata=?")
             params.append(int(has_metadata))
+        if needs_reverse:
+            conditions.append(_NEEDS_REVERSE)
         q = q.strip()[:1000]
         if q and self._fts:
             tokens = re.findall(r"\w+", q, flags=re.UNICODE)
@@ -577,6 +590,54 @@ class GalleryLibrary:
                                  "nearDuplicateSearch": False, "artistReferences": False, "dualComputerWorkers": False,
                                  "gpuScheduling": False, "comfyuiRoundtrip": False,
                                  "exactDuplicateRelinking": True, "fullTextSearch": self._fts}}
+
+    # ── Reverse queue: images whose generation metadata is gone get model tags instead ──
+
+    def _queued_wd_ids(self, db: sqlite3.Connection) -> set[str]:
+        ids: set[str] = set()
+        for row in db.execute("SELECT payload FROM jobs WHERE type='wd' AND status IN ('queued','running','paused')"):
+            ids.update(json.loads(row["payload"]).get("ids", []))
+        return ids
+
+    def reverse_status(self) -> dict:
+        """How many images wait for reverse inference, and whether the tagger can run."""
+        from backend.gallery_inference import get_capabilities
+
+        with self.connection() as db:
+            pending = [row["id"] for row in db.execute("SELECT a.id FROM assets a WHERE " + _NEEDS_REVERSE)]
+            queued = self._queued_wd_ids(db)
+        adapter = get_capabilities(config=self.get_settings()).get("adapters", {}).get("wd_onnx", {})
+        return {
+            "pending": len(pending),
+            "queued": len([asset_id for asset_id in pending if asset_id in queued]),
+            "ready": bool(adapter.get("ready")),
+            "blockers": adapter.get("blockers") or [],
+            "auto": self.get_settings().get("autoReverse", True) is not False,
+        }
+
+    def queue_reverse(self, *, quiet: bool = False) -> dict:
+        """Queue every image without generation metadata (and without model tags) for the WD tagger."""
+        with self.connection() as db:
+            queued = self._queued_wd_ids(db)
+            ids = [row["id"] for row in db.execute(
+                "SELECT a.id FROM assets a WHERE " + _NEEDS_REVERSE + " ORDER BY a.created_at DESC")
+                if row["id"] not in queued]
+        status = self.reverse_status()
+        if not ids:
+            return {**status, "job": None}
+        if not status["ready"]:
+            if quiet:
+                return {**status, "job": None}
+            raise GalleryError("The tagger is not ready: " + "; ".join(status["blockers"]))
+        ready_ids = []
+        for asset_id in ids[:MAX_EXPORT]:
+            try:
+                self.source_path(asset_id)
+                ready_ids.append(asset_id)
+            except (GalleryError, KeyError, OSError):
+                continue  # missing originals cannot be tagged; they stay pending
+        job = self.process(ready_ids) if ready_ids else None
+        return {**self.reverse_status(), "job": job}
 
     def selected(self, ids: list[str]) -> list[dict]:
         if not isinstance(ids, list) or not ids or len(ids) > MAX_EXPORT or not all(isinstance(v, str) for v in ids):

@@ -756,6 +756,58 @@
     text-transform: uppercase;
   }
 
+  .gal-reverse {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: 4px 0 var(--sp-2);
+    font-size: var(--fs-xs);
+  }
+
+  .gal-reverse__count {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--c-text-2);
+    text-decoration: underline dotted;
+  }
+
+  .gal-breakdown__actions {
+    display: inline-flex;
+    gap: 4px;
+  }
+
+  .gal-breakdown__units {
+    display: grid;
+    gap: var(--sp-2);
+  }
+
+  .gal-breakdown__unit {
+    display: grid;
+    gap: 2px;
+    padding: var(--sp-2);
+    border: 1px solid var(--c-line);
+    border-radius: var(--r-sm);
+    font-size: var(--fs-xs);
+    overflow-wrap: anywhere;
+  }
+
+  .gal-ref {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    color: var(--c-text-2);
+  }
+
+  .gal-ref img {
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
+    border-radius: var(--r-sm);
+    background: var(--c-sunken);
+  }
+
   .gal-field {
     display: grid;
     gap: 4px;

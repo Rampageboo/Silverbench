@@ -70,6 +70,7 @@ class BackendService:
         app_settings_dir: Path | None = None,
         legacy_settings_dir: Path | None = None,
         choose_directory: Callable[[str], str] | None = None,
+        choose_file: Callable[[str, list[tuple[str, str]]], str] | None = None,
         choose_image_file: Callable[[str], str] | None = None,
         choose_image_files: Callable[[str], list[Path]] | None = None,
         choose_media_files: Callable[[str], list[Path]] | None = None,
@@ -83,6 +84,7 @@ class BackendService:
         self.app_settings_dir = app_settings_dir or session_dir
         self.legacy_settings_dir = legacy_settings_dir
         self.choose_directory = choose_directory
+        self.choose_file = choose_file
         self.choose_image_file = choose_image_file
         self.choose_image_files = choose_image_files
         self.choose_media_files = choose_media_files
@@ -105,6 +107,7 @@ class BackendService:
             "ping": self._handle_ping,
             "torchRuntimeInfo": self._handle_torchRuntimeInfo,
             "chooseDirectory": self._handle_chooseDirectory,
+            "chooseFile": self._handle_chooseFile,
             "chooseImageFile": self._handle_chooseImageFile,
             "chooseImageFiles": self._handle_chooseImageFiles,
             "chooseMediaFiles": self._handle_chooseMediaFiles,
@@ -215,6 +218,19 @@ class BackendService:
 
     def _handle_chooseDirectory(self, args: list[Any]) -> object:
             return self._choose_directory(args[0] if args else "Choose Folder")
+
+    def _handle_chooseFile(self, args: list[Any]) -> object:
+            # args: [title, filters?] with filters as [[label, "*.ext *.ext"], ...]
+            raw = args[1] if len(args) > 1 else []
+            filters = json.loads(raw) if isinstance(raw, str) else raw
+            if not isinstance(filters, list) or not all(isinstance(f, list) and len(f) == 2 for f in filters):
+                raise ValueError("chooseFile filters must be [[label, patterns], ...].")
+            if not self.choose_file:
+                raise RuntimeError("File picker is not available in this backend.")
+            path = self.choose_file(str(args[0]) if args else "Choose File", [(str(a), str(b)) for a, b in filters])
+            if path:
+                self.path_access.remember_parent(path)
+            return path
 
     def _handle_chooseImageFile(self, args: list[Any]) -> object:
             return self._choose_image_file(args[0] if args else "Choose Image")

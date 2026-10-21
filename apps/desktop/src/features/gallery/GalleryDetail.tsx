@@ -15,6 +15,7 @@ import {
   type PromptFormat
 } from "./galleryDomain";
 import { IconAlert, IconCopy, IconEyeOff, IconStar } from "../../ui/icons";
+import { GalleryBreakdown } from "./GalleryBreakdown";
 
 type Props = {
   asset: GalleryAssetDetail;
@@ -308,6 +309,8 @@ export function GalleryDetail({
             <p className="gal-muted">{prompts ? "没有标签：既无元数据标签，也还没有模型打标结果。" : "加载中…"}</p>
           )}
         </section>
+
+        <GalleryBreakdown assetId={asset.id} filename={asset.filename} onCopy={onCopy} />
 
         <section className="gal-section">
           <h3 className="gal-section__title">原始元数据</h3>

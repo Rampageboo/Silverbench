@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { callJson } from "../../api";
-import { inTauri } from "../../app/splashscreen";
-import { chooseDirectory } from "../../lib/tauri";
-import { IconClose, IconCopy, IconFolder } from "../../ui/icons";
+import { PathField } from "../../components/PathField";
+import { IconClose, IconCopy } from "../../ui/icons";
 import { galleryApi, galleryImageUrl, type GalleryExportResult, type GallerySummary, type PromptOptions } from "./galleryApi";
 import {
   DEFAULT_RULES,
@@ -15,16 +13,6 @@ import {
 import { errorText } from "./useGallery";
 
 const ROOT_SOURCES = ["ComfyUI 输出", "下载图集", "训练集", "Blender 渲染", "其他"];
-
-async function pickFolder(title: string): Promise<string> {
-  if (inTauri()) return chooseDirectory(title);
-  try {
-    const value = await callJson<string>("chooseDirectory", [title]);
-    return typeof value === "string" ? value : "";
-  } catch {
-    return "";
-  }
-}
 
 function Dialog({
   title,
@@ -69,27 +57,6 @@ function Dialog({
   );
 }
 
-function FolderField({ label, value, onChange, hint }: { label: string; value: string; onChange: (value: string) => void; hint?: string }) {
-  return (
-    <div className="ui-field">
-      <span className="ui-field__label">{label}</span>
-      <div className="ui-input-row">
-        <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={"绝对路径，例如 D:\\Images 或 N:\\Datasets"} spellCheck={false} />
-        <button
-          type="button"
-          onClick={async () => {
-            const folder = await pickFolder(label);
-            if (folder) onChange(folder);
-          }}
-        >
-          <IconFolder size={14} /> 浏览…
-        </button>
-      </div>
-      {hint ? <span className="ui-field__hint">{hint}</span> : null}
-    </div>
-  );
-}
-
 // ── Add location ─────────────────────────────────────────────────────────────
 
 export function AddRootDialog({ onClose, onAdded }: { onClose: () => void; onAdded: (message: string) => void }) {
@@ -128,7 +95,7 @@ export function AddRootDialog({ onClose, onAdded }: { onClose: () => void; onAdd
         </>
       }
     >
-      <FolderField label="文件夹" value={path} onChange={setPath} hint="本机路径或已挂载的 NAS。只读取，不改动原图；与已有位置重叠会被拒绝。" />
+      <PathField label="文件夹" value={path} onChange={setPath} hint="本机路径或已挂载的 NAS。只读取，不改动原图；与已有位置重叠会被拒绝。" />
       <div className="ui-field">
         <span className="ui-field__label">来源</span>
         <div className="ui-seg gal-seg-wrap">
@@ -614,7 +581,7 @@ export function ExportDialog({
         </>
       }
     >
-      <FolderField
+      <PathField
         label="目标文件夹"
         value={destination}
         onChange={setDestination}

@@ -85,7 +85,7 @@ export function GalleryPage({ active = true, onReady }: Props) {
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search.trim(), 300);
-  const [filters, setFilters] = useState<GalleryFilters>({ rootId: undefined, collection: undefined, minRating: 0, hasMetadata: undefined });
+  const [filters, setFilters] = useState<GalleryFilters>({ rootId: undefined, collection: undefined, minRating: 0, hasMetadata: undefined, needsReverse: false });
   const [listToken, setListToken] = useState(0);
   const [detailToken, setDetailToken] = useState(0);
   const [focus, setFocus] = useState<{ id: string; index: number } | null>(null);
@@ -132,6 +132,7 @@ export function GalleryPage({ active = true, onReady }: Props) {
     if (filters.collection !== undefined) value.collection = filters.collection;
     if (filters.minRating) value.minRating = filters.minRating;
     if (filters.hasMetadata !== undefined) value.hasMetadata = filters.hasMetadata;
+    if (filters.needsReverse) value.needsReverse = true;
     return value;
   }, [debouncedSearch, filters]);
 
@@ -451,7 +452,7 @@ export function GalleryPage({ active = true, onReady }: Props) {
   }
 
   const scanning = status.jobs.some((job) => job.type === "scan" && isActiveJob(job));
-  const filtering = Boolean(debouncedSearch || filters.rootId || filters.collection !== undefined || filters.minRating || filters.hasMetadata !== undefined);
+  const filtering = Boolean(debouncedSearch || filters.rootId || filters.collection !== undefined || filters.minRating || filters.hasMetadata !== undefined || filters.needsReverse);
   const emptyState = !status.roots.length ? (
     <div className="ui-empty-state">
       <span className="ui-empty-state__icon">
@@ -470,7 +471,7 @@ export function GalleryPage({ active = true, onReady }: Props) {
         type="button"
         onClick={() => {
           setSearch("");
-          setFilters({ rootId: undefined, collection: undefined, minRating: 0, hasMetadata: undefined });
+          setFilters({ rootId: undefined, collection: undefined, minRating: 0, hasMetadata: undefined, needsReverse: false });
         }}
       >
         清除搜索和筛选
@@ -553,6 +554,7 @@ export function GalleryPage({ active = true, onReady }: Props) {
           onRescan={(rootId) => void rescan(rootId)}
           onAddCollection={() => setDialog({ kind: "new-collection" })}
           onJobAction={(job, action) => void runJob(job, action)}
+          onMessage={(message) => showToast(message)}
         />
 
         <main className="gal-center">

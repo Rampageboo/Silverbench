@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import quote
 
 from fastapi import APIRouter, Body, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from backend.gallery_library import GalleryError, GalleryLibrary
 
@@ -80,6 +82,24 @@ def capabilities() -> dict:
     return _call(_capabilities, get_library())
 
 
+@router.get("/comfyui")
+def comfyui(path: str | None = None) -> dict:
+    """Check a ComfyUI folder (or the configured one when no path is given)."""
+    from backend.comfyui_paths import locate_comfyui
+    return locate_comfyui(path if path is not None else get_library().get_settings().get("comfyuiPath"))
+
+
+@router.get("/reverse")
+def reverse_status() -> dict:
+    return _call(get_library().reverse_status)
+
+
+@router.post("/reverse")
+def queue_reverse() -> dict:
+    """Queue every image without generation metadata for the tagger."""
+    return _call(get_library().queue_reverse)
+
+
 @router.get("/settings")
 def settings() -> dict:
     return _call(get_library().get_settings)
@@ -108,10 +128,11 @@ def scan(payload: dict = Body(default={})) -> dict:
 
 @router.get("/assets")
 def assets(q: str = "", rootId: str | None = None, collection: str | None = None,
-           minRating: int = Query(default=0, ge=0, le=5), hasMetadata: bool | None = None,
+           minRating: int = Query(default=0, ge=0, le=5), hasMetadata: bool | None = None, needsReverse: bool = False,
            offset: int = Query(default=0, ge=0), limit: int = Query(default=60, ge=1, le=200)) -> dict:
     return _call(get_library().list_assets, q=q, root_id=rootId, collection=collection,
-                 min_rating=minRating, has_metadata=hasMetadata, offset=offset, limit=limit)
+                 min_rating=minRating, has_metadata=hasMetadata, needs_reverse=needsReverse,
+                 offset=offset, limit=limit)
 
 
 @router.get("/assets/{asset_id}")
@@ -124,6 +145,44 @@ def asset(asset_id: str) -> dict:
 def edit_asset(asset_id: str, payload: dict = Body(...)) -> dict:
     library = get_library()
     return _call(_with_prompts, library, _call(library.edit_asset, asset_id, payload))
+
+
+def _comfyui(library: GalleryLibrary) -> dict:
+    from backend.comfyui_paths import locate_comfyui
+    return locate_comfyui(library.get_settings().get("comfyuiPath"))
+
+
+@router.get("/assets/{asset_id}/breakdown")
+def breakdown(asset_id: str) -> dict:
+    """Checkpoints, LoRAs, samplers, ControlNets and reference images behind one image."""
+    from backend.gallery_workflow import analyze
+    library = get_library()
+    record = _call(library.asset, asset_id)
+    return analyze(record.get("metadata") or {}, _comfyui(library))
+
+
+@router.get("/assets/{asset_id}/workflow")
+def workflow(asset_id: str) -> JSONResponse:
+    """The ComfyUI editor graph as workflow.json: drop it into ComfyUI to get the nodes back."""
+    from backend.gallery_workflow import editor_workflow
+    record = _call(get_library().asset, asset_id)
+    graph = editor_workflow(record.get("metadata") or {})
+    if graph is None:
+        raise HTTPException(404, "This image carries no ComfyUI workflow.")
+    name = Path(record.get("filename") or asset_id).stem
+    return JSONResponse(graph, headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}.workflow.json"})
+
+
+@router.get("/assets/{asset_id}/reference/{node}")
+def reference(asset_id: str, node: str) -> FileResponse:
+    """A ControlNet / IPAdapter / img2img input image, when it is still in ComfyUI's input folder."""
+    from backend.gallery_workflow import reference_image
+    library = get_library()
+    record = _call(library.asset, asset_id)
+    path = reference_image(record.get("metadata") or {}, _comfyui(library), node)
+    if path is None:
+        raise HTTPException(404, "Reference image not found in the ComfyUI input folder.")
+    return FileResponse(path)
 
 
 @router.post("/assets/{asset_id}/preview")
