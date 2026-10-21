@@ -773,6 +773,38 @@
     text-decoration: underline dotted;
   }
 
+  .gal-reverse__stage {
+    flex-basis: 100%;
+    color: var(--c-text-2);
+  }
+
+  .gal-controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: var(--sp-2);
+  }
+
+  .gal-control {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    font-size: var(--fs-xs);
+  }
+
+  .gal-control img {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: contain;
+    border-radius: var(--r-sm);
+    background: var(--c-sunken);
+  }
+
+  .gal-control figcaption {
+    display: grid;
+    gap: 2px;
+    color: var(--c-text-2);
+  }
+
   .gal-breakdown__actions {
     display: inline-flex;
     gap: 4px;

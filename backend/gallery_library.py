@@ -25,8 +25,12 @@ from backend.gallery_metadata import extract_metadata
 IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif"})
 MAX_PAGE = 200
 MAX_EXPORT = 10000
-# No generation metadata and no model tags yet: these wait for reverse inference.
-_NEEDS_REVERSE = "a.has_metadata=0 AND a.model_tags='{}'"
+# Reverse inference is for images whose generation metadata is gone. Two stages:
+# model tags (local WD tagger) and control maps (preprocessors on the user's ComfyUI).
+_NO_METADATA = "a.has_metadata=0"
+_NEEDS_TAGS = "a.model_tags='{}'"
+_NEEDS_CONTROLS = "NOT EXISTS (SELECT 1 FROM controls c WHERE c.asset_id=a.id)"
+DEFAULT_CONTROL_KINDS = ("pose", "depth", "lineart")
 MAX_PIXELS = 100_000_000
 
 
@@ -105,6 +109,10 @@ class GalleryLibrary:
                     root_id TEXT NOT NULL REFERENCES roots(id), size INTEGER NOT NULL,
                     mtime_ns INTEGER NOT NULL, seen_job TEXT NOT NULL, missing INTEGER NOT NULL DEFAULT 0);
                 CREATE TABLE IF NOT EXISTS collections (name TEXT PRIMARY KEY);
+                CREATE TABLE IF NOT EXISTS controls (
+                    asset_id TEXT NOT NULL REFERENCES assets(id), kind TEXT NOT NULL,
+                    file TEXT NOT NULL, preprocessor TEXT NOT NULL, created_at TEXT NOT NULL,
+                    PRIMARY KEY (asset_id, kind));
                 CREATE TABLE IF NOT EXISTS jobs (
                     id TEXT PRIMARY KEY, root_ids TEXT NOT NULL, status TEXT NOT NULL,
                     progress TEXT NOT NULL, created_at TEXT NOT NULL, modified_at TEXT NOT NULL,
@@ -273,6 +281,8 @@ class GalleryLibrary:
                 if row:
                     if row["type"] == "wd":
                         self._run_process_job(row["id"])
+                    elif row["type"] == "control":
+                        self._run_control_job(row["id"])
                     else:
                         self.run_job(row["id"])
                 else:
@@ -455,7 +465,7 @@ class GalleryLibrary:
             conditions.append("a.has_metadata=?")
             params.append(int(has_metadata))
         if needs_reverse:
-            conditions.append(_NEEDS_REVERSE)
+            conditions.append(self._needs_reverse_sql())
         q = q.strip()[:1000]
         if q and self._fts:
             tokens = re.findall(r"\w+", q, flags=re.UNICODE)
@@ -593,51 +603,187 @@ class GalleryLibrary:
 
     # ── Reverse queue: images whose generation metadata is gone get model tags instead ──
 
-    def _queued_wd_ids(self, db: sqlite3.Connection) -> set[str]:
+    def _queued_ids(self, db: sqlite3.Connection, job_type: str) -> set[str]:
         ids: set[str] = set()
-        for row in db.execute("SELECT payload FROM jobs WHERE type='wd' AND status IN ('queued','running','paused')"):
+        for row in db.execute("SELECT payload FROM jobs WHERE type=? AND status IN ('queued','running','paused')", (job_type,)):
             ids.update(json.loads(row["payload"]).get("ids", []))
         return ids
 
-    def reverse_status(self) -> dict:
-        """How many images wait for reverse inference, and whether the tagger can run."""
+    def control_settings(self) -> dict:
+        from backend.comfyui_client import CONTROL_KINDS
+
+        settings = self.get_settings()
+        url = str(settings.get("comfyuiUrl") or "").strip()
+        kinds = settings.get("controlKinds", list(DEFAULT_CONTROL_KINDS))
+        kinds = [kind for kind in kinds if kind in CONTROL_KINDS] if isinstance(kinds, list) else list(DEFAULT_CONTROL_KINDS)
+        return {"url": url, "kinds": kinds, "enabled": bool(url and kinds)}
+
+    def _needs_reverse_sql(self) -> str:
+        stages = [_NEEDS_TAGS] + ([_NEEDS_CONTROLS] if self.control_settings()["enabled"] else [])
+        return f"{_NO_METADATA} AND ({' OR '.join(stages)})"
+
+    def _ids(self, db: sqlite3.Connection, condition: str) -> list[str]:
+        return [row["id"] for row in db.execute(f"SELECT a.id FROM assets a WHERE {condition} ORDER BY a.created_at DESC")]
+
+    def reverse_status(self, *, probe: bool = True) -> dict:
+        """Images waiting for reverse inference, per stage, and whether each stage can run."""
+        from backend.comfyui_client import ComfyUiClient, ComfyUiError
         from backend.gallery_inference import get_capabilities
 
+        controls = self.control_settings()
         with self.connection() as db:
-            pending = [row["id"] for row in db.execute("SELECT a.id FROM assets a WHERE " + _NEEDS_REVERSE)]
-            queued = self._queued_wd_ids(db)
+            pending = self._ids(db, self._needs_reverse_sql())
+            tags_pending = self._ids(db, f"{_NO_METADATA} AND {_NEEDS_TAGS}")
+            controls_pending = self._ids(db, f"{_NO_METADATA} AND {_NEEDS_CONTROLS}") if controls["enabled"] else []
+            tags_queued, controls_queued = self._queued_ids(db, "wd"), self._queued_ids(db, "control")
         adapter = get_capabilities(config=self.get_settings()).get("adapters", {}).get("wd_onnx", {})
+        server: dict = {"ok": False, "error": "Set the ComfyUI address in Settings." if not controls["url"] else "", "preprocessors": {}}
+        if controls["enabled"] and probe:
+            try:
+                server = ComfyUiClient(controls["url"], timeout=3).check()
+            except ComfyUiError as error:
+                server = {"ok": False, "error": str(error), "preprocessors": {}}
         return {
             "pending": len(pending),
-            "queued": len([asset_id for asset_id in pending if asset_id in queued]),
+            "queued": len([i for i in pending if i in tags_queued or i in controls_queued]),
             "ready": bool(adapter.get("ready")),
             "blockers": adapter.get("blockers") or [],
             "auto": self.get_settings().get("autoReverse", True) is not False,
+            "tags": {"pending": len(tags_pending), "queued": len([i for i in tags_pending if i in tags_queued])},
+            "controls": {
+                **controls,
+                "pending": len(controls_pending),
+                "queued": len([i for i in controls_pending if i in controls_queued]),
+                "ready": bool(controls["enabled"] and server.get("ok")),
+                "error": server.get("error") or server.get("warning") or "",
+                "preprocessors": server.get("preprocessors") or {},
+            },
         }
 
-    def queue_reverse(self, *, quiet: bool = False) -> dict:
-        """Queue every image without generation metadata (and without model tags) for the WD tagger."""
-        with self.connection() as db:
-            queued = self._queued_wd_ids(db)
-            ids = [row["id"] for row in db.execute(
-                "SELECT a.id FROM assets a WHERE " + _NEEDS_REVERSE + " ORDER BY a.created_at DESC")
-                if row["id"] not in queued]
-        status = self.reverse_status()
-        if not ids:
-            return {**status, "job": None}
-        if not status["ready"]:
-            if quiet:
-                return {**status, "job": None}
-            raise GalleryError("The tagger is not ready: " + "; ".join(status["blockers"]))
-        ready_ids = []
+    def _available(self, ids: list[str]) -> list[str]:
+        ready = []
         for asset_id in ids[:MAX_EXPORT]:
             try:
                 self.source_path(asset_id)
-                ready_ids.append(asset_id)
+                ready.append(asset_id)
             except (GalleryError, KeyError, OSError):
-                continue  # missing originals cannot be tagged; they stay pending
-        job = self.process(ready_ids) if ready_ids else None
-        return {**self.reverse_status(), "job": job}
+                continue  # a missing original cannot be processed; it stays pending
+        return ready
+
+    def queue_reverse(self, *, quiet: bool = False) -> dict:
+        """Queue images without generation metadata: WD tags and control maps, each stage when it can run."""
+        status = self.reverse_status()
+        with self.connection() as db:
+            tags_ids = [i for i in self._ids(db, f"{_NO_METADATA} AND {_NEEDS_TAGS}") if i not in self._queued_ids(db, "wd")]
+            control_ids = ([i for i in self._ids(db, f"{_NO_METADATA} AND {_NEEDS_CONTROLS}") if i not in self._queued_ids(db, "control")]
+                           if status["controls"]["enabled"] else [])
+        jobs, blocked = [], []
+        if tags_ids:
+            if status["ready"]:
+                ready = self._available(tags_ids)
+                if ready:
+                    jobs.append(self.process(ready))
+            else:
+                blocked.append("tagger: " + "; ".join(status["blockers"]))
+        if control_ids:
+            if status["controls"]["ready"]:
+                ready = self._available(control_ids)
+                if ready:
+                    jobs.append(self.queue_controls(ready))
+            else:
+                blocked.append("ComfyUI: " + (status["controls"]["error"] or "unavailable"))
+        if blocked and not jobs and not quiet:
+            raise GalleryError("Reverse inference cannot run yet — " + " | ".join(blocked))
+        return {**self.reverse_status(probe=False), "jobs": jobs, "blocked": blocked}
+
+    # ── Control maps (pose / depth / lineart / canny) ───────────────────────
+
+    def queue_controls(self, ids: list[str], kinds: list[str] | None = None) -> dict:
+        from backend.comfyui_client import CONTROL_KINDS
+
+        records = self.selected(ids)
+        settings = self.control_settings()
+        if not settings["url"]:
+            raise GalleryError("Set the ComfyUI address in Settings first.")
+        kinds = [kind for kind in (kinds or settings["kinds"]) if kind in CONTROL_KINDS]
+        if not kinds:
+            raise GalleryError("Choose at least one control map kind.")
+        progress = {"scanned": 0, "imported": 0, "skipped": 0, "nextIndex": 0, "total": len(records), "currentPath": "", "errors": []}
+        payload = {"ids": [record["id"] for record in records], "kinds": kinds, "url": settings["url"]}
+        stamp, job_id = _now(), uuid.uuid4().hex
+        with self.connection() as db:
+            db.execute("INSERT INTO jobs VALUES (?,?,?,?,?,?,?,?)", (job_id, "[]", "queued", _json(progress), stamp, stamp, "control", _json(payload)))
+            row = db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+        self._wake.set()
+        return self._job(row)
+
+    def controls(self, asset_id: str) -> list[dict]:
+        with self.connection() as db:
+            if not db.execute("SELECT 1 FROM assets WHERE id=?", (asset_id,)).fetchone():
+                raise KeyError(asset_id)
+            rows = db.execute("SELECT kind, preprocessor, created_at FROM controls WHERE asset_id=? ORDER BY kind", (asset_id,)).fetchall()
+        return [{"kind": row["kind"], "preprocessor": row["preprocessor"], "createdAt": row["created_at"]} for row in rows]
+
+    def control_file(self, asset_id: str, kind: str) -> Path:
+        with self.connection() as db:
+            row = db.execute("SELECT file FROM controls WHERE asset_id=? AND kind=?", (asset_id, kind)).fetchone()
+        if not row:
+            raise KeyError(f"{asset_id}/{kind}")
+        path = self.directory / row["file"]
+        if not path.is_file():
+            raise KeyError(f"{asset_id}/{kind}")
+        return path
+
+    def _store_control(self, asset_id: str, kind: str, png: bytes, preprocessor: str) -> None:
+        relative = Path("controls") / asset_id / f"{kind}.png"
+        target = self.directory / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_name(f".{kind}-{uuid.uuid4().hex}.tmp")
+        temporary.write_bytes(png)
+        os.replace(temporary, target)
+        with self.connection() as db:
+            db.execute("INSERT INTO controls VALUES (?,?,?,?,?) ON CONFLICT(asset_id,kind) DO UPDATE SET file=excluded.file,"
+                       "preprocessor=excluded.preprocessor,created_at=excluded.created_at",
+                       (asset_id, kind, relative.as_posix(), preprocessor, _now()))
+
+    def _run_control_job(self, job_id: str) -> None:
+        from backend.comfyui_client import ComfyUiClient
+
+        with self.connection() as db:
+            row = db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if not row or row["status"] != "running":
+                return
+        payload, progress = json.loads(row["payload"]), json.loads(row["progress"])
+        client = ComfyUiClient(payload["url"])
+        try:
+            for index in range(progress["nextIndex"], len(payload["ids"])):
+                if not self._running(job_id):
+                    return
+                asset_id = payload["ids"][index]
+                try:
+                    path = self.source_path(asset_id, verify_hash=True)
+                    progress["currentPath"] = str(path)
+                    self._progress(job_id, progress)
+                    done = {item["kind"] for item in self.controls(asset_id)}
+                    for kind in payload["kinds"]:
+                        if kind in done:
+                            continue
+                        png, node = client.run_preprocessor(path, kind, cancelled=lambda: not self._running(job_id))
+                        self._store_control(asset_id, kind, png, node)
+                    progress["imported"] += 1
+                except Exception as error:
+                    if not self._running(job_id):
+                        return  # paused or cancelled mid-image: resume retries it
+                    progress["skipped"] += 1
+                    progress["errors"] = [*progress["errors"], f"{asset_id}: {error}"][-20:]
+                progress["scanned"] += 1
+                progress["nextIndex"] = index + 1
+                self._progress(job_id, progress)
+            progress["currentPath"] = ""
+            self._progress(job_id, progress, "failed" if progress["skipped"] and not progress["imported"] else "completed")
+        except Exception as error:
+            progress["errors"] = [*progress["errors"], str(error)][-20:]
+            self._progress(job_id, progress, "failed")
 
     def selected(self, ids: list[str]) -> list[dict]:
         if not isinstance(ids, list) or not ids or len(ids) > MAX_EXPORT or not all(isinstance(v, str) for v in ids):

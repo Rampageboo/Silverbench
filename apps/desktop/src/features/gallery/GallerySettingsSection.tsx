@@ -1,7 +1,18 @@
 import { useEffect, useState } from "react";
 import { PathField } from "../../components/PathField";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
-import { galleryApi, type ComfyUiCheck, type GalleryCapabilities, type GallerySettings } from "./galleryApi";
+import {
+  CONTROL_KIND_LABELS,
+  galleryApi,
+  type ComfyServerCheck,
+  type ComfyUiCheck,
+  type ControlKind,
+  type GalleryCapabilities,
+  type GallerySettings
+} from "./galleryApi";
+
+const ALL_KINDS: ControlKind[] = ["pose", "depth", "lineart", "canny"];
+const DEFAULT_KINDS: ControlKind[] = ["pose", "depth", "lineart"];
 import { errorText } from "./useGallery";
 import "./gallery.css";
 
@@ -25,6 +36,8 @@ type Fields = {
   captionModelPath: string;
   comfyuiPath: string;
   autoReverse: boolean;
+  comfyuiUrl: string;
+  controlKinds: ControlKind[];
 };
 
 function fieldsFrom(settings: GallerySettings): Fields {
@@ -37,7 +50,9 @@ function fieldsFrom(settings: GallerySettings): Fields {
     pixaiModelPath: settings.pixaiModelPath ?? "",
     captionModelPath: settings.captionModelPath ?? "",
     comfyuiPath: settings.comfyuiPath ?? "",
-    autoReverse: settings.autoReverse !== false
+    autoReverse: settings.autoReverse !== false,
+    comfyuiUrl: settings.comfyuiUrl ?? "",
+    controlKinds: settings.controlKinds ?? DEFAULT_KINDS
   };
 }
 
@@ -72,6 +87,18 @@ function ComfyUiStatus({ check }: { check: ComfyUiCheck | null }) {
   );
 }
 
+function ServerStatus({ check }: { check: ComfyServerCheck | null }) {
+  if (!check) return null;
+  if (!check.ok) return <span className="ui-field__hint gset-bad">{check.error}</span>;
+  const available = ALL_KINDS.filter((kind) => check.preprocessors[kind]);
+  return (
+    <span className={`ui-field__hint ${check.warning ? "gset-warn" : "gset-ok"}`}>
+      已连上 ComfyUI {check.version}；可用：{available.map((kind) => `${CONTROL_KIND_LABELS[kind]}（${check.preprocessors[kind]}）`).join("、") || "无"}
+      {check.warning ? `。${check.warning}` : ""}
+    </span>
+  );
+}
+
 /** Gallery model paths and an honest readout of what can actually run. */
 export function GallerySettingsSection({ open }: { open: boolean }) {
   const [settings, setSettings] = useState<GallerySettings | null>(null);
@@ -82,6 +109,21 @@ export function GallerySettingsSection({ open }: { open: boolean }) {
   const [saved, setSaved] = useState(false);
   const [comfyCheck, setComfyCheck] = useState<ComfyUiCheck | null>(null);
   const comfyPath = useDebouncedValue(fields?.comfyuiPath ?? "", 300);
+  const [serverCheck, setServerCheck] = useState<ComfyServerCheck | null>(null);
+  const comfyUrl = useDebouncedValue(fields?.comfyuiUrl ?? "", 500);
+
+  useEffect(() => {
+    if (!open || !comfyUrl.trim()) {
+      setServerCheck(null);
+      return;
+    }
+    const controller = new AbortController();
+    galleryApi
+      .checkComfyServer(comfyUrl.trim(), controller.signal)
+      .then(setServerCheck)
+      .catch(() => setServerCheck(null));
+    return () => controller.abort();
+  }, [comfyUrl, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -129,6 +171,8 @@ export function GallerySettingsSection({ open }: { open: boolean }) {
       assign("captionModelPath", fields.captionModelPath);
       assign("comfyuiPath", fields.comfyuiPath);
       next.autoReverse = fields.autoReverse;
+      assign("comfyuiUrl", fields.comfyuiUrl);
+      next.controlKinds = fields.controlKinds;
       if (fields.deviceId.trim()) next.deviceId = Number(fields.deviceId);
       else delete next.deviceId;
       // Explicit only: the backend refuses to infer the model profile from a filename.
@@ -178,9 +222,43 @@ export function GallerySettingsSection({ open }: { open: boolean }) {
             status={<ComfyUiStatus check={comfyCheck} />}
             hint="用于找回 ControlNet / IPAdapter 参考图（PNG 里只记了文件名，图在 ComfyUI 的 input 文件夹）。选便携版外层或 ComfyUI 本体都可以。"
           />
+          <label className="ui-field">
+            <span className="ui-field__label">ComfyUI 地址（生成控制图用）</span>
+            <input
+              value={fields.comfyuiUrl}
+              onChange={(event) => set({ comfyuiUrl: event.target.value })}
+              placeholder="http://127.0.0.1:8188"
+              spellCheck={false}
+            />
+            <ServerStatus check={serverCheck} />
+            <span className="ui-field__hint">
+              可以是本机，也可以是另一台电脑的局域网地址（那台 ComfyUI 需用 --listen 启动）。需要装 comfyui_controlnet_aux。
+            </span>
+          </label>
+          <div className="ui-field">
+            <span className="ui-field__label">无元数据的图生成这些控制图</span>
+            <div className="gset-kinds">
+              {ALL_KINDS.map((kind) => (
+                <label key={kind} className="gal-check">
+                  <input
+                    type="checkbox"
+                    checked={fields.controlKinds.includes(kind)}
+                    onChange={(event) =>
+                      set({
+                        controlKinds: event.target.checked
+                          ? ALL_KINDS.filter((item) => item === kind || fields.controlKinds.includes(item))
+                          : fields.controlKinds.filter((item) => item !== kind)
+                      })
+                    }
+                  />
+                  {CONTROL_KIND_LABELS[kind]}
+                </label>
+              ))}
+            </div>
+          </div>
           <label className="gal-check">
             <input type="checkbox" checked={fields.autoReverse} onChange={(event) => set({ autoReverse: event.target.checked })} />
-            扫描后，没有生成元数据的图自动进入反推队列（打标模型就绪时运行）
+            扫描后，没有生成元数据的图自动进入反推队列（打标与控制图，各自就绪时运行）
           </label>
           <PathField
             label="WD 模型 (.onnx)"

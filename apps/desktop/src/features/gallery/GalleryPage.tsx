@@ -638,6 +638,8 @@ export function GalleryPage({ active = true, onReady }: Props) {
             onSave={() => void save()}
             onRevert={revert}
             onCopy={copy}
+            refreshKey={detailToken}
+            onMessage={(message) => showToast(message)}
           />
         ) : (
           <aside className="gal-detail gal-detail--empty">

@@ -178,6 +178,16 @@
     color: var(--c-danger);
   }
 
+  .gset-warn {
+    color: var(--c-warn);
+  }
+
+  .gset-kinds {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-3);
+  }
+
   .gset-caps {
     display: grid;
     gap: var(--sp-2);

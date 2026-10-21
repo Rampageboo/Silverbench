@@ -243,7 +243,8 @@ export const JOB_STATUS_LABELS: Record<GalleryJob["status"], string> = {
 
 export const JOB_TYPE_LABELS: Record<GalleryJob["type"], string> = {
   scan: "扫描",
-  wd: "WD 打标"
+  wd: "WD 打标",
+  control: "控制图"
 };
 
 export function isActiveJob(job: GalleryJob) {

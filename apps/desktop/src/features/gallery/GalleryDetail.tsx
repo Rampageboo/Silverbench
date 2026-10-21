@@ -16,6 +16,7 @@ import {
 } from "./galleryDomain";
 import { IconAlert, IconCopy, IconEyeOff, IconStar } from "../../ui/icons";
 import { GalleryBreakdown } from "./GalleryBreakdown";
+import { GalleryControls } from "./GalleryControls";
 
 type Props = {
   asset: GalleryAssetDetail;
@@ -34,6 +35,9 @@ type Props = {
   onSave: () => void;
   onRevert: () => void;
   onCopy: (text: string, what: string) => void;
+  /** Changes when background jobs advance, so generated control maps show up. */
+  refreshKey: number;
+  onMessage: (message: string) => void;
 };
 
 const FORMAT_LABELS: Record<PromptFormat, string> = { noobai: "NoobAI", anima: "Anima" };
@@ -138,7 +142,9 @@ export function GalleryDetail({
   onDraftChange,
   onSave,
   onRevert,
-  onCopy
+  onCopy,
+  refreshKey,
+  onMessage
 }: Props) {
   const [format, setFormat] = useState<PromptFormat>("noobai");
   const prompt = prompts ? prompts[format] : null;
@@ -311,6 +317,7 @@ export function GalleryDetail({
         </section>
 
         <GalleryBreakdown assetId={asset.id} filename={asset.filename} onCopy={onCopy} />
+        <GalleryControls assetId={asset.id} refreshKey={refreshKey} onMessage={onMessage} />
 
         <section className="gal-section">
           <h3 className="gal-section__title">原始元数据</h3>

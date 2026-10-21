@@ -89,6 +89,44 @@ def comfyui(path: str | None = None) -> dict:
     return locate_comfyui(path if path is not None else get_library().get_settings().get("comfyuiPath"))
 
 
+@router.get("/comfyui/server")
+def comfyui_server(url: str | None = None) -> dict:
+    """Reach the ComfyUI server (this computer or the other one) and list its preprocessors."""
+    from backend.comfyui_client import ComfyUiClient, ComfyUiError
+    try:
+        return ComfyUiClient(url if url is not None else get_library().control_settings()["url"] or None, timeout=3).check()
+    except ComfyUiError as error:
+        return {"ok": False, "error": str(error), "preprocessors": {}}
+
+
+@router.post("/controls")
+def queue_controls(payload: dict = Body(...)) -> dict:
+    """Make control maps (pose, depth, lineart, canny) for the given images on ComfyUI."""
+    return _call(get_library().queue_controls, payload.get("ids", []), payload.get("kinds"))
+
+
+@router.get("/assets/{asset_id}/controls")
+def asset_controls(asset_id: str) -> list[dict]:
+    return _call(get_library().controls, asset_id)
+
+
+@router.get("/assets/{asset_id}/controls/{kind}")
+def control_image(asset_id: str, kind: str) -> FileResponse:
+    return FileResponse(_call(get_library().control_file, asset_id, kind), media_type="image/png")
+
+
+@router.post("/assets/{asset_id}/controls/{kind}/to-comfyui")
+def control_to_comfyui(asset_id: str, kind: str) -> dict:
+    """Upload a control map into ComfyUI's input folder so a LoadImage node can pick it."""
+    from backend.comfyui_client import ComfyUiClient, ComfyUiError
+    library = get_library()
+    path = _call(library.control_file, asset_id, kind)
+    try:
+        return {"name": ComfyUiClient(library.control_settings()["url"] or None).upload(path)}
+    except ComfyUiError as error:
+        raise HTTPException(409, str(error)) from error
+
+
 @router.get("/reverse")
 def reverse_status() -> dict:
     return _call(get_library().reverse_status)

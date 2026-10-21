@@ -42,7 +42,7 @@ export type GalleryAssetSummary = Omit<GalleryAsset, "metadata" | "notes" | "use
   personalTagsCount: number;
 };
 export type GalleryJob = {
-  id: string; type: "scan" | "wd"; rootIds: string[];
+  id: string; type: "scan" | "wd" | "control"; rootIds: string[];
   status: "queued" | "running" | "paused" | "completed" | "cancelled" | "failed";
   processed: number; createdAt: string; modifiedAt: string;
   progress: {
@@ -68,9 +68,20 @@ export type GallerySettings = JsonObject & {
   pixaiModelPath?: string; captionModelPath?: string; rules?: JsonObject;
   /** This computer's ComfyUI folder (portable bundle or the ComfyUI folder itself). */
   comfyuiPath?: string;
-  /** Queue images without generation metadata for the tagger after each scan (default on). */
+  /** Queue images without generation metadata for reverse inference after each scan (default on). */
   autoReverse?: boolean;
+  /** ComfyUI server that runs the preprocessors: this computer or the other one on the LAN. */
+  comfyuiUrl?: string;
+  /** Control maps to make for images without metadata. */
+  controlKinds?: ControlKind[];
 };
+export type ControlKind = "pose" | "depth" | "lineart" | "canny";
+export const CONTROL_KIND_LABELS: Record<ControlKind, string> = { pose: "姿势", depth: "深度", lineart: "线稿", canny: "Canny 边缘" };
+export type ComfyServerCheck = {
+  ok: boolean; url?: string; version?: string; error?: string; warning?: string;
+  preprocessors: Partial<Record<ControlKind, string | null>>;
+};
+export type ControlMap = { kind: ControlKind; preprocessor: string; createdAt: string };
 export type ComfyUiCheck = {
   ok: boolean; configured: boolean; error?: string;
   root?: string; portable?: boolean; inputDir?: string; outputDir?: string; modelsDir?: string;
@@ -93,7 +104,16 @@ export type GalleryBreakdown = {
   inputImages?: Array<{ node: string; filename: string; found: boolean; path: string }>;
   adetailer?: Record<string, string>; hires?: Record<string, string>;
 };
-export type ReverseStatus = { pending: number; queued: number; ready: boolean; blockers: string[]; auto: boolean };
+export type ReverseStatus = {
+  pending: number; queued: number; auto: boolean;
+  /** WD tagger stage. */
+  ready: boolean; blockers: string[];
+  tags: { pending: number; queued: number };
+  controls: {
+    enabled: boolean; url: string; kinds: ControlKind[]; pending: number; queued: number;
+    ready: boolean; error: string; preprocessors: Partial<Record<ControlKind, string | null>>;
+  };
+};
 export type GalleryStatus = {
   total: number; roots: GalleryRoot[]; collections: string[]; jobs: GalleryJob[];
   capabilities: GalleryCapabilities;
@@ -145,6 +165,9 @@ const assetPath = (id: string) => `/assets/${encodeURIComponent(id)}`;
 export function galleryImageUrl(id: string, full = false) {
   return `${backendBaseUrl()}/api/gallery${assetPath(id)}/${full ? "image" : "thumbnail"}`;
 }
+export function galleryControlUrl(id: string, kind: ControlKind, version = "") {
+  return `${backendBaseUrl()}/api/gallery${assetPath(id)}/controls/${kind}${version ? `?v=${encodeURIComponent(version)}` : ""}`;
+}
 /** workflow.json download: drop it into ComfyUI to get the nodes back. */
 export function galleryWorkflowUrl(id: string) {
   return `${backendBaseUrl()}/api/gallery${assetPath(id)}/workflow`;
@@ -183,5 +206,11 @@ export const galleryApi = {
   checkComfyUi: (path?: string, signal?: AbortSignal) =>
     galleryRequest<ComfyUiCheck>(`/comfyui${path === undefined ? "" : `?${new URLSearchParams({ path })}`}`, undefined, signal),
   reverseStatus: (signal?: AbortSignal) => galleryRequest<ReverseStatus>("/reverse", undefined, signal),
-  queueReverse: (signal?: AbortSignal) => galleryRequest<ReverseStatus & { job: GalleryJob | null }>("/reverse", {}, signal)
+  queueReverse: (signal?: AbortSignal) => galleryRequest<ReverseStatus & { jobs: GalleryJob[]; blocked: string[] }>("/reverse", {}, signal),
+  checkComfyServer: (url?: string, signal?: AbortSignal) =>
+    galleryRequest<ComfyServerCheck>(`/comfyui/server${url === undefined ? "" : `?${new URLSearchParams({ url })}`}`, undefined, signal),
+  queueControls: (ids: string[], kinds?: ControlKind[], signal?: AbortSignal) => galleryRequest<GalleryJob>("/controls", { ids, kinds }, signal),
+  controls: (id: string, signal?: AbortSignal) => galleryRequest<ControlMap[]>(`${assetPath(id)}/controls`, undefined, signal),
+  controlToComfyUi: (id: string, kind: ControlKind, signal?: AbortSignal) =>
+    galleryRequest<{ name: string }>(`${assetPath(id)}/controls/${kind}/to-comfyui`, {}, signal)
 };

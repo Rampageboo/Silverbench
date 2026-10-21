@@ -45,14 +45,23 @@ function ReverseQueue({ jobs, onShow, onMessage }: { jobs: GalleryJob[]; onShow:
   }, [jobKey]);
 
   if (!status || !status.pending) return null;
-  const waiting = status.pending - status.queued;
+  // Offer to start only when a stage that can run actually has unqueued work.
+  const runnable =
+    (status.ready && status.tags.pending > status.tags.queued) ||
+    (status.controls.ready && status.controls.pending > status.controls.queued);
 
   async function start() {
     setBusy(true);
     try {
       const result = await galleryApi.queueReverse();
       setStatus(result);
-      onMessage(result.job ? `已加入反推：${result.job.progress.total ?? waiting} 张` : "没有需要反推的图。");
+      onMessage(
+        result.jobs.length
+          ? `已加入反推：${result.jobs.map((job) => `${job.type === "control" ? "控制图" : "标签"} ${job.progress.total ?? 0} 张`).join("，")}`
+          : result.blocked.length
+            ? `暂时无法反推：${result.blocked.join("；")}`
+            : "没有需要反推的图。"
+      );
     } catch (err) {
       onMessage(err instanceof Error ? err.message : String(err));
     } finally {
@@ -65,16 +74,20 @@ function ReverseQueue({ jobs, onShow, onMessage }: { jobs: GalleryJob[]; onShow:
       <button type="button" className="gal-reverse__count" onClick={onShow} title="只看这些图">
         {status.pending} 张无元数据{status.queued ? `（${status.queued} 张反推中）` : ""}
       </button>
-      {waiting > 0 ? (
-        status.ready ? (
-          <button type="button" className="ui-btn--sm" onClick={() => void start()} disabled={busy}>
-            {busy ? "加入中…" : "开始反推"}
-          </button>
-        ) : (
-          <span className="gal-muted" title={status.blockers.join("\n")}>
-            打标模型未就绪，在设置里配置后自动开始
-          </span>
-        )
+      <span className="gal-reverse__stage" title={status.ready ? "" : status.blockers.join("\n")}>
+        标签：{status.tags.pending} 张待处理{status.ready ? "" : "（打标模型未就绪）"}
+      </span>
+      {status.controls.enabled ? (
+        <span className="gal-reverse__stage" title={status.controls.error}>
+          控制图：{status.controls.pending} 张待处理{status.controls.ready ? "" : "（ComfyUI 未连上）"}
+        </span>
+      ) : (
+        <span className="gal-reverse__stage gal-muted">控制图：在设置里填 ComfyUI 地址后启用</span>
+      )}
+      {runnable ? (
+        <button type="button" className="ui-btn--sm" onClick={() => void start()} disabled={busy}>
+          {busy ? "加入中…" : "开始反推"}
+        </button>
       ) : null}
     </div>
   );

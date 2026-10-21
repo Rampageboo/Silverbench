@@ -107,7 +107,8 @@ def test_reverse_queue_waits_for_a_ready_tagger(tmp_path):
         assert library.list_assets(needs_reverse=True)["total"] == 1
         status = library.reverse_status()
         assert status["pending"] == 1 and status["ready"] is False and status["blockers"]
-        assert library.queue_reverse(quiet=True)["job"] is None
+        result = library.queue_reverse(quiet=True)
+        assert result["jobs"] == [] and result["blocked"]
         with pytest.raises(GalleryError):
             library.queue_reverse()
     finally:
