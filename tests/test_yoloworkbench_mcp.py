@@ -320,16 +320,14 @@ class McpStdioContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.structuredContent["apiSchemaVersion"], 22)
 
 
-class ProjectConfigTests(unittest.TestCase):
-    def test_project_config_targets_existing_launcher_from_codex_directory(self) -> None:
-        with (ROOT / ".codex" / "config.toml").open("rb") as handle:
-            config = tomllib.load(handle)
-
-        server = config["mcp_servers"]["yoloworkbench"]
-        configured_cwd = (ROOT / ".codex" / server["cwd"]).resolve()
-        launcher = configured_cwd / server["args"][-1]
-        self.assertEqual(configured_cwd, ROOT)
-        self.assertTrue(launcher.is_file())
+class DocumentedConfigTests(unittest.TestCase):
+    def test_documented_codex_config_targets_the_launcher_with_write_approval(self) -> None:
+        doc = (ROOT / "docs" / "yoloworkbench-mcp.md").read_text(encoding="utf-8")
+        block = doc.split("```toml", 1)[1].split("```", 1)[0]
+        server = tomllib.loads(block)["mcp_servers"]["rampageworkbench"]
+        launcher = Path(server["args"][-1])
+        self.assertEqual(launcher.name, "run-yoloworkbench-mcp.cmd")
+        self.assertTrue((ROOT / "scripts" / launcher.name).is_file())
         self.assertEqual(server["default_tools_approval_mode"], "writes")
 
 

@@ -1,0 +1,27 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "apps/desktop",
+        "run",
+        "backend:dev"
+      ],
+      "port": 8765
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "apps/desktop",
+        "run",
+        "dev"
+      ],
+      "port": 5173
+    }
+  ]
+}
