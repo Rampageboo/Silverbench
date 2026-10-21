@@ -36,8 +36,12 @@ $old = git rev-parse HEAD
 Write-Host "Fetching from GitHub..."
 git fetch origin
 if ($LASTEXITCODE) { Fail "git fetch failed (network or GitHub sign-in)." }
+git merge-base --is-ancestor HEAD origin/main
+if ($LASTEXITCODE) {
+    Fail "main here has commits GitHub does not have, so it cannot fast-forward. Push them from here once, or reset with 'git reset --hard origin/main' if they are not needed."
+}
 git merge --ff-only origin/main
-if ($LASTEXITCODE) { Fail "main here has commits GitHub does not have, so it cannot fast-forward. Push them from here once, or reset with 'git reset --hard origin/main' if they are not needed." }
+if ($LASTEXITCODE) { Fail "Could not fast-forward (see git's message above): usually an untracked file here has the same name as a new file in the update. Move it away and run update again." }
 $new = git rev-parse HEAD
 
 if ($old -eq $new) {
