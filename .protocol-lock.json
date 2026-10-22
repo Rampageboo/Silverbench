@@ -1,14 +1,12 @@
 {
   "schema_version": 1,
   "package_id": "project-policy",
-  "version": "v6.0.0",
-  "source": "Rampageboo/ai_collaboration_protocol_v4@0dc1036f982dd68571fe6890dc6d1a8c555e5904",
-  "installed_at": "2026-08-10T15:45:09Z",
+  "version": "v6.0.1",
+  "source": "Rampageboo/ai_collaboration_protocol_v4@6ec089b2ddb4406865216c2b11f01c00c139864f",
+  "installed_at": "2026-08-14T09:33:52Z",
   "files": {
-    "AGENTS.md": "37e668c197d2f521695f3a745b9a60cd5dd28fa7dff74d57e71cc826f83c0810",
-    "CLAUDE.md": "b404ecb82f1ca3f3fa8ec690b112e9884f051877f7ac7b54e29f91462e8506e6",
     "OWNER_HANDBOOK.md": "ac96a409876e3bb578fb557da006b7e9bb869461ee352f04abf20141e3559145",
-    "UPDATE_FROM_GITHUB.md": "53823decbcdea407bbc6be618052921116d2fe1a001dd05a13803fce5d0c33b6",
+    "UPDATE_FROM_GITHUB.md": "6c264771314f2d1e0f72ef5faa79c60eacb5dbbb1ff61b90dda843d978d0ecd6",
     "docs/ai-workflow/codebase-map.md": "e31dd400c7203dba6828092ce1a775fea58636e39bc9c6442da60ad3d62844d4",
     "docs/ai-workflow/failure-and-debug.md": "e14a18af0cad19d03fe746e93a869e519770cb91737c788a0e7f6fcfb3f0b4c9",
     "docs/ai-workflow/migrations/project-context-v2-to-v3.md": "dfb8e40ead0c252a1eb4968f72d8de535dbe7cfa8995ec1b3464cf69b2795597",
