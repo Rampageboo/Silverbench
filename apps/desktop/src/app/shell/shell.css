@@ -377,6 +377,31 @@
     color: var(--c-warn);
   }
 
+  .shell-models {
+    position: relative;
+  }
+
+  .shell-models__menu {
+    bottom: calc(100% + 4px);
+    left: 0;
+    width: 280px;
+  }
+
+  .shell-models__row,
+  .shell-models__foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    padding: 4px 8px;
+  }
+
+  .shell-models__text {
+    display: grid;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
   .is-collapsed .shell-status {
     flex-direction: column;
   }

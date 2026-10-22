@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .dataset_merge import IMAGE_EXTENSIONS, unique_path
-from .yolo_pt_model_cache import get_yolo_model
+from .yolo_pt_model_cache import get_yolo_model, touch_yolo_model
 from .torch_runtime import require_cuda_device
 
 
@@ -52,6 +52,7 @@ def detect_folder_with_pt(
     labels = 0
 
     for index, image_path in enumerate(images, start=1):
+        touch_yolo_model(model_path)  # a running job keeps its model loaded
         if cancel_event is not None and cancel_event.is_set():
             _write_data_yaml(output_dir, model)
             result = _result(model_path, source_dir, output_dir, len(images), copied, labels, class_counts, errors)

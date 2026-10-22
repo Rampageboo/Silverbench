@@ -712,6 +712,33 @@ export async function writeAppSettings(
   return data as AppSettings;
 }
 
+/** Models the backend holds in memory (loaded on first use, released when idle). */
+export type LoadedModels = {
+  ok: true;
+  models: Array<{ path: string; name: string; loadedSecondsAgo: number; idleSeconds: number }>;
+  idleReleaseSeconds: number;
+  gpu: { torchLoaded: boolean; allocatedMB?: number; reservedMB?: number };
+};
+
+export async function loadedModels(signal?: AbortSignal) {
+  const response = await fetch(`${API_BASE_URL}/api/models`, { cache: "no-store", signal });
+  const data = await response.json();
+  assertOk(data, response);
+  return data as LoadedModels;
+}
+
+/** Release one model (by path) or all of them and empty the GPU cache. */
+export async function releaseModels(path?: string) {
+  const response = await fetch(`${API_BASE_URL}/api/models/release`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(path ? { path } : {})
+  });
+  const data = await response.json();
+  assertOk(data, response);
+  return data as LoadedModels & { released: number };
+}
+
 export async function openWorkspace(workspaceRoot: string) {
   const response = await fetch(`${API_BASE_URL}/api/workspace/open`, {
     method: "POST",

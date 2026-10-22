@@ -89,6 +89,11 @@
     box-shadow: 0 0 0 3px var(--c-danger-soft);
   }
 
+  .ui-dot--warn {
+    background: var(--c-warn);
+    box-shadow: 0 0 0 3px var(--c-warn-soft);
+  }
+
   /* Eyebrow: small mono uppercase label used for section titles. */
 
   .ui-eyebrow {

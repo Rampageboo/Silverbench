@@ -6,7 +6,7 @@ from typing import Any, Callable
 
 from .dataset_merge import IMAGE_EXTENSIONS, unique_path
 from .torch_runtime import require_cuda_device
-from .yolo_pt_model_cache import get_yolo_model
+from .yolo_pt_model_cache import get_yolo_model, touch_yolo_model
 
 
 def classify_folder_with_pt(
@@ -57,6 +57,7 @@ def classify_folder_with_pt(
     copied = 0
 
     for index, image_path in enumerate(images, start=1):
+        touch_yolo_model(model_path)  # a running job keeps its model loaded
         if cancel_event is not None and cancel_event.is_set():
             return {
                 "ok": True,

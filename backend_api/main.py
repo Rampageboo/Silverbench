@@ -133,6 +133,25 @@ def app_settings() -> JSONResponse:
     return JSONResponse({"ok": True, **service.call("readAppSettings", [])})
 
 
+class ReleaseModelsRequest(BaseModel):
+    path: str | None = None
+
+
+@app.get("/api/models")
+def models_loaded() -> JSONResponse:
+    """Models held in memory now, and GPU memory in use (never loads anything)."""
+    from backend.yolo_pt_model_cache import loaded_models
+
+    return JSONResponse({"ok": True, **loaded_models()})
+
+
+@app.post("/api/models/release")
+def models_release(payload: ReleaseModelsRequest) -> JSONResponse:
+    from backend.yolo_pt_model_cache import release_models
+
+    return JSONResponse({"ok": True, **release_models(payload.path)})
+
+
 @app.post("/api/call")
 def api_call(payload: ApiCallRequest) -> JSONResponse:
     method = payload.method.strip()

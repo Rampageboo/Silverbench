@@ -54,6 +54,13 @@ def _digest(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _hand_over_gpu() -> None:
+    """Release this process's idle YOLO models before tagging / ComfyUI work needs the GPU."""
+    from backend.yolo_pt_model_cache import release_models
+
+    release_models()
+
+
 class GalleryError(ValueError):
     """An actionable invalid request, suitable for a desktop API error."""
 
@@ -754,6 +761,7 @@ class GalleryLibrary:
             if not row or row["status"] != "running":
                 return
         payload, progress = json.loads(row["payload"]), json.loads(row["progress"])
+        _hand_over_gpu()
         client = ComfyUiClient(payload["url"])
         try:
             for index in range(progress["nextIndex"], len(payload["ids"])):
@@ -837,6 +845,7 @@ class GalleryLibrary:
             if not row or row["status"] != "running":
                 return
         payload, progress = json.loads(row["payload"]), json.loads(row["progress"])
+        _hand_over_gpu()
         try:
             for index in range(progress["nextIndex"], len(payload["ids"])):
                 if not self._running(job_id):
