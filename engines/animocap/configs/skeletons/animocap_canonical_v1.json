@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "skeleton_id": "animocap_canonical_v1",
+  "coordinate_system": {
+    "handedness": "right",
+    "up_axis": "Y",
+    "forward_axis": "Z",
+    "unit": "meter"
+  },
+  "reference_pose": {
+    "type": "T_POSE",
+    "facing": "+Z"
+  },
+  "bones": [
+    {"semantic":"sceneRoot","parent":null,"rest_offset_m":[0.0,0.0,0.0]},
+    {"semantic":"hips","parent":"sceneRoot","rest_offset_m":[0.0,0.9,0.0]},
+    {"semantic":"spine","parent":"hips","rest_offset_m":[0.0,0.12,0.0]},
+    {"semantic":"chest","parent":"spine","rest_offset_m":[0.0,0.15,0.0]},
+    {"semantic":"upperChest","parent":"chest","rest_offset_m":[0.0,0.12,0.0]},
+    {"semantic":"neck","parent":"upperChest","rest_offset_m":[0.0,0.12,0.0]},
+    {"semantic":"head","parent":"neck","rest_offset_m":[0.0,0.16,0.0]},
+    {"semantic":"leftShoulder","parent":"upperChest","rest_offset_m":[0.12,0.08,0.0]},
+    {"semantic":"leftUpperArm","parent":"leftShoulder","rest_offset_m":[0.2,0.0,0.0]},
+    {"semantic":"leftLowerArm","parent":"leftUpperArm","rest_offset_m":[0.24,0.0,0.0]},
+    {"semantic":"leftHand","parent":"leftLowerArm","rest_offset_m":[0.18,0.0,0.0]},
+    {"semantic":"rightShoulder","parent":"upperChest","rest_offset_m":[-0.12,0.08,0.0]},
+    {"semantic":"rightUpperArm","parent":"rightShoulder","rest_offset_m":[-0.2,0.0,0.0]},
+    {"semantic":"rightLowerArm","parent":"rightUpperArm","rest_offset_m":[-0.24,0.0,0.0]},
+    {"semantic":"rightHand","parent":"rightLowerArm","rest_offset_m":[-0.18,0.0,0.0]},
+    {"semantic":"leftUpperLeg","parent":"hips","rest_offset_m":[0.09,-0.1,0.0]},
+    {"semantic":"leftLowerLeg","parent":"leftUpperLeg","rest_offset_m":[0.0,-0.4,0.0]},
+    {"semantic":"leftFoot","parent":"leftLowerLeg","rest_offset_m":[0.0,-0.4,0.04]},
+    {"semantic":"leftToes","parent":"leftFoot","rest_offset_m":[0.0,0.0,0.16]},
+    {"semantic":"rightUpperLeg","parent":"hips","rest_offset_m":[-0.09,-0.1,0.0]},
+    {"semantic":"rightLowerLeg","parent":"rightUpperLeg","rest_offset_m":[0.0,-0.4,0.0]},
+    {"semantic":"rightFoot","parent":"rightLowerLeg","rest_offset_m":[0.0,-0.4,0.04]},
+    {"semantic":"rightToes","parent":"rightFoot","rest_offset_m":[0.0,0.0,0.16]}
+  ]
+}

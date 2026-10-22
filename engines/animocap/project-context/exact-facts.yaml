@@ -1,0 +1,49 @@
+schema_version: 3
+metadata:
+  last_updated: 2026-08-11
+  source_revision_represented: ""
+paths: []
+commands:
+  - id: prepare_character_reference
+    command: tools/prepare_character_reference.ps1
+    purpose: Export and clean-reimport a private character-reference v1.1 package without modifying the source blend.
+  - id: generate_character_dataset
+    command: tools/generate_character_dataset.ps1
+    purpose: Render private paired character RGB, anatomy masks, and exact projected COCO keypoints from Canonical Motion.
+  - id: calibrate_pose_confidence
+    command: tools/calibrate_pose_confidence.ps1
+    purpose: Fit local monotonic per-model/per-joint confidence curves from hash-bound labelled real evidence spanning distinct source motions.
+versions: []
+identifiers: []
+constraints:
+  - id: target_inference_hardware
+    gpu: NVIDIA RTX 5070 Ti Laptop GPU
+    vram_gb: 12
+    workload: offline batch inference
+    authority: Owner-confirmed project specification v0.2
+    confirmed_on: 2026-08-06
+  - id: development_validation_hardware
+    gpu: NVIDIA RTX 2060
+    role: development compatibility check only; must not constrain target architecture
+    observed_on: 2026-08-06
+  - id: development_npu_hardware
+    device: Intel(R) AI Boost
+    processor: Intel(R) Core(TM) Ultra 9 275HX
+    driver: 32.0.100.4778
+    runtime: OpenVINO 2026.2.1
+    role: non-authoritative shadow pose observer and local-recovery priority trigger; coordinates remain outside fusion
+    observed_on: 2026-08-11
+codebase_map:
+  status: not-adopted
+  provider: ""
+  artifact_path: ""
+  corpus_and_data_boundary: ""
+  represented_revision: ""
+  freshness_or_health_limit: ""
+  maintainer: ""
+  update_trigger: on-query
+  automation_authorized: ""
+research:
+  status: adopted
+  approved_sources_and_private_data_boundary: Official specifications and upstream repositories only; no private media may be uploaded.
+  durable_validity_limit: Re-check before selecting a model checkpoint, dataset, exporter version, or commercial release.

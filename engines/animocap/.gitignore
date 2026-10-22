@@ -1,0 +1,16 @@
+.venv/
+.venv-mmpose/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+out/
+private/
+outputs/
+reports/fixture/
+
+# Graphify derived artifacts and rebuildable sidecars
+graphify-out/
+.graphify_python
+.graphify_root
+.graphify_detect.json
