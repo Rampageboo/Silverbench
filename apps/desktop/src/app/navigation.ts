@@ -10,6 +10,7 @@ import {
   IconInbox,
   IconMask,
   IconMerge,
+  IconMotion,
   IconOverview,
   IconPackage,
   IconReview,
@@ -96,6 +97,14 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: IconVideo,
         target: { tab: "video-capture" },
         keywords: "video capture screenshot segments export frames"
+      },
+      {
+        id: "mocap",
+        label: "Motion capture",
+        labelZh: "动捕",
+        icon: IconMotion,
+        target: { tab: "mocap" },
+        keywords: "mocap motion capture animocap pose skeleton bvh vrma 动捕 动作捕捉"
       }
     ]
   },

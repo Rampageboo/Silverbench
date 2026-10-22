@@ -294,7 +294,7 @@ class CaptureJob:
         _save(self.folder, self.take)
         try:
             if not engine.python_exe().is_file():
-                raise MocapError("The capture environment (.venv-mmpose) is not installed. Install it under Settings → Motion capture.")
+                raise MocapError("The capture environment (.venv-mmpose) is not installed. Install it from the 本机环境 panel on the Motion capture page.")
             _hand_over_gpu()
             self.capture_dir.mkdir(parents=True, exist_ok=True)
             warning = self._capture_multiview() if self.take["mode"] == "multiview" else self._capture_single()
@@ -577,6 +577,12 @@ def pose_data(layout: WorkspaceLayout, take_id: str, variant: str = "current") -
             position.extend(joint["position_m"])
             confidence.append(round(float(joint["confidence"]), 4))
             valid.append(1 if joint["valid"] else 0)
+    parents: list[int] = []
+    skeleton_path = folder / "motion.amotion" / "skeleton.json"
+    if skeleton_path.is_file():
+        bones = _read_json(skeleton_path)["bones"]
+        index_of = {bone["semantic"]: index for index, bone in enumerate(bones)}
+        parents = [index_of.get(bone["parent"], -1) if bone["parent"] else -1 for bone in bones]
     inferred: list[list[int]] = []
     edit_result = folder / "edit-result.json"
     if variant == "current" and edit_result.is_file():
@@ -588,6 +594,7 @@ def pose_data(layout: WorkspaceLayout, take_id: str, variant: str = "current") -
         "height": document["image_height"],
         "backend": document["backend"],
         "joints": joints,
+        "parents": parents,
         "times": [frame["time_s"] for frame in frames],
         "image": [round(v, 2) for v in image],
         "position": [round(v, 5) for v in position],

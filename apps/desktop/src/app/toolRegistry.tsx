@@ -77,6 +77,15 @@ const VideoCaptureTool = lazy(async () => {
   };
 });
 
+const MocapTool = lazy(async () => {
+  const module = await import("../features/mocap/MocapPage");
+  return {
+    default: (props: ToolPageProps) => (
+      <module.MocapPage active={props.active} workspaceRoot={props.workspaceRoot} onReady={props.onReady} />
+    )
+  };
+});
+
 const TrainPrepTool = lazy(async () => {
   const module = await import("../features/train-prep/TrainPrepPage");
   return { default: (props: ToolPageProps) => <module.TrainPrepPage onReady={props.onReady} /> };
@@ -112,6 +121,7 @@ const TOOL_COMPONENTS: Record<ToolTab, WorkbenchToolDefinition["component"]> = {
   gallery: GalleryTool,
   // Tool pages
   "video-capture": VideoCaptureTool,
+  mocap: MocapTool,
   "image-pool": ImageWorkspaceTool,
   "train-prep": TrainPrepTool,
   train: AutoLabelTool,

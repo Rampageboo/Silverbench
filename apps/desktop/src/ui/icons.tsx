@@ -57,6 +57,14 @@ export const IconVideo = make(
   </>
 );
 
+export const IconMotion = make(
+  "Motion",
+  <>
+    <circle cx="13" cy="4.5" r="1.8" />
+    <path d="M9 21l2.5-6 2.5 2v4M11.5 15l1-5.5M12.5 9.5l-4 1.5-1.5 3M12.5 9.5l3 2.5 3-1" />
+  </>
+);
+
 export const IconTag = make(
   "Tag",
   <>

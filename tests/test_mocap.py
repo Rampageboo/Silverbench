@@ -116,6 +116,7 @@ def test_capture_builds_refined_pose_and_motion(workspace):
     assert refined["backend"] == "fake+temporal-smooth5+kinematic-opt-v2"
     pose = takes.pose_data(workspace, take_id)
     assert len(pose["times"]) == 120 and len(pose["joints"]) == 23
+    assert pose["parents"][:3] == [-1, 0, 1] and pose["parents"][pose["joints"].index("leftHand")] == pose["joints"].index("leftLowerArm")
     assert len(pose["image"]) == 120 * 23 * 2 and len(pose["position"]) == 120 * 23 * 3
     # With no edits the current pose is the refined pose.
     assert takes.pose_data(workspace, take_id, "refined")["image"] == pose["image"]

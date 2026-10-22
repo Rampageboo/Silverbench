@@ -5,6 +5,7 @@ export type PrimaryTab = "home" | "gallery" | "library" | "classes" | "label" | 
 export type ToolPageTab =
   | "image-pool"
   | "video-capture"
+  | "mocap"
   | "train-prep"
   | "train"
   | "crop"
@@ -108,6 +109,16 @@ export const WORKBENCH_TOOLS: readonly WorkbenchTool[] = [
     label: "Video Segments",
     labelZh: "视频片段",
     keywords: "video segment capture screenshot frame export",
+    group: "video",
+    keepAlive: true,
+    heavy: true,
+    requiresWorkspace: true
+  },
+  {
+    tab: "mocap",
+    label: "Motion Capture",
+    labelZh: "动捕",
+    keywords: "mocap motion capture animocap pose skeleton bvh vrma 动捕 动作捕捉 骨架",
     group: "video",
     keepAlive: true,
     heavy: true,
