@@ -48,24 +48,6 @@ add_executable(animocap src/cli.cpp)
 target_link_libraries(animocap PRIVATE animocap_core)
 if(WIN32)
     target_link_libraries(animocap PRIVATE mf mfplat mfreadwrite mfuuid ole32)
-    add_executable(animocap_studio WIN32 src/gui_main.cpp)
-    target_link_libraries(animocap_studio PRIVATE
-        animocap_core
-        comctl32
-        gdi32
-        mf
-        mfplat
-        mfreadwrite
-        mfuuid
-        msimg32
-        ole32
-        shell32
-        user32
-        windowscodecs
-    )
-    target_include_directories(animocap_studio PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
-    target_compile_options(animocap_studio PRIVATE /W4 /permissive- /EHsc /utf-8)
-    target_compile_definitions(animocap_studio PRIVATE UNICODE _UNICODE)
 
     if(ANIMOCAP_BUILD_MAXINE_VSR_BRIDGE)
         add_library(animocap_maxine_vsr SHARED src/maxine_vsr_bridge.cpp)

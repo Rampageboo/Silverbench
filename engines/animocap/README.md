@@ -1,5 +1,9 @@
 # AniMocap Fusion
 
+> **在 RampageWorkbench 里的形态**：这里只有引擎（C++ 核心库、`animocap` 命令行、Python 推理适配器、Maxine 桥接、Blender 插件），没有界面。
+> 原 Win32 Studio（`src/gui_main.cpp`）在整合时删除，唯一的界面是 RWB 的“动捕”页；RWB 通过 [`docs/animocap-engine.md`](../../docs/animocap-engine.md) 的命令行合同调用引擎。
+> 下文提到 “Studio” 的地方描述的是 RWB 复刻的行为；原版源码与二进制在 GitHub 标签 `archive-2026-10-23` 及其 Release 附件中。
+
 合并到其他软件或恢复工程时，先读 [合并交接文档](docs/MERGE_HANDOFF.md)。它记录模块入口、已验证范围、未解决问题和私有归档的恢复方式；不需要保留原始对话。
 
 AniMocap Fusion 是一个本地运行的单目/多机视频动作捕捉工具，面向动漫与游戏类人角色。核心、视频解码、动作数据合同和桌面 GUI 使用 C++20；MMPose、HRNet、RTMW、MotionBERT 与可选 SAM 2.1 作为独立 Python 推理进程运行。

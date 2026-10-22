@@ -3,6 +3,8 @@
 状态：A、B、C（只读界面）完成，D 进行中（2026-10-23）。3D 视图选 Canvas 2D（复刻 Studio 投影，无新依赖）。基线：AniMocap `main` @ `50549a85`（已 subtree 进 `engines/animocap/`），RWB `main` @ `d589c203`。
 实施地点：Owner 改为这台电脑完成（"全部在这台电脑做"），另一台收尾。
 
+**Owner 2026-10-23 追加**：AniMocap 原前端不要。Studio（`gui_main.cpp` 等）已在整合时删除，不再等 E 阶段；对拍改用标签 `archive-2026-10-23` 的源码/Release 二进制在临时目录构建旧 Studio。引擎版本固定为 `50549a85`（= 该标签），归档 bundle 中唯一未合并的 `codex/multiview-architecture` 为受阻 R&D 且与 main 冲突，不合入（见 `DECISIONS.md`）。
+
 AniMocap 侧的交接文档是 `engines/animocap/docs/MERGE_HANDOFF.md`（产品边界、验收事实、不能宣称完成的事项），本计划以它为准补充。
 
 ## 目标与完成标准

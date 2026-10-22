@@ -49,3 +49,9 @@ These decisions summarize reviewed Codex chats as of 2026-10-03. Historical deci
 - **Decision:** Generation metadata is read and broken down first (ComfyUI graphs, A1111/Forge fields). Only images without it enter the reverse queue: WD tags (local tagger) and control maps made by the user's ComfyUI preprocessors.
 - **Reason:** Metadata is exact; model output is an approximation. RampageWorkbench should not bundle pose/depth models that ComfyUI already has.
 - **Consequences:** Control maps need a reachable ComfyUI with `comfyui_controlnet_aux`; ControlNet reference images are found only through the configured ComfyUI input folder.
+
+## Motion capture: AniMocap is an engine inside RWB, with RWB as its only UI.
+
+- **Decision:** Bring AniMocap Fusion in as `engines/animocap/` (git subtree, history kept) at upstream `main` `50549a85` (= tag `archive-2026-10-23`). Delete its Win32 Studio (`gui_main.cpp`, launchers, UI assets); RWB's 动捕 page is the front end and drives the engine through the CLI contract in `docs/animocap-engine.md`.
+- **Reason:** One app and one repository on both computers. `50549a85` is the newest validated state (Release build, C++ tests, Python tests). The local-only branch `codex/multiview-architecture` (in the archive bundle) is blocked R&D that its own index marks unaccepted, and it conflicts with `main`'s later multiview changes.
+- **Consequences:** Algorithms stay in C++; RWB adds none. Engine changes are made in this repository; later upstream commits, if any, come in with `git subtree pull --prefix=engines/animocap`. The original Studio stays reachable at the tag for comparison runs. Real-video quality is not certified by the upstream archive and must be checked on the target GPU.

@@ -1,7 +1,7 @@
 /**
- * Display rules for motion capture, ported from AniMocap Studio (gui_main.cpp) so
- * both front ends show the same frame, projection and names. No motion maths
- * lives here: every edit goes through the engine.
+ * Display rules for motion capture, ported from the retired AniMocap Studio
+ * (gui_main.cpp, kept at tag archive-2026-10-23) so results read the same as
+ * before. No motion maths lives here: every edit goes through the engine.
  */
 import type { PoseData, Take } from "./mocapApi";
 

@@ -1392,9 +1392,8 @@ void test_license_and_asset_gate() {
         ".blend", ".blend1", ".fbx", ".glb", ".gltf", ".vrm", ".vrma",
         ".mp4", ".mov", ".avi", ".mkv", ".png", ".jpg", ".jpeg", ".webp"
     };
-    const std::set<std::string> allowed_visual_assets{
-        "assets/motion/human_outline_generic.png"
-    };
+    // The engine ships no visual assets; the UI lives in RampageWorkbench.
+    const std::set<std::string> allowed_visual_assets{};
     const auto root = source_path("");
     for (const auto& entry : std::filesystem::recursive_directory_iterator(root)) {
         const auto relative = std::filesystem::relative(entry.path(), root).generic_string();
