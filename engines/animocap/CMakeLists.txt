@@ -11,6 +11,7 @@ add_library(animocap_core
     src/blender_exchange.cpp
     src/character_profile.cpp
     src/contracts.cpp
+    src/edit_session.cpp
     src/export_blender.cpp
     src/export_bvh.cpp
     src/export_vrma.cpp
@@ -101,6 +102,12 @@ if(ANIMOCAP_BUILD_TESTS)
         target_compile_options(animocap_pose_review_tests PRIVATE /EHsc /utf-8)
     endif()
     add_test(NAME animocap_pose_review COMMAND animocap_pose_review_tests)
+    add_executable(animocap_edit_session_tests tests/test_edit_session.cpp)
+    target_link_libraries(animocap_edit_session_tests PRIVATE animocap_core)
+    if(MSVC)
+        target_compile_options(animocap_edit_session_tests PRIVATE /EHsc /utf-8)
+    endif()
+    add_test(NAME animocap_edit_session COMMAND animocap_edit_session_tests)
 
     add_executable(animocap_blender_exchange_tests tests/test_blender_exchange.cpp)
     target_link_libraries(animocap_blender_exchange_tests PRIVATE animocap_core)

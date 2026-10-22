@@ -1,4 +1,5 @@
 #include "animocap/contracts.hpp"
+#include "animocap/edit_session.hpp"
 #include "animocap/character_profile.hpp"
 #include "animocap/export.hpp"
 #include "animocap/fixture.hpp"
@@ -29,7 +30,8 @@ using json = nlohmann::json;
         "  animocap validate-manifest <capture.json>\n"
         "  animocap inspect-motion <motion.amotion>\n"
         "  animocap inspect-video <video-file>\n"
-        "  animocap reconstruct-pose <pose_sequence.json> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>]\n"
+        "  animocap reconstruct-pose <pose_sequence.json> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>] [--pose-output <refined.json>]\n"
+        "  animocap apply-edits <refined.json> --edits <edits.json> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>] [--pose-output <pose.json>] [--review-output <motion.amotion.areview>] [--cameras-from <motion.amotion>]\n"
         "  animocap fuse-multiview <capture.json> --poses <directory> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>] [--reference-image-plane-anchor]\n"
         "  animocap export-bvh <motion.amotion> --output <motion.bvh> [--unit centimeters|meters] [--force]\n"
         "  animocap export-vrma <motion.amotion> --output <motion.vrma> [--force]\n"
@@ -137,11 +139,13 @@ int reconstruct_pose(int argc, char** argv) {
     }
     std::filesystem::path output;
     std::filesystem::path character_profile_path;
+    std::filesystem::path pose_output;
     for(int index=3;index<argc;++index) {
         const std::string_view option(argv[index]);
         if(option=="--output" && index+1<argc)output=argv[++index];
         else if(option=="--character-profile" && index+1<argc)
             character_profile_path=argv[++index];
+        else if(option=="--pose-output" && index+1<argc)pose_output=argv[++index];
         else usage_error("unknown reconstruct-pose option: "+std::string(option));
     }
     if(output.empty())usage_error("reconstruct-pose requires --output");
@@ -161,9 +165,12 @@ int reconstruct_pose(int argc, char** argv) {
     const auto& sequence = optimization.sequence;
     const auto package = animocap::reconstruct_canonical_motion(sequence,profile);
     animocap::save_motion_package(package, output);
+    // The refined sequence is the base that apply-edits replays edits on.
+    if(!pose_output.empty())animocap::save_pose_sequence_json(sequence,pose_output);
     const json result{
         {"status", "generated"},
         {"output", output.generic_string()},
+        {"pose_output", pose_output.empty()?json(nullptr):json(pose_output.generic_string())},
         {"frame_count", package.motion.frame_count},
         {"joint_count", package.motion.joint_count},
         {"fps", package.motion.fps},
@@ -184,6 +191,57 @@ int reconstruct_pose(int argc, char** argv) {
         {"profile_id", optimization.diagnostics.profile_id},
     };
     std::cout << result.dump(2) << '\n';
+    return 0;
+}
+
+int apply_edits(int argc, char** argv) {
+    if (argc < 7) usage_error("apply-edits requires a refined pose, --edits and --output");
+    std::filesystem::path edits;
+    std::filesystem::path output;
+    std::filesystem::path pose_output;
+    std::filesystem::path review_output;
+    std::filesystem::path cameras_from;
+    std::filesystem::path character_profile_path;
+    for (int index = 3; index < argc; ++index) {
+        const std::string_view option(argv[index]);
+        if (option == "--edits" && index + 1 < argc) edits = argv[++index];
+        else if (option == "--output" && index + 1 < argc) output = argv[++index];
+        else if (option == "--pose-output" && index + 1 < argc) pose_output = argv[++index];
+        else if (option == "--review-output" && index + 1 < argc) review_output = argv[++index];
+        else if (option == "--cameras-from" && index + 1 < argc) cameras_from = argv[++index];
+        else if (option == "--character-profile" && index + 1 < argc) character_profile_path = argv[++index];
+        else usage_error("unknown apply-edits option: " + std::string(option));
+    }
+    if (edits.empty() || output.empty()) usage_error("apply-edits requires --edits and --output");
+    std::optional<animocap::CharacterProfile> character_profile;
+    if (!character_profile_path.empty())
+        character_profile = animocap::load_character_profile(character_profile_path);
+    const auto* profile = character_profile ? &character_profile->skeleton : nullptr;
+
+    const auto refined = animocap::load_pose_sequence_json(argv[2]);
+    const auto session = animocap::load_edit_session(edits);
+    auto result = animocap::apply_edit_session(refined, session, profile);
+    // Multiview takes carry solved cameras; a pose-only rebuild would drop them.
+    if (!cameras_from.empty()) result.motion.cameras = animocap::load_motion_package(cameras_from).cameras;
+    animocap::save_motion_package(result.motion, output);
+    if (!pose_output.empty()) animocap::save_pose_sequence_json(result.pose, pose_output);
+    if (!review_output.empty()) animocap::save_pose_review(result.corrected, result.review, review_output);
+
+    const auto joints = result.pose.frames.empty() ? std::size_t{0} : result.pose.frames.front().joints.size();
+    json inferred = json::array();
+    for (std::size_t index = 0; index < result.inferred.size(); ++index) {
+        if (result.inferred[index]) inferred.push_back({index / joints, index % joints});
+    }
+    std::cout << json{
+        {"status", "generated"},
+        {"output", output.generic_string()},
+        {"frame_count", result.motion.motion.frame_count},
+        {"joint_count", result.motion.motion.joint_count},
+        {"corrections", session.corrections.size()},
+        {"review_marks", session.review.marks.size()},
+        {"review_ranges", session.review.ranges.size()},
+        {"inferred", std::move(inferred)},
+    }.dump(2) << '\n';
     return 0;
 }
 
@@ -479,7 +537,8 @@ void print_help() {
         "  validate-manifest <capture.json>\n"
         "  inspect-motion <motion.amotion>\n"
         "  inspect-video <video-file>\n"
-        "  reconstruct-pose <pose_sequence.json> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>]\n"
+        "  reconstruct-pose <pose_sequence.json> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>] [--pose-output <refined.json>]\n"
+        "  apply-edits <refined.json> --edits <edits.json> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>] [--pose-output <pose.json>] [--review-output <motion.amotion.areview>] [--cameras-from <motion.amotion>]\n"
         "  fuse-multiview <capture.json> --poses <directory> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>] [--reference-image-plane-anchor]\n"
         "  export-bvh <motion.amotion> --output <motion.bvh> [--unit centimeters|meters] [--force]\n"
         "  export-vrma <motion.amotion> --output <motion.vrma> [--force]\n"
@@ -505,6 +564,7 @@ int main(int argc, char** argv) {
         if (command == "inspect-motion") return inspect_motion(argc, argv);
         if (command == "inspect-video") return inspect_video(argc, argv);
         if (command == "reconstruct-pose") return reconstruct_pose(argc, argv);
+        if (command == "apply-edits") return apply_edits(argc, argv);
         if (command == "fuse-multiview") return fuse_multiview(argc, argv);
         if (command == "export-bvh") return export_bvh(argc, argv);
         if (command == "export-vrma") return export_vrma(argc, argv);

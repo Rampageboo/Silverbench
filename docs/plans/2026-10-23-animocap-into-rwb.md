@@ -1,7 +1,9 @@
 # AniMocap Fusion 整合进 RampageWorkbench
 
-状态：计划（2026-10-23）。基线：AniMocap `main` @ `12d2e4e`，RWB `main` @ `d874ea06`。
-实施地点：开发电脑（这台电脑只运行 `update.bat`）。
+状态：A 进行中（2026-10-23）。基线：AniMocap `main` @ `50549a85`（已 subtree 进 `engines/animocap/`），RWB `main` @ `d589c203`。
+实施地点：Owner 改为这台电脑完成（"全部在这台电脑做"），另一台收尾。
+
+AniMocap 侧的交接文档是 `engines/animocap/docs/MERGE_HANDOFF.md`（产品边界、验收事实、不能宣称完成的事项），本计划以它为准补充。
 
 ## 目标与完成标准
 
@@ -12,7 +14,10 @@
 1. 从工作区 `media/` 选单视角视频，或 2–8 视角（fan3 / cardinal4 / `capture.json`）；自动人物范围或手动框选；开始/取消捕捉，看到阶段、帧进度、已用时间与预计剩余；
 2. 看原视频 + 2D 关键点叠加（含关节名）、可拖视角的 3D 骨架（含 A/B 深度对比虚影与毫米差）、多视角 2×4 总览与单视角只读回看（与参考时间轴同步）、问题面板（NPU 复查帧、低置信度等）；
 3. 时间轴：播放、逐帧/跳 10 帧、区间起止、区间循环、关键帧菱形与影响曲线；
-4. 手动修正：拖关节生成稀疏关键帧（局部三次缓入缓出传播）、删除当前键、撤销/重做、保存；导入角色骨架预设并显示实际修正样本数和毫米数；
+4. 手动修正：拖关节生成稀疏关键帧（局部曲线传播，5 种预设）、删除当前键、关键帧平滑、撤销/重做、保存；导入角色骨架预设并显示实际修正样本数和毫米数；
+   逐关节修复（`docs/joint-review.md`）：锁定/加权（4×/8×/16×）/排除、区间重建、原始叠影、恢复自动，推算点单独显示；打开/保存 `.areview`；
+   选帧导出到 Blender（`blender_exchange`），"推理过的帧 / 用户锁定的帧 / 导出选中的帧"是三个独立状态，界面不得合并；
+   辅助 AI 间隔（1/2/3/auto）与 ROI AI 放大（Maxine VSR）作为捕捉选项；
 5. 导出 BVH（厘米/米）与 VRMA，存在区间时只导出区间；打开已有 `motion.amotion`；
 6. 一键安装/检查推理环境（MMPose、本地 VLM、可选 OpenVINO NPU、SAM 2.1），状态如实显示；
 7. 在同一段测试视频上（Owner 的 367 帧单视角视频 + 一组 fan3 多视角），RWB 结果与旧 Studio **逐字节或在明确容差内一致**（见验证）。
@@ -25,11 +30,13 @@
 - **Python ML 适配器原样保留**（`mmpose_adapter.py`、`multiview_pipeline.py`、`local_vlm_adapter.py`、NPU 等），用 AniMocap 自己的环境 `.venv-mmpose`，与 RWB 的 `.venv` **分开**（两边 torch / mmcv 版本约束不同，合并必冲突）。
 - **单仓库**：AniMocap 以 `git subtree add`（保留历史）进入 RWB 的 `engines/animocap/`。两台电脑只同步一个仓库，`update.bat` 一并更新。AniMocap 原仓库在切换完成后由 Owner 决定归档。
 - **C++ 引擎通过命令行 + JSON 被调用**，不做 Python 绑定/DLL。RWB 后端是编排者：按旧 Studio 的顺序调用 Python 适配器，再调用 `animocap.exe`。
-- **数据落在 v3 工作区**：每次捕捉是一个 take 目录 `mocap/<take>/`（`capture.json`、各视角 `pose_sequence*.json`、诊断、日志、`motion.amotion/`、修正关键帧 `corrections.json`）。`mocap` 加进 `RELATIVE_PATHS`（前后端布局一致性测试会提醒同步）。导出文件写到 `exports/mocap/`。手动修正是用户劳动，单独存成关键帧文件，始终从不可变基线重放；快照（`versions/`）是否包含 `mocap/` 的修正文件见"待定"。
+- **数据落在 v3 工作区**：每次捕捉是一个 take 目录 `mocap/<take>/`（文件清单见 `docs/animocap-engine.md`：原始观测、不可变 `refined.json`、用户编辑 `edits.json`、`motion.amotion/`）。`mocap` 加进 `RELATIVE_PATHS`（前后端布局一致性测试会提醒同步）。导出文件写到 `exports/mocap/`。手动修正是用户劳动，单独存成关键帧文件，始终从不可变基线重放；快照（`versions/`）是否包含 `mocap/` 的修正文件见"待定"。
 - **模型权重和推理环境按电脑各自安装**（`engines/animocap/private/`、`.venv-mmpose`，均 git 忽略），同 ComfyUI 的做法；RWB 设置里显示状态与"安装"按钮。
 - 视频文件不复制：take 引用 `media/` 的相对路径。
 
 ## 必须先定下的契约（并行开发前）
+
+**已定（A 阶段完成部分）**：见 `docs/animocap-engine.md`。编辑不再分散成 `apply-corrections`：引擎新增 `edit_session`（核心库，把 Studio 的拖拽曲线、关键帧平滑、逐关节修复按 Studio 顺序合成一次重放）和 `apply-edits` 命令；`reconstruct-pose --pose-output` 保存编辑基线；`--review-output` 写出与 Studio 兼容的 `.areview`，用于对拍和互通。下面第 1 条的其余部分（界面读取字段）在 B 阶段落实。
 
 1. **引擎 CLI 补齐**：旧 Studio 有若干步骤是进程内调用、CLI 没有的。至少需要：
    - 与 Studio 单视角路径一致的重建（Studio：`smooth → optimize_detailed(options, profile, proportion_policy) → reconstruct`；`reconstruct-pose` 已基本一致，需确认 VLM 修正后的输入、无 profile 时的默认策略与 Studio 完全相同）；
@@ -58,8 +65,9 @@ C 可以在 A/B 完成前用 fixture 动作包开工。
 
 ## 风险与会改变计划的情况
 
-- **AniMocap 仍在活跃排查**（多视角 joint10、输入审计的 Codex 交接，2026-10-23 刚推送）。subtree 导入要在这些分支合并或明确暂停之后；导入后 AniMocap 的改动只在 RWB 仓库进行，避免两边分叉。`codex/m4-s1-s3-measurement` 有 7 个未合并提交（8 月）——Owner 决定合并还是放弃。
-- **交互延迟**：每次拖关节都起一个 `animocap.exe` 进程。若"松手到更新"超过约 200 ms，改为常驻 `animocap serve`（stdin/stdout JSON-RPC），而不是把算法搬到 TS。拖动过程中的即时预览只移动被拖的关节，松手后以引擎结果为准。
+- **AniMocap 上游**：Owner 已推送归档提交 `50549a85`（标签 `archive-2026-10-23`），之前导入的 `12d2e4e` 缺 `src/import_bvh.cpp` 无法构建，已用 `git subtree pull` 更新。此后 AniMocap 的改动只在 RWB 仓库进行，避免两边分叉；若上游再有提交，用 `git subtree pull --prefix=engines/animocap` 合入。`codex/m4-s1-s3-measurement` 等未合并分支保留在上游和归档 bundle 里，不导入。
+- **未经实片验收的能力**（交接文档"不应误称为完成"）：辅助 AI 间隔的速度/质量、修复面板实片端到端、Maxine 长时运行。RWB 界面照搬能力，但对拍验收不能把这些写成已通过。
+- **交互延迟（已测，结论：D 阶段做常驻进程）**：400 帧 `apply-edits` ≈ 280 ms，其中 ≈ 160 ms 是这台 Windows 启动任何新编译的未签名 exe 的固定开销（hello world 同样 160 ms；延迟加载 Media Foundation 无改善）。捕捉/导出用一次性命令；编辑循环在 D 阶段改为常驻 `animocap serve`（stdin/stdout JSON，常驻 refined 姿态），而不是把算法搬到 TS。拖动过程中的即时预览只移动被拖的关节，松手后以引擎结果为准。
 - **解码差异**导致叠加错位（见契约 3）。用 fixture 和真实视频逐帧检查关节落点。
 - **多视角 8 路同时预览**在浏览器里的解码压力：用缩略帧/代理视频，回看时只解码当前视角。
 - **许可证**：`LICENSES.md` 与 `third_party/`（模型许可）随 subtree 一起进入，RWB 的 README 链接到它。
@@ -69,7 +77,7 @@ C 可以在 A/B 完成前用 fixture 动作包开工。
 
 - 3D 视图用 three.js 还是 Canvas 2D 投影（旧 Studio 是 GDI 投影绘制，Canvas 2D 足够复刻；three.js 便于以后做角色预览）。实施者给出建议。
 - 快照是否包含 `mocap/*/corrections.json`（建议包含：它是用户劳动，体积小）。
-- AniMocap Blender 插件放在 `engines/animocap/blender_addon/` 原处，还是另行处理。
+- AniMocap Blender 插件：先留在 `engines/animocap/blender_addon/` 原处（上游已更新 Blender 交换与插件）；RWB 界面只负责导出选帧 JSON。
 - 动捕结果是否进入 MCP（例如让 Agent 读取问题帧）——不在本计划内。
 
 ## 验证
