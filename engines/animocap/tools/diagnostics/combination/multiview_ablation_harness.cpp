@@ -25,6 +25,8 @@ json options_json(const animocap::MultiviewSolveOptions& options) {
         {"reference_view", options.reference_view},
         {"minimum_confidence", options.minimum_confidence},
         {"conflict_threshold_m", options.conflict_threshold_m},
+        {"enable_reference_image_plane_anchor",
+         options.enable_reference_image_plane_anchor},
         {"reference_anchor_confidence", options.reference_anchor_confidence},
         {"require_reference_consensus_for_anchor",
          options.require_reference_consensus_for_anchor},
@@ -178,6 +180,12 @@ int main(int argc, char** argv) {
 
         animocap::MultiviewSolveOptions enhanced;
         enhanced.reference_view = 1;
+        // Keep the historical F0 control explicit after the product default
+        // moves to the balanced multiview image plane.
+        enhanced.enable_reference_image_plane_anchor = true;
+
+        auto balanced_image_plane = enhanced;
+        balanced_image_plane.enable_reference_image_plane_anchor = false;
 
         auto combined_ablated = enhanced;
         combined_ablated.enable_view_visibility_weighting = false;
@@ -197,6 +205,7 @@ int main(int argc, char** argv) {
 
         const std::vector<Variant> variants{
             {"enhanced", enhanced},
+            {"balanced_image_plane", balanced_image_plane},
             {"combined_ablated", combined_ablated},
             {"disable_visibility_weighting", no_visibility},
             {"disable_temporal_reliability", no_temporal},

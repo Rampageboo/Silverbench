@@ -3,6 +3,7 @@
 #include "animocap/pose_sequence.hpp"
 
 #include <cstddef>
+#include <vector>
 
 namespace animocap {
 
@@ -42,11 +43,44 @@ struct AnimationCurveStabilizationResult {
     AnimationCurveStabilizationDiagnostics diagnostics;
 };
 
+// A sparse Studio selection can be used as a local smoothing centre without
+// rewriting the authored keyframe samples themselves.  The operation is
+// intentionally bounded: it is for removing high-frequency shake around an
+// authored pose, not for inventing a new motion or changing a deliberate turn.
+struct KeyframeCenteredSmoothingOptions {
+    std::size_t radius_frames{4};
+    double strength{0.78};
+    double correction_noise_floor_m{0.0004};
+    double maximum_correction_m{0.006};
+    double maximum_image_correction_px{3.0};
+};
+
+struct KeyframeCenteredSmoothingDiagnostics {
+    std::size_t selected_keyframes{};
+    std::size_t protected_keyframe_samples{};
+    std::size_t corrected_samples{};
+    std::size_t invalid_samples_preserved{};
+    double mean_correction_m{};
+    double maximum_correction_m{};
+    double jitter_before{};
+    double jitter_after{};
+};
+
+struct KeyframeCenteredSmoothingResult {
+    PoseSequence sequence;
+    KeyframeCenteredSmoothingDiagnostics diagnostics;
+};
+
 double pose_sequence_jitter_metric(const PoseSequence& sequence);
 
 AnimationCurveStabilizationResult stabilize_pose_with_animation_curves(
     const PoseSequence& sequence,
     const AnimationCurveStabilizationOptions& options = {},
     const Skeleton* skeleton = nullptr);
+
+KeyframeCenteredSmoothingResult smooth_pose_around_keyframes(
+    const PoseSequence& sequence,
+    const std::vector<std::size_t>& keyframe_frames,
+    const KeyframeCenteredSmoothingOptions& options = {});
 
 }  // namespace animocap

@@ -52,11 +52,11 @@ def _curve(samples: list[dict[str, Any]], bins: int) -> list[list[float]]:
     calibrated = _pava(support, [len(group) for group in groups])
     points: list[list[float]] = [[0.0, 0.0]]
     for x, y in zip(raw, calibrated):
-        x = max(points[-1][0] + 1e-6, min(1.0, x))
-        if x >= 1.0:
-            break
+        x = max(points[-1][0] + 1e-6, x)
         points.append([round(x, 8), round(max(points[-1][1], y), 8)])
-    points.append([1.0, 1.0])
+    endpoint = max(1.0, max(float(item["raw_confidence"]) for item in ordered))
+    endpoint = max(points[-1][0] + 1e-6, endpoint)
+    points.append([round(endpoint, 8), 1.0])
     return points
 
 
@@ -85,7 +85,7 @@ def fit_profile(
         error = float(item.get("error_normalized", math.nan))
         if model not in grouped or joint not in COCO_JOINTS or not motion_id:
             raise RuntimeError(f"invalid model, joint, or motion id at sample {index}")
-        if not math.isfinite(raw) or not math.isfinite(error) or not 0.0 <= raw <= 1.0 or error < 0.0:
+        if not math.isfinite(raw) or not math.isfinite(error) or raw < 0.0 or error < 0.0:
             raise RuntimeError(f"invalid confidence or error at sample {index}")
         grouped[model].setdefault(joint, []).append({
             "raw_confidence": raw,

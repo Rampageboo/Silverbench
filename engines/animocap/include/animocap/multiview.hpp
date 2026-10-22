@@ -65,9 +65,11 @@ struct MultiviewSolveOptions {
     std::size_t reference_view{};
     double minimum_confidence{0.12};
     double conflict_threshold_m{0.18};
-    // A trustworthy reference view owns the two image-plane coordinates. Other
-    // views may still solve the orthogonal depth component and recover missing
-    // or weak reference observations.
+    // Legacy single-view image-plane ownership is opt-in. The default preserves
+    // the balanced multiview solve through stabilization and optimization.
+    bool enable_reference_image_plane_anchor{false};
+    // When the legacy anchor is enabled, a trustworthy reference view owns the
+    // two image-plane coordinates. Other views may still solve depth.
     double reference_anchor_confidence{0.85};
     // A confident reference observation owns the image plane when at least one
     // other view contributes. It yields only when strict multiview consensus

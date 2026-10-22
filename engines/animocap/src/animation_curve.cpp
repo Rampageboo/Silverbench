@@ -50,6 +50,21 @@ double median3(double first, double second, double third) {
         std::max({first, second, third});
 }
 
+Vec2 median3(const Vec2& first, const Vec2& second, const Vec2& third) {
+    return {
+        median3(first.x, second.x, third.x),
+        median3(first.y, second.y, third.y),
+    };
+}
+
+Vec3 median3(const Vec3& first, const Vec3& second, const Vec3& third) {
+    return {
+        median3(first.x, second.x, third.x),
+        median3(first.y, second.y, third.y),
+        median3(first.z, second.z, third.z),
+    };
+}
+
 Vec3 bounded_delta(Vec3 delta, double maximum) {
     const double magnitude = norm(delta);
     if (magnitude <= maximum || magnitude <= kEpsilon) return delta;
@@ -480,6 +495,151 @@ AnimationCurveStabilizationResult stabilize_pose_with_animation_curves(
         ? correction_sum / static_cast<double>(result.diagnostics.corrected_samples)
         : 0.0;
     result.sequence.backend += "+animation-keyframe-curve";
+    validate_pose_sequence(result.sequence);
+    result.diagnostics.jitter_after = pose_sequence_jitter_metric(result.sequence);
+    return result;
+}
+
+KeyframeCenteredSmoothingResult smooth_pose_around_keyframes(
+    const PoseSequence& sequence,
+    const std::vector<std::size_t>& keyframe_frames,
+    const KeyframeCenteredSmoothingOptions& options
+) {
+    validate_pose_sequence(sequence);
+    if (options.radius_frames == 0 ||
+        !std::isfinite(options.strength) || options.strength < 0.0 ||
+        options.strength > 1.0 ||
+        !std::isfinite(options.correction_noise_floor_m) ||
+        options.correction_noise_floor_m < 0.0 ||
+        !std::isfinite(options.maximum_correction_m) ||
+        options.maximum_correction_m <= 0.0 ||
+        !std::isfinite(options.maximum_image_correction_px) ||
+        options.maximum_image_correction_px <= 0.0) {
+        throw ContractError("invalid keyframe-centered smoothing options");
+    }
+
+    KeyframeCenteredSmoothingResult result{sequence, {}};
+    result.diagnostics.jitter_before = pose_sequence_jitter_metric(sequence);
+    if (sequence.backend.find("keyframe-centered-smooth") != std::string::npos ||
+        sequence.frames.empty() || keyframe_frames.empty()) {
+        result.diagnostics.jitter_after = result.diagnostics.jitter_before;
+        for (const auto& frame : sequence.frames) {
+            for (const auto& joint : frame.joints) {
+                if (!joint.valid) ++result.diagnostics.invalid_samples_preserved;
+            }
+        }
+        return result;
+    }
+
+    const std::size_t frame_count = sequence.frames.size();
+    const std::size_t joint_count = sequence.frames.front().joints.size();
+    std::vector<std::size_t> unique_keyframes = keyframe_frames;
+    std::sort(unique_keyframes.begin(), unique_keyframes.end());
+    unique_keyframes.erase(
+        std::unique(unique_keyframes.begin(), unique_keyframes.end()),
+        unique_keyframes.end());
+    for (const auto keyframe : unique_keyframes) {
+        if (keyframe >= frame_count) {
+            throw ContractError("keyframe-centered smoothing key is outside the pose sequence");
+        }
+    }
+
+    std::vector<bool> selected(frame_count, false);
+    for (const auto keyframe : unique_keyframes) selected[keyframe] = true;
+    result.diagnostics.selected_keyframes = unique_keyframes.size();
+
+    auto local_target = [&](std::size_t frame, std::size_t joint) {
+        const auto& center = sequence.frames[frame].joints[joint];
+        if (frame > 0 && frame + 1 < frame_count) {
+            const auto& before = sequence.frames[frame - 1].joints[joint];
+            const auto& after = sequence.frames[frame + 1].joints[joint];
+            if (before.valid && after.valid) {
+                return std::pair<Vec3, Vec2>{
+                    median3(before.position_m, center.position_m, after.position_m),
+                    median3(before.image_xy, center.image_xy, after.image_xy),
+                };
+            }
+        }
+
+        Vec3 position{};
+        Vec2 image{};
+        double total_weight = 0.0;
+        const std::size_t start = frame > 2 ? frame - 2 : 0;
+        const std::size_t end = std::min(frame_count - 1, frame + 2);
+        for (std::size_t candidate = start; candidate <= end; ++candidate) {
+            const auto& sample = sequence.frames[candidate].joints[joint];
+            if (!sample.valid) continue;
+            const double distance = std::abs(
+                static_cast<double>(candidate) - static_cast<double>(frame));
+            const double weight = std::max(0.1, static_cast<double>(sample.confidence)) /
+                (1.0 + distance);
+            position += weight * sample.position_m;
+            image.x += weight * sample.image_xy.x;
+            image.y += weight * sample.image_xy.y;
+            total_weight += weight;
+        }
+        if (total_weight <= kEpsilon) return std::pair<Vec3, Vec2>{
+            center.position_m, center.image_xy};
+        return std::pair<Vec3, Vec2>{
+            scale(position, 1.0 / total_weight),
+            scale(image, 1.0 / total_weight),
+        };
+    };
+
+    double correction_sum = 0.0;
+    for (std::size_t frame = 0; frame < frame_count; ++frame) {
+        for (std::size_t joint = 0; joint < joint_count; ++joint) {
+            const auto& original = sequence.frames[frame].joints[joint];
+            if (!original.valid) {
+                ++result.diagnostics.invalid_samples_preserved;
+                continue;
+            }
+            if (selected[frame]) {
+                ++result.diagnostics.protected_keyframe_samples;
+                continue;
+            }
+
+            std::size_t nearest_distance = frame_count;
+            for (const auto keyframe : unique_keyframes) {
+                const std::size_t distance = frame > keyframe
+                    ? frame - keyframe : keyframe - frame;
+                nearest_distance = std::min(nearest_distance, distance);
+            }
+            if (nearest_distance > options.radius_frames) continue;
+
+            const double normalized_distance = static_cast<double>(nearest_distance) /
+                static_cast<double>(options.radius_frames);
+            const double influence = 1.0 - normalized_distance * normalized_distance *
+                (3.0 - 2.0 * normalized_distance);
+            const double strength = options.strength * influence;
+            if (strength <= kEpsilon) continue;
+
+            const auto [target_position, target_image] = local_target(frame, joint);
+            Vec3 correction = bounded_delta(
+                scale(target_position - original.position_m, strength),
+                options.maximum_correction_m);
+            Vec2 image_correction = bounded_delta(
+                scale(target_image - original.image_xy, strength),
+                options.maximum_image_correction_px);
+            if (norm(correction) <= options.correction_noise_floor_m &&
+                norm(image_correction) <= kEpsilon) {
+                continue;
+            }
+            auto& target = result.sequence.frames[frame].joints[joint];
+            target.position_m += correction;
+            target.image_xy = target.image_xy + image_correction;
+            const double correction_m = norm(correction);
+            correction_sum += correction_m;
+            result.diagnostics.maximum_correction_m = std::max(
+                result.diagnostics.maximum_correction_m, correction_m);
+            ++result.diagnostics.corrected_samples;
+        }
+    }
+
+    result.diagnostics.mean_correction_m = result.diagnostics.corrected_samples
+        ? correction_sum / static_cast<double>(result.diagnostics.corrected_samples)
+        : 0.0;
+    result.sequence.backend += "+keyframe-centered-smooth";
     validate_pose_sequence(result.sequence);
     result.diagnostics.jitter_after = pose_sequence_jitter_metric(result.sequence);
     return result;

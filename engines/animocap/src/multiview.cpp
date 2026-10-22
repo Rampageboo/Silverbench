@@ -1242,7 +1242,8 @@ MultiviewSolveResult solve_directional_multiview(
         result.fused_pose.backend += "+joint-view-visibility";
     if (options.enable_temporal_view_reliability)
         result.fused_pose.backend += "+temporal-view-reliability";
-    if (options.require_reference_consensus_for_anchor)
+    if (options.enable_reference_image_plane_anchor &&
+        options.require_reference_consensus_for_anchor)
         result.fused_pose.backend += "+evidence-gated-reference-anchor";
     result.fused_pose.source_video = reference.source_video;
     double reprojection_error_sum = 0.0;
@@ -1427,16 +1428,20 @@ MultiviewSolveResult solve_directional_multiview(
         result.fused_pose = std::move(stabilized.sequence);
     }
     result.fused_pose = optimize_pose_sequence(result.fused_pose);
-    const auto anchor_result = pin_reference_image_plane(
-        result.fused_pose, reference, reference_anchor_allowed,
-        views[options.reference_view].yaw_degrees,
-        hips, head, left_foot, right_foot,
-        options.reference_anchor_confidence);
-    result.diagnostics.reference_anchored_observations = anchor_result.anchored;
-    result.diagnostics.reference_anchor_suppressed_conflicts =
-        anchor_result.suppressed_conflicts;
-    result.diagnostics.reference_anchor_suppressed_low_confidence =
-        anchor_result.suppressed_low_confidence;
+    if (options.enable_reference_image_plane_anchor) {
+        const auto anchor_result = pin_reference_image_plane(
+            result.fused_pose, reference, reference_anchor_allowed,
+            views[options.reference_view].yaw_degrees,
+            hips, head, left_foot, right_foot,
+            options.reference_anchor_confidence);
+        result.diagnostics.reference_anchored_observations = anchor_result.anchored;
+        result.diagnostics.reference_anchor_suppressed_conflicts =
+            anchor_result.suppressed_conflicts;
+        result.diagnostics.reference_anchor_suppressed_low_confidence =
+            anchor_result.suppressed_low_confidence;
+    } else {
+        result.fused_pose.backend += "+balanced-multiview-image-plane";
+    }
     validate_pose_sequence(result.fused_pose);
     result.motion = reconstruct_canonical_motion(result.fused_pose);
     result.motion.cameras.clear();

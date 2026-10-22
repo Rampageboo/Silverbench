@@ -30,7 +30,7 @@ using json = nlohmann::json;
         "  animocap inspect-motion <motion.amotion>\n"
         "  animocap inspect-video <video-file>\n"
         "  animocap reconstruct-pose <pose_sequence.json> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>]\n"
-        "  animocap fuse-multiview <capture.json> --poses <directory> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>]\n"
+        "  animocap fuse-multiview <capture.json> --poses <directory> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>] [--reference-image-plane-anchor]\n"
         "  animocap export-bvh <motion.amotion> --output <motion.bvh> [--unit centimeters|meters] [--force]\n"
         "  animocap export-vrma <motion.amotion> --output <motion.vrma> [--force]\n"
         "  animocap trim-motion <motion.amotion> --output <clip.amotion> --start-frame <index> --end-frame <index>\n"
@@ -196,6 +196,7 @@ int fuse_multiview(int argc, char** argv) {
     std::filesystem::path diagnostics;
     std::filesystem::path comparison_pose;
     std::filesystem::path character_profile_path;
+    bool enable_reference_image_plane_anchor=false;
     for (int index = 3; index < argc; ++index) {
         const std::string_view option(argv[index]);
         if (option == "--poses" && index + 1 < argc) {
@@ -208,6 +209,8 @@ int fuse_multiview(int argc, char** argv) {
             comparison_pose = argv[++index];
         } else if(option=="--character-profile" && index+1<argc) {
             character_profile_path=argv[++index];
+        } else if(option=="--reference-image-plane-anchor") {
+            enable_reference_image_plane_anchor=true;
         } else {
             usage_error("unknown fuse-multiview option: " + std::string(option));
         }
@@ -241,6 +244,8 @@ int fuse_multiview(int argc, char** argv) {
     const auto options=character_profile
         ? character_profile->optimization_options:animocap::PoseOptimizationOptions{};
     animocap::MultiviewSolveOptions solve_options;
+    solve_options.enable_reference_image_plane_anchor=
+        enable_reference_image_plane_anchor;
     solve_options.reference_view=static_cast<std::size_t>(std::distance(
         views.begin(),std::min_element(views.begin(),views.end(),
             [](const auto& left,const auto& right) {
@@ -248,6 +253,7 @@ int fuse_multiview(int argc, char** argv) {
             })));
     if (!comparison_pose.empty()) {
         auto baseline_options=solve_options;
+        baseline_options.enable_reference_image_plane_anchor=true;
         baseline_options.enable_view_visibility_weighting=false;
         baseline_options.enable_temporal_view_reliability=false;
         baseline_options.enable_animation_curve_stabilization=false;
@@ -474,7 +480,7 @@ void print_help() {
         "  inspect-motion <motion.amotion>\n"
         "  inspect-video <video-file>\n"
         "  reconstruct-pose <pose_sequence.json> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>]\n"
-        "  fuse-multiview <capture.json> --poses <directory> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>]\n"
+        "  fuse-multiview <capture.json> --poses <directory> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>] [--reference-image-plane-anchor]\n"
         "  export-bvh <motion.amotion> --output <motion.bvh> [--unit centimeters|meters] [--force]\n"
         "  export-vrma <motion.amotion> --output <motion.vrma> [--force]\n"
         "  trim-motion <motion.amotion> --output <clip.amotion> --start-frame <index> --end-frame <index>\n"

@@ -42,3 +42,39 @@ Passed. No actionable P0, P1, or P2 visual differences remain.
 - Existing CLI load paths successfully loaded the local video, pose sequence, and reconstructed motion used by the screenshot.
 - Primary state-dependent controls were visibly verified in loaded/disabled states. Capture, correction, range, save, and export handlers were not changed by this visual pass.
 - Browser verification was not applicable to this native Win32 UI. The Windows control plugin failed during initialization with a window-enumeration path error, so native `PrintWindow` capture was used instead.
+
+## Direction 1 workspace redesign QA — 2026-08-20
+
+- source visual truth: `<historical-local-generated-images>/01a01af1-6f44-78f3-8b82-42853a61bee5\exec-719e4130-c3bc-44d5-a4d3-ea0577532635.png`
+- implementation screenshot: native Computer Use capture `screenshot-0` (not persisted to the workspace)
+- source pixels: 1487 × 1058
+- implementation capture: 1857 × 1241 native outer window
+- state: empty AniMocap Fusion workspace; no video, pose, or motion loaded
+- density normalization: no scaling performed; source and native capture were inspected at their reported pixel dimensions
+- full-view comparison: the persistent shell was captured and inspected; the implementation shows the selected direction's top bar, left workflow/asset drawer, central viewport, right inspector, and full-width timeline.
+- focused-region comparison: the left asset drawer, right inspector header/action row, and bottom timeline were inspected; the final title/action spacing was corrected after the first capture.
+
+### Findings
+
+- [P2] Loaded-state parity remains unverified. The selected visual shows populated video/skeleton/quality/timeline data, while the available native capture is the empty state. A matching loaded capture is required before claiming final visual fidelity.
+- [P3] The native shell uses its existing code-drawn controls and real product copy; image/video content is intentionally not fabricated in the empty state.
+
+### Comparison history
+
+- First shell capture showed input-heading/button overlap in the asset drawer and the inspector title touching the action buttons.
+- Fix: lowered the input controls, moved the asset status copy, shortened/isolated the inspector title, and recaptured the final empty shell.
+
+final result: blocked
+blocker: no matching loaded-state implementation screenshot was available for the selected visual target.
+
+## Direction 1 loaded-state follow-up — 2026-08-20
+
+- source visual truth: `<historical-local-generated-images>/01a01af1-6f44-78f3-8b82-42853a61bee5\exec-719e4130-c3bc-44d5-a4d3-ea0577532635.png`
+- loaded visual state: native Computer Use capture with `front.mp4`, valid `outputs\alignment-common-qa-20260812-0240\motion.amotion`, and the workspace's curve editor open
+- observed loaded state: the center video is decoded, the left asset drawer lists both the video and motion package, the right inspector renders the 3D skeleton, and the bottom timeline renders the confidence/contact-style data tracks
+- observed appearance reference state: the existing `private\verification\character-profile-import-ui.png` was accepted; the status footer reports that the appearance reference is used only for low-confidence visual review and does not override current-frame spatial coordinates
+- observed curve state: the curve editor exposes the 0–100% grid and the curve/keyframe controls; the selected motion fixture has no authored manual correction keyframes, so the editor correctly shows its empty-state message and keeps keyframe selection/smoothing disabled
+- evidence boundary: this proves populated video + motion + appearance-reference loading and the curve editor shell, but not populated curve editing against the supplied visual's authored keyframe diamonds
+
+final result: blocked
+blocker: no accepted fixture containing authored manual correction keyframes was available to prove the populated keyframe/curve-editing state end to end; the valid loaded-state workspace itself is verified.
