@@ -45,6 +45,10 @@ else()
 endif()
 
 add_executable(animocap src/cli.cpp)
+if(WIN32)
+    # UTF-8 code page: Unicode paths in argv and file APIs (see the manifest).
+    target_sources(animocap PRIVATE src/animocap.manifest)
+endif()
 target_link_libraries(animocap PRIVATE animocap_core)
 if(WIN32)
     target_link_libraries(animocap PRIVATE mf mfplat mfreadwrite mfuuid ole32)

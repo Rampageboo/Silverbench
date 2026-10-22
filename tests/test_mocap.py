@@ -251,3 +251,17 @@ def test_setup_opens_a_visible_console(monkeypatch):
     assert kwargs["creationflags"] == getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
     with pytest.raises(engine.EngineError):
         engine.open_setup("../evil")
+
+
+def test_chinese_workspace_and_video_names(workspace, tmp_path):
+    """Owner's recordings often have Chinese names; the engine CLI must keep them intact."""
+    layout = create_workspace(tmp_path / "动捕 工作区")
+    (layout.media / "舞蹈 第一段.mp4").write_bytes(b"x")
+    take = takes.create_take(layout, {"sources": [{"video": "media/舞蹈 第一段.mp4"}]})
+    takes.start_capture(layout, take["id"])
+    takes.wait_for_capture(layout, take["id"], timeout=120)
+    assert takes.describe(layout, take["id"])["capture"]["status"] == "ready"
+    edits = {**takes.EMPTY_EDITS, "corrections": [{"joint": 10, "keyframe": 5, "dragPx": [3, 1]}]}
+    assert takes.save_edits(layout, take["id"], edits)["edits"]["corrections"] == 1
+    exported = takes.export(layout, take["id"], {"format": "bvh", "range": [0, 9]})
+    assert exported["relativePath"] == "exports/mocap/舞蹈 第一段-f0-9.bvh" and Path(exported["path"]).is_file()
