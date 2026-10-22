@@ -187,14 +187,22 @@ fn spawn_backend() -> Result<Child, Box<dyn std::error::Error>> {
         .env("YWB_DESKTOP", "1")
         .arg("-m")
         .arg("uvicorn")
-        .arg("backend_api.main:app")
+        // Same app as development (run.bat / start-backend-and-wait.mjs): it adds the training
+        // and multimodal routes on top of backend_api.main.
+        .arg("backend_api.multimodal_main:app")
         .arg("--host")
         .arg(host)
         .arg("--port")
         .arg(port.to_string())
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stdout(log_sink(&root))
+        .stderr(log_sink(&root));
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
 
     command.spawn().map_err(|err| {
         format!(
@@ -203,6 +211,18 @@ fn spawn_backend() -> Result<Child, Box<dyn std::error::Error>> {
         )
         .into()
     })
+}
+
+/// Backend output goes to logs/backend.log (append), so a failed start leaves a trace.
+fn log_sink(root: &Path) -> Stdio {
+    let dir = root.join("logs");
+    let _ = std::fs::create_dir_all(&dir);
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("backend.log"))
+        .map(Stdio::from)
+        .unwrap_or_else(|_| Stdio::null())
 }
 
 struct PythonCommand {

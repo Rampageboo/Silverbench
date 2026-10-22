@@ -85,6 +85,9 @@ app.add_middleware(
         "http://127.0.0.1:8765",
         "http://localhost:8765",
         "tauri://localhost",
+        # Release builds on Windows serve the window from this origin (WebView2).
+        "http://tauri.localhost",
+        "https://tauri.localhost",
     ],
     allow_credentials=False,
     allow_methods=["GET", "POST"],

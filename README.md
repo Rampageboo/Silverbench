@@ -15,7 +15,8 @@ If the checkout is still named `YoloWorkBench`, Windows has kept the folder open
 
 Development happens on one computer; the other only runs the app and pulls updates from GitHub.
 
-- **Run-only computer:** close the app, double-click `update.bat`. It fast-forwards `main`, reinstalls Python or frontend packages only when the update changed them, and refuses to run over local edits (this computer does not commit).
+- **Run-only computer:** close the app, double-click `update.bat`. It fast-forwards `main`, reinstalls Python or frontend packages only when the update changed them, rebuilds the app (`tauri build --no-bundle`) when the desktop app changed, and refuses to run over local edits (this computer does not commit). The desktop shortcut starts the built app; without it, development mode.
+- **Development computer:** use `run.bat` (development mode with hot reload). A built app there would be whatever was last built, so do not rely on the shortcut while developing.
 - **Development computer, first time:** install Git, Python 3, Node.js and Rust; `git clone https://github.com/Rampageboo/RampageWorkbench.git D:\Projects\RampageWorkbench` (the same path keeps per-project AI memory aligned); run `run.bat` once to create `.venv` and `node_modules`. Then register the MCP server (see [MCP integration](docs/yoloworkbench-mcp.md)) and sync AI config with `sync.ps1` in `~/.ai-dotfiles`.
 - **Per computer, never synced:** app settings and recent workspaces, the gallery library, the ComfyUI folder and address, model paths. Each computer browses its own in Settings. Workspaces (e.g. `D:\Yolo\ZZZ`) stay where they are; copy one over only if you need real data for testing.
 

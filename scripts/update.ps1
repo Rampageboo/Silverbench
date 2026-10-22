@@ -44,15 +44,18 @@ git merge --ff-only origin/main
 if ($LASTEXITCODE) { Fail "Could not fast-forward (see git's message above): usually an untracked file here has the same name as a new file in the update. Move it away and run update again." }
 $new = git rev-parse HEAD
 
-if ($old -eq $new) {
+$desktop = Join-Path $repo "apps\desktop"
+$exe = Join-Path $desktop "src-tauri\target\release\rampageworkbench-desktop.exe"
+$changed = @()
+if ($old -ne $new) {
+    Write-Host ""
+    Write-Host "New changes:" -ForegroundColor Cyan
+    git log --oneline "$old..$new"
+    $changed = @(git diff --name-only $old $new)
+} elseif (Test-Path $exe) {
     Write-Host "Already up to date." -ForegroundColor Green
     exit 0
 }
-
-Write-Host ""
-Write-Host "New changes:" -ForegroundColor Cyan
-git log --oneline "$old..$new"
-$changed = git diff --name-only $old $new
 
 $python = Join-Path $repo ".venv\Scripts\python.exe"
 if (($changed -contains "requirements.txt") -and (Test-Path $python)) {
@@ -64,10 +67,11 @@ if (($changed -contains "requirements.txt") -and (Test-Path $python)) {
     & $python -m pip install ultralytics --no-deps
 }
 
-$desktop = Join-Path $repo "apps\desktop"
-if (($changed -match '^apps/desktop/package(-lock)?\.json$') -and (Test-Path (Join-Path $desktop "node_modules"))) {
+$nodeModules = Join-Path $desktop "node_modules"
+$depsChanged = $changed -match '^apps/desktop/package(-lock)?\.json$'
+if ($depsChanged -or -not (Test-Path $nodeModules)) {
     Write-Host ""
-    Write-Host "Frontend dependencies changed: running npm ci..." -ForegroundColor Cyan
+    Write-Host "Installing frontend dependencies (npm ci)..." -ForegroundColor Cyan
     Push-Location $desktop
     try {
         npm ci
@@ -77,5 +81,21 @@ if (($changed -match '^apps/desktop/package(-lock)?\.json$') -and (Test-Path (Jo
     }
 }
 
+# The release app is compiled from apps/desktop (React + Tauri shell) and backend.config.json.
+$appChanged = $changed -match '^apps/desktop/|^backend\.config\.json$'
+if ($appChanged -or -not (Test-Path $exe)) {
+    Write-Host ""
+    Write-Host "Building the app (a few minutes the first time)..." -ForegroundColor Cyan
+    $cargo = Join-Path $env:USERPROFILE ".cargo\bin"
+    if (Test-Path $cargo) { $env:Path = "$cargo;$env:Path" }
+    Push-Location $desktop
+    try {
+        npx tauri build --no-bundle
+        if ($LASTEXITCODE) { Fail "Build failed. The previous app (if any) is unchanged; development mode (run.bat) still works." }
+    } finally {
+        Pop-Location
+    }
+}
+
 Write-Host ""
-Write-Host "Updated. Start RampageWorkbench as usual (desktop shortcut or run.bat)." -ForegroundColor Green
+Write-Host "Updated. Start RampageWorkbench from the desktop shortcut." -ForegroundColor Green
