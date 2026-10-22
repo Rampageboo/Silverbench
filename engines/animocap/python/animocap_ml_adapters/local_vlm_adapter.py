@@ -295,40 +295,45 @@ def _apply_grounding(document: dict[str, Any], frame_index: int,
             (proposal[0] - current[0]) * blend,
             (proposal[1] - current[1]) * blend,
         ]
+        moved = False
         for offset, weight in ((-2, 0.2), (-1, 0.5), (0, 1.0), (1, 0.5), (2, 0.2)):
             target_index = frame_index + offset
             if not 0 <= target_index < len(frames):
                 continue
             target = _joint_map(frames[target_index]).get(name)
-            if target is None:
+            # Invalid observations stay invalid with zero confidence (the pose
+            # contract); the VLM only nudges joints the capture actually saw.
+            if target is None or not target.get("valid", True):
                 continue
-            target["image_xy"][0] += delta[0] * weight
-            target["image_xy"][1] += delta[1] * weight
+            shift = [delta[0] * weight, delta[1] * weight]
+            target["image_xy"][0] += shift[0]
+            target["image_xy"][1] += shift[1]
+            _shift_position(frames[target_index], target, shift)
             target["confidence"] = max(float(target.get("confidence", 0.0)), 0.58)
-        accepted.append(name)
+            moved = True
+        if moved:
+            accepted.append(name)
     return accepted
 
 
-def _refresh_planar_positions(document: dict[str, Any]) -> None:
-    for frame in document.get("frames", []):
-        joints = _joint_map(frame)
-        hips = joints.get("hips")
-        head = joints.get("head")
-        feet = [joints.get("leftFoot"), joints.get("rightFoot")]
-        if not hips or not head or not all(feet):
-            continue
-        foot_y = max(float(foot["image_xy"][1]) for foot in feet if foot)
-        body_pixels = max(80.0, foot_y - float(head["image_xy"][1]))
-        meters_per_pixel = 1.68 / body_pixels
-        hips_x, hips_y = map(float, hips["image_xy"])
-        base_y = float(hips.get("position_m", [0.0, 0.95, 0.0])[1])
-        for joint in frame.get("joints", []):
-            point = joint.get("image_xy")
-            position = joint.get("position_m")
-            if not point or not position or len(position) != 3:
-                continue
-            position[0] = (float(point[0]) - hips_x) * meters_per_pixel
-            position[1] = base_y + (hips_y - float(point[1])) * meters_per_pixel
+def _shift_position(frame: dict[str, Any], joint: dict[str, Any], shift_px: list[float]) -> None:
+    """Move one joint's 3D observation by an image shift, keeping its lifted depth.
+
+    Same convention and scale as the capture adapter's planar positions and the
+    engine's drag corrections: +u is -X, +v is -Y, 1.55 m from head to feet.
+    """
+    position = joint.get("position_m")
+    joints = _joint_map(frame)
+    head = joints.get("head")
+    feet = [joints.get("leftFoot"), joints.get("rightFoot")]
+    if not position or len(position) != 3 or not head or not all(feet):
+        return
+    foot_x = sum(float(foot["image_xy"][0]) for foot in feet if foot) / 2
+    foot_y = sum(float(foot["image_xy"][1]) for foot in feet if foot) / 2
+    body_pixels = max(1.0, math.hypot(float(head["image_xy"][0]) - foot_x, float(head["image_xy"][1]) - foot_y))
+    meters_per_pixel = 1.55 / body_pixels
+    position[0] -= shift_px[0] * meters_per_pixel
+    position[1] -= shift_px[1] * meters_per_pixel
 
 
 def run(input_video: Path, input_pose: Path, output_pose: Path,
@@ -385,7 +390,6 @@ def run(input_video: Path, input_pose: Path, output_pose: Path,
     capture.release()
 
     if any(issue["accepted"] for issue in issues):
-        _refresh_planar_positions(document)
         backend = str(document.get("backend", "pose"))
         if "+qwen3-vl-local" not in backend:
             backend += "+qwen3-vl-local"
@@ -417,6 +421,10 @@ def run(input_video: Path, input_pose: Path, output_pose: Path,
 
 
 def main() -> int:
+    # JSON lines carry video and output paths, often Chinese; with stdout redirected
+    # to a log, Python would otherwise encode them in the ANSI code page and crash.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
     parser = argparse.ArgumentParser()
     parser.add_argument("--input-video", type=Path)
     parser.add_argument("--input-pose", type=Path)

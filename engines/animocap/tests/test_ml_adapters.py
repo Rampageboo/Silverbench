@@ -1,4 +1,5 @@
 import argparse
+import copy
 import math
 import importlib.util
 import json
@@ -39,6 +40,7 @@ from python.animocap_ml_adapters.character_synthetic_dataset import (
 from python.animocap_ml_adapters.evaluate_character_capture import evaluate, pose_metrics
 from python.animocap_ml_adapters.calibrate_pose_confidence import fit_profile
 from python.animocap_ml_adapters.local_vlm_adapter import (
+    _apply_grounding,
     _candidate_frames,
     _priority_frames,
 )
@@ -466,6 +468,7 @@ class HighAccuracyPoseTests(unittest.TestCase):
         scores[10] = 0.2
         self.assertTrue(_needs_humanart_pass(scores, 1, "balanced"))
 
+    @unittest.skipUnless(importlib.util.find_spec("mmpose"), "needs MMPose (.venv-mmpose)")
     def test_humanart_config_is_migrated_without_legacy_mmcls_arguments(self) -> None:
         config = _humanart_runtime_config()
         self.assertEqual(
@@ -742,3 +745,47 @@ class HighAccuracyPoseTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _vlm_frames(count: int = 7) -> list[dict]:
+    """Head at v=100, feet at v=410 (310 px tall), leftHand low-confidence."""
+    frames = []
+    for _ in range(count):
+        joints = [
+            {"semantic": "hips", "image_xy": [500.0, 250.0], "position_m": [0.0, 0.9, 0.0], "confidence": 0.9, "valid": True},
+            {"semantic": "head", "image_xy": [500.0, 100.0], "position_m": [0.0, 1.6, 0.05], "confidence": 0.9, "valid": True},
+            {"semantic": "leftFoot", "image_xy": [520.0, 410.0], "position_m": [-0.1, 0.0, 0.0], "confidence": 0.9, "valid": True},
+            {"semantic": "rightFoot", "image_xy": [480.0, 410.0], "position_m": [0.1, 0.0, 0.0], "confidence": 0.9, "valid": True},
+            {"semantic": "leftHand", "image_xy": [600.0, 250.0], "position_m": [-0.32, 1.0, 0.07], "confidence": 0.3, "valid": True},
+        ]
+        frames.append({"time_s": 0.0, "joints": joints})
+    return frames
+
+
+class LocalVlmGroundingTests(unittest.TestCase):
+    def test_grounding_moves_valid_joints_with_the_capture_convention(self) -> None:
+        document = {"frames": _vlm_frames()}
+        before = copy.deepcopy(document)
+        accepted = _apply_grounding(document, 3, {"leftHand": [620.0, 250.0]}, (0, 0, 1000, 600))
+        self.assertEqual(accepted, ["leftHand"])
+        hand = document["frames"][3]["joints"][4]
+        shift = 20.0 * 0.68  # low-confidence blend
+        self.assertAlmostEqual(hand["image_xy"][0], 600.0 + shift)
+        # +u is -X, at 1.55 m per head-to-feet height; depth is kept.
+        self.assertAlmostEqual(hand["position_m"][0], -0.32 - shift * 1.55 / 310.0)
+        self.assertEqual(hand["position_m"][2], 0.07)
+        # Untouched joints keep their lifted 3D positions.
+        for frame_after, frame_before in zip(document["frames"], before["frames"]):
+            self.assertEqual(frame_after["joints"][:4], frame_before["joints"][:4])
+
+    def test_grounding_leaves_invalid_observations_invalid(self) -> None:
+        frames = _vlm_frames()
+        for index in (2, 3, 4):
+            frames[index]["joints"][4].update(valid=False, confidence=0.0)
+        document = {"frames": frames}
+        _apply_grounding(document, 3, {"leftHand": [620.0, 250.0]}, (0, 0, 1000, 600))
+        for index in (2, 3, 4):
+            self.assertEqual(document["frames"][index]["joints"][4]["confidence"], 0.0)
+            self.assertEqual(document["frames"][index]["joints"][4]["image_xy"], [600.0, 250.0])
+        self.assertGreater(document["frames"][1]["joints"][4]["image_xy"][0], 600.0)
+

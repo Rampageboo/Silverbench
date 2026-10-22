@@ -2105,6 +2105,10 @@ def run_mmpose(
 
 
 def main() -> int:
+    # JSON lines carry video and output paths, often Chinese; with stdout redirected
+    # to a log, Python would otherwise encode them in the ANSI code page and crash.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
     parser = argparse.ArgumentParser()
     parser.add_argument("--expert-interval", choices=EXPERT_INTERVALS, default=None,
                         help="Auxiliary experts only: 1/2/3 frames or auto; risk frames force checks. Omit for legacy quality scheduling.")

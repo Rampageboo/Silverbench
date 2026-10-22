@@ -96,8 +96,12 @@ marks and ranges, and `inferred`: `[frame, joint]` pairs the rebuild invented
   locked joint" are expressed.
 - `review.ranges`: `[first, last, joint]`, inclusive, both ends locked; gaps with
   no support longer than 0.75 s are refused.
+- Only `locked` marks act on their own (the sample is set exactly). `weighted` and
+  `excluded` marks are inputs to a range rebuild: outside every range of their
+  joint they change nothing (Studio's order: mark, then rebuild the range). The
+  UI must show such marks as pending, not as applied.
 
-The engine refuses invalid edits (exit 2) instead of clamping them; RWB keeps the
+The engine refuses invalid edits (exit 2 for contract errors, 1 for malformed JSON types) instead of clamping them; RWB keeps the
 previous result and shows the message.
 
 ## Other commands used

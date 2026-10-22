@@ -357,6 +357,10 @@ def run_pipeline(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
+    # JSON lines carry video and output paths, often Chinese; with stdout redirected
+    # to a log, Python would otherwise encode them in the ANSI code page and crash.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)

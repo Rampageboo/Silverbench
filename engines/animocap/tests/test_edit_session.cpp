@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 
 namespace {
@@ -104,6 +105,12 @@ int main() {
     CHECK(same(apply_edit_session(refined, loaded).pose, smoothed.pose));
 
     // Invalid edits are refused rather than clamped.
+    {
+        const auto negative = std::filesystem::temp_directory_path() / "animocap-edit-session-negative.json";
+        std::ofstream(negative) << R"({"version":1,"corrections":[{"joint":10,"keyframe":20,"dragPx":[1,1],"radius":-1}]})";
+        THROWS(load_edit_session(negative));
+        std::filesystem::remove(negative);
+    }
     auto bad = session;
     bad.review.marks[0].frame = 99;
     THROWS(apply_edit_session(refined, bad));

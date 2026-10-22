@@ -75,6 +75,11 @@ C 可以在 A/B 完成前用 fixture 动作包开工。
 - **许可证**：`LICENSES.md` 与 `third_party/`（模型许可）随 subtree 一起进入，RWB 的 README 链接到它。
 - **两个项目的协作上下文**：AniMocap 的 `project-context/`（决策、风险）保留在 `engines/animocap/` 下继续有效；RWB 的 `DECISIONS.md` 只记整合层面的决定。
 
+## D 阶段必须处理的已知问题（2026-10-23 审查）
+
+- **多视角拖拽方向**：`make_drag_correction` 把像素直接映射到世界 X/Y，没有按参考视角 yaw 旋转。参考视角 yaw≠0 的多视角 take，拖拽会朝错误方向；在修好前编辑界面对这类 take 禁用拖拽（锁定/排除/区间重建不受影响）。
+- **未生效的标记**：加权/排除只在区间重建内起作用（见 `docs/animocap-engine.md`），界面要把区间外的这类标记显示为“待重建”。
+
 ## 待定（实施中由 Owner 决定）
 
 - 3D 视图用 three.js 还是 Canvas 2D 投影（旧 Studio 是 GDI 投影绘制，Canvas 2D 足够复刻；three.js 便于以后做角色预览）。实施者给出建议。

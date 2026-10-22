@@ -13,6 +13,12 @@ from pathlib import Path
 from typing import Any
 
 
+PROGRESS_EVENTS = frozenset({
+    "progress", "vlm_progress", "view_started", "view_finished",
+    "stage_started", "stage_output", "stage_finished", "complete", "error",
+})
+
+
 @dataclass
 class LogState:
     found: bool = False
@@ -41,8 +47,8 @@ def read_log(path: Path) -> LogState:
         except json.JSONDecodeError:
             continue
         event = value.get("event") if isinstance(value, dict) else None
-        if not isinstance(event, str):
-            continue
+        if event not in PROGRESS_EVENTS:
+            continue  # warnings and diagnostics say nothing about progress
         state.found = True
         state.event = event
         if event == "view_started":

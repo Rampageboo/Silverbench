@@ -265,3 +265,72 @@ def test_chinese_workspace_and_video_names(workspace, tmp_path):
     assert takes.save_edits(layout, take["id"], edits)["edits"]["corrections"] == 1
     exported = takes.export(layout, take["id"], {"format": "bvh", "range": [0, 9]})
     assert exported["relativePath"] == "exports/mocap/舞蹈 第一段-f0-9.bvh" and Path(exported["path"]).is_file()
+
+
+def test_retry_after_late_cancel_starts_clean(workspace):
+    """A cancel during refining, or closing the app, leaves packages the next run must not collide with."""
+    take = takes.create_take(workspace, {"sources": [{"video": "media/dance.mp4"}]})
+    folder = workspace.path("mocap") / take["id"]
+    (folder / "capture" / "base.amotion").mkdir(parents=True)
+    (folder / "capture" / "base.amotion" / "manifest.json").write_text("{}")
+    (folder / "refined.json").write_text("{}")
+    record = json.loads((folder / "take.json").read_text(encoding="utf-8"))
+    record["capture"] = {"status": "capturing"}  # reads back as "interrupted"
+    (folder / "take.json").write_text(json.dumps(record), encoding="utf-8")
+    assert takes.describe(workspace, take["id"])["capture"]["status"] == "interrupted"
+    takes.start_capture(workspace, take["id"])
+    takes.wait_for_capture(workspace, take["id"], timeout=120)
+    assert takes.describe(workspace, take["id"])["capture"]["status"] == "ready"
+
+
+def test_adapters_run_with_utf8_output(workspace, monkeypatch):
+    seen = {}
+    real_popen = takes.subprocess.Popen
+
+    def spy(args, **kwargs):
+        seen.update(kwargs["env"])
+        return real_popen(args, **kwargs)
+
+    monkeypatch.setattr(takes.subprocess, "Popen", spy)
+    _captured(workspace)
+    assert seen["PYTHONUTF8"] == "1" and seen["PYTHONIOENCODING"] == "utf-8"
+
+
+def test_failed_swap_rolls_back_to_the_previous_version(workspace, monkeypatch):
+    take_id = _captured(workspace)
+    folder = workspace.path("mocap") / take_id
+    before = {name: (folder / name).read_bytes() for name in ("pose.json", "edit-result.json", "edits.json")}
+    real_rename = Path.rename
+
+    def flaky(self, target):
+        # A file held open (export, scanner) makes placing the new pose.json fail.
+        if self.name == "pose.json" and ".staging-" in str(self):
+            raise PermissionError(5, "Access is denied")
+        return real_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", flaky)
+    edits = {**takes.EMPTY_EDITS, "corrections": [{"joint": 10, "keyframe": 5, "dragPx": [9, 9]}]}
+    with pytest.raises(takes.MocapError, match="open in another program"):
+        takes.save_edits(workspace, take_id, edits)
+    assert {name: (folder / name).read_bytes() for name in before} == before
+    assert (folder / "motion.amotion" / "manifest.json").is_file()
+    assert not list(folder.glob("*.old-*")) and not list(folder.glob(".staging-*"))
+
+
+def test_small_request_checks(workspace):
+    with pytest.raises(takes.MocapError, match="twice"):
+        takes.create_take(workspace, {"sources": [{"video": "media/dance.mp4", "yaw": 0}, {"video": "media/dance.mp4", "yaw": 90}]})
+    take_id = _captured(workspace)
+    with pytest.raises(takes.MocapError, match="first, last"):
+        takes.export(workspace, take_id, {"format": "bvh", "range": [1, 2, 3]})
+
+
+def test_progress_ignores_diagnostics_after_the_last_frame(tmp_path):
+    log = tmp_path / "pose.log"
+    log.write_text(
+        '{"event": "progress", "frame": 100, "total": 100}\n'
+        '{"event": "fusion_diagnostics", "x": 1}\n{"event": "warning", "message": "slow"}\n'
+        '{"event": "expert_schedule", "interval": "2"}\n'
+    )
+    state = progress.single_view(progress.read_log(log), progress.LogState(), vlm_enabled=False)
+    assert state["stage"] == "pose" and state["fraction"] == pytest.approx(0.86)

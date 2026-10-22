@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <fstream>
 #include <string>
 
@@ -176,7 +177,9 @@ EditSession load_edit_session(const std::filesystem::path& path) {
         drag.keyframe = item.at("keyframe");
         const auto px = item.at("dragPx");
         drag.drag_px = {px.at(0).get<double>(), px.at(1).get<double>()};
-        drag.radius = item.value("radius", std::size_t{0});
+        const auto radius = item.value("radius", std::int64_t{0});
+        if (radius < 0) throw ContractError("drag correction radius must not be negative");
+        drag.radius = static_cast<std::size_t>(radius);
         drag.curve = preset_from(item.value("curve", std::string("smooth")));
         if (!std::isfinite(drag.drag_px.x) || !std::isfinite(drag.drag_px.y)) {
             throw ContractError("drag correction must be finite");

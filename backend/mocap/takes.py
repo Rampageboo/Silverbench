@@ -14,6 +14,7 @@ the same commands, options and order as AniMocap Studio.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -112,6 +113,8 @@ def create_take(layout: WorkspaceLayout, request: dict[str, Any]) -> dict[str, A
             raise MocapError(f"Invalid or duplicate view id: {view_id}")
         ids.add(view_id)
         entry: dict[str, Any] = {"id": view_id, "video": _media_video(layout, str(source.get("video", "")))}
+        if any(other["video"] == entry["video"] for other in sources):
+            raise MocapError(f"The same video is chosen twice: {entry['video']}")
         if multiview:
             yaw = source.get("yaw")
             if not isinstance(yaw, (int, float)):
@@ -267,6 +270,7 @@ class CaptureJob:
                 stdin=subprocess.DEVNULL,
                 stdout=sink,
                 stderr=subprocess.STDOUT,
+                env={**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"},
                 creationflags=engine.CREATE_NO_WINDOW,
             )
             code = self.process.wait()
@@ -296,6 +300,7 @@ class CaptureJob:
             if not engine.python_exe().is_file():
                 raise MocapError("The capture environment (.venv-mmpose) is not installed. Install it from the 本机环境 panel on the Motion capture page.")
             _hand_over_gpu()
+            _clear_capture_outputs(self.folder)
             self.capture_dir.mkdir(parents=True, exist_ok=True)
             warning = self._capture_multiview() if self.take["mode"] == "multiview" else self._capture_single()
             self.phase = "building"
@@ -395,6 +400,26 @@ class CaptureJob:
         return None
 
 
+DERIVED_OUTPUTS = ("motion.amotion", "pose.json", "motion.amotion.areview", "edit-result.json")
+
+
+def _clear_capture_outputs(folder: Path) -> None:
+    """Remove what an earlier, unfinished capture left, so a retry cannot collide with it.
+
+    Only takes that never finished get here (a ready take is not recaptured), so
+    there are no user edits to lose; edits.json is reset because they would
+    refer to the old refined pose.
+    """
+    for name in ("capture", "logs", *DERIVED_OUTPUTS):
+        path = folder / name
+        if path.is_dir():
+            shutil.rmtree(path)
+        elif path.exists():
+            path.unlink()
+    (folder / "refined.json").unlink(missing_ok=True)
+    _write_json(folder / "edits.json", EMPTY_EDITS)
+
+
 _JOBS: dict[str, CaptureJob] = {}
 _JOBS_LOCK = threading.Lock()
 
@@ -471,16 +496,31 @@ def _cameras_source(folder: Path, take: dict[str, Any]) -> Path | None:
     return package if take["mode"] == "multiview" and package.is_dir() else None
 
 
-def _swap(target: Path, staged: Path) -> None:
-    """Replace ``target`` (file or folder) with ``staged``; the old copy is removed last."""
-    old = target.with_name(target.name + f".old-{uuid.uuid4().hex[:8]}")
-    if target.exists():
-        target.rename(old)
-    staged.rename(target)
-    if old.is_dir():
-        shutil.rmtree(old, ignore_errors=True)
-    elif old.exists():
-        old.unlink()
+def _swap_all(folder: Path, stage: Path, names: tuple[str, ...]) -> None:
+    """Replace ``folder/name`` with ``stage/name`` for every name, all or nothing."""
+    suffix = f".old-{uuid.uuid4().hex[:8]}"
+    retired: list[str] = []
+    placed: list[str] = []
+    try:
+        for name in names:
+            if (folder / name).exists():
+                (folder / name).rename(folder / (name + suffix))
+                retired.append(name)
+        for name in names:
+            (stage / name).rename(folder / name)
+            placed.append(name)
+    except OSError as error:
+        for name in placed:
+            (folder / name).rename(stage / name)
+        for name in retired:
+            (folder / (name + suffix)).rename(folder / name)
+        raise MocapError(f"Could not update the take's files (is one open in another program?): {error}") from error
+    for name in retired:
+        old = folder / (name + suffix)
+        if old.is_dir():
+            shutil.rmtree(old, ignore_errors=True)
+        else:
+            old.unlink(missing_ok=True)
 
 
 def rebuild(folder: Path, take: dict[str, Any], edits: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -521,10 +561,7 @@ def rebuild(folder: Path, take: dict[str, Any], edits: dict[str, Any] | None = N
                 "updatedAt": _now(),
             }
             _write_json(stage / "edit-result.json", summary)
-            for name in ("motion.amotion", "pose.json", "motion.amotion.areview", "edit-result.json"):
-                _swap(folder / name, stage / name)
-            if edits is not None:
-                _swap(folder / "edits.json", stage / "edits.json")
+            _swap_all(folder, stage, DERIVED_OUTPUTS + (("edits.json",) if edits is not None else ()))
             return summary
         finally:
             shutil.rmtree(stage, ignore_errors=True)
@@ -649,7 +686,13 @@ def export(layout: WorkspaceLayout, take_id: str, request: dict[str, Any]) -> di
     take = _load(folder)
     stem = re.sub(r'[<>:"/\\|?*]+', "_", take["name"]).strip(" ._") or take_id
     frame_range = request.get("range")
+    if frame_range is not None and not (
+        isinstance(frame_range, (list, tuple)) and len(frame_range) == 2 and all(isinstance(v, int) for v in frame_range)
+    ):
+        raise MocapError("The export range must be [first, last] frame numbers.")
     staging: Path | None = None
+    lock = _take_lock(folder)
+    lock.acquire()
     try:
         source = package
         if frame_range is not None:
@@ -669,6 +712,7 @@ def export(layout: WorkspaceLayout, take_id: str, request: dict[str, Any]) -> di
     except engine.EngineError as error:
         raise MocapError(str(error)) from error
     finally:
+        lock.release()
         if staging is not None:
             shutil.rmtree(staging, ignore_errors=True)
     return {"path": str(target), "relativePath": target.relative_to(layout.root).as_posix(), "engine": result}
