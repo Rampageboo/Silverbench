@@ -30,7 +30,7 @@ using json = nlohmann::json;
         "  animocap validate-manifest <capture.json>\n"
         "  animocap inspect-motion <motion.amotion>\n"
         "  animocap inspect-video <video-file>\n"
-        "  animocap reconstruct-pose <pose_sequence.json> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>] [--pose-output <refined.json>]\n"
+        "  animocap reconstruct-pose <pose_sequence.json> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>] [--pose-output <refined.json>] [--no-smooth]\n"
         "  animocap apply-edits <refined.json> --edits <edits.json> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>] [--pose-output <pose.json>] [--review-output <motion.amotion.areview>] [--cameras-from <motion.amotion>]\n"
         "  animocap fuse-multiview <capture.json> --poses <directory> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>] [--reference-image-plane-anchor]\n"
         "  animocap export-bvh <motion.amotion> --output <motion.bvh> [--unit centimeters|meters] [--force]\n"
@@ -140,12 +140,15 @@ int reconstruct_pose(int argc, char** argv) {
     std::filesystem::path output;
     std::filesystem::path character_profile_path;
     std::filesystem::path pose_output;
+    bool smooth=true;
     for(int index=3;index<argc;++index) {
         const std::string_view option(argv[index]);
         if(option=="--output" && index+1<argc)output=argv[++index];
         else if(option=="--character-profile" && index+1<argc)
             character_profile_path=argv[++index];
         else if(option=="--pose-output" && index+1<argc)pose_output=argv[++index];
+        // A fused multiview pose is already stabilized; Studio only optimizes it.
+        else if(option=="--no-smooth")smooth=false;
         else usage_error("unknown reconstruct-pose option: "+std::string(option));
     }
     if(output.empty())usage_error("reconstruct-pose requires --output");
@@ -155,9 +158,10 @@ int reconstruct_pose(int argc, char** argv) {
     const auto* profile=character_profile?&character_profile->skeleton:nullptr;
     const auto options=character_profile
         ? character_profile->optimization_options:animocap::PoseOptimizationOptions{};
+    auto observed = animocap::load_pose_sequence_json(argv[2]);
+    if(smooth)observed=animocap::smooth_pose_sequence(observed);
     auto optimization = animocap::optimize_pose_sequence_detailed(
-        animocap::smooth_pose_sequence(
-            animocap::load_pose_sequence_json(argv[2])),options,profile,
+        observed,options,profile,
         character_profile ? character_profile->proportion_policy
                           : animocap::ProportionPolicy::ExactReference);
     if(character_profile)
@@ -537,7 +541,7 @@ void print_help() {
         "  validate-manifest <capture.json>\n"
         "  inspect-motion <motion.amotion>\n"
         "  inspect-video <video-file>\n"
-        "  reconstruct-pose <pose_sequence.json> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>] [--pose-output <refined.json>]\n"
+        "  reconstruct-pose <pose_sequence.json> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>] [--pose-output <refined.json>] [--no-smooth]\n"
         "  apply-edits <refined.json> --edits <edits.json> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>] [--pose-output <pose.json>] [--review-output <motion.amotion.areview>] [--cameras-from <motion.amotion>]\n"
         "  fuse-multiview <capture.json> --poses <directory> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>] [--reference-image-plane-anchor]\n"
         "  export-bvh <motion.amotion> --output <motion.bvh> [--unit centimeters|meters] [--force]\n"

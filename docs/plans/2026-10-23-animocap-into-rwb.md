@@ -1,6 +1,6 @@
 # AniMocap Fusion 整合进 RampageWorkbench
 
-状态：A 进行中（2026-10-23）。基线：AniMocap `main` @ `50549a85`（已 subtree 进 `engines/animocap/`），RWB `main` @ `d589c203`。
+状态：A、B 完成，C 进行中（2026-10-23）。基线：AniMocap `main` @ `50549a85`（已 subtree 进 `engines/animocap/`），RWB `main` @ `d589c203`。
 实施地点：Owner 改为这台电脑完成（"全部在这台电脑做"），另一台收尾。
 
 AniMocap 侧的交接文档是 `engines/animocap/docs/MERGE_HANDOFF.md`（产品边界、验收事实、不能宣称完成的事项），本计划以它为准补充。

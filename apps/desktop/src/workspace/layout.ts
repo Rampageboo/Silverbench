@@ -8,6 +8,7 @@
  *   labels/                         annotations — the only source of truth
  *   models/ runs/ exports/          products: weights, training runs, datasets
  *   backups/originals/ versions/    originals before edits, annotation snapshots
+ *   mocap/                          motion-capture takes (observations, edits, motion)
  *   .rwb/                           this machine's session and caches (safe to delete)
  *
  * Annotation files are named after the media file they belong to, never after
@@ -30,6 +31,7 @@ export const WORKSPACE_PATHS = {
   exports: "exports",
   originals: "backups/originals",
   versions: "versions",
+  mocap: "mocap",
   state: ".rwb",
   session: ".rwb/session.json",
   cache: ".rwb/cache",

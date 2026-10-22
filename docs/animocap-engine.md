@@ -19,22 +19,35 @@ A take lives in `mocap/<take>/` of the workspace:
 
 | File | Written by | Meaning |
 |---|---|---|
-| `pose_sequence.json` | Python adapter (capture) | Raw observations, immutable |
-| `refined.json` | `reconstruct-pose --pose-output` | `optimize(smooth(raw))`: the base all edits replay on, immutable |
+| `take.json` | RWB | Sources (workspace-relative videos, yaw per view), capture options, capture status |
+| `capture/` | Python adapters, engine | Raw observations and diagnostics as the adapters write them; kept on failure/cancel |
+| `logs/pose.log`, `logs/vlm.log` | Python adapters | JSON-line progress (`event`: `progress`, `view_started`, `stage_*`, `complete`, `error`) |
+| `refined.json` | `reconstruct-pose --pose-output` (multiview without profile: the fused pose) | The base all edits replay on; written once |
 | `edits.json` | RWB | The user's edits (below). Small, user labour |
-| `motion.amotion/` | `reconstruct-pose` / `apply-edits` | Canonical motion for playback and export |
+| `motion.amotion/` | `apply-edits` | Canonical motion for playback and export |
 | `pose.json` | `apply-edits --pose-output` | Edited observation pose shown in the UI |
-| `motion.amotion.areview/` | `apply-edits --review-output` | Studio-compatible review project (only on save/export) |
+| `motion.amotion.areview/` | `apply-edits --review-output` | Studio-compatible review project; `source.json` is the pre-review baseline ("原始叠影") |
+| `edit-result.json` | RWB | Last `apply-edits` summary, including inferred samples |
+
+Everything except `take.json`, `capture/`, `refined.json` and `edits.json` is
+rebuilt from them on every edit (staged, then swapped in; a refused edit changes
+nothing). The capture runs Studio's commands and options: `mmpose_adapter.py`
+(`--quality maximum --segmentation auto --npu-mode shadow`, Maxine VSR 2×, expert
+interval, ROI) → optional `local_vlm_adapter.py` (failure keeps the base result,
+as in Studio) → `reconstruct-pose`; multiview runs `multiview_pipeline.py`, then
+`reconstruct-pose --no-smooth` only when a character profile is set.
 
 ## `reconstruct-pose`
 
 ```
 animocap reconstruct-pose <pose_sequence.json> --output <motion.amotion>
-    [--character-profile <profile.json>] [--pose-output <refined.json>]
+    [--character-profile <profile.json>] [--pose-output <refined.json>] [--no-smooth]
 ```
 
 Same path as Studio single-view capture: smooth → `optimize_pose_sequence_detailed`
 (profile options and proportion policy when a profile is given) → reconstruct.
+`--no-smooth` skips the smoothing, for a fused multiview pose that is already
+stabilized (Studio only optimizes it).
 
 ## `apply-edits`
 

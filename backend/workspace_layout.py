@@ -50,6 +50,8 @@ RELATIVE_PATHS: dict[str, str] = {
     "exports": "exports",
     "originals": "backups/originals",
     "versions": "versions",
+    # Motion-capture takes: raw observations, the user's edits, the motion package.
+    "mocap": "mocap",
     # Machine-local state and caches.
     "state": ".rwb",
     "session": ".rwb/session.json",

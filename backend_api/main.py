@@ -68,13 +68,18 @@ async def _lifespan(application: FastAPI):
         yield
     finally:
         from backend_api.gallery import close_library
+        from backend.mocap.takes import cancel_all_captures
+
         close_library()
+        cancel_all_captures()
 
 
 app = FastAPI(title="RampageWorkbench API", lifespan=_lifespan)
 from backend_api.gallery import router as gallery_router
+from backend_api.mocap import router as mocap_router
 
 app.include_router(gallery_router)
+app.include_router(mocap_router)
 service = create_desktop_backend_service(APP_DIR, SESSION_DIR, app_data_dir())
 
 app.add_middleware(
