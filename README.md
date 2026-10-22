@@ -1,5 +1,7 @@
 # AniMocap Fusion
 
+合并到其他软件或恢复工程时，先读 [合并交接文档](docs/MERGE_HANDOFF.md)。它记录模块入口、已验证范围、未解决问题和私有归档的恢复方式；不需要保留原始对话。
+
 AniMocap Fusion 是一个本地运行的单目/多机视频动作捕捉工具，面向动漫与游戏类人角色。核心、视频解码、动作数据合同和桌面 GUI 使用 C++20；MMPose、HRNet、RTMW、MotionBERT 与可选 SAM 2.1 作为独立 Python 推理进程运行。
 
 目标运行硬件为 RTX 5070 Ti Laptop（12 GB VRAM），采用离线批处理；当前 RTX 2060 开发机只用于兼容性验证。
@@ -20,9 +22,15 @@ AniMocap Fusion 是一个本地运行的单目/多机视频动作捕捉工具，
 
 ## 稀疏关键帧曲线修正
 
-自动捕捉完成后点击“手动修正”。在需要修正的帧拖动错位的头、肩、肘、腕、髋、膝或踝；Studio 会在当前帧创建一个可见关键帧，并用局部三次缓入缓出曲线传播偏移，约四分之一秒外权重归零，不再把同一偏移复制到整段视频。时间轴上的紫色菱形是关键帧，细线是影响曲线；绿色菱形表示当前帧。可用“删除当前键”或 Delete 删除当前帧关键帧，Ctrl+Z/Ctrl+Y 撤销/重做。
+新增[按关节修复](docs/joint-review.md)：右侧人体预览可选择单个部位，锁定可信帧、调整可信权重、排除局部坏点，并在两个锁定帧之间重建动作。支持原始叠影、撤销/重做和可重新打开的 `.areview` 修复工程。
+
+自动捕捉完成后点击“手动修正”。在需要修正的帧拖动错位的头、肩、肘、腕、髋、膝或踝；Studio 会在当前帧创建一个可见关键帧，并用局部三次缓入缓出曲线传播偏移，约四分之一秒外权重归零，不再把同一偏移复制到整段视频。时间线上的紫色菱形是关键帧，细线是影响曲线；绿色菱形表示当前帧。可用“删除当前键”或 Delete 删除当前帧关键帧，Ctrl+Z/Ctrl+Y 撤销/重做。
+
+底层仍保留关键帧曲线和平滑功能；当前 Studio 界面以按关节修复和选中帧导出为主，旧曲线模式切换与批量平滑按钮暂不显示。
 
 多视角联合求解还会自动执行一次有界防抖：低置信度噪声可向曲线靠拢；高置信度样本只有呈现小幅、相邻帧反向的高频摆动时才允许最多 6 mm 的修正。动作峰值、大幅转向、脚接触和无效帧保持锁定。完成状态会报告整体抖动指标降幅及其中高置信度微抖修正样本数。
+
+需要处理局部抖动时，优先使用右侧“锁定此帧 / 排除此部位 / 重建区间”，并通过原始叠影检查结果。
 
 ## 动作导出
 
@@ -52,9 +60,13 @@ AniMocap Fusion 是一个本地运行的单目/多机视频动作捕捉工具，
 
 ## 时序稳定
 
+Studio 提供[辅助 AI 推理间隔](docs/expert-interval.md)，可选逐帧、每 2 帧、每 3 帧或自动，初始试用设置为每 2 帧。它减少辅助姿态专家调用，基础动捕与最终动画仍逐帧；风险帧会自动补算，调用记录保存在 `expert-schedule.json`。
+
 加载捕捉结果时会自动执行三帧中值去跳点、五帧对称时序平滑和全序列运动学优化。优化器使用稳健骨长、关节置信度和二阶时间约束，只移动有效 3D 观测，不改手工 2D 点，也不会把缺失点伪造成有效数据。接触帧还会约束脚掌水平漂移。
 
-GUI 默认使用最高精度模式：HRNet/MotionBERT 生成基础观测，RTMW-x 384 对每帧 2D 关节再推理；两个模型明显冲突时降低置信度而不是盲目平均。LK 光流只在人物前景中延续关节。若本机已有 `private/models/sam2/sam2.1_hiera_small.pt`，前景来自 SAM 2.1 整段视频传播；否则自动回退 GrabCut。
+GUI 保留最高精度模型配置：HRNet/MotionBERT 逐帧生成基础观测，RTMW-x 384 与 Human-Art ViTPose 按辅助 AI 间隔和风险信号复核；模型明显冲突时降低置信度而不是盲目平均。LK 光流只在人物前景中延续关节。若本机已有 `private/models/sam2/sam2.1_hiera_small.pt`，前景来自 SAM 2.1 整段视频传播；否则自动回退 GrabCut。
+
+Studio 捕捉默认在固定人物 ROI 后运行 NVIDIA Maxine VFX 1.2 Video Super Resolution Mode 4，将人物区域 AI 放大 2× 后再交给 HRNet、RTMW-x 与 Human-Art ViTPose；三个专家共享同一张放大帧，关节点会按放大比例除回并加上 ROI 偏移，因此最终坐标仍属于原视频。桥接 DLL 由 Windows CMake 构建自动生成；本地运行还需要把 `NVCVImage.dll`、`NVVideoEffects.dll`、`nvngxruntime.dll`、`nvVFXVideoSuperRes.dll` 与 `nvngx_vsr.dll` 放在 Git 忽略的 `private/maxine-vfx/runtime/`。命令行可用 `--upscale off` 做无超分诊断，或通过 `ANIMOCAP_MAXINE_VFX_RUNTIME` 指定运行目录。
 
 重建时还会依据脚掌/脚尖相对地面高度与速度生成左右脚接触轨道，并用滞回阈值与单帧毛刺过滤保持稳定。接触帧数、接触占比、置信度范围和无效观测数写入每个动作包的 `diagnostics.json`。
 
@@ -63,6 +75,10 @@ GUI 默认使用最高精度模式：HRNet/MotionBERT 生成基础观测，RTMW-
 界面默认启用“本地视觉纠错”。它只在低置信度、轨迹突跳、遮挡或左右肢体混淆的候选帧调用本机 Qwen3-VL，不会逐帧占用显存；HRNet 与光流仍负责连续跟踪。所有视频帧只在本机处理，不上传云端。
 
 在目标 RTX 5070 Ti Laptop（12 GB VRAM）上，点击“配置本地 AI”会安装 Ollama 并拉取 qwen3-vl:4b。本地模型未启动时，捕捉会继续使用 HRNet、光流和时序平滑，并在状态栏明确提示纠错阶段不可用。
+
+## 外观参考辅助
+
+左侧“外观参考 · 导入”可载入目标角色的 PNG/JPG/WebP/BMP 参考图；“外观辅助 · 开”只在本地 Qwen3-VL 复核低置信度、遮挡、突跳或左右肢体歧义帧时发送参考图。当前视频帧仍是坐标和姿势的唯一空间权威，参考图只用于确认目标角色的外观、轮廓、可见肢体和服装连续性，不会把参考图的姿势或坐标硬套到当前动作。参考图路径和参与情况会写入 `visual-recovery-issues.json`；没有参考图或本地 VLM 不可用时，骨骼、前景掩码、光流和时序路径照常工作。
 
 ## Intel NPU 影子评估
 
@@ -194,8 +210,10 @@ Copy-Item private\calibration\calibration.json private\take-01\calibration.json
 
 The maximum offline path now keeps MotionBERT as the only production 3D lifter and runs three independent 17-joint 2D hypotheses where available: the active base HRNet (or the activated character-HRNet checkpoint), Human-Art ViTPose-L, and RTMW-x 384. Hypotheses are clustered per COCO joint using the active person ROI/body box. Compatible evidence may be combined; incompatible limbs are never averaged. An unresolved conflict keeps an observed hypothesis with reduced confidence, and missing predictions remain invalid.
 
-Quality scheduling is deliberate: `fast` is base-only, `balanced` invokes ViTPose-L and RTMW adaptively, and `maximum` invokes both experts on every usable frame. MMPose 1.3.2's bundled Human-Art config still names the retired `mmcls.VisionTransformer`; the adapter non-destructively migrates the in-memory config to `mmpretrain.VisionTransformer`, removes the legacy output argument, and loads the immutable official checkpoint with a narrowly scoped PyTorch 2.6+ compatibility boundary. Model failure is still reported explicitly and the available CUDA path remains usable.
+When `--expert-interval` is omitted, quality scheduling is unchanged: `fast` is base-only, `balanced` invokes ViTPose-L and RTMW adaptively, and `maximum` invokes both experts on every usable frame. An explicit expert interval overrides balanced/maximum scheduling; Studio starts with interval 2 and checks risk frames densely. MMPose 1.3.2's bundled Human-Art config still names the retired `mmcls.VisionTransformer`; the adapter non-destructively migrates the in-memory config to `mmpretrain.VisionTransformer`, removes the legacy output argument, and loads the immutable official checkpoint with a narrowly scoped PyTorch 2.6+ compatibility boundary. Model failure is still reported explicitly and the available CUDA path remains usable.
 
-Held-out confidence calibration is a local, evidence-bound JSON profile. Create it with `tools\calibrate_pose_confidence.ps1 -Evidence private\calibration\labelled_pose_evidence.json`; the evidence must contain labelled real samples from at least two distinct source motions for HRNet, Human-Art ViTPose-L, and RTMW. The fitter produces monotonic per-model/per-joint curves plus the source hash and motion IDs. Pass the result with `--confidence-calibration private\calibration\pose_confidence.json`, or use that ignored conventional path for auto-discovery. Structurally valid curves without the held-out evidence block are rejected rather than treated as calibrated; absent profiles use identity calibration and Studio says so explicitly.
+Held-out confidence calibration is a local, evidence-bound JSON profile. Create it with `tools\calibrate_pose_confidence.ps1 -Evidence private\calibration\labelled_pose_evidence.json`; the evidence must contain labelled real samples from at least two distinct source motions for HRNet, Human-Art ViTPose-L, and RTMW. The fitter preserves each model's raw score domain (including RTMW SimCC responses above one) and produces monotonic per-model/per-joint curves plus the source hash and motion IDs. Pass the result with `--confidence-calibration private\calibration\pose_confidence.json`, or use that ignored conventional path for auto-discovery. Structurally valid curves without the held-out evidence block are rejected. Without a profile, probability-like experts keep their native scale, RTMW uses a monotonic bounded response transform, and compatible experts publish conservative agreement support rather than the maximum score.
+
+Directional multiview fusion now keeps the balanced multiview image plane through the final optimization stage. The former raw reference-view image-plane overwrite remains available only as the explicit `fuse-multiview --reference-image-plane-anchor` compatibility option; diagnostic F0 controls enable it explicitly.
 
 The official Human-Art ViTPose-L config/checkpoint and the required MMPreTrain dependency are installed/cached only by `tools\setup_mmpose.ps1`; weights and calibration remain local/Git-ignored and are never bundled. Local verification on 2026-08-11 loaded the full maximum HRNet + MotionBERT + RTMW-x + ViTPose-L session and ran a real 2304×1440 animation frame through ViTPose-L on CUDA (17/17 returned joints). This proves execution compatibility, not held-out quality or checkpoint activation evidence.

@@ -1,0 +1,33 @@
+CANONICAL_SEMANTICS = (
+    "sceneRoot",
+    "hips",
+    "spine",
+    "chest",
+    "upperChest",
+    "neck",
+    "head",
+    "leftShoulder",
+    "leftUpperArm",
+    "leftLowerArm",
+    "leftHand",
+    "rightShoulder",
+    "rightUpperArm",
+    "rightLowerArm",
+    "rightHand",
+    "leftUpperLeg",
+    "leftLowerLeg",
+    "leftFoot",
+    "leftToes",
+    "rightUpperLeg",
+    "rightLowerLeg",
+    "rightFoot",
+    "rightToes",
+)
+
+COORDINATE_CONTRACT = {
+    "unit": "meter",
+    "handedness": "right",
+    "up_axis": "Y",
+    "forward_axis": "Z",
+    "source": "canonical",
+}

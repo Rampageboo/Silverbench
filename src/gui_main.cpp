@@ -1,3 +1,5 @@
+#include "animocap/animation_curve.hpp"
+#include "animocap/blender_exchange.hpp"
 #include "animocap/math.hpp"
 #include "animocap/character_profile.hpp"
 #include "animocap/contracts.hpp"
@@ -5,6 +7,7 @@
 #include "animocap/multiview.hpp"
 #include "animocap/package.hpp"
 #include "animocap/pose_sequence.hpp"
+#include "animocap/pose_review.hpp"
 #include "animocap/video.hpp"
 
 #include <nlohmann/json.hpp>
@@ -16,6 +19,7 @@
 #include <shellapi.h>
 #include <shobjidl.h>
 #include <windowsx.h>
+#include <wincodec.h>
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -31,7 +35,11 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <tuple>
 #include <vector>
+
+#pragma comment(lib,"msimg32.lib")
+#pragma comment(lib,"windowscodecs.lib")
 
 namespace {
 constexpr wchar_t kWindowClass[] = L"AniMocapFusionWindow";
@@ -48,9 +56,22 @@ constexpr int kExportVrma = 120;
 constexpr int kRangeStart = 121, kRangeEnd = 122, kRangeClear = 123, kLoopRange = 124;
 constexpr int kCharacterProfile = 125;
 constexpr int kDeleteKeyframe = 126;
-constexpr int kHeader = 66, kSteps = 52, kScopeBar = 56, kTimelineHeight = 244;
-constexpr int kTimelineLabelWidth = 124;
-constexpr int kPadding = 16;
+constexpr int kSelectAllKeyframes = 127, kClearKeyframeSelection = 128;
+constexpr int kSmoothKeyframes = 129;
+constexpr int kAppearanceReference = 130, kAppearanceToggle = 131;
+constexpr int kTimelineMode = 132, kCurvePreset = 133;
+constexpr int kSelectExportFrames = 134, kSelectAuthoredExportFrames = 135;
+constexpr int kClearExportFrames = 136, kExportBlenderSelected = 137;
+constexpr int kReviewJoint=138,kReviewLock=139,kReviewWeight=140,kReviewExclude=141;
+constexpr int kReviewClear=142,kReviewRebuild=143,kReviewCompare=144,kReviewOpen=145;
+constexpr int kReviewFront=146,kReviewSide=147;
+constexpr int kExpertInterval=148;
+constexpr int kHeader = 58, kWorkspaceBar = 40, kTimelineHeight = 328;
+constexpr int kFooterHeight = 34;
+constexpr int kRailWidth = 64, kAssetPanelWidth = 236, kInspectorWidth = 380;
+constexpr int kInspectorTabs = 36;
+constexpr int kTimelineLabelWidth = 156;
+constexpr int kPadding = 12;
 constexpr std::size_t kMaximumMultiviewViews = 8;
 constexpr double kPi = 3.14159265358979323846;
 
@@ -77,6 +98,13 @@ constexpr COLORREF red=RGB(255,91,105);
 }
 
 using ManualCorrectionState=animocap::ManualPoseCorrections;
+enum class TimelineMode { DopeSheet, CurveEditor };
+enum class CurvePreset { Linear, EaseIn, EaseOut, Smooth, Hold };
+struct CorrectionEditState {
+    ManualCorrectionState corrections;
+    std::vector<std::size_t> smoothed_keyframes;
+    animocap::PoseReview review;
+};
 
 struct NpuReviewIssue {
     std::size_t view_index{}, frame_index{};
@@ -109,6 +137,7 @@ struct AnalysisCancelled final : std::exception {
 struct AppState {
     HWND window{}, timeline{}, status{}, progress{}, play{};
     std::filesystem::path root, video_path, motion_path;
+    std::filesystem::path appearance_reference_path;
     std::array<std::filesystem::path,kMaximumMultiviewViews> multiview_videos{};
     std::array<animocap::VideoFrame,kMaximumMultiviewViews> multiview_preview_frames{};
     std::array<std::string,kMaximumMultiviewViews> multiview_view_ids{};
@@ -126,7 +155,17 @@ struct AppState {
     std::optional<animocap::PoseOptimizationDiagnostics> optimization_diagnostics;
     std::optional<animocap::PoseSequence> anchor_drag_snapshot;
     ManualCorrectionState manual_corrections;
-    std::vector<ManualCorrectionState> correction_undo, correction_redo;
+    animocap::PoseReview review;
+    std::vector<bool> review_inferred;
+    std::optional<animocap::PoseSequence> review_base;
+    std::size_t review_joint{10};
+    bool review_compare{};
+    std::wstring expert_interval{L"2"};
+    std::vector<std::pair<POINT,std::size_t>> review_hit_points;
+    std::vector<CorrectionEditState> correction_undo, correction_redo;
+    std::vector<std::size_t> selected_keyframes;
+    std::vector<std::size_t> smoothed_keyframes;
+    animocap::BlenderFrameSelection selected_export_frames;
     std::optional<animocap::MotionPackage> motion;
     std::optional<animocap::CharacterProfile> character_profile;
     std::optional<animocap::MultiviewDiagnostics> multiview_diagnostics;
@@ -135,9 +174,19 @@ struct AppState {
     bool rotating{}, calibrating{}, scrubbing{}, video_eof{};
     bool has_person_frame{}, selecting_person_frame{}, drawing_person_frame{};
     bool auto_person_frame{true}, manual_person_frame{}, vlm_enabled{true};
+    bool appearance_assist_enabled{true};
     bool multiview_mode{}, calibrated_multiview{}, multiview_overview{};
     std::size_t multiview_review_view{};
     bool motion_dirty{};
+    bool selecting_export_frames{};
+    TimelineMode timeline_mode{TimelineMode::DopeSheet};
+    CurvePreset curve_preset{CurvePreset::Smooth};
+    int active_curve_correction{-1};
+    bool dragging_curve_handle{};
+    int curve_handle_side{};
+    bool curve_drag_changed{};
+    std::optional<CorrectionEditState> curve_drag_before_state;
+    std::optional<animocap::PoseSequence> curve_drag_before_pose;
     bool loop_range{};
     std::optional<double> range_start,range_end;
     int dragging_anchor{-1};
@@ -151,6 +200,10 @@ struct AppState {
     std::jthread worker;
     HFONT font{}, small_font{}, title_font{}, section_font{}, mono_font{};
     HBRUSH panel_brush{};
+    HBITMAP human_reference_bitmap{};
+    HDC human_reference_dc{};
+    SIZE human_reference_size{};
+    bool human_reference_attempted{};
 } app;
 
 std::wstring widen(const std::string& value) {
@@ -170,6 +223,14 @@ void append_status(const std::wstring& suffix) {
     set_status(value+suffix);
 }
 void update_correction_controls();
+void update_blender_selection_controls();
+std::wstring blender_selection_summary(std::size_t limit=12);
+bool contains_keyframe(const std::vector<std::size_t>& frames,std::size_t frame);
+std::size_t pose_frame();
+void rebuild_corrected_pose();
+CorrectionEditState current_correction_state();
+void push_correction_history(std::vector<CorrectionEditState>& history,
+                             CorrectionEditState value);
 bool confirm_replace_dirty_motion() {
     if(!app.motion_dirty)return true;
     return MessageBoxW(app.window,
@@ -331,33 +392,38 @@ std::optional<std::filesystem::path> choose_export_output(
 }
 RECT canvas_rect() {
     RECT client{}; GetClientRect(app.window, &client);
-    return {kPadding, kHeader + kSteps + kScopeBar,
-            client.right - kPadding, client.bottom - kTimelineHeight};
+    return {kRailWidth + kAssetPanelWidth + kPadding,
+            kHeader + kWorkspaceBar + kPadding,
+            client.right - kInspectorWidth - kPadding,
+            client.bottom - kTimelineHeight - kFooterHeight - kPadding};
+}
+RECT inspector_rect() {
+    RECT client{}; GetClientRect(app.window, &client);
+    const RECT canvas=canvas_rect();
+    return {canvas.right + kPadding,canvas.top,client.right-kPadding,canvas.bottom};
 }
 int workspace_split() {
-    RECT canvas=canvas_rect();
-    return canvas.left+static_cast<int>((canvas.right-canvas.left)*.64);
+    return canvas_rect().right;
 }
 RECT video_area() {
-    RECT canvas=canvas_rect();
-    return {canvas.left,canvas.top,workspace_split()-6,canvas.bottom};
+    return canvas_rect();
 }
 RECT motion_area() {
-    RECT canvas=canvas_rect();
-    int split=workspace_split();
-    int right_height=canvas.bottom-canvas.top;
-    return {split+6,canvas.top,canvas.right,
-            canvas.top+static_cast<int>(right_height*.56)};
+    const RECT inspector=inspector_rect();
+    const LONG available=std::max<LONG>(0,inspector.bottom-inspector.top-kInspectorTabs);
+    const LONG height=std::clamp<LONG>(available*78/100,300,560);
+    return {inspector.left,inspector.top+kInspectorTabs,inspector.right,
+            std::min<LONG>(inspector.bottom,inspector.top+kInspectorTabs+height)};
 }
 RECT issues_area() {
-    RECT canvas=canvas_rect();
-    RECT motion=motion_area();
-    return {motion.left,motion.bottom+8,canvas.right,canvas.bottom};
+    const RECT inspector=inspector_rect();
+    const RECT motion=motion_area();
+    return {inspector.left,motion.bottom+8,inspector.right,inspector.bottom};
 }
 RECT timeline_area() {
     RECT client{}; GetClientRect(app.window,&client);
-    return {kPadding,client.bottom-kTimelineHeight+10,
-            client.right-kPadding,client.bottom-48};
+    return {kPadding,client.bottom-kFooterHeight-kTimelineHeight,
+            client.right-kPadding,client.bottom-kFooterHeight-8};
 }
 RECT timeline_track() {
     RECT area=timeline_area();
@@ -370,6 +436,89 @@ RECT timeline_hit_area() {
     RECT area=timeline_area();
     return {area.left+kTimelineLabelWidth,area.top+46,
             area.right-12,area.bottom-4};
+}
+RECT curve_graph_area() {
+    const RECT area=timeline_area();
+    return {area.left+kTimelineLabelWidth,area.top+56,
+            area.right-12,area.bottom-12};
+}
+std::wstring curve_preset_label(CurvePreset preset) {
+    switch(preset) {
+    case CurvePreset::Linear:return L"曲线 · 线性";
+    case CurvePreset::EaseIn:return L"曲线 · 缓入";
+    case CurvePreset::EaseOut:return L"曲线 · 缓出";
+    case CurvePreset::Smooth:return L"曲线 · 平滑";
+    case CurvePreset::Hold:return L"曲线 · 保持";
+    }
+    return L"曲线 · 平滑";
+}
+double editor_curve_weight(double normalized_distance,CurvePreset preset) {
+    const double value=std::clamp(normalized_distance,0.0,1.0);
+    switch(preset) {
+    case CurvePreset::Linear:
+        return 1.0-value;
+    case CurvePreset::EaseIn:
+        return 1.0-value*value;
+    case CurvePreset::EaseOut:
+        return (1.0-value)*(1.0-value);
+    case CurvePreset::Smooth:
+        return 1.0-value*value*(3.0-2.0*value);
+    case CurvePreset::Hold:
+        return 1.0;
+    }
+    return 1.0-value*value*(3.0-2.0*value);
+}
+std::vector<double> editor_curve_weights(
+    std::size_t frame_count,std::size_t keyframe,std::size_t radius,CurvePreset preset
+) {
+    if(frame_count==0||keyframe>=frame_count)return {};
+    radius=std::max<std::size_t>(1,radius);
+    std::vector<double> result(frame_count,0.0);
+    for(std::size_t frame=0;frame<frame_count;++frame) {
+        const std::size_t distance=frame>keyframe?frame-keyframe:keyframe-frame;
+        if(distance>radius)continue;
+        result[frame]=editor_curve_weight(
+            static_cast<double>(distance)/static_cast<double>(radius),preset);
+    }
+    return result;
+}
+std::size_t correction_curve_radius(const animocap::ManualPoseCorrection& correction) {
+    std::size_t radius=1;
+    if(correction.frame_weights.empty())return 4;
+    for(std::size_t frame=0;frame<correction.frame_weights.size();++frame) {
+        if(correction.frame_weights[frame]<=1e-5)continue;
+        const auto distance=frame>correction.keyframe_frame_index
+            ?frame-correction.keyframe_frame_index
+            :correction.keyframe_frame_index-frame;
+        radius=std::max(radius,distance);
+    }
+    return radius;
+}
+std::optional<std::size_t> active_curve_correction_index() {
+    if(app.active_curve_correction>=0&&
+       static_cast<std::size_t>(app.active_curve_correction)<app.manual_corrections.size())
+        return static_cast<std::size_t>(app.active_curve_correction);
+    const auto selected=app.selected_keyframes;
+    for(std::size_t index=0;index<app.manual_corrections.size();++index) {
+        const auto& correction=app.manual_corrections[index];
+        if(!correction.frame_weights.empty()&&
+           contains_keyframe(selected,correction.keyframe_frame_index))return index;
+    }
+    const auto current=app.pose?pose_frame():0;
+    for(std::size_t index=0;index<app.manual_corrections.size();++index) {
+        if(app.manual_corrections[index].keyframe_frame_index==current&&
+           !app.manual_corrections[index].frame_weights.empty())return index;
+    }
+    if(!app.manual_corrections.empty())return std::size_t{0};
+    return {};
+}
+void update_timeline_labels() {
+    if(!app.window)return;
+    if(HWND control=GetDlgItem(app.window,kTimelineMode))
+        SetWindowTextW(control,app.timeline_mode==TimelineMode::DopeSheet
+            ?L"曲线编辑器":L"关键帧轨道");
+    if(HWND control=GetDlgItem(app.window,kCurvePreset))
+        SetWindowTextW(control,curve_preset_label(app.curve_preset).c_str());
 }
 struct TimelineRange { double start{}, end{}; };
 std::size_t multiview_reference_view() {
@@ -476,6 +625,111 @@ std::optional<TimelineRange> selected_range() {
     const double end=std::clamp(std::max(*app.range_start,*app.range_end),full->start,full->end);
     if(end-start<1e-6)return {};
     return TimelineRange{start,end};
+}
+std::vector<std::size_t> authored_keyframe_frames() {
+    std::vector<std::size_t> frames;
+    const std::size_t frame_count=app.pose?app.pose->frames.size():0;
+    for(const auto& correction:app.manual_corrections) {
+        if(correction.frame_weights.empty() ||
+           correction.keyframe_frame_index>=frame_count) continue;
+        frames.push_back(correction.keyframe_frame_index);
+    }
+    std::sort(frames.begin(),frames.end());
+    frames.erase(std::unique(frames.begin(),frames.end()),frames.end());
+    return frames;
+}
+bool contains_keyframe(const std::vector<std::size_t>& frames,std::size_t frame) {
+    return std::binary_search(frames.begin(),frames.end(),frame);
+}
+bool keyframe_is_selected(std::size_t frame) {
+    return contains_keyframe(app.selected_keyframes,frame);
+}
+void prune_keyframe_selection() {
+    const auto available=authored_keyframe_frames();
+    app.selected_keyframes.erase(
+        std::remove_if(app.selected_keyframes.begin(),app.selected_keyframes.end(),
+            [&](std::size_t frame) { return !contains_keyframe(available,frame); }),
+        app.selected_keyframes.end());
+    std::sort(app.selected_keyframes.begin(),app.selected_keyframes.end());
+    app.selected_keyframes.erase(std::unique(
+        app.selected_keyframes.begin(),app.selected_keyframes.end()),
+        app.selected_keyframes.end());
+}
+bool all_keyframes_selected() {
+    const auto available=authored_keyframe_frames();
+    return !available.empty() && app.selected_keyframes==available;
+}
+std::optional<std::size_t> keyframe_from_point(POINT point) {
+    if(!app.pose)return {};
+    const auto range=timeline_range();
+    if(!range)return {};
+    RECT hit=timeline_hit_area();
+    if(point.x<hit.left || point.x>hit.right ||
+       point.y<hit.top || point.y>hit.bottom) return {};
+    const RECT track=timeline_track();
+    const auto frames=authored_keyframe_frames();
+    std::optional<std::size_t> result;
+    int closest=14;
+    for(const auto frame:frames) {
+        const int x=track.left+static_cast<int>((track.right-track.left)*
+            std::clamp(app.pose->frames[frame].time_s-range->start,0.0,range->end-range->start)/
+            std::max(.001,range->end-range->start));
+        const int distance=std::abs(point.x-x);
+        if(distance<closest) {
+            closest=distance;
+            result=frame;
+        }
+    }
+    return result;
+}
+int curve_x_for_frame(RECT graph,std::size_t frame) {
+    if(!app.pose||app.pose->frames.empty())return graph.left;
+    if(const auto range=timeline_range()) {
+        const double time=app.pose->frames[std::min(frame,app.pose->frames.size()-1)].time_s;
+        return graph.left+static_cast<int>(std::lround(
+            (graph.right-graph.left)*std::clamp(
+                (time-range->start)/std::max(.001,range->end-range->start),0.0,1.0)));
+    }
+    return graph.left+static_cast<int>(std::lround(
+        (graph.right-graph.left)*frame/
+        std::max<double>(1.0,static_cast<double>(app.pose->frames.size()-1))));
+}
+std::optional<std::size_t> curve_keyframe_from_point(POINT point) {
+    if(app.timeline_mode!=TimelineMode::CurveEditor||!app.pose)return {};
+    const RECT graph=curve_graph_area();
+    if(point.x<graph.left-14||point.x>graph.right+14||
+       point.y<graph.top||point.y>graph.bottom)return {};
+    std::optional<std::size_t> result;
+    int closest=14;
+    for(const auto frame:authored_keyframe_frames()) {
+        const int distance=std::abs(point.x-curve_x_for_frame(graph,frame));
+        if(distance<closest) { closest=distance; result=frame; }
+    }
+    return result;
+}
+int curve_handle_y(RECT graph) { return graph.bottom-18; }
+std::optional<std::pair<int,int>> curve_handle_from_point(POINT point) {
+    if(app.timeline_mode!=TimelineMode::CurveEditor||!app.pose)return {};
+    const auto index=active_curve_correction_index();
+    if(!index||*index>=app.manual_corrections.size())return {};
+    const RECT graph=curve_graph_area();
+    if(point.x<graph.left||point.x>graph.right||point.y<graph.top||point.y>graph.bottom)
+        return {};
+    const auto& correction=app.manual_corrections[*index];
+    if(correction.frame_weights.empty()||
+       correction.keyframe_frame_index>=app.pose->frames.size())return {};
+    const auto radius=correction_curve_radius(correction);
+    const int key_x=curve_x_for_frame(graph,correction.keyframe_frame_index);
+    const int left_x=curve_x_for_frame(graph,
+        correction.keyframe_frame_index>radius
+            ?correction.keyframe_frame_index-radius:0);
+    const int right_x=curve_x_for_frame(graph,std::min(
+        app.pose->frames.size()-1,correction.keyframe_frame_index+radius));
+    if(std::abs(point.x-left_x)<=10&&std::abs(point.y-curve_handle_y(graph))<=12)
+        return std::pair<int,int>{-1,key_x};
+    if(std::abs(point.x-right_x)<=10&&std::abs(point.y-curve_handle_y(graph))<=12)
+        return std::pair<int,int>{1,key_x};
+    return {};
 }
 TimelineRange playback_range() {
     if(const auto selected=selected_range())return *selected;
@@ -605,12 +859,17 @@ bool open_video(const std::filesystem::path& path) {
         reset_range_selection();
         app.anchor_drag_snapshot.reset();
         app.manual_corrections.clear();
+        app.review={}; app.review_inferred.clear(); app.review_base.reset(); app.review_compare=false;
         app.correction_undo.clear(); app.correction_redo.clear();
+        app.selected_keyframes.clear(); app.smoothed_keyframes.clear();
+        app.selected_export_frames.clear(); app.selecting_export_frames=false;
+        app.active_curve_correction=-1;
         EnableWindow(GetDlgItem(app.window,kUndoCorrection),FALSE);
         EnableWindow(GetDlgItem(app.window,kRedoCorrection),FALSE);
         EnableWindow(GetDlgItem(app.window,kExportBvh),FALSE);
         EnableWindow(GetDlgItem(app.window,kExportVrma),FALSE);
         EnableWindow(GetDlgItem(app.window,kSaveMotion),FALSE);
+        update_blender_selection_controls();
         app.motion_dirty=false;
         app.multiview_mode=false; app.calibrated_multiview=false;
         app.multiview_overview=false;
@@ -741,6 +1000,42 @@ void import_video() {
     open_video(*path);
 }
 
+void import_appearance_reference() {
+    if(app.analyzing)return;
+    const COMDLG_FILTERSPEC filters[] = {
+        {L"外观参考图像",L"*.png;*.jpg;*.jpeg;*.webp;*.bmp"},
+        {L"所有图像",L"*.*"},
+    };
+    const auto path=choose(false,L"导入目标角色外观参考（最多使用 3 张）",
+        filters,static_cast<UINT>(std::size(filters)));
+    if(!path)return;
+    if(!std::filesystem::is_regular_file(*path)) {
+        MessageBoxW(app.window,L"外观参考不是可读取的图像文件。",
+                    L"外观参考导入失败",MB_ICONWARNING);
+        return;
+    }
+    app.appearance_reference_path=*path;
+    app.appearance_assist_enabled=true;
+    SetWindowTextW(GetDlgItem(app.window,kAppearanceReference),L"外观参考 · 已载入");
+    SetWindowTextW(GetDlgItem(app.window,kAppearanceToggle),L"外观辅助 · 开");
+    set_status(L"外观参考已载入 · 只用于低置信度视觉纠错，不覆盖当前帧空间坐标");
+    InvalidateRect(app.window,nullptr,TRUE);
+}
+
+void toggle_appearance_assist() {
+    if(app.appearance_reference_path.empty()) {
+        set_status(L"请先导入外观参考图；当前仍可使用骨骼、轮廓和时序辅助");
+        return;
+    }
+    app.appearance_assist_enabled=!app.appearance_assist_enabled;
+    SetWindowTextW(GetDlgItem(app.window,kAppearanceToggle),
+        app.appearance_assist_enabled?L"外观辅助 · 开":L"外观辅助 · 关");
+    set_status(app.appearance_assist_enabled
+        ?L"外观辅助已启用 · 参考图参与低置信度/遮挡帧复核"
+        :L"外观辅助已关闭 · 当前捕捉只使用骨骼、轮廓和时序信息");
+    InvalidateRect(app.window,nullptr,FALSE);
+}
+
 std::wstring profile_effect_summary(
     const animocap::PoseOptimizationDiagnostics& diagnostics
 ) {
@@ -779,6 +1074,10 @@ void import_character_profile() {
             updated_diagnostics=std::move(refinement.diagnostics);
             updated_pose=animocap::apply_manual_pose_corrections(
                 new_refined,app.manual_corrections);
+            auto reviewed=animocap::rebuild_reviewed_pose(*updated_pose,app.review);
+            app.review_base=*updated_pose;
+            app.review_inferred=std::move(reviewed.inferred);
+            updated_pose=std::move(reviewed.sequence);
             app.pose_baseline=baseline;
             app.profile_refined_pose=new_refined;
             updated_motion=animocap::reconstruct_canonical_motion(
@@ -1396,8 +1695,14 @@ void start_analysis() {
     EnableWindow(GetDlgItem(app.window,kImport),FALSE);
     EnableWindow(GetDlgItem(app.window,kMultiview),FALSE);
     EnableWindow(GetDlgItem(app.window,kCharacterProfile),FALSE);
+    EnableWindow(GetDlgItem(app.window,kAppearanceReference),FALSE);
+    EnableWindow(GetDlgItem(app.window,kAppearanceToggle),FALSE);
     EnableWindow(GetDlgItem(app.window,kExportBvh),FALSE);
     EnableWindow(GetDlgItem(app.window,kExportVrma),FALSE);
+    EnableWindow(GetDlgItem(app.window,kSelectExportFrames),FALSE);
+    EnableWindow(GetDlgItem(app.window,kSelectAuthoredExportFrames),FALSE);
+    EnableWindow(GetDlgItem(app.window,kClearExportFrames),FALSE);
+    EnableWindow(GetDlgItem(app.window,kExportBlenderSelected),FALSE);
     EnableWindow(GetDlgItem(app.window,kSaveMotion),FALSE);
     SendMessageW(app.progress,PBM_SETMARQUEE,FALSE,0);
     SendMessageW(app.progress,PBM_SETRANGE32,0,100);
@@ -1410,15 +1715,17 @@ void start_analysis() {
             : L"方向重复多视角捕捉 · 正在逐视角提取关节，随后自动相位对齐并联合求解…");
     } else {
         if (app.manual_person_frame && app.has_person_frame) {
-        set_status(L"正在严格使用手动框捕捉 · x="+
+        set_status(L"正在使用手动框 → Maxine VSR 2× → 姿态捕捉 · x="+
             std::to_wstring(app.person_frame.left)+L" y="+
             std::to_wstring(app.person_frame.top)+L" w="+
             std::to_wstring(app.person_frame.right-app.person_frame.left)+L" h="+
             std::to_wstring(app.person_frame.bottom-app.person_frame.top));
     } else {
         set_status(app.vlm_enabled
-            ? L"正在执行 HRNet → 光流 → 本地视觉纠错…"
-            : L"正在执行 HRNet → 光流动作捕捉…");
+                ? (app.appearance_assist_enabled&&!app.appearance_reference_path.empty()
+                    ? L"正在自动框人 → Maxine VSR 2× → 姿态与视觉纠错（含外观参考）…"
+                    : L"正在自动框人 → Maxine VSR 2× → 姿态与视觉纠错…")
+                : L"正在自动框人 → Maxine VSR 2× → 姿态捕捉…");
     }
     }
     const bool has_person_frame=app.manual_person_frame && app.has_person_frame;
@@ -1431,6 +1738,10 @@ void start_analysis() {
     const auto multiview_view_ids=app.multiview_view_ids;
     const auto multiview_view_yaws=app.multiview_view_yaws;
     const auto character_profile=app.character_profile;
+    const auto appearance_reference=app.appearance_reference_path;
+    const bool appearance_assist=app.appearance_assist_enabled;
+    const auto expert_interval=app.expert_interval;
+    EnableWindow(GetDlgItem(app.window,kExpertInterval),FALSE);
     const double capture_fps=app.decoder ? app.decoder->info().fps : 30.0;
     HWND window=app.window;
     app.worker=std::jthread([video,root,output,mmpose_log,vlm_log,window,has_person_frame,
@@ -1438,7 +1749,8 @@ void start_analysis() {
                              calibrated_multiview,multiview_manifest,
                              multiview_videos,multiview_view_ids,
                              multiview_view_yaws,capture_fps,
-                             character_profile](std::stop_token stop) {
+                             character_profile,appearance_reference,
+                             appearance_assist,expert_interval](std::stop_token stop) {
         auto result=std::make_unique<AnalysisResult>();
         try {
             const auto* profile=character_profile?
@@ -1478,8 +1790,12 @@ void start_analysis() {
                 auto pipeline=root/"python/animocap_ml_adapters/multiview_pipeline.py";
                 std::wstring command=quote(python)+L" "+quote(pipeline)+
                     L" --manifest "+quote(manifest_path)+L" --output "+quote(output)+
-                    L" --quality maximum --segmentation auto --npu-mode shadow";
+                    L" --quality maximum --segmentation auto --npu-mode shadow"
+                    L" --upscale maxine-vsr --upscale-scale 2";
+                command+=L" --expert-interval "+expert_interval;
                 if(!use_vlm)command+=L" --no-vlm";
+                if(use_vlm&&appearance_assist&&!appearance_reference.empty())
+                    command+=L" --reference-image "+quote(appearance_reference);
                 const auto pipeline_exit=run_hidden(command,root,mmpose_log,stop);
                 if(pipeline_exit==static_cast<int>(ERROR_CANCELLED))throw AnalysisCancelled{};
                 if(pipeline_exit!=0) {
@@ -1603,7 +1919,9 @@ void start_analysis() {
                 auto observations=output/"pose_sequence.json";
             std::wstring command=quote(python)+L" "+quote(adapter)+
                 L" --input "+quote(video)+L" --output "+quote(observations)+
-                L" --quality maximum --segmentation auto --npu-mode shadow";
+                L" --quality maximum --segmentation auto --npu-mode shadow"
+                L" --upscale maxine-vsr --upscale-scale 2";
+            command+=L" --expert-interval "+expert_interval;
             if(has_person_frame) {
                 command+=L" --roi "+std::to_wstring(person_frame.left)+L" "+
                     std::to_wstring(person_frame.top)+L" "+
@@ -1639,6 +1957,8 @@ void start_analysis() {
                         std::to_wstring(person_frame.right-person_frame.left)+L" "+
                         std::to_wstring(person_frame.bottom-person_frame.top);
                 }
+                if(appearance_assist&&!appearance_reference.empty())
+                    vlm_command+=L" --reference-image "+quote(appearance_reference);
                 const auto vlm_exit_code=run_hidden(vlm_command,root,vlm_log,stop);
                 if(vlm_exit_code==static_cast<int>(ERROR_CANCELLED))throw AnalysisCancelled{};
                 if(vlm_exit_code==0 &&
@@ -1773,7 +2093,11 @@ void load_motion() {
         SetWindowTextW(GetDlgItem(app.window,kResetFrame),L"重置");
         app.anchor_drag_snapshot.reset();
         app.manual_corrections.clear();
+        app.review={}; app.review_inferred.clear(); app.review_base.reset(); app.review_compare=false;
         app.correction_undo.clear(); app.correction_redo.clear();
+        app.selected_keyframes.clear(); app.smoothed_keyframes.clear();
+        app.selected_export_frames.clear(); app.selecting_export_frames=false;
+        app.active_curve_correction=-1;
         update_correction_controls();
         app.motion_path = *path;
         app.time_s = app.motion->motion.time_s.front();
@@ -1824,6 +2148,39 @@ void export_vrma_file() {
         MessageBoxW(app.window,widen(error.what()).c_str(),L"VRMA 导出失败",MB_ICONERROR);
     }
 }
+void export_blender_selected_file() {
+    if(!app.motion) {
+        MessageBoxW(app.window,L"请先完成捕捉或打开一个动作包。",
+                    L"无法导入到 Blender",MB_ICONINFORMATION);
+        return;
+    }
+    app.selected_export_frames.prune(app.motion->motion.frame_count);
+    if(app.selected_export_frames.empty()) {
+        MessageBoxW(app.window,
+            L"默认不会导入全部帧。请先点击“选择导入帧”，再在时间线上选择至少一帧。",
+            L"尚未选择 Blender 导入帧",MB_ICONINFORMATION);
+        update_blender_selection_controls();
+        return;
+    }
+    const auto summary=blender_selection_summary();
+    if(MessageBoxW(app.window,(summary+L"\n\n将生成选中帧文件；Blender 会创建新 Action，不覆盖原 Action。")
+            .c_str(),L"确认导入选中帧到 Blender",MB_OKCANCEL|MB_ICONINFORMATION)!=IDOK)
+        return;
+    const auto output=choose_export_output(
+        L"导入选中帧到 Blender",L"AniMocap Blender selected frames",
+        L"*.animocap-blender.json",L"animocap-blender.json",
+        L"selected.animocap-blender.json");
+    if(!output)return;
+    try {
+        animocap::export_blender_selected_frames(
+            *app.motion,app.selected_export_frames.frames(),*output,{true});
+        set_status(summary+L" · 已生成 "+output->wstring()+
+                   L" · 在 Blender 的 AniMocap 面板创建新 Action");
+    } catch(const std::exception& error) {
+        MessageBoxW(app.window,widen(error.what()).c_str(),
+                    L"Blender 选中帧导出失败",MB_ICONERROR);
+    }
+}
 bool save_motion_copy() {
     if(!app.motion) {
         MessageBoxW(app.window,L"当前没有可保存的规范动作。",L"保存动作",MB_ICONINFORMATION);
@@ -1840,6 +2197,11 @@ bool save_motion_copy() {
     const auto output=*folder/(stem+L"-corrected-"+std::to_wstring(stamp)+L".amotion");
     try {
         animocap::save_motion_package(*app.motion,output);
+        if(app.pose) {
+            const auto& base=app.review_base?*app.review_base:*app.pose;
+            auto review_path=output; review_path+=L".areview";
+            animocap::save_pose_review(base,app.review,review_path);
+        }
         app.motion_path=output;
         app.motion_dirty=false;
         set_status(L"动作已保存 · "+output.wstring());
@@ -1942,6 +2304,93 @@ std::wstring timecode(double time_s) {
     wchar_t buffer[32]{};
     swprintf_s(buffer,L"%02lld:%02lld.%03lld",minutes,seconds,millis);
     return buffer;
+}
+std::optional<std::size_t> motion_frame_from_time(double time_s) {
+    if(!app.motion||app.motion->motion.time_s.empty())return {};
+    const auto& times=app.motion->motion.time_s;
+    const auto after=std::lower_bound(times.begin(),times.end(),time_s);
+    if(after==times.begin())return std::size_t{0};
+    if(after==times.end())return times.size()-1;
+    const auto after_index=static_cast<std::size_t>(after-times.begin());
+    const auto before_index=after_index-1;
+    return time_s-times[before_index]<=times[after_index]-time_s
+        ?before_index:after_index;
+}
+std::wstring blender_selection_summary(std::size_t limit) {
+    if(!app.motion||app.selected_export_frames.empty())
+        return L"将导入 0 帧（默认不导入全部帧）";
+    const auto& frames=app.selected_export_frames.frames();
+    std::wstring result=L"将导入 "+std::to_wstring(frames.size())+L" 帧：";
+    for(std::size_t index=0;index<std::min(limit,frames.size());++index) {
+        if(index>0)result+=L"、";
+        const auto frame=frames[index];
+        result+=std::to_wstring(frame)+L"（"+
+            timecode(app.motion->motion.time_s[frame])+L"）";
+    }
+    if(frames.size()>limit)result+=L"…";
+    return result;
+}
+void update_blender_selection_controls() {
+    const bool has_motion=app.motion&&app.motion->motion.frame_count>0;
+    if(has_motion)app.selected_export_frames.prune(app.motion->motion.frame_count);
+    else app.selected_export_frames.clear();
+    EnableWindow(GetDlgItem(app.window,kSelectExportFrames),has_motion);
+    EnableWindow(GetDlgItem(app.window,kSelectAuthoredExportFrames),
+                 has_motion&&!authored_keyframe_frames().empty());
+    EnableWindow(GetDlgItem(app.window,kClearExportFrames),
+                 has_motion&&!app.selected_export_frames.empty());
+    EnableWindow(GetDlgItem(app.window,kExportBlenderSelected),
+                 has_motion&&!app.selected_export_frames.empty());
+    SetWindowTextW(GetDlgItem(app.window,kSelectExportFrames),
+        app.selecting_export_frames?L"完成选择导入帧":L"选择导入帧");
+}
+void toggle_export_frame_selection_mode() {
+    if(!app.motion)return;
+    app.selecting_export_frames=!app.selecting_export_frames;
+    stop_playback();
+    update_blender_selection_controls();
+    set_status(app.selecting_export_frames
+        ?L"选择 Blender 导入帧 · 单击选择，Ctrl+单击多选，Shift+单击选择区间"
+        :blender_selection_summary());
+    InvalidateRect(app.window,nullptr,FALSE);
+}
+void select_authored_frames_for_blender() {
+    if(!app.motion)return;
+    const auto authored=authored_keyframe_frames();
+    if(authored.empty()) {
+        set_status(L"当前没有已创建关键帧；未改为导入全部帧");
+        return;
+    }
+    try {
+        app.selected_export_frames.select_only(authored,app.motion->motion.frame_count);
+        set_status(blender_selection_summary());
+    } catch(const std::exception& error) {
+        MessageBoxW(app.window,widen(error.what()).c_str(),L"选择导入帧失败",MB_ICONERROR);
+    }
+    update_blender_selection_controls();
+    InvalidateRect(app.window,nullptr,FALSE);
+}
+void clear_blender_frame_selection() {
+    app.selected_export_frames.clear();
+    set_status(L"已清除 Blender 导入帧 · 默认不会导入全部帧");
+    update_blender_selection_controls();
+    InvalidateRect(app.window,nullptr,FALSE);
+}
+void select_blender_frame_at_time(double time_s,bool control,bool shift) {
+    if(!app.motion)return;
+    const auto frame=motion_frame_from_time(time_s);
+    if(!frame)return;
+    try {
+        app.selected_export_frames.select(
+            *frame,app.motion->motion.frame_count,control,shift);
+        app.time_s=app.motion->motion.time_s[*frame];
+        update_timeline();
+        set_status(blender_selection_summary());
+    } catch(const std::exception& error) {
+        MessageBoxW(app.window,widen(error.what()).c_str(),L"选择导入帧失败",MB_ICONERROR);
+    }
+    update_blender_selection_controls();
+    InvalidateRect(app.window,nullptr,FALSE);
 }
 void draw_person_frame_selection(HDC dc) {
     if (!app.drawing_person_frame) return;
@@ -2228,26 +2677,512 @@ void draw_video(HDC dc, RECT area) {
     RestoreDC(dc,saved_dc);
     rounded_outline(dc,area,theme::border,8);
 }
-animocap::Vec2 project(const animocap::Vec3& value, RECT area) {
-    double yaw=app.yaw*kPi/180.0, pitch=app.pitch*kPi/180.0;
-    double cy=std::cos(yaw), sy=std::sin(yaw), cp=std::cos(pitch), sp=std::sin(pitch);
-    double x=cy*value.x+sy*value.z, z=-sy*value.x+cy*value.z;
-    double y=cp*value.y-sp*z, scale=static_cast<double>(area.bottom-area.top)/2.28;
-    return {(area.left+area.right)*.5+x*scale, area.bottom-28.0-y*scale};
+struct MotionProjection {
+    double cos_yaw{},sin_yaw{},cos_pitch{},sin_pitch{};
+    double scale{1.0},origin_x{},origin_y{},floor_y{};
+    animocap::Vec2 raw(const animocap::Vec3& value) const {
+        const double x=cos_yaw*value.x+sin_yaw*value.z;
+        const double z=-sin_yaw*value.x+cos_yaw*value.z;
+        return {x,cos_pitch*value.y-sin_pitch*z};
+    }
+    animocap::Vec2 operator()(const animocap::Vec3& value) const {
+        const auto transformed=raw(value);
+        return {origin_x+transformed.x*scale,origin_y-transformed.y*scale};
+    }
+    double depth(const animocap::Vec3& value) const {
+        const double z=-sin_yaw*value.x+cos_yaw*value.z;
+        return sin_pitch*value.y+cos_pitch*z;
+    }
+};
+MotionProjection make_motion_projection(
+    RECT viewport,const std::vector<animocap::Vec3>& positions,
+    const std::vector<animocap::Vec3>& comparison_positions
+) {
+    MotionProjection result{};
+    const double yaw=app.yaw*kPi/180.0, pitch=app.pitch*kPi/180.0;
+    result.cos_yaw=std::cos(yaw); result.sin_yaw=std::sin(yaw);
+    result.cos_pitch=std::cos(pitch); result.sin_pitch=std::sin(pitch);
+    double min_x=std::numeric_limits<double>::infinity();
+    double max_x=-std::numeric_limits<double>::infinity();
+    double min_y=std::numeric_limits<double>::infinity();
+    double max_y=-std::numeric_limits<double>::infinity();
+    const auto include=[&](const std::vector<animocap::Vec3>& values) {
+        for(const auto& value:values) {
+            const auto projected=result.raw(value);
+            min_x=std::min(min_x,projected.x); max_x=std::max(max_x,projected.x);
+            min_y=std::min(min_y,projected.y); max_y=std::max(max_y,projected.y);
+        }
+    };
+    include(positions); include(comparison_positions);
+    if(!std::isfinite(min_x)||!std::isfinite(min_y)) {
+        min_x=-1.0; max_x=1.0; min_y=0.0; max_y=1.0;
+    }
+    const double padding=22.0;
+    const double width=std::max(0.1,max_x-min_x);
+    const double height=std::max(0.1,max_y-min_y);
+    const double available_width=std::max(24.0,
+        static_cast<double>(viewport.right-viewport.left)-padding*2.0);
+    const double available_height=std::max(24.0,
+        static_cast<double>(viewport.bottom-viewport.top)-padding*2.0);
+    result.scale=std::min(available_width/width,available_height/height);
+    result.origin_x=(viewport.left+viewport.right)*.5-
+        (min_x+max_x)*.5*result.scale;
+    result.floor_y=viewport.bottom-padding;
+    result.origin_y=result.floor_y+min_y*result.scale;
+    return result;
+}
+COLORREF motion_bone_color(animocap::BoneSemantic semantic) {
+    using S=animocap::BoneSemantic;
+    switch(semantic) {
+    case S::SceneRoot: case S::Hips: case S::Spine: case S::Chest:
+    case S::UpperChest: case S::Neck: case S::Head:
+        return theme::accent;
+    case S::LeftShoulder: case S::LeftUpperArm: case S::LeftLowerArm:
+    case S::LeftHand: case S::LeftUpperLeg: case S::LeftLowerLeg:
+    case S::LeftFoot: case S::LeftToes:
+        return RGB(153,126,245);
+    case S::RightShoulder: case S::RightUpperArm: case S::RightLowerArm:
+    case S::RightHand: case S::RightUpperLeg: case S::RightLowerLeg:
+    case S::RightFoot: case S::RightToes:
+        return RGB(73,190,213);
+    }
+    return theme::violet;
+}
+COLORREF mix_color(COLORREF from,COLORREF to,double amount) {
+    amount=std::clamp(amount,0.0,1.0);
+    const auto channel=[amount](BYTE a,BYTE b) {
+        return static_cast<BYTE>(std::lround(
+            static_cast<double>(a)+(static_cast<double>(b)-a)*amount));
+    };
+    return RGB(channel(GetRValue(from),GetRValue(to)),
+               channel(GetGValue(from),GetGValue(to)),
+               channel(GetBValue(from),GetBValue(to)));
+}
+COLORREF human_model_fill(animocap::BoneSemantic semantic,float confidence) {
+    using S=animocap::BoneSemantic;
+    COLORREF base=RGB(116,164,187);
+    switch(semantic) {
+    case S::LeftShoulder: case S::LeftUpperArm: case S::LeftLowerArm:
+    case S::LeftHand: case S::LeftUpperLeg: case S::LeftLowerLeg:
+    case S::LeftFoot: case S::LeftToes:
+        base=RGB(143,134,219); break;
+    case S::RightShoulder: case S::RightUpperArm: case S::RightLowerArm:
+    case S::RightHand: case S::RightUpperLeg: case S::RightLowerLeg:
+    case S::RightFoot: case S::RightToes:
+        base=RGB(82,188,206); break;
+    default: break;
+    }
+    const double visibility=.68+.32*std::clamp(static_cast<double>(confidence),0.0,1.0);
+    return mix_color(RGB(20,31,42),base,visibility);
+}
+void filled_polygon(HDC dc,const POINT* points,int count,COLORREF fill_color,
+                    COLORREF outline_color,int outline_width=1) {
+    HBRUSH brush=CreateSolidBrush(fill_color);
+    HPEN pen=CreatePen(PS_SOLID,outline_width,outline_color);
+    auto old_brush=SelectObject(dc,brush);
+    auto old_pen=SelectObject(dc,pen);
+    Polygon(dc,points,count);
+    SelectObject(dc,old_pen); SelectObject(dc,old_brush);
+    DeleteObject(pen); DeleteObject(brush);
+}
+void draw_body_segment(HDC dc,animocap::Vec2 a,animocap::Vec2 b,
+                       double start_radius,double end_radius,
+                       COLORREF fill_color,COLORREF outline_color) {
+    const double dx=b.x-a.x,dy=b.y-a.y;
+    const double length=std::hypot(dx,dy);
+    if(length<.5)return;
+    const double nx=-dy/length,ny=dx/length;
+    POINT body[4]{
+        {static_cast<LONG>(std::lround(a.x+nx*start_radius)),
+         static_cast<LONG>(std::lround(a.y+ny*start_radius))},
+        {static_cast<LONG>(std::lround(b.x+nx*end_radius)),
+         static_cast<LONG>(std::lround(b.y+ny*end_radius))},
+        {static_cast<LONG>(std::lround(b.x-nx*end_radius)),
+         static_cast<LONG>(std::lround(b.y-ny*end_radius))},
+        {static_cast<LONG>(std::lround(a.x-nx*start_radius)),
+         static_cast<LONG>(std::lround(a.y-ny*start_radius))},
+    };
+    filled_polygon(dc,body,4,fill_color,outline_color);
+    HBRUSH brush=CreateSolidBrush(fill_color);
+    HPEN pen=CreatePen(PS_SOLID,1,outline_color);
+    auto old_brush=SelectObject(dc,brush);
+    auto old_pen=SelectObject(dc,pen);
+    const auto cap=[&](animocap::Vec2 point,double radius) {
+        Ellipse(dc,static_cast<int>(std::lround(point.x-radius)),
+                static_cast<int>(std::lround(point.y-radius)),
+                static_cast<int>(std::lround(point.x+radius))+1,
+                static_cast<int>(std::lround(point.y+radius))+1);
+    };
+    cap(a,start_radius); cap(b,end_radius);
+    SelectObject(dc,old_pen); SelectObject(dc,old_brush);
+    DeleteObject(pen); DeleteObject(brush);
+}
+void draw_motion_human_model(HDC dc,const MotionProjection& projection,
+                             const animocap::Skeleton& skeleton,
+                             const std::vector<animocap::Vec3>& positions,
+                             const std::vector<float>& confidences) {
+    using S=animocap::BoneSemantic;
+    if(positions.empty())return;
+    const auto index=[&](S semantic) { return animocap::bone_index(skeleton,semantic); };
+    const auto point=[&](S semantic) { return projection(positions[index(semantic)]); };
+    const auto confidence=[&](S semantic) {
+        const auto i=index(semantic);
+        return i<confidences.size()?confidences[i]:1.0f;
+    };
+    const auto radius=[&](double meters) {
+        return std::clamp(meters*projection.scale,2.5,18.0);
+    };
+    struct Segment {
+        S start{},end{};
+        double start_radius_m{},end_radius_m{},depth{};
+    };
+    std::vector<Segment> segments{
+        {S::LeftShoulder,S::LeftUpperArm,.064,.058},
+        {S::LeftUpperArm,S::LeftLowerArm,.058,.047},
+        {S::LeftLowerArm,S::LeftHand,.047,.034},
+        {S::RightShoulder,S::RightUpperArm,.064,.058},
+        {S::RightUpperArm,S::RightLowerArm,.058,.047},
+        {S::RightLowerArm,S::RightHand,.047,.034},
+        {S::LeftUpperLeg,S::LeftLowerLeg,.082,.062},
+        {S::LeftLowerLeg,S::LeftFoot,.062,.043},
+        {S::LeftFoot,S::LeftToes,.048,.036},
+        {S::RightUpperLeg,S::RightLowerLeg,.082,.062},
+        {S::RightLowerLeg,S::RightFoot,.062,.043},
+        {S::RightFoot,S::RightToes,.048,.036},
+        {S::UpperChest,S::Neck,.055,.046},
+    };
+    for(auto& segment:segments) {
+        const auto a=index(segment.start),b=index(segment.end);
+        if(a>=positions.size()||b>=positions.size())continue;
+        segment.depth=(projection.depth(positions[a])+projection.depth(positions[b]))*.5;
+    }
+    std::stable_sort(segments.begin(),segments.end(),[](const Segment& a,const Segment& b) {
+        return a.depth<b.depth;
+    });
+    for(const auto& segment:segments) {
+        const float segment_confidence=std::min(confidence(segment.start),confidence(segment.end));
+        const COLORREF fill_color=human_model_fill(segment.end,segment_confidence);
+        draw_body_segment(dc,point(segment.start),point(segment.end),
+                          radius(segment.start_radius_m),radius(segment.end_radius_m),
+                          fill_color,mix_color(fill_color,RGB(122,203,224),.42));
+    }
+
+    const auto left_shoulder=point(S::LeftShoulder);
+    const auto right_shoulder=point(S::RightShoulder);
+    const auto hips=point(S::Hips);
+    const auto left_leg=point(S::LeftUpperLeg);
+    const auto right_leg=point(S::RightUpperLeg);
+    animocap::Vec2 shoulder_axis{left_shoulder.x-right_shoulder.x,
+                                 left_shoulder.y-right_shoulder.y};
+    double shoulder_length=std::hypot(shoulder_axis.x,shoulder_axis.y);
+    if(shoulder_length<1.0) {
+        const auto upper_chest=point(S::UpperChest);
+        shoulder_axis={-(upper_chest.y-hips.y),upper_chest.x-hips.x};
+        shoulder_length=std::max(1.0,std::hypot(shoulder_axis.x,shoulder_axis.y));
+    }
+    shoulder_axis.x/=shoulder_length; shoulder_axis.y/=shoulder_length;
+    const animocap::Vec2 shoulder_center{
+        (left_shoulder.x+right_shoulder.x)*.5,
+        (left_shoulder.y+right_shoulder.y)*.5};
+    const animocap::Vec2 pelvis_center{
+        (left_leg.x+right_leg.x+hips.x)*.333333333,
+        (left_leg.y+right_leg.y+hips.y)*.333333333};
+    const double shoulder_half=std::max(shoulder_length*.52,radius(.17));
+    const double leg_span=std::hypot(left_leg.x-right_leg.x,left_leg.y-right_leg.y);
+    const double pelvis_half=std::max(leg_span*.62,radius(.105));
+    POINT torso[4]{
+        {static_cast<LONG>(std::lround(shoulder_center.x+shoulder_axis.x*shoulder_half)),
+         static_cast<LONG>(std::lround(shoulder_center.y+shoulder_axis.y*shoulder_half))},
+        {static_cast<LONG>(std::lround(shoulder_center.x-shoulder_axis.x*shoulder_half)),
+         static_cast<LONG>(std::lround(shoulder_center.y-shoulder_axis.y*shoulder_half))},
+        {static_cast<LONG>(std::lround(pelvis_center.x-shoulder_axis.x*pelvis_half)),
+         static_cast<LONG>(std::lround(pelvis_center.y-shoulder_axis.y*pelvis_half))},
+        {static_cast<LONG>(std::lround(pelvis_center.x+shoulder_axis.x*pelvis_half)),
+         static_cast<LONG>(std::lround(pelvis_center.y+shoulder_axis.y*pelvis_half))},
+    };
+    const float torso_confidence=std::min({confidence(S::Hips),confidence(S::Chest),
+                                           confidence(S::UpperChest)});
+    const COLORREF torso_fill=human_model_fill(S::Chest,torso_confidence);
+    filled_polygon(dc,torso,4,torso_fill,mix_color(torso_fill,theme::accent,.5));
+    stroke(dc,{torso[0].x,torso[0].y},{torso[3].x,torso[3].y},
+           mix_color(torso_fill,RGB(145,220,237),.28));
+
+    const auto neck=point(S::Neck),head=point(S::Head);
+    double head_dx=head.x-neck.x,head_dy=head.y-neck.y;
+    double head_length=std::hypot(head_dx,head_dy);
+    if(head_length<1.0) { head_dx=0.0; head_dy=-1.0; head_length=1.0; }
+    head_dx/=head_length; head_dy/=head_length;
+    const double head_rx=radius(.078),head_ry=radius(.105);
+    const animocap::Vec2 head_center{head.x+head_dx*head_ry*.18,
+                                     head.y+head_dy*head_ry*.18};
+    std::array<POINT,18> head_points{};
+    for(std::size_t i=0;i<head_points.size();++i) {
+        const double angle=2.0*kPi*static_cast<double>(i)/head_points.size();
+        const double along=std::cos(angle)*head_ry;
+        const double across=std::sin(angle)*head_rx;
+        head_points[i]={
+            static_cast<LONG>(std::lround(head_center.x+head_dx*along-head_dy*across)),
+            static_cast<LONG>(std::lround(head_center.y+head_dy*along+head_dx*across))};
+    }
+    const COLORREF head_fill=human_model_fill(S::Head,confidence(S::Head));
+    filled_polygon(dc,head_points.data(),static_cast<int>(head_points.size()),
+                   head_fill,mix_color(head_fill,theme::accent,.55));
+
+    // The canonical character faces +Z.  In a front view the anatomical left
+    // side therefore appears on the viewer's right; explicit face and L/R cues
+    // prevent that correct projection from reading as an accidental mirror.
+    const double view_facing=std::cos(app.yaw*kPi/180.0);
+    const double view_side=std::sin(app.yaw*kPi/180.0);
+    const bool viewing_front=view_facing>.22;
+    const bool viewing_back=view_facing<-.22;
+    const animocap::Vec2 head_across{-head_dy,head_dx};
+    const double face_shift=view_side*head_rx*.24;
+    if(viewing_front) {
+        const animocap::Vec2 eye_center{
+            head_center.x+head_dx*head_ry*.18+head_across.x*face_shift,
+            head_center.y+head_dy*head_ry*.18+head_across.y*face_shift};
+        const double eye_offset=head_rx*.31;
+        const int eye_radius=std::max(1,static_cast<int>(std::lround(head_rx*.09)));
+        HBRUSH eye_brush=CreateSolidBrush(RGB(166,231,242));
+        auto old_brush=SelectObject(dc,eye_brush);
+        for(const double side:{-1.0,1.0}) {
+            const double x=eye_center.x+head_across.x*eye_offset*side;
+            const double y=eye_center.y+head_across.y*eye_offset*side;
+            Ellipse(dc,static_cast<int>(std::lround(x))-eye_radius,
+                    static_cast<int>(std::lround(y))-eye_radius,
+                    static_cast<int>(std::lround(x))+eye_radius+1,
+                    static_cast<int>(std::lround(y))+eye_radius+1);
+        }
+        SelectObject(dc,old_brush); DeleteObject(eye_brush);
+        const POINT nose{
+            static_cast<LONG>(std::lround(eye_center.x-head_dx*head_ry*.25)),
+            static_cast<LONG>(std::lround(eye_center.y-head_dy*head_ry*.25))};
+        const POINT nose_tip{
+            static_cast<LONG>(std::lround(nose.x+head_across.x*view_side*head_rx*.18)),
+            static_cast<LONG>(std::lround(nose.y+head_across.y*view_side*head_rx*.18))};
+        stroke(dc,nose,nose_tip,RGB(126,203,220),1);
+    } else if(viewing_back) {
+        const POINT crown{
+            static_cast<LONG>(std::lround(head_center.x+head_dx*head_ry*.55)),
+            static_cast<LONG>(std::lround(head_center.y+head_dy*head_ry*.55))};
+        const POINT nape{
+            static_cast<LONG>(std::lround(head_center.x-head_dx*head_ry*.55)),
+            static_cast<LONG>(std::lround(head_center.y-head_dy*head_ry*.55))};
+        stroke(dc,crown,nape,mix_color(head_fill,RGB(8,18,27),.55),2);
+    }
+
+    const auto chest=point(S::Chest);
+    const wchar_t* facing_mark=viewing_front?L"F":viewing_back?L"B":L"S";
+    const COLORREF facing_color=viewing_front?theme::accent:
+        viewing_back?theme::violet:theme::amber;
+    const RECT facing_badge{
+        static_cast<LONG>(std::lround(chest.x))-9,
+        static_cast<LONG>(std::lround(chest.y))-9,
+        static_cast<LONG>(std::lround(chest.x))+10,
+        static_cast<LONG>(std::lround(chest.y))+10};
+    rounded_box(dc,facing_badge,RGB(13,29,40),facing_color,9);
+    text(dc,facing_mark,facing_badge,facing_color,app.small_font,
+         DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+
+    for(const auto [semantic,label,color]:{
+            std::tuple{S::LeftShoulder,L"L",RGB(174,149,247)},
+            std::tuple{S::RightShoulder,L"R",RGB(91,211,229)}}) {
+        const auto shoulder=point(semantic);
+        const RECT badge{
+            static_cast<LONG>(std::lround(shoulder.x))-8,
+            static_cast<LONG>(std::lround(shoulder.y))-8,
+            static_cast<LONG>(std::lround(shoulder.x))+9,
+            static_cast<LONG>(std::lround(shoulder.y))+9};
+        rounded_box(dc,badge,RGB(13,24,34),color,8);
+        text(dc,label,badge,color,app.small_font,
+             DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+    }
+
+    for(const auto semantic:{S::LeftHand,S::RightHand}) {
+        const auto hand=point(semantic);
+        const int hand_radius=static_cast<int>(std::lround(radius(.044)));
+        const COLORREF hand_fill=human_model_fill(semantic,confidence(semantic));
+        HBRUSH brush=CreateSolidBrush(hand_fill);
+        HPEN pen=CreatePen(PS_SOLID,1,mix_color(hand_fill,RGB(155,218,232),.4));
+        auto old_brush=SelectObject(dc,brush); auto old_pen=SelectObject(dc,pen);
+        Ellipse(dc,static_cast<int>(std::lround(hand.x))-hand_radius,
+                static_cast<int>(std::lround(hand.y))-hand_radius,
+                static_cast<int>(std::lround(hand.x))+hand_radius+1,
+                static_cast<int>(std::lround(hand.y))+hand_radius+1);
+        SelectObject(dc,old_pen); SelectObject(dc,old_brush);
+        DeleteObject(pen); DeleteObject(brush);
+    }
+
+    for(std::size_t i=0;i<positions.size()&&i<confidences.size()&&i<skeleton.bones.size();++i) {
+        if(confidences[i]>=.65f)continue;
+        const auto p=projection(positions[i]);
+        const COLORREF warning=confidences[i]>=.3f?theme::amber:theme::red;
+        HBRUSH brush=CreateSolidBrush(warning);
+        auto old_brush=SelectObject(dc,brush);
+        const int marker_radius=confidences[i]>=.3f?3:4;
+        Ellipse(dc,static_cast<int>(std::lround(p.x))-marker_radius,
+                static_cast<int>(std::lround(p.y))-marker_radius,
+                static_cast<int>(std::lround(p.x))+marker_radius+1,
+                static_cast<int>(std::lround(p.y))+marker_radius+1);
+        SelectObject(dc,old_brush); DeleteObject(brush);
+    }
+}
+void draw_motion_view_gizmo(HDC dc,RECT viewport) {
+    const RECT reference_chip{viewport.left+12,viewport.top+10,
+                              viewport.left+104,viewport.top+34};
+    rounded_box(dc,reference_chip,theme::surface_raised,theme::border_soft,6);
+    text(dc,L"人体模型 · +Z",reference_chip,theme::text_muted,app.small_font,
+         DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+    const double view_facing=std::cos(app.yaw*kPi/180.0);
+    const wchar_t* view_label=view_facing>.22?L"正面 3/4":
+        view_facing<-.22?L"背面 3/4":L"侧面";
+    const RECT chip{viewport.right-92,viewport.top+10,viewport.right-12,viewport.top+34};
+    rounded_box(dc,chip,theme::surface_raised,theme::border_soft,6);
+    text(dc,view_label,chip,theme::text_muted,app.small_font,
+         DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+    const POINT origin{viewport.left+28,viewport.bottom-25};
+    stroke(dc,origin,{origin.x+20,origin.y},theme::red,2);
+    stroke(dc,origin,{origin.x,origin.y-20},theme::green,2);
+    stroke(dc,origin,{origin.x-10,origin.y+7},theme::accent,2);
+    text(dc,L"X",{origin.x+21,origin.y-8,origin.x+34,origin.y+8},theme::red,
+         app.small_font,DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+    text(dc,L"Y",{origin.x-5,origin.y-34,origin.x+9,origin.y-20},theme::green,
+         app.small_font,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+    text(dc,L"Z",{origin.x-24,origin.y+3,origin.x-10,origin.y+18},theme::accent,
+         app.small_font,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+}
+void release_human_reference_bitmap() {
+    if(app.human_reference_dc) {
+        DeleteDC(app.human_reference_dc);
+        app.human_reference_dc=nullptr;
+    }
+    if(app.human_reference_bitmap) {
+        DeleteObject(app.human_reference_bitmap);
+        app.human_reference_bitmap=nullptr;
+    }
+    app.human_reference_size={};
+}
+bool load_human_reference_bitmap() {
+    app.human_reference_attempted=true;
+    const auto path=app.root/"assets"/"motion"/"human_outline_generic.png";
+    if(!std::filesystem::exists(path))return false;
+
+    IWICImagingFactory* factory=nullptr;
+    IWICBitmapDecoder* decoder=nullptr;
+    IWICBitmapFrameDecode* frame=nullptr;
+    IWICFormatConverter* converter=nullptr;
+    HBITMAP bitmap=nullptr;
+    HDC memory_dc=nullptr;
+    auto release_wic=[&]() {
+        if(converter)converter->Release();
+        if(frame)frame->Release();
+        if(decoder)decoder->Release();
+        if(factory)factory->Release();
+        converter=nullptr; frame=nullptr; decoder=nullptr; factory=nullptr;
+    };
+    auto fail=[&]() {
+        if(memory_dc)DeleteDC(memory_dc);
+        if(bitmap)DeleteObject(bitmap);
+        memory_dc=nullptr; bitmap=nullptr;
+        release_wic();
+        return false;
+    };
+    if(FAILED(CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,
+                               IID_PPV_ARGS(&factory))))return fail();
+    if(FAILED(factory->CreateDecoderFromFilename(
+        path.c_str(),nullptr,GENERIC_READ,WICDecodeMetadataCacheOnLoad,&decoder)))
+        return fail();
+    UINT frame_count=0;
+    if(FAILED(decoder->GetFrameCount(&frame_count))||frame_count==0)return fail();
+    if(FAILED(decoder->GetFrame(0,&frame)))return fail();
+    if(FAILED(factory->CreateFormatConverter(&converter)))return fail();
+    if(FAILED(converter->Initialize(frame,GUID_WICPixelFormat32bppPBGRA,
+                                    WICBitmapDitherTypeNone,nullptr,0.0,
+                                    WICBitmapPaletteTypeCustom)))return fail();
+    UINT width=0,height=0;
+    if(FAILED(frame->GetSize(&width,&height))||width==0||height==0)return fail();
+    if(width>std::numeric_limits<UINT>::max()/4||
+       height>std::numeric_limits<UINT>::max()/(width*4))return fail();
+    BITMAPINFO bitmap_info{};
+    bitmap_info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
+    bitmap_info.bmiHeader.biWidth=static_cast<LONG>(width);
+    bitmap_info.bmiHeader.biHeight=-static_cast<LONG>(height);
+    bitmap_info.bmiHeader.biPlanes=1;
+    bitmap_info.bmiHeader.biBitCount=32;
+    bitmap_info.bmiHeader.biCompression=BI_RGB;
+    void* pixels=nullptr;
+    bitmap=CreateDIBSection(nullptr,&bitmap_info,DIB_RGB_COLORS,&pixels,nullptr,0);
+    if(!bitmap||!pixels)return fail();
+    const UINT stride=width*4;
+    const UINT bytes=stride*height;
+    if(FAILED(converter->CopyPixels(nullptr,stride,bytes,
+                                    static_cast<BYTE*>(pixels))))return fail();
+    // Keep the CC0 silhouette's alpha, but tint it to the workspace's subdued
+    // blue-gray so it reads as a reference layer rather than captured data.
+    auto* pixel_bytes=static_cast<BYTE*>(pixels);
+    constexpr BYTE tint_b=86,tint_g=112,tint_r=136;
+    for(std::size_t index=0;index<static_cast<std::size_t>(width)*height;++index) {
+        const BYTE alpha=pixel_bytes[index*4+3];
+        pixel_bytes[index*4+0]=static_cast<BYTE>(tint_b*alpha/255);
+        pixel_bytes[index*4+1]=static_cast<BYTE>(tint_g*alpha/255);
+        pixel_bytes[index*4+2]=static_cast<BYTE>(tint_r*alpha/255);
+    }
+    memory_dc=CreateCompatibleDC(nullptr);
+    if(!memory_dc)return fail();
+    SelectObject(memory_dc,bitmap);
+    app.human_reference_bitmap=bitmap;
+    app.human_reference_dc=memory_dc;
+    app.human_reference_size={static_cast<LONG>(width),static_cast<LONG>(height)};
+    bitmap=nullptr; memory_dc=nullptr;
+    release_wic();
+    return true;
+}
+void draw_human_reference(HDC dc,RECT viewport,const MotionProjection& projection,
+                          const std::vector<animocap::Vec3>& positions) {
+    if(!app.human_reference_bitmap||!app.human_reference_dc||positions.empty())return;
+    double min_y=std::numeric_limits<double>::infinity();
+    double max_y=-std::numeric_limits<double>::infinity();
+    for(const auto& value:positions) {
+        const auto projected=projection.raw(value);
+        min_y=std::min(min_y,projected.y);
+        max_y=std::max(max_y,projected.y);
+    }
+    if(!std::isfinite(min_y)||!std::isfinite(max_y)||
+       app.human_reference_size.cx<=0||app.human_reference_size.cy<=0)return;
+    const int viewport_height=std::max(
+        1,static_cast<int>(viewport.bottom-viewport.top));
+    const int maximum_height=std::max(40,viewport_height-24);
+    const int desired_height=static_cast<int>(std::lround(
+        std::max(1.0,(max_y-min_y)*projection.scale)*1.08));
+    const int minimum_height=std::min(92,maximum_height);
+    const int figure_height=std::clamp(desired_height,minimum_height,maximum_height);
+    const int figure_width=std::max(1,static_cast<int>(std::lround(
+        static_cast<double>(figure_height)*app.human_reference_size.cx/
+        static_cast<double>(app.human_reference_size.cy)*1.22)));
+    const int center=(viewport.left+viewport.right)/2;
+    const int bottom=std::min(static_cast<int>(viewport.bottom)-8,
+                              static_cast<int>(std::lround(projection.floor_y))+2);
+    const RECT destination{center-figure_width/2,bottom-figure_height,
+                           center-figure_width/2+figure_width,bottom};
+    const BLENDFUNCTION blend{AC_SRC_OVER,0,72,AC_SRC_ALPHA};
+    AlphaBlend(dc,destination.left,destination.top,
+               destination.right-destination.left,destination.bottom-destination.top,
+               app.human_reference_dc,0,0,app.human_reference_size.cx,
+               app.human_reference_size.cy,blend);
 }
 void draw_motion(HDC dc, RECT area) {
+    app.review_hit_points.clear();
     panel_box(dc,area,theme::surface,theme::border,8);
     panel_accent(dc,area,app.pose?theme::violet:theme::accent);
-    const bool has_comparison=app.pose&&app.comparison_pose&&
-        app.comparison_pose->frames.size()==app.pose->frames.size();
+    const auto* comparison_source=app.review_compare&&app.review_base?&*app.review_base:
+        (app.comparison_pose?&*app.comparison_pose:nullptr);
+    const bool has_comparison=app.pose&&comparison_source&&
+        comparison_source->frames.size()==app.pose->frames.size();
     RECT label=area; label.left+=18; label.top+=8; label.bottom=label.top+28;
-    text(dc,app.pose
-            ?(has_comparison?L"FUSED 3D · A/B DEPTH REVIEW":
-              app.multiview_mode?L"FUSED 2.5D · DEPTH REVIEW":L"OBSERVED 2.5D")
-            :L"CANONICAL 3D",
+    text(dc,app.pose?L"人体动作 · 按部位修复":L"人体动作预览",
          label,theme::accent,app.small_font);
     if (!app.motion && !app.pose) {
-        text(dc,L"\u5b8c\u6210\u6355\u6349\u6216\u52a0\u8f7d\u52a8\u4f5c\u540e\u663e\u793a 3D \u9aa8\u67b6",area,RGB(116,126,148),app.font,
+        text(dc,L"\u5b8c\u6210\u6355\u6349\u6216\u52a0\u8f7d\u52a8\u4f5c\u540e\u663e\u793a 3D \u4eba\u4f53\u6a21\u578b",area,RGB(116,126,148),app.font,
              DT_CENTER|DT_VCENTER|DT_SINGLELINE);
         return;
     }
@@ -2266,7 +3201,7 @@ void draw_motion(HDC dc, RECT area) {
             confidences.push_back(joint.confidence);
         }
         if(has_comparison) {
-            const auto& baseline=app.comparison_pose->frames[pose_frame()];
+            const auto& baseline=comparison_source->frames[pose_frame()];
             comparison_positions.reserve(baseline.joints.size());
             comparison_valid.reserve(baseline.joints.size());
             for(const auto& joint:baseline.joints) {
@@ -2292,64 +3227,111 @@ void draw_motion(HDC dc, RECT area) {
         confidences.assign(confidence_begin,
             confidence_begin+static_cast<std::ptrdiff_t>(motion.joint_count));
     }
-    HPEN grid=CreatePen(PS_SOLID,1,theme::border_soft);
+    const RECT viewport{area.left+12,area.top+164,area.right-12,area.bottom-42};
+    fill(dc,viewport,RGB(8,14,21));
+    rounded_outline(dc,viewport,theme::border_soft,7);
+    std::vector<animocap::Vec3> projection_comparison_positions;
+    projection_comparison_positions.reserve(comparison_positions.size());
+    for(std::size_t i=0;i<comparison_positions.size();++i) {
+        if(i<comparison_valid.size()&&comparison_valid[i])
+            projection_comparison_positions.push_back(comparison_positions[i]);
+    }
+    const auto projection=make_motion_projection(
+        viewport,positions,projection_comparison_positions);
+    const int ground=static_cast<int>(std::lround(projection.floor_y));
+    const int center=(viewport.left+viewport.right)/2;
+    const int horizon=viewport.top+38;
+    HPEN grid=CreatePen(PS_SOLID,1,RGB(28,43,56));
     auto old_pen=SelectObject(dc,grid);
-    int ground=static_cast<int>(project({0,0,0},area).y);
-    const int center=(area.left+area.right)/2;
-    for(int depth=0;depth<6;++depth) {
-        const double ratio=depth/5.0;
-        const int y=ground-static_cast<int>(ratio*std::max<LONG>(18,ground-area.top-54));
-        const int half=static_cast<int>((area.right-area.left-56)*(1.0-ratio*.72)/2.0);
+    for(int row=0;row<5;++row) {
+        const double ratio=static_cast<double>(row)/4.0;
+        const int y=ground-static_cast<int>(ratio*(ground-horizon));
+        const int half=static_cast<int>((viewport.right-viewport.left)*
+            (.16+.34*ratio));
         MoveToEx(dc,center-half,y,nullptr);LineTo(dc,center+half,y);
     }
     for(int lane=-4;lane<=4;++lane) {
-        MoveToEx(dc,center+lane*(area.right-area.left-56)/8,ground,nullptr);
-        LineTo(dc,center+lane*12,area.top+54);
+        const int bottom_x=center+lane*(viewport.right-viewport.left)/8;
+        const int top_x=center+lane*7;
+        MoveToEx(dc,bottom_x,ground,nullptr);LineTo(dc,top_x,horizon);
     }
     SelectObject(dc,old_pen); DeleteObject(grid);
-    stroke(dc,{center,ground},{area.right-28,ground},theme::red,1);
-    stroke(dc,{center,ground},{center,area.top+48},theme::green,1);
-    stroke(dc,{center,ground},{area.left+28,ground},theme::accent,1);
+    HPEN floor_pen=CreatePen(PS_SOLID,2,RGB(43,67,82));
+    old_pen=SelectObject(dc,floor_pen);
+    MoveToEx(dc,viewport.left+12,ground,nullptr);
+    LineTo(dc,viewport.right-12,ground);
+    SelectObject(dc,old_pen); DeleteObject(floor_pen);
+    if(!positions.empty()) {
+        const auto foot_index=animocap::bone_index(
+            skeleton,animocap::BoneSemantic::LeftFoot);
+        const auto right_foot_index=animocap::bone_index(
+            skeleton,animocap::BoneSemantic::RightFoot);
+        const auto foot_a=foot_index<positions.size()?projection(positions[foot_index]):
+            animocap::Vec2{static_cast<double>(center),static_cast<double>(ground)};
+        const auto foot_b=right_foot_index<positions.size()?projection(positions[right_foot_index]):
+            animocap::Vec2{static_cast<double>(center),static_cast<double>(ground)};
+        const int shadow_left=static_cast<int>(std::min(foot_a.x,foot_b.x))-12;
+        const int shadow_right=static_cast<int>(std::max(foot_a.x,foot_b.x))+12;
+        HBRUSH shadow_brush=CreateSolidBrush(RGB(18,27,37));
+        auto old_brush=SelectObject(dc,shadow_brush);
+        Ellipse(dc,shadow_left,ground-5,shadow_right,ground+5);
+        SelectObject(dc,old_brush); DeleteObject(shadow_brush);
+    }
     if(!comparison_positions.empty()) {
         HPEN comparison_pen=CreatePen(PS_DOT,1,RGB(112,128,148));
         old_pen=SelectObject(dc,comparison_pen);
-        for(std::size_t i=1;i<skeleton.bones.size();++i) {
+        for(std::size_t i=1;i<skeleton.bones.size()&&i<comparison_positions.size();++i) {
             const auto parent=static_cast<std::size_t>(skeleton.bones[i].parent);
-            if(!comparison_valid[i]||!comparison_valid[parent])continue;
-            const auto a=project(comparison_positions[parent],area);
-            const auto b=project(comparison_positions[i],area);
+            if(parent>=comparison_positions.size()||i>=comparison_valid.size()||
+               parent>=comparison_valid.size()||!comparison_valid[i]||
+               !comparison_valid[parent])continue;
+            const auto a=projection(comparison_positions[parent]);
+            const auto b=projection(comparison_positions[i]);
             MoveToEx(dc,static_cast<int>(a.x),static_cast<int>(a.y),nullptr);
             LineTo(dc,static_cast<int>(b.x),static_cast<int>(b.y));
         }
         SelectObject(dc,old_pen);
         DeleteObject(comparison_pen);
     }
-    HPEN shadow=CreatePen(PS_SOLID,7,RGB(24,30,42)), bone=CreatePen(PS_SOLID,3,theme::violet);
-    old_pen=SelectObject(dc,shadow);
-    for (std::size_t i=1;i<skeleton.bones.size();++i) {
-        auto parent=static_cast<std::size_t>(skeleton.bones[i].parent);
-        auto a=project(positions[parent],area), b=project(positions[i],area);
-        SelectObject(dc,shadow); MoveToEx(dc,static_cast<int>(a.x),static_cast<int>(a.y),nullptr);
-        LineTo(dc,static_cast<int>(b.x),static_cast<int>(b.y));
-        SelectObject(dc,bone); MoveToEx(dc,static_cast<int>(a.x),static_cast<int>(a.y),nullptr);
-        LineTo(dc,static_cast<int>(b.x),static_cast<int>(b.y));
+    draw_motion_human_model(dc,projection,skeleton,positions,confidences);
+    if(app.pose&&app.review_joint<positions.size()) {
+        const auto f=pose_frame();
+        const auto joint_count=app.pose->frames[f].joints.size();
+        for(std::size_t j=0;j<positions.size();++j) {
+            if(app.pose->frames[f].joints[j].valid) {
+                const auto p=projection(positions[j]);
+                app.review_hit_points.push_back({{static_cast<LONG>(p.x),static_cast<LONG>(p.y)},j});
+            }
+            const auto mark=std::find_if(app.review.marks.begin(),app.review.marks.end(),[&](const auto& m){return m.frame==f&&m.joint==j;});
+            const bool inferred=f*joint_count+j<app.review_inferred.size()&&app.review_inferred[f*joint_count+j];
+            if(mark==app.review.marks.end()&&!inferred&&j!=app.review_joint)continue;
+            const COLORREF color=inferred?theme::amber:mark==app.review.marks.end()?theme::text:
+                mark->trust==animocap::ReviewTrust::Locked?theme::green:
+                mark->trust==animocap::ReviewTrust::Excluded?theme::red:theme::accent;
+            const auto point=projection(positions[j]);
+            HPEN pen=CreatePen(PS_SOLID,j==app.review_joint?3:2,color);
+            auto old=SelectObject(dc,pen);auto brush=SelectObject(dc,GetStockObject(HOLLOW_BRUSH));
+            const int radius=j==app.review_joint?10:6;
+            Ellipse(dc,static_cast<int>(point.x)-radius,static_cast<int>(point.y)-radius,
+                static_cast<int>(point.x)+radius+1,static_cast<int>(point.y)+radius+1);
+            SelectObject(dc,brush);SelectObject(dc,old);DeleteObject(pen);
+        }
+        const auto mark=std::find_if(app.review.marks.begin(),app.review.marks.end(),[&](const auto& m){return m.frame==f&&m.joint==app.review_joint;});
+        const bool inferred=f*joint_count+app.review_joint<app.review_inferred.size()&&app.review_inferred[f*joint_count+app.review_joint];
+        const std::wstring state=inferred?L"重建 / 推算":mark==app.review.marks.end()?L"自动观测":
+            mark->trust==animocap::ReviewTrust::Locked?L"已锁定":mark->trust==animocap::ReviewTrust::Excluded?L"已排除 / 待重建":
+            L"可信 "+std::to_wstring(static_cast<int>(mark->weight))+L"×";
+        RECT status{area.left+16,area.top+138,area.right-12,area.top+161};
+        text(dc,L"帧 "+std::to_wstring(f)+L" · "+joint_display_name(skeleton.bones[app.review_joint].semantic)+L" · "+state,
+            status,inferred?theme::amber:theme::text,app.small_font);
     }
-    SelectObject(dc,old_pen); DeleteObject(shadow); DeleteObject(bone);
-    for (std::size_t i=0;i<positions.size();++i) {
-        auto p=project(positions[i],area);
-        float confidence=confidences[i];
-        COLORREF color=confidence>=.65f?theme::green:confidence>=.3f?theme::amber:theme::red;
-        HBRUSH brush=CreateSolidBrush(color); auto old=SelectObject(dc,brush);
-        Ellipse(dc,static_cast<int>(p.x)-4,static_cast<int>(p.y)-4,
-                static_cast<int>(p.x)+5,static_cast<int>(p.y)+5);
-        SelectObject(dc,old); DeleteObject(brush);
-    }
+    draw_motion_view_gizmo(dc,viewport);
     RECT hint=area; hint.left+=18; hint.top=hint.bottom-34;
     if(!comparison_positions.empty()) {
         double sum=0.0,maximum=0.0;
         std::size_t samples=0;
-        for(std::size_t i=0;i<positions.size();++i) {
-            if(!comparison_valid[i])continue;
+        for(std::size_t i=0;i<positions.size()&&i<comparison_positions.size();++i) {
+            if(i>=comparison_valid.size()||!comparison_valid[i])continue;
             const auto delta=positions[i]-comparison_positions[i];
             const double distance=std::sqrt(
                 delta.x*delta.x+delta.y*delta.y+delta.z*delta.z);
@@ -2360,13 +3342,14 @@ void draw_motion(HDC dc, RECT area) {
         const auto mean_mm=static_cast<int>(std::lround(
             (samples?sum/static_cast<double>(samples):0.0)*1000.0));
         const auto maximum_mm=static_cast<int>(std::lround(maximum*1000.0));
-        text(dc,L"\u539f\u59cb\u7070 / \u589e\u5f3a\u7d2b \u00b7 \u5f53\u524d\u5e27\u5e73\u5747 "+
+        text(dc,L"\u7070\u8272\u57fa\u7ebf / \u5f69\u8272\u5f53\u524d \u00b7 \u5e73\u5747 "+
              std::to_wstring(mean_mm)+L" mm \u00b7 \u6700\u5927 "+
-             std::to_wstring(maximum_mm)+L" mm \u00b7 \u62d6\u52a8\u65cb\u8f6c\u6df1\u5ea6\u89c6\u89d2",
+             std::to_wstring(maximum_mm)+L" mm \u00b7 \u62d6\u52a8\u65cb\u8f6c",
              hint,theme::text_faint,app.small_font);
         return;
     }
-    text(dc,L"拖动旋转视角",hint,theme::text_faint,app.small_font);
+    text(dc,L"绿：锁定  蓝：加权  红：排除  橙：推算\nL/R 人体左右 · 拖动旋转 · 单目深度为估计",
+         hint,theme::text_faint,app.small_font,DT_LEFT|DT_WORDBREAK);
 }
 std::wstring issue_joint_name(animocap::BoneSemantic semantic) {
     return joint_display_name(semantic);
@@ -2380,6 +3363,147 @@ bool is_limb(animocap::BoneSemantic semantic) {
         semantic==S::LeftFoot||semantic==S::RightUpperLeg||
         semantic==S::RightLowerLeg||semantic==S::RightFoot;
 }
+int workspace_stage() {
+    int active=0;
+    if(app.decoder&&app.decoder->is_open())active=1;
+    if(app.analyzing)active=2;
+    else if(app.pose)active=3;
+    else if(app.decoder&&app.decoder->is_open())active=2;
+    if(app.motion&&app.pose)active=4;
+    return active;
+}
+std::wstring workspace_project_name() {
+    const auto choose_name=[](const std::filesystem::path& path) {
+        if(path.empty())return std::wstring{};
+        const auto name=path.filename().wstring();
+        return name.empty()?path.wstring():name;
+    };
+    if(const auto name=choose_name(app.video_path);!name.empty())return name;
+    if(const auto name=choose_name(app.motion_path);!name.empty())return name;
+    return L"未命名捕捉";
+}
+void draw_asset_row(HDC dc,RECT row,const std::wstring& title,
+                    const std::wstring& detail,bool active) {
+    rounded_box(dc,row,active?theme::surface_raised:theme::surface,
+                active?theme::accent_dark:theme::border_soft,6);
+    fill(dc,{row.left+10,row.top+12,row.left+14,row.bottom-12},
+         active?theme::accent:theme::text_faint);
+    text(dc,title,{row.left+24,row.top+5,row.right-12,row.top+25},
+         active?theme::text:theme::text_muted,app.small_font,
+         DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS);
+    text(dc,detail,{row.left+24,row.top+24,row.right-12,row.bottom-4},
+         theme::text_faint,app.small_font,DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+}
+void draw_workspace_shell(HDC dc,RECT client) {
+    const int content_bottom=client.bottom-kFooterHeight;
+    const int asset_left=kRailWidth;
+    const int asset_right=kRailWidth+kAssetPanelWidth;
+    fill(dc,client,theme::background);
+
+    // Top app bar: identity and session context are separated from actions.
+    fill(dc,{0,0,client.right,kHeader},theme::header);
+    fill(dc,{0,0,client.right,2},theme::accent_soft);
+    rounded_box(dc,{14,13,42,42},theme::accent_dark,theme::accent,7);
+    text(dc,L"AF",{14,13,42,42},theme::accent,app.small_font,
+         DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+    text(dc,L"AniMocap Fusion",{52,8,260,34},theme::text,app.title_font,
+         DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+    text(dc,L"CAPTURE WORKSPACE",{52,32,260,51},theme::text_faint,app.small_font,
+         DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+    text(dc,L"当前项目",{300,6,670,25},theme::text_faint,app.small_font,
+         DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+    text(dc,workspace_project_name(),{300,23,670,50},theme::text,app.section_font,
+         DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS);
+    stroke(dc,{0,kHeader-1},{client.right,kHeader-1},theme::border_soft);
+
+    // Persistent workflow rail.
+    fill(dc,{0,kHeader,kRailWidth,content_bottom},theme::header);
+    stroke(dc,{kRailWidth-1,kHeader},{kRailWidth-1,content_bottom},theme::border_soft);
+    const wchar_t* rail_labels[]={L"视频",L"人物",L"捕捉",L"检查",L"导出"};
+    const int active=workspace_stage();
+    for(int index=0;index<5;++index) {
+        const int top=kHeader+22+index*76;
+        if(index==active)fill(dc,{0,top,3,top+52},theme::accent);
+        rounded_box(dc,{10,top,54,top+52},index==active?theme::accent_dark:theme::surface,
+                    index==active?theme::accent:theme::border_soft,8);
+        text(dc,std::to_wstring(index+1),{10,top+7,54,top+27},
+             index==active?theme::accent:theme::text_faint,app.small_font,
+             DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+        text(dc,rail_labels[index],{6,top+27,58,top+49},
+             index==active?theme::text:theme::text_muted,app.small_font,
+             DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+    }
+    text(dc,L"工作流",{4,content_bottom-34,60,content_bottom-8},
+         theme::text_faint,app.small_font,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+
+    // Asset/project drawer under the rail.
+    fill(dc,{asset_left,kHeader,asset_right,content_bottom},theme::surface);
+    stroke(dc,{asset_right-1,kHeader},{asset_right-1,content_bottom},theme::border_soft);
+    text(dc,L"资产",{asset_left+16,kHeader+11,asset_right-16,kHeader+34},
+         theme::text,app.section_font);
+    text(dc,L"项目输入与输出预设",{asset_left+16,kHeader+33,asset_right-16,kHeader+53},
+         theme::text_faint,app.small_font);
+    stroke(dc,{asset_left+12,kHeader+59},{asset_right-12,kHeader+59},theme::border_soft);
+    text(dc,L"输入源",{asset_left+16,kHeader+61,asset_right-16,kHeader+78},
+         theme::text_muted,app.small_font);
+    draw_asset_row(dc,{asset_left+12,kHeader+160,asset_right-12,kHeader+204},
+        app.video_path.empty()?L"等待导入":app.video_path.filename().wstring(),
+        app.decoder&&app.decoder->is_open()?L"视频源 · 已连接":L"视频源 · 未载入",
+        app.decoder&&app.decoder->is_open());
+    draw_asset_row(dc,{asset_left+12,kHeader+210,asset_right-12,kHeader+254},
+        app.motion_path.empty()?L"未生成动作":app.motion_path.filename().wstring(),
+        app.motion?L"规范动作包 · 可修正":L"动作包 · 等待捕捉",
+        app.motion.has_value());
+    text(dc,L"人物与角色",{asset_left+16,kHeader+266,asset_right-16,kHeader+286},
+         theme::text_muted,app.small_font);
+    text(dc,app.character_profile?L"骨骼参考 · 已加载":L"默认人体骨架",
+         {asset_left+16,kHeader+368,asset_right-16,kHeader+384},
+         theme::text_faint,app.small_font,DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS);
+    text(dc,app.appearance_reference_path.empty()?L"外观参考 · 未载入":
+         L"外观参考 · "+app.appearance_reference_path.filename().wstring(),
+         {asset_left+16,kHeader+405,asset_right-16,kHeader+423},
+         theme::text_faint,app.small_font,DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS);
+    text(dc,L"推理与本地 AI",{asset_left+16,kHeader+429,asset_right-16,kHeader+448},
+         theme::text_muted,app.small_font);
+    text(dc,L"外观参考只参与低置信度视觉纠错",{asset_left+16,kHeader+494,asset_right-16,kHeader+515},
+         theme::text_faint,app.small_font,DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+
+    // Workspace context strip and inspector tabs.
+    const int context_right=client.right-kInspectorWidth;
+    fill(dc,{asset_right,kHeader,context_right,kHeader+kWorkspaceBar},theme::surface);
+    stroke(dc,{asset_right,kHeader+kWorkspaceBar-1},{context_right,kHeader+kWorkspaceBar-1},theme::border_soft);
+    text(dc,L"捕捉工作区",{asset_right+16,kHeader+6,asset_right+170,kHeader+33},
+         theme::text,app.section_font);
+    const std::wstring scope=app.multiview_mode?L"多视角合并复核":
+        app.auto_person_frame?L"自动人物范围":
+        app.has_person_frame?L"手动人物范围":L"全视频画面";
+    text(dc,scope,{asset_right+188,kHeader+6,context_right-210,kHeader+33},
+         theme::text_muted,app.small_font,DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS);
+    text(dc,app.analyzing?L"正在处理":app.pose?L"可检查":L"待开始",
+         {context_right-200,kHeader+6,context_right-16,kHeader+33},
+         app.analyzing?theme::amber:app.pose?theme::green:theme::text_faint,app.small_font,
+         DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+
+    const RECT inspector=inspector_rect();
+    fill(dc,{inspector.left,inspector.top,inspector.right,inspector.top+kInspectorTabs},theme::surface);
+    stroke(dc,{inspector.left,inspector.top+kInspectorTabs-1},
+           {inspector.right,inspector.top+kInspectorTabs-1},theme::border_soft);
+    const wchar_t* tabs[]={L"骨架",L"质量",L"工具"};
+    const LONG tab_width=(inspector.right-inspector.left)/3;
+    for(int index=0;index<3;++index) {
+        const LONG left=inspector.left+tab_width*index;
+        const LONG right=index==2?inspector.right:left+tab_width;
+        text(dc,tabs[index],{left,inspector.top+2,right,inspector.top+kInspectorTabs-5},
+             index==0?theme::text:theme::text_muted,app.small_font,
+             DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+        if(index==0)fill(dc,{left+18,inspector.top+kInspectorTabs-3,
+                             right-18,inspector.top+kInspectorTabs},theme::accent);
+    }
+
+    fill(dc,{0,client.bottom-kFooterHeight,client.right,client.bottom},theme::background);
+    stroke(dc,{0,client.bottom-kFooterHeight},{client.right,client.bottom-kFooterHeight},theme::border_soft);
+}
+
 void draw_steps(HDC dc,RECT area) {
     fill(dc,area,theme::header);
     const wchar_t* labels[]={L"视频",L"人物",L"捕捉",L"检查",L"导出"};
@@ -2415,7 +3539,7 @@ void draw_steps(HDC dc,RECT area) {
 void draw_issues(HDC dc,RECT area) {
     panel_box(dc,area,theme::surface,theme::border,8);
     panel_accent(dc,area,theme::amber);
-    text(dc,L"检查与修正",{area.left+16,area.top+5,area.right-326,area.top+39},
+    text(dc,L"检查",{area.left+16,area.top+5,area.left+52,area.top+39},
          theme::text,app.section_font);
     stroke(dc,{area.left+1,area.top+44},{area.right-1,area.top+44},theme::border_soft);
     auto skeleton=animocap::make_default_skeleton();
@@ -2509,9 +3633,124 @@ void draw_issues(HDC dc,RECT area) {
         if(y>=area.bottom-30)break;
     }
 }
+void draw_curve_editor(HDC dc,RECT area) {
+    const RECT graph=curve_graph_area();
+    fill(dc,graph,RGB(10,17,25));
+    stroke(dc,{graph.left,graph.top},{graph.right,graph.top},theme::border);
+    stroke(dc,{graph.left,graph.bottom},{graph.right,graph.bottom},theme::border);
+    const int graph_height=std::max<LONG>(1,graph.bottom-graph.top);
+    const int graph_width=std::max<LONG>(1,graph.right-graph.left);
+    for(int tick=0;tick<=4;++tick) {
+        const int y=graph.bottom-graph_height*tick/4;
+        stroke(dc,{graph.left,y},{graph.right,y},
+               tick==0||tick==4?theme::border:RGB(27,40,53));
+        text(dc,std::to_wstring(tick*25)+L"%",
+             {area.left+14,y-10,area.left+kTimelineLabelWidth-12,y+10},
+             theme::text_faint,app.mono_font,DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+    }
+    for(int tick=0;tick<=10;++tick) {
+        const int x=graph.left+graph_width*tick/10;
+        stroke(dc,{x,graph.top},{x,graph.bottom},RGB(24,36,48));
+    }
+    const auto range=timeline_range();
+    if(range) {
+        text(dc,timecode(range->start),{graph.left,area.top+46,graph.left+110,area.top+56},
+             theme::text_faint,app.mono_font,DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+        text(dc,timecode(range->end),{graph.right-110,area.top+46,graph.right,area.top+56},
+             theme::text_faint,app.mono_font,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+    }
+    const auto active=active_curve_correction_index();
+    if(!app.pose||app.pose->frames.empty()) {
+        text(dc,L"加载动作后在此编辑关键帧影响曲线",
+             {graph.left+16,graph.top+18,graph.right-16,graph.bottom-18},
+             theme::text_muted,app.small_font,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+        return;
+    }
+    text(dc,L"曲线编辑器",
+         {area.left+14,area.top+148,area.left+kTimelineLabelWidth-8,area.top+174},
+         theme::text_muted,app.small_font,DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+    if(active&&*active<app.manual_corrections.size()) {
+        const auto& correction=app.manual_corrections[*active];
+        text(dc,L"关键帧 "+std::to_wstring(correction.keyframe_frame_index)+
+             L" · 影响 "+std::to_wstring(correction_curve_radius(correction))+L" 帧",
+             {area.left+14,area.top+178,area.left+kTimelineLabelWidth-8,area.top+220},
+             theme::text_faint,app.small_font,DT_LEFT|DT_TOP|DT_WORDBREAK);
+    }
+    const auto draw_y=[&](double weight) {
+        return graph.bottom-static_cast<int>(std::lround(
+            std::clamp(weight,0.0,1.0)*graph_height));
+    };
+    for(std::size_t index=0;index<app.manual_corrections.size();++index) {
+        const auto& correction=app.manual_corrections[index];
+        if(correction.frame_weights.empty()||
+           correction.keyframe_frame_index>=app.pose->frames.size())continue;
+        const bool is_active=active&&*active==index;
+        HPEN pen=CreatePen(PS_SOLID,is_active?3:1,
+            is_active?theme::accent:RGB(82,71,128));
+        auto old_pen=SelectObject(dc,pen);
+        bool started=false;
+        for(std::size_t frame=0;frame<correction.frame_weights.size()&&
+            frame<app.pose->frames.size();++frame) {
+            if(correction.frame_weights[frame]<=1e-5) { started=false; continue; }
+            const int x=curve_x_for_frame(graph,frame);
+            const int y=draw_y(correction.frame_weights[frame]);
+            if(!started){MoveToEx(dc,x,y,nullptr);started=true;}else LineTo(dc,x,y);
+        }
+        SelectObject(dc,old_pen);DeleteObject(pen);
+        const int key_x=curve_x_for_frame(graph,correction.keyframe_frame_index);
+        const int key_y=draw_y(1.0);
+        HBRUSH brush=CreateSolidBrush(
+            is_active?theme::accent:(keyframe_is_selected(correction.keyframe_frame_index)
+                ?theme::amber:theme::violet));
+        auto old_brush=SelectObject(dc,brush);
+        POINT diamond[]={{key_x,key_y-7},{key_x+7,key_y},
+                         {key_x,key_y+7},{key_x-7,key_y}};
+        Polygon(dc,diamond,4);
+        SelectObject(dc,old_brush);DeleteObject(brush);
+        if(is_active) {
+            const auto radius=correction_curve_radius(correction);
+            const int left_x=curve_x_for_frame(graph,
+                correction.keyframe_frame_index>radius
+                    ?correction.keyframe_frame_index-radius:0);
+            const int right_x=curve_x_for_frame(graph,std::min(
+                app.pose->frames.size()-1,correction.keyframe_frame_index+radius));
+            const int handle_y=curve_handle_y(graph);
+            HPEN handle_pen=CreatePen(PS_DOT,1,theme::accent_soft);
+            old_pen=SelectObject(dc,handle_pen);
+            MoveToEx(dc,key_x,key_y,nullptr);LineTo(dc,left_x,handle_y);
+            MoveToEx(dc,key_x,key_y,nullptr);LineTo(dc,right_x,handle_y);
+            SelectObject(dc,old_pen);DeleteObject(handle_pen);
+            HBRUSH handle_brush=CreateSolidBrush(theme::accent);
+            old_brush=SelectObject(dc,handle_brush);
+            Ellipse(dc,left_x-6,handle_y-6,left_x+7,handle_y+7);
+            Ellipse(dc,right_x-6,handle_y-6,right_x+7,handle_y+7);
+            SelectObject(dc,old_brush);DeleteObject(handle_brush);
+            text(dc,L"影响手柄 · 左右拖动调整范围",
+                 {graph.left+10,graph.bottom-16,graph.right-10,graph.bottom},
+                 theme::text_faint,app.small_font,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+        }
+    }
+    if(range) {
+        const double normalized=std::clamp(
+            (app.time_s-range->start)/std::max(.001,range->end-range->start),0.0,1.0);
+        const int cursor=graph.left+static_cast<int>(std::lround(graph_width*normalized));
+        stroke(dc,{cursor,graph.top},{cursor,graph.bottom},theme::accent,2);
+        fill(dc,{cursor-5,graph.top-1,cursor+6,graph.top+7},theme::accent);
+    }
+}
 void draw_timeline_panel(HDC dc,RECT area) {
     panel_box(dc,area,theme::surface,theme::border,8);
     panel_accent(dc,area,theme::accent);
+    if(app.timeline_mode==TimelineMode::CurveEditor) {
+        const auto range=timeline_range();
+        const std::wstring current=timecode(app.time_s);
+        const std::wstring duration=range?timecode(range->end-range->start):L"--:--.---";
+        text(dc,current+L"  /  "+duration,
+             {area.right-270,area.top+6,area.right-16,area.top+40},theme::accent,
+             app.mono_font,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+        draw_curve_editor(dc,area);
+        return;
+    }
     const int label_width=kTimelineLabelWidth;
     const int plot_left=area.left+label_width;
     const int plot_right=area.right-12;
@@ -2529,12 +3768,21 @@ void draw_timeline_panel(HDC dc,RECT area) {
          theme::amber,app.small_font);
     text(dc,L"歧义度",{area.left+14,ambiguity_top,area.left+label_width-8,ambiguity_bottom},
          theme::violet,app.small_font);
-    const std::wstring track_label=app.manual_corrections.empty()
+    std::wstring track_label=app.manual_corrections.empty()
         ?(app.decoder&&app.decoder->is_open()?L"视频轨道":L"动作轨道")
         :L"关键帧曲线 · "+std::to_wstring(app.manual_corrections.size());
+    if(!app.selected_keyframes.empty())
+        track_label+=L" · 已选 "+std::to_wstring(app.selected_keyframes.size());
     text(dc,track_label,
-         {area.left+14,area.top+148,area.left+label_width-8,area.bottom-7},
+         {area.left+14,area.top+148,area.left+label_width-8,area.top+188},
          theme::text_muted,app.small_font);
+    const std::wstring export_label=app.selected_export_frames.empty()
+        ?L"Blender 导入 · 未选择"
+        :L"Blender 导入 · "+std::to_wstring(app.selected_export_frames.size())+L" 帧";
+    text(dc,export_label,
+         {area.left+14,area.top+188,area.left+label_width-8,area.bottom-7},
+         app.selecting_export_frames?theme::green:theme::text_faint,app.small_font,
+         DT_LEFT|DT_TOP|DT_WORDBREAK);
 
     for(int y:{confidence_top,confidence_bottom,ambiguity_top,ambiguity_bottom})
         stroke(dc,{plot_left,y},{plot_right,y},theme::border_soft);
@@ -2613,6 +3861,18 @@ void draw_timeline_panel(HDC dc,RECT area) {
             }
         }
         if(app.pose&&!app.pose->frames.empty()) {
+            for(const auto& mark:app.review.marks) {
+                if(mark.joint!=app.review_joint||mark.frame>=app.pose->frames.size())continue;
+                const int x=x_at_time(app.pose->frames[mark.frame].time_s);
+                const COLORREF color=mark.trust==animocap::ReviewTrust::Locked?theme::green:
+                    mark.trust==animocap::ReviewTrust::Excluded?theme::red:theme::accent;
+                fill(dc,{x-2,bar.top+27,x+3,bar.top+40},color);
+            }
+            for(const auto& r:app.review.ranges) {
+                if(r.joint!=app.review_joint||r.last>=app.pose->frames.size())continue;
+                fill(dc,{x_at_time(app.pose->frames[r.first].time_s),bar.top+44,
+                    x_at_time(app.pose->frames[r.last].time_s)+1,bar.top+48},theme::amber);
+            }
             for(const auto& correction:app.manual_corrections) {
                 if(correction.frame_weights.empty() ||
                    correction.keyframe_frame_index>=app.pose->frames.size()) continue;
@@ -2633,13 +3893,24 @@ void draw_timeline_panel(HDC dc,RECT area) {
                 const int key_x=x_at_time(app.pose->frames[keyframe].time_s);
                 const int key_y=bar.top+7;
                 const bool is_current_keyframe=pose_frame()==keyframe;
+                const bool is_selected_keyframe=keyframe_is_selected(keyframe);
                 HBRUSH key_brush=CreateSolidBrush(
-                    is_current_keyframe?theme::green:theme::violet);
+                    is_current_keyframe?theme::green:
+                    is_selected_keyframe?theme::amber:theme::violet);
                 auto old_brush=SelectObject(dc,key_brush);
                 POINT diamond[]={{key_x,key_y-5},{key_x+5,key_y},
                                  {key_x,key_y+5},{key_x-5,key_y}};
                 Polygon(dc,diamond,4);
                 SelectObject(dc,old_brush);DeleteObject(key_brush);
+            }
+        }
+        if(app.motion) {
+            for(const auto frame:app.selected_export_frames.frames()) {
+                if(frame>=app.motion->motion.frame_count)continue;
+                const int x=x_at_time(app.motion->motion.time_s[frame]);
+                const int y=bar.top+31;
+                fill(dc,{x-3,y-3,x+4,y+4},theme::green);
+                stroke(dc,{x,bar.top+23},{x,bar.bottom-12},theme::green,1);
             }
         }
         if(const auto selected=selected_range()) {
@@ -2667,35 +3938,7 @@ void paint(HWND window) {
     HDC dc=CreateCompatibleDC(paint_dc);
     HBITMAP buffer=CreateCompatibleBitmap(paint_dc,client.right,client.bottom);
     auto old_bitmap=SelectObject(dc,buffer);
-    fill(dc,client,theme::background);
-    fill(dc,{0,0,client.right,kHeader},theme::header);
-    fill(dc,{0,0,client.right,3},theme::accent_soft);
-    fill(dc,{18,21,22,45},theme::accent);
-    text(dc,L"AniMocap Fusion",{34,7,216,kHeader-7},theme::text,app.title_font);
-    stroke(dc,{0,kHeader-1},{client.right,kHeader-1},theme::border_soft);
-    draw_steps(dc,{0,kHeader,client.right,kHeader+kSteps});
-    RECT scope{0,kHeader+kSteps,client.right,kHeader+kSteps+kScopeBar};
-    fill(dc,scope,theme::surface);
-    stroke(dc,{0,scope.top},{client.right,scope.top},theme::border_soft);
-    stroke(dc,{0,scope.bottom-1},{client.right,scope.bottom-1},theme::border_soft);
-    text(dc,app.multiview_mode?L"多视角范围":L"人物范围",{20,scope.top,112,scope.bottom},
-         theme::text,app.section_font);
-    std::wstring multiview_scope=L"多视角分别识别，再联合恢复遮挡与深度";
-    if(has_multiview_review()) {
-        const auto& label=app.multiview_view_labels[app.multiview_review_view];
-        multiview_scope=L"同步检查："+(label.empty()
-            ?L"view "+std::to_wstring(app.multiview_review_view+1):label)+
-            (app.multiview_review_view==multiview_reference_view()
-                ?L" · 高置信度参考平面已锁定"
-                :L" · 只读辅助视角");
-    }
-    text(dc,app.multiview_mode
-        ? multiview_scope
-        : app.auto_person_frame
-            ? L"仅识别人体骨架，不包含翅膀、武器、宠物和 UI"
-            : app.has_person_frame?L"使用手动人物框":L"使用完整视频画面",
-        {548,scope.top,workspace_split()-12,scope.bottom},
-        theme::text_muted,app.small_font);
+    draw_workspace_shell(dc,client);
     if(app.multiview_mode&&(!app.pose&&!app.motion||app.multiview_overview))
         draw_multiview_preview(dc,video_area());
     else
@@ -2703,7 +3946,6 @@ void paint(HWND window) {
     draw_motion(dc,motion_area());
     draw_issues(dc,issues_area());
     draw_timeline_panel(dc,timeline_area());
-    stroke(dc,{0,client.bottom-48},{client.right,client.bottom-48},theme::border_soft);
     BitBlt(paint_dc,0,0,client.right,client.bottom,dc,0,0,SRCCOPY);
     SelectObject(dc,old_bitmap);DeleteObject(buffer);DeleteDC(dc);
     EndPaint(window,&ps);
@@ -2718,14 +3960,18 @@ void draw_owner_button(const DRAWITEMSTRUCT* item) {
     const bool selected=(id==kAutoFrame&&app.auto_person_frame)||
                         (id==kPersonFrame&&app.manual_person_frame)||
                         (id==kVlmToggle&&app.vlm_enabled)||
+                        (id==kAppearanceToggle&&app.appearance_assist_enabled)||
                         (id==kLoopRange&&app.loop_range)||
-                        (id==kCalibrate&&app.calibrating);
+                        (id==kCalibrate&&app.calibrating)||
+                        (id==kSelectExportFrames&&app.selecting_export_frames)||
+                        (id==kReviewCompare&&app.review_compare);
     COLORREF background=primary?theme::accent_strong:
         selected?theme::accent_dark:theme::surface_raised;
     COLORREF border=primary?theme::accent:selected?theme::accent:theme::border;
     if(pressed)background=primary?RGB(8,103,164):theme::surface_hover;
     else if(hot&&!disabled)background=primary?RGB(28,155,211):theme::surface_hover;
     if(disabled){background=RGB(14,21,29);border=theme::border_soft;}
+    fill(item->hDC,rect,theme::surface);
     rounded_box(item->hDC,rect,background,border,8);
     wchar_t label[128]{};
     GetWindowTextW(item->hwndItem,label,128);
@@ -2774,23 +4020,50 @@ HWND button(HWND parent,int id,const wchar_t* label) {
 }
 void layout(HWND window) {
     RECT client{};GetClientRect(window,&client);
-    int header_x=224;
-    for(int id:{kImport,kMultiview,kLoad,kSaveMotion,kExportBvh,kExportVrma,kSetup,kVlmSetup}) {
-        const int width=id==kMultiview?100:id==kVlmSetup?112:
-            id==kExportVrma?96:(id==kExportBvh||id==kSetup)?92:84;
-        MoveWindow(GetDlgItem(window,id),header_x,13,width,40,TRUE);
-        header_x+=width+((id==kMultiview||id==kSaveMotion||id==kExportVrma)?14:6);
-    }
-    MoveWindow(GetDlgItem(window,kVlmToggle),client.right-218,13,202,40,TRUE);
-    const int scope_y=kHeader+kSteps+9;
-    MoveWindow(GetDlgItem(window,kAutoFrame),112,scope_y,94,38,TRUE);
-    MoveWindow(GetDlgItem(window,kPersonFrame),212,scope_y,94,38,TRUE);
-    MoveWindow(GetDlgItem(window,kResetFrame),312,scope_y,74,38,TRUE);
-    MoveWindow(GetDlgItem(window,kCharacterProfile),392,scope_y,142,38,TRUE);
+    const int asset_left=kRailWidth;
+    const int asset_top=kHeader;
+    MoveWindow(GetDlgItem(window,kImport),asset_left+12,asset_top+84,212,34,TRUE);
+    MoveWindow(GetDlgItem(window,kMultiview),asset_left+12,asset_top+124,104,34,TRUE);
+    MoveWindow(GetDlgItem(window,kLoad),asset_left+120,asset_top+124,104,34,TRUE);
+    MoveWindow(GetDlgItem(window,kAutoFrame),asset_left+12,asset_top+286,70,34,TRUE);
+    MoveWindow(GetDlgItem(window,kPersonFrame),asset_left+86,asset_top+286,70,34,TRUE);
+    MoveWindow(GetDlgItem(window,kResetFrame),asset_left+160,asset_top+286,64,34,TRUE);
+    MoveWindow(GetDlgItem(window,kCharacterProfile),asset_left+12,asset_top+328,104,34,TRUE);
+    MoveWindow(GetDlgItem(window,kAppearanceReference),asset_left+120,asset_top+328,104,34,TRUE);
+    MoveWindow(GetDlgItem(window,kAppearanceToggle),asset_left+12,asset_top+368,104,34,TRUE);
+    MoveWindow(GetDlgItem(window,kSetup),asset_left+120,asset_top+368,104,34,TRUE);
+    MoveWindow(GetDlgItem(window,kVlmSetup),asset_left+12,asset_top+408,212,34,TRUE);
+    MoveWindow(GetDlgItem(window,kExpertInterval),asset_left+12,asset_top+448,212,34,TRUE);
+
+    int header_right=client.right-12;
+    const int analyze_width=142;
+    MoveWindow(GetDlgItem(window,kAnalyze),header_right-analyze_width,9,analyze_width,38,TRUE);
+    header_right-=analyze_width+8;
+    const int vlm_width=174;
+    MoveWindow(GetDlgItem(window,kVlmToggle),header_right-vlm_width,9,vlm_width,38,TRUE);
+    header_right-=vlm_width+8;
+    const int vrma_width=90;
+    MoveWindow(GetDlgItem(window,kExportVrma),header_right-vrma_width,9,vrma_width,38,TRUE);
+    header_right-=vrma_width+8;
+    const int bvh_width=84;
+    MoveWindow(GetDlgItem(window,kExportBvh),header_right-bvh_width,9,bvh_width,38,TRUE);
+    header_right-=bvh_width+8;
+    const int save_width=88;
+    MoveWindow(GetDlgItem(window,kSaveMotion),header_right-save_width,9,save_width,38,TRUE);
+
     RECT issues=issues_area();
-    MoveWindow(GetDlgItem(window,kUndoCorrection),issues.right-302,issues.top+6,86,32,TRUE);
-    MoveWindow(GetDlgItem(window,kRedoCorrection),issues.right-208,issues.top+6,86,32,TRUE);
-    MoveWindow(GetDlgItem(window,kCalibrate),issues.right-114,issues.top+6,98,32,TRUE);
+    const auto review=motion_area();
+    const int cell=(review.right-review.left-32)/3;
+    MoveWindow(GetDlgItem(window,kReviewJoint),review.left+12,review.top+36,cell*2+4,340,TRUE);
+    MoveWindow(GetDlgItem(window,kReviewOpen),review.left+20+cell*2,review.top+36,cell,28,TRUE);
+    const int review_buttons[]{kReviewLock,kReviewWeight,kReviewExclude,kReviewClear,kReviewRebuild,kReviewCompare};
+    for(int i=0;i<6;++i)MoveWindow(GetDlgItem(window,review_buttons[i]),
+        review.left+12+(cell+4)*(i%3),review.top+70+(i/3)*32,cell,28,TRUE);
+    MoveWindow(GetDlgItem(window,kReviewFront),review.right-122,review.top+6,52,24,TRUE);
+    MoveWindow(GetDlgItem(window,kReviewSide),review.right-66,review.top+6,52,24,TRUE);
+    MoveWindow(GetDlgItem(window,kUndoCorrection),issues.right-246,issues.top+6,72,32,TRUE);
+    MoveWindow(GetDlgItem(window,kRedoCorrection),issues.right-168,issues.top+6,72,32,TRUE);
+    MoveWindow(GetDlgItem(window,kCalibrate),issues.right-90,issues.top+6,82,32,TRUE);
     RECT timeline=timeline_area();
     MoveWindow(app.play,timeline.left+8,timeline.top+6,82,34,TRUE);
     MoveWindow(GetDlgItem(window,kRangeStart),timeline.left+96,timeline.top+6,88,34,TRUE);
@@ -2798,10 +4071,18 @@ void layout(HWND window) {
     MoveWindow(GetDlgItem(window,kRangeClear),timeline.left+284,timeline.top+6,88,34,TRUE);
     MoveWindow(GetDlgItem(window,kLoopRange),timeline.left+378,timeline.top+6,124,34,TRUE);
     MoveWindow(GetDlgItem(window,kDeleteKeyframe),timeline.left+508,timeline.top+6,112,34,TRUE);
+    for(const int hidden:{kSelectAllKeyframes,kClearKeyframeSelection,kSmoothKeyframes,
+                          kTimelineMode,kCurvePreset})
+        ShowWindow(GetDlgItem(window,hidden),SW_HIDE);
+    MoveWindow(GetDlgItem(window,kSelectExportFrames),timeline.left+626,timeline.top+6,130,34,TRUE);
+    MoveWindow(GetDlgItem(window,kSelectAuthoredExportFrames),timeline.left+762,timeline.top+6,154,34,TRUE);
+    MoveWindow(GetDlgItem(window,kClearExportFrames),timeline.left+922,timeline.top+6,96,34,TRUE);
+    MoveWindow(GetDlgItem(window,kExportBlenderSelected),timeline.left+1024,timeline.top+6,240,34,TRUE);
+    update_timeline_labels();
     ShowWindow(app.timeline,SW_HIDE);
-    MoveWindow(GetDlgItem(window,kAnalyze),client.right-210,client.bottom-42,194,36,TRUE);
-    MoveWindow(app.progress,client.right-210,client.bottom-52,194,6,TRUE);
-    MoveWindow(app.status,20,client.bottom-42,std::max<LONG>(180,client.right-250),34,TRUE);
+    MoveWindow(app.progress,client.right-194,client.bottom-kFooterHeight+13,178,6,TRUE);
+    MoveWindow(app.status,16,client.bottom-kFooterHeight+1,
+               std::max<LONG>(180,client.right-226),kFooterHeight-2,TRUE);
     InvalidateRect(window,nullptr,FALSE);
 }
 void set_range_boundary(bool start) {
@@ -3089,6 +4370,10 @@ void move_anchor(POINT mouse) {
     InvalidateRect(app.window,nullptr,FALSE);
 }
 void update_correction_controls() {
+    for(const int id:{kReviewJoint,kReviewLock,kReviewWeight,kReviewExclude,kReviewClear,kReviewRebuild,kReviewCompare})
+        EnableWindow(GetDlgItem(app.window,id),app.pose.has_value()&&!app.analyzing);
+    prune_keyframe_selection();
+    update_blender_selection_controls();
     EnableWindow(GetDlgItem(app.window,kUndoCorrection),!app.correction_undo.empty());
     EnableWindow(GetDlgItem(app.window,kRedoCorrection),!app.correction_redo.empty());
     const auto current=app.pose?pose_frame():0;
@@ -3099,6 +4384,14 @@ void update_correction_controls() {
                 correction.keyframe_frame_index==current;
         });
     EnableWindow(GetDlgItem(app.window,kDeleteKeyframe),has_current_key);
+    const auto available=authored_keyframe_frames();
+    SetWindowTextW(GetDlgItem(app.window,kSelectAllKeyframes),
+        all_keyframes_selected()?L"全部已选":L"全选关键帧");
+    EnableWindow(GetDlgItem(app.window,kSelectAllKeyframes),!available.empty());
+    EnableWindow(GetDlgItem(app.window,kClearKeyframeSelection),
+        !app.selected_keyframes.empty());
+    EnableWindow(GetDlgItem(app.window,kSmoothKeyframes),
+        !app.selected_keyframes.empty());
 }
 void rebuild_corrected_motion() {
     auto corrected=animocap::reconstruct_canonical_motion(
@@ -3106,13 +4399,273 @@ void rebuild_corrected_motion() {
     if(app.motion&&!app.motion->cameras.empty())corrected.cameras=app.motion->cameras;
     app.motion=std::move(corrected);
 }
+void rebuild_corrected_pose() {
+    const auto* refined=app.profile_refined_pose
+        ?&*app.profile_refined_pose
+        :(app.pose_baseline?&*app.pose_baseline:nullptr);
+    if(!refined) return;
+    auto corrected=animocap::apply_manual_pose_corrections(
+        *refined,app.manual_corrections);
+    if(!app.smoothed_keyframes.empty()) {
+        const auto authored=authored_keyframe_frames();
+        const auto smoothing=animocap::smooth_pose_around_keyframes(
+            corrected,app.smoothed_keyframes);
+        auto smoothed=smoothing.sequence;
+        // Every authored keyframe remains an exact anchor, including keys
+        // that were not selected for this pass.  This makes later manual edits
+        // compose safely with an earlier local smoothing operation.
+        for(const auto frame:authored) {
+            if(frame<smoothed.frames.size())
+                smoothed.frames[frame]=corrected.frames[frame];
+        }
+        corrected=std::move(smoothed);
+    }
+    auto reviewed=animocap::rebuild_reviewed_pose(corrected,app.review);
+    auto rebuilt_motion=animocap::reconstruct_canonical_motion(reviewed.sequence,
+        app.character_profile?&app.character_profile->skeleton:nullptr);
+    if(app.motion&&!app.motion->cameras.empty())rebuilt_motion.cameras=app.motion->cameras;
+    app.review_base=corrected;
+    app.review_inferred=std::move(reviewed.inferred);
+    app.pose=std::move(reviewed.sequence);
+    app.motion=std::move(rebuilt_motion);
+}
+void rebuild_correction_curve(std::size_t index,std::size_t radius) {
+    if(!app.pose||index>=app.manual_corrections.size())return;
+    auto& correction=app.manual_corrections[index];
+    if(correction.frame_weights.empty()||
+       correction.keyframe_frame_index>=app.pose->frames.size())return;
+    correction.frame_weights=editor_curve_weights(
+        app.pose->frames.size(),correction.keyframe_frame_index,radius,app.curve_preset);
+    rebuild_corrected_pose();
+}
+void apply_curve_preset() {
+    if(!app.pose)return;
+    std::vector<std::size_t> targets;
+    const auto selected=app.selected_keyframes;
+    if(!selected.empty()) {
+        for(std::size_t index=0;index<app.manual_corrections.size();++index) {
+            const auto& correction=app.manual_corrections[index];
+            if(!correction.frame_weights.empty()&&contains_keyframe(
+                selected,correction.keyframe_frame_index))targets.push_back(index);
+        }
+    } else if(const auto active=active_curve_correction_index()) {
+        targets.push_back(*active);
+    }
+    if(targets.empty()) {
+        set_status(curve_preset_label(app.curve_preset)+L" · 将用于下一次关键帧拖动");
+        update_timeline_labels();
+        InvalidateRect(app.window,nullptr,FALSE);
+        return;
+    }
+    const auto before_state=current_correction_state();
+    const auto before_pose=*app.pose;
+    try {
+        for(const auto index:targets)
+            rebuild_correction_curve(index,correction_curve_radius(
+                app.manual_corrections[index]));
+        push_correction_history(app.correction_undo,before_state);
+        app.correction_redo.clear();
+        app.motion_dirty=true;
+        update_correction_controls();
+        set_status(curve_preset_label(app.curve_preset)+L" · 已应用到 "+
+            std::to_wstring(targets.size())+L" 条关键帧曲线 · 尚未保存");
+    } catch(const std::exception& error) {
+        app.manual_corrections=before_state.corrections;
+        app.smoothed_keyframes=before_state.smoothed_keyframes;
+        app.review=before_state.review;
+        app.pose=before_pose;
+        MessageBoxW(app.window,widen(error.what()).c_str(),L"曲线预设应用失败",MB_ICONERROR);
+    }
+    InvalidateRect(app.window,nullptr,FALSE);
+}
+void cycle_curve_preset() {
+    const auto next=(static_cast<int>(app.curve_preset)+1)%5;
+    app.curve_preset=static_cast<CurvePreset>(next);
+    update_timeline_labels();
+    apply_curve_preset();
+}
+void toggle_timeline_mode() {
+    app.timeline_mode=app.timeline_mode==TimelineMode::DopeSheet
+        ?TimelineMode::CurveEditor:TimelineMode::DopeSheet;
+    update_timeline_labels();
+    set_status(app.timeline_mode==TimelineMode::CurveEditor
+        ?L"曲线编辑器 · 拖动底部影响手柄调整曲线范围，点击菱形选择关键帧"
+        :L"关键帧轨道 · 单击选择，Ctrl+点击多选；选中后可按中心平滑");
+    InvalidateRect(app.window,nullptr,FALSE);
+}
+void begin_curve_handle_drag(POINT point) {
+    const auto handle=curve_handle_from_point(point);
+    if(!handle)return;
+    const auto active=active_curve_correction_index();
+    if(!active)return;
+    app.active_curve_correction=static_cast<int>(*active);
+    app.dragging_curve_handle=true;
+    app.curve_handle_side=handle->first;
+    app.curve_drag_changed=false;
+    app.curve_drag_before_state=current_correction_state();
+    if(app.pose)app.curve_drag_before_pose=*app.pose;
+    SetCapture(app.window);
+}
+void move_curve_handle(POINT point) {
+    if(!app.dragging_curve_handle||!app.pose)return;
+    const auto active=active_curve_correction_index();
+    if(!active||*active>=app.manual_corrections.size())return;
+    const auto& correction=app.manual_corrections[*active];
+    if(correction.frame_weights.empty()||
+       correction.keyframe_frame_index>=app.pose->frames.size())return;
+    const RECT graph=curve_graph_area();
+    const double normalized=std::clamp(
+        static_cast<double>(point.x-graph.left)/std::max<LONG>(1,graph.right-graph.left),0.0,1.0);
+    const auto range=timeline_range();
+    std::size_t candidate=0;
+    if(range&&app.pose->frames.size()>1) {
+        const double time=range->start+normalized*(range->end-range->start);
+        auto found=std::lower_bound(app.pose->frames.begin(),app.pose->frames.end(),time,
+            [](const auto& frame,double target){return frame.time_s<target;});
+        candidate=found==app.pose->frames.end()?app.pose->frames.size()-1:
+            static_cast<std::size_t>(found-app.pose->frames.begin());
+    } else {
+        candidate=static_cast<std::size_t>(std::lround(
+            normalized*static_cast<double>(app.pose->frames.size()-1)));
+    }
+    const auto keyframe=correction.keyframe_frame_index;
+    std::size_t radius=1;
+    if(app.curve_handle_side<0) {
+        radius=keyframe>candidate?keyframe-candidate:1;
+    } else {
+        radius=candidate>keyframe?candidate-keyframe:1;
+    }
+    const auto previous_radius=correction_curve_radius(correction);
+    if(radius==previous_radius)return;
+    rebuild_correction_curve(*active,radius);
+    app.curve_drag_changed=true;
+    InvalidateRect(app.window,nullptr,FALSE);
+}
+void finish_curve_handle_drag() {
+    if(!app.dragging_curve_handle)return;
+    app.dragging_curve_handle=false;
+    app.curve_handle_side=0;
+    ReleaseCapture();
+    if(!app.curve_drag_before_state)return;
+    auto before=std::move(*app.curve_drag_before_state);
+    app.curve_drag_before_state.reset();
+    app.curve_drag_before_pose.reset();
+    if(app.curve_drag_changed) {
+        push_correction_history(app.correction_undo,std::move(before));
+        app.correction_redo.clear();
+        app.motion_dirty=true;
+        update_correction_controls();
+        set_status(L"关键帧曲线影响范围已调整 · 尚未保存");
+    }
+    app.curve_drag_changed=false;
+    InvalidateRect(app.window,nullptr,FALSE);
+}
 void push_correction_history(
-    std::vector<ManualCorrectionState>& history,
-    ManualCorrectionState value
+    std::vector<CorrectionEditState>& history,
+    CorrectionEditState value
 ) {
     constexpr std::size_t kMaximumCorrectionHistory=12;
     if(history.size()==kMaximumCorrectionHistory)history.erase(history.begin());
     history.push_back(std::move(value));
+}
+CorrectionEditState current_correction_state() {
+    return {app.manual_corrections,app.smoothed_keyframes,app.review};
+}
+void toggle_keyframe_selection(std::size_t frame) {
+    const auto available=authored_keyframe_frames();
+    if(!contains_keyframe(available,frame)) return;
+    for(std::size_t index=0;index<app.manual_corrections.size();++index) {
+        if(!app.manual_corrections[index].frame_weights.empty()&&
+           app.manual_corrections[index].keyframe_frame_index==frame) {
+            app.active_curve_correction=static_cast<int>(index);
+            break;
+        }
+    }
+    const auto found=std::find(app.selected_keyframes.begin(),
+        app.selected_keyframes.end(),frame);
+    if(found==app.selected_keyframes.end()) {
+        app.selected_keyframes.push_back(frame);
+        set_status(L"已选关键帧 "+std::to_wstring(frame)+
+            L" · Ctrl+点击继续多选，点击“平滑选中键”应用");
+    } else {
+        app.selected_keyframes.erase(found);
+        set_status(L"已取消选择关键帧 "+std::to_wstring(frame));
+    }
+    std::sort(app.selected_keyframes.begin(),app.selected_keyframes.end());
+    update_correction_controls();
+    InvalidateRect(app.window,nullptr,FALSE);
+}
+void select_all_keyframes() {
+    app.selected_keyframes=authored_keyframe_frames();
+    if(app.selected_keyframes.empty()) {
+        set_status(L"当前没有可选择的手动关键帧");
+    } else {
+        set_status(L"已选中全部 "+std::to_wstring(app.selected_keyframes.size())+
+            L" 个关键帧 · 点击“平滑选中键”应用");
+    }
+    update_correction_controls();
+    InvalidateRect(app.window,nullptr,FALSE);
+}
+void clear_keyframe_selection() {
+    app.selected_keyframes.clear();
+    set_status(L"已清除关键帧选择 · 已应用的平滑保持不变");
+    update_correction_controls();
+    InvalidateRect(app.window,nullptr,FALSE);
+}
+void smooth_selected_keyframes() {
+    if(!app.pose) return;
+    prune_keyframe_selection();
+    if(app.selected_keyframes.empty()) {
+        set_status(L"请先用 Ctrl+点击关键帧，或点击“全选关键帧”");
+        return;
+    }
+    std::vector<std::size_t> combined=app.smoothed_keyframes;
+    combined.insert(combined.end(),app.selected_keyframes.begin(),
+                    app.selected_keyframes.end());
+    std::sort(combined.begin(),combined.end());
+    combined.erase(std::unique(combined.begin(),combined.end()),combined.end());
+    if(combined==app.smoothed_keyframes) {
+        set_status(L"选中的关键帧已经应用过平滑");
+        return;
+    }
+    const auto before_state=current_correction_state();
+    const auto before_pose=*app.pose;
+    const double jitter_before=animocap::pose_sequence_jitter_metric(before_pose);
+    try {
+        app.smoothed_keyframes=std::move(combined);
+        rebuild_corrected_pose();
+        const double jitter_after=animocap::pose_sequence_jitter_metric(*app.pose);
+        std::size_t changed_samples=0;
+        for(std::size_t frame=0;frame<before_pose.frames.size();++frame) {
+            for(std::size_t joint=0;joint<before_pose.frames[frame].joints.size();++joint) {
+                const auto& before=before_pose.frames[frame].joints[joint];
+                const auto& after=app.pose->frames[frame].joints[joint];
+                if(before.position_m!=after.position_m||before.image_xy!=after.image_xy)
+                    ++changed_samples;
+            }
+        }
+        push_correction_history(app.correction_undo,before_state);
+        app.correction_redo.clear();
+        app.motion_dirty=true;
+        EnableWindow(GetDlgItem(app.window,kSaveMotion),TRUE);
+        EnableWindow(GetDlgItem(app.window,kExportBvh),TRUE);
+        EnableWindow(GetDlgItem(app.window,kExportVrma),TRUE);
+        update_correction_controls();
+        const int reduction=jitter_before>0.0
+            ?static_cast<int>(std::lround(std::clamp(
+                1.0-jitter_after/jitter_before,0.0,1.0)*100.0)):0;
+        set_status(L"已按 "+std::to_wstring(app.selected_keyframes.size())+
+            L" 个关键帧为中心平滑 · 影响 "+std::to_wstring(changed_samples)+
+            L" 个样本 · 抖动指标 -"+std::to_wstring(reduction)+L"% · 尚未保存");
+    } catch(const std::exception& error) {
+        app.manual_corrections=before_state.corrections;
+        app.smoothed_keyframes=before_state.smoothed_keyframes;
+        app.review=before_state.review;
+        app.pose=before_pose;
+        set_status(L"关键帧平滑失败 · 已恢复平滑前状态");
+        MessageBoxW(app.window,widen(error.what()).c_str(),L"关键帧平滑失败",MB_ICONERROR);
+    }
+    InvalidateRect(app.window,nullptr,FALSE);
 }
 void finish_anchor_drag() {
     if (app.dragging_anchor<0) return;
@@ -3126,21 +4679,25 @@ void finish_anchor_drag() {
         app.pose=std::move(before);
         return;
     }
-    const auto before_corrections=app.manual_corrections;
+    const auto before_state=current_correction_state();
     try {
         auto skeleton=animocap::make_default_skeleton();
         const auto head=animocap::bone_index(skeleton,animocap::BoneSemantic::Head);
         const auto left_foot=animocap::bone_index(skeleton,animocap::BoneSemantic::LeftFoot);
         const auto right_foot=animocap::bone_index(skeleton,animocap::BoneSemantic::RightFoot);
         const auto keyframe_frame=pose_frame();
+        for(auto& mark:app.review.marks)
+            if(mark.frame==keyframe_frame&&mark.joint==selected&&mark.trust!=animocap::ReviewTrust::Excluded)
+                mark.target=app.pose->frames[keyframe_frame].joints[selected];
         animocap::ManualPoseCorrection correction;
         correction.joint_index=selected;
         correction.image_delta={app.anchor_drag_delta_u,app.anchor_drag_delta_v};
         correction.keyframe_frame_index=keyframe_frame;
         const auto influence_radius=std::max<std::size_t>(4,
             static_cast<std::size_t>(std::lround(std::max(1.0,before.fps)*0.25)));
-        correction.frame_weights=animocap::make_bounded_keyframe_curve_weights(
-            before.frames.size(),correction.keyframe_frame_index,influence_radius);
+        correction.frame_weights=editor_curve_weights(
+            before.frames.size(),correction.keyframe_frame_index,influence_radius,
+            app.curve_preset);
         correction.position_deltas_m.reserve(before.frames.size());
         for(const auto& frame:before.frames) {
             const auto head_xy=frame.joints[head].image_xy;
@@ -3158,13 +4715,10 @@ void finish_anchor_drag() {
             });
         }
         app.manual_corrections.push_back(std::move(correction));
-        const auto* refined=app.profile_refined_pose
-            ?&*app.profile_refined_pose
-            :(app.pose_baseline?&*app.pose_baseline:&before);
-        app.pose=animocap::apply_manual_pose_corrections(
-            *refined,app.manual_corrections);
-        rebuild_corrected_motion();
-        push_correction_history(app.correction_undo,before_corrections);
+        app.active_curve_correction=static_cast<int>(app.manual_corrections.size()-1);
+        app.selected_keyframes={keyframe_frame};
+        rebuild_corrected_pose();
+        push_correction_history(app.correction_undo,before_state);
         app.correction_redo.clear();
         app.motion_dirty=true;
         EnableWindow(GetDlgItem(app.window,kSaveMotion),TRUE);
@@ -3174,7 +4728,9 @@ void finish_anchor_drag() {
         set_status(L"关键帧 "+std::to_wstring(keyframe_frame)+
             L" 已创建 · 三次曲线有界传播 · 尚未保存");
     } catch (const std::exception& error) {
-        app.manual_corrections=before_corrections;
+        app.manual_corrections=before_state.corrections;
+        app.smoothed_keyframes=before_state.smoothed_keyframes;
+        app.review=before_state.review;
         app.pose=std::move(before);
         set_status(L"锚点修正失败 · 已恢复拖动前状态");
         MessageBoxW(app.window,widen(error.what()).c_str(),L"校准失败",MB_ICONERROR);
@@ -3184,7 +4740,8 @@ void finish_anchor_drag() {
 void delete_current_keyframes() {
     if(!app.pose)return;
     const auto frame=pose_frame();
-    const auto before=app.manual_corrections;
+    const auto before_state=current_correction_state();
+    const auto before_pose=*app.pose;
     auto kept=app.manual_corrections;
     kept.erase(std::remove_if(kept.begin(),kept.end(),[&](const auto& correction) {
         return !correction.frame_weights.empty()&&
@@ -3194,21 +4751,28 @@ void delete_current_keyframes() {
         set_status(L"当前帧没有手动关键帧");
         return;
     }
+    const auto before_selection=app.selected_keyframes;
     try {
-        const auto* refined=app.profile_refined_pose
-            ?&*app.profile_refined_pose
-            :(app.pose_baseline?&*app.pose_baseline:&*app.pose);
-        auto corrected=animocap::apply_manual_pose_corrections(*refined,kept);
-        push_correction_history(app.correction_undo,before);
+        push_correction_history(app.correction_undo,before_state);
         app.correction_redo.clear();
         app.manual_corrections=std::move(kept);
-        app.pose=std::move(corrected);
-        rebuild_corrected_motion();
+        app.smoothed_keyframes.erase(std::remove(
+            app.smoothed_keyframes.begin(),app.smoothed_keyframes.end(),frame),
+            app.smoothed_keyframes.end());
+        app.selected_keyframes.erase(std::remove(
+            app.selected_keyframes.begin(),app.selected_keyframes.end(),frame),
+            app.selected_keyframes.end());
+        app.active_curve_correction=-1;
+        rebuild_corrected_pose();
         app.motion_dirty=true;
         update_correction_controls();
         set_status(L"已删除当前帧关键帧 · 尚未保存");
     } catch(const std::exception& error) {
-        app.manual_corrections=before;
+        app.manual_corrections=before_state.corrections;
+        app.smoothed_keyframes=before_state.smoothed_keyframes;
+        app.review=before_state.review;
+        app.selected_keyframes=before_selection;
+        app.pose=before_pose;
         MessageBoxW(app.window,widen(error.what()).c_str(),
             L"删除关键帧失败",MB_ICONERROR);
     }
@@ -3220,23 +4784,22 @@ void restore_correction(bool redo) {
     auto& destination=redo?app.correction_undo:app.correction_redo;
     if(source.empty())return;
     auto current_pose=*app.pose;
-    auto current=app.manual_corrections;
+    auto current=current_correction_state();
     auto target=std::move(source.back());
     source.pop_back();
-    app.manual_corrections=target;
+    app.manual_corrections=target.corrections;
+    app.smoothed_keyframes=target.smoothed_keyframes;
+    app.review=target.review;
     try {
-        const auto* refined=app.profile_refined_pose
-            ?&*app.profile_refined_pose
-            :(app.pose_baseline?&*app.pose_baseline:&current_pose);
-        app.pose=animocap::apply_manual_pose_corrections(
-            *refined,app.manual_corrections);
-        rebuild_corrected_motion();
+        rebuild_corrected_pose();
         push_correction_history(destination,std::move(current));
         app.motion_dirty=true;
         set_status(redo?L"已重做锚点修正 · 尚未保存":L"已撤销锚点修正 · 尚未保存");
     } catch(const std::exception& error) {
         app.pose=std::move(current_pose);
-        app.manual_corrections=std::move(current);
+        app.manual_corrections=std::move(current.corrections);
+        app.smoothed_keyframes=std::move(current.smoothed_keyframes);
+        app.review=std::move(current.review);
         source.push_back(std::move(target));
         MessageBoxW(app.window,widen(error.what()).c_str(),L"恢复修正失败",MB_ICONERROR);
     }
@@ -3262,13 +4825,117 @@ void toggle_calibration() {
     SetWindowTextW(GetDlgItem(app.window,kCalibrate),
         app.calibrating ? L"保存并完成" : L"手动修正");
     if(app.calibrating) {
-        set_status(L"关键帧修正 · 在当前帧拖动关节，偏移用三次曲线在局部有界传播");
+        set_status(L"关键帧修正 · 拖动关节创建关键帧；Ctrl+点击关键帧可多选，Ctrl+A 全选后平滑");
     } else if(saving_on_finish) {
         set_status(L"修正已保存并完成 · "+app.motion_path.wstring());
     } else {
         set_status(L"已退出手动修正 · 当前动作没有未保存改动");
     }
     InvalidateRect(app.window,nullptr,FALSE);
+}
+void review_action(int action) {
+    if(!app.pose||app.analyzing||app.dragging_anchor>=0)return;
+    app.playing=false;
+    const auto before=current_correction_state();
+    const auto old_pose=app.pose;
+    const auto old_motion=app.motion;
+    const auto old_base=app.review_base;
+    const auto old_inferred=app.review_inferred;
+    auto first=pose_frame(),last=first;
+    if(action==kReviewExclude||action==kReviewClear||action==kReviewRebuild) {
+        if(const auto range=selected_range()) {
+            const auto& frames=app.pose->frames;
+            auto a=std::lower_bound(frames.begin(),frames.end(),range->start,[](const auto& f,double t){return f.time_s<t;});
+            auto b=std::upper_bound(frames.begin(),frames.end(),range->end,[](double t,const auto& f){return t<f.time_s;});
+            if(a==frames.end()||a==b){set_status(L"所选区间没有动作帧");return;}
+            first=static_cast<std::size_t>(a-frames.begin());last=static_cast<std::size_t>(b-frames.begin()-1);
+        }
+    }
+    double weight=8;
+    if(action==kReviewWeight) {
+        HMENU menu=CreatePopupMenu();
+        AppendMenuW(menu,MF_STRING,4,L"可信权重 4×");
+        AppendMenuW(menu,MF_STRING,8,L"可信权重 8×");
+        AppendMenuW(menu,MF_STRING,16,L"可信权重 16×");
+        POINT cursor{};GetCursorPos(&cursor);
+        const auto choice=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_NONOTIFY,cursor.x,cursor.y,0,app.window,nullptr);
+        DestroyMenu(menu);if(!choice)return;weight=choice;
+    }
+    try {
+        if(action==kReviewRebuild) {
+            if(first==last)throw animocap::ContractError("Set interval start and end on the timeline; lock this joint at both endpoints");
+            app.review.ranges.push_back({first,last,app.review_joint});
+        } else {
+            // Removing/replacing an endpoint invalidates its previous solve request.
+            if(action==kReviewClear||action==kReviewExclude||action==kReviewWeight)
+                std::erase_if(app.review.ranges,[&](const auto& r){return r.joint==app.review_joint&&
+                    ((r.first>=first&&r.first<=last)||(r.last>=first&&r.last<=last));});
+            std::erase_if(app.review.marks,[&](const auto& m){return m.joint==app.review_joint&&m.frame>=first&&m.frame<=last;});
+            if(action!=kReviewClear)for(auto f=first;f<=last;++f) {
+                const auto trust=action==kReviewExclude?animocap::ReviewTrust::Excluded:
+                    action==kReviewWeight?animocap::ReviewTrust::Weighted:animocap::ReviewTrust::Locked;
+                app.review.marks.push_back({f,app.review_joint,trust,app.pose->frames[f].joints[app.review_joint],weight});
+            }
+        }
+        rebuild_corrected_pose();
+        push_correction_history(app.correction_undo,before);app.correction_redo.clear();
+        app.motion_dirty=true;
+        EnableWindow(GetDlgItem(app.window,kSaveMotion),TRUE);
+        const auto name=joint_display_name(animocap::make_default_skeleton().bones[app.review_joint].semantic);
+        set_status(name+L" · 帧 "+std::to_wstring(first)+L"–"+std::to_wstring(last)+
+            (action==kReviewRebuild?L" · 区间已重建（推算点为橙色）":
+             action==kReviewExclude?L" · 已排除观测；设置两端锁定后重建":
+             action==kReviewClear?L" · 已恢复自动观测":
+             action==kReviewWeight?L" · 已提高可信权重；重建区间时生效":L" · 已锁定当前姿态"));
+    } catch(const std::exception& error) {
+        app.review=before.review;app.pose=old_pose;app.motion=old_motion;
+        app.review_base=old_base;app.review_inferred=old_inferred;
+        MessageBoxW(app.window,widen(error.what()).c_str(),L"局部修复未应用",MB_ICONINFORMATION);
+    }
+    update_correction_controls();InvalidateRect(app.window,nullptr,FALSE);
+}
+void open_review_project() {
+    if(app.analyzing)return;
+    if(app.motion_dirty) {set_status(L"请先保存当前修正，再打开修复工程");return;}
+    const auto path=choose(true,L"打开 .areview 修复工程文件夹");if(!path)return;
+    try {
+        auto [base,review]=animocap::load_pose_review(*path);
+        auto repaired=animocap::rebuild_reviewed_pose(base,review);
+        auto motion=animocap::reconstruct_canonical_motion(repaired.sequence,
+            app.character_profile?&app.character_profile->skeleton:nullptr);
+        std::unique_ptr<animocap::VideoDecoder> decoder;
+        animocap::VideoFrame video;
+        try {
+            if(std::filesystem::is_regular_file(base.source_video)) {
+                decoder=std::make_unique<animocap::VideoDecoder>();decoder->open(base.source_video);
+                decoder->seek(base.frames.front().time_s);
+                if(!decoder->read_frame(video))decoder.reset();
+            }
+        } catch(const std::exception&) {decoder.reset();video={};}
+        app.manual_corrections.clear();app.smoothed_keyframes.clear();app.selected_keyframes.clear();
+        app.correction_undo.clear();app.correction_redo.clear();
+        app.selected_export_frames.clear();app.selecting_export_frames=false;
+        app.pose_baseline=base;app.profile_refined_pose=base;app.review_base=base;
+        app.review=std::move(review);app.review_inferred=std::move(repaired.inferred);
+        app.pose=std::move(repaired.sequence);app.motion=std::move(motion);
+        app.comparison_pose.reset();app.review_compare=false;app.playing=false;
+        app.time_s=base.frames.front().time_s;app.motion_dirty=false;
+        app.multiview_mode=false;app.multiview_overview=false;app.multiview_diagnostics.reset();
+        app.npu_review_issues.clear();app.motion_path.clear();reset_range_selection();
+        // Do not leave an unrelated clip under the restored pose overlay.
+        app.decoder=std::move(decoder);app.video_frame=std::move(video);app.video_path=base.source_video;
+        app.video_eof=false;app.calibrating=false;app.dragging_anchor=-1;
+        app.multiview_poses={};app.multiview_manifest.clear();app.multiview_videos={};
+        app.has_person_frame=false;app.anchor_drag_snapshot.reset();app.active_curve_correction=-1;
+        set_status(app.decoder?L"修复工程已打开 · 原视频、标记和区间已恢复":
+            L"修复工程已打开 · 原视频不可用，仍可检查和重建动作");
+        EnableWindow(GetDlgItem(app.window,kSaveMotion),TRUE);
+        EnableWindow(GetDlgItem(app.window,kExportBvh),TRUE);
+        EnableWindow(GetDlgItem(app.window,kExportVrma),TRUE);
+        update_correction_controls();InvalidateRect(app.window,nullptr,FALSE);
+    } catch(const std::exception& error) {
+        MessageBoxW(app.window,widen(error.what()).c_str(),L"打开修复工程失败",MB_ICONERROR);
+    }
 }
 LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lparam) {
     switch(message) {
@@ -3296,6 +4963,7 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
         EnableWindow(GetDlgItem(window,kExportVrma),FALSE);
         button(window,kSetup,L"推理环境");
         button(window,kVlmSetup,L"配置本地 AI");
+        button(window,kExpertInterval,L"辅助 AI · 每 2 帧 ▾");
         button(window,kVlmToggle,L"本地视觉纠错 · 开");
         button(window,kAutoFrame,L"自动识别");
         button(window,kPersonFrame,L"手动框选");
@@ -3304,7 +4972,38 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
         button(window,kRedoCorrection,L"重做修正");
         button(window,kDeleteKeyframe,L"删除当前键");
         EnableWindow(GetDlgItem(window,kDeleteKeyframe),FALSE);
-        button(window,kCharacterProfile,L"\u5bfc\u5165\u52a8\u753b\u89d2\u8272\u53c2\u8003");
+        button(window,kSelectAllKeyframes,L"全选关键帧");
+        button(window,kClearKeyframeSelection,L"清除选择");
+        button(window,kSmoothKeyframes,L"平滑选中键");
+        {
+            auto combo=CreateWindowExW(0,L"COMBOBOX",L"",WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL,
+                0,0,0,0,window,reinterpret_cast<HMENU>(static_cast<INT_PTR>(kReviewJoint)),GetModuleHandleW(nullptr),nullptr);
+            SendMessageW(combo,WM_SETFONT,reinterpret_cast<WPARAM>(app.font),TRUE);
+            for(const auto& bone:animocap::make_default_skeleton().bones)
+                SendMessageW(combo,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(joint_display_name(bone.semantic).c_str()));
+            SendMessageW(combo,CB_SETCURSEL,app.review_joint,0);
+        }
+        button(window,kReviewLock,L"锁定此帧");button(window,kReviewWeight,L"可信权重 ▾");
+        button(window,kReviewExclude,L"排除此部位");button(window,kReviewClear,L"恢复自动");
+        button(window,kReviewRebuild,L"重建区间");button(window,kReviewCompare,L"原始叠影");
+        button(window,kReviewOpen,L"打开修复");button(window,kReviewFront,L"正面");button(window,kReviewSide,L"侧面");
+        EnableWindow(GetDlgItem(window,kSelectAllKeyframes),FALSE);
+        EnableWindow(GetDlgItem(window,kClearKeyframeSelection),FALSE);
+        EnableWindow(GetDlgItem(window,kSmoothKeyframes),FALSE);
+        button(window,kSelectExportFrames,L"选择导入帧");
+        button(window,kSelectAuthoredExportFrames,L"仅选已建关键帧");
+        button(window,kClearExportFrames,L"清除导入帧");
+        button(window,kExportBlenderSelected,L"导入选中帧到 Blender");
+        EnableWindow(GetDlgItem(window,kSelectExportFrames),FALSE);
+        EnableWindow(GetDlgItem(window,kSelectAuthoredExportFrames),FALSE);
+        EnableWindow(GetDlgItem(window,kClearExportFrames),FALSE);
+        EnableWindow(GetDlgItem(window,kExportBlenderSelected),FALSE);
+        button(window,kCharacterProfile,L"\u9aa8\u67b6\u53c2\u8003 · \u5bfc\u5165");
+        button(window,kAppearanceReference,L"外观参考 · 导入");
+        button(window,kAppearanceToggle,L"外观辅助 · 开");
+        button(window,kTimelineMode,L"曲线编辑器");
+        button(window,kCurvePreset,L"曲线 · 平滑");
+        EnableWindow(GetDlgItem(window,kAppearanceToggle),FALSE);
         EnableWindow(GetDlgItem(window,kUndoCorrection),FALSE);
         EnableWindow(GetDlgItem(window,kRedoCorrection),FALSE);
         button(window,kCalibrate,L"手动修正");
@@ -3327,7 +5026,7 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
             0,0,0,0,window,reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStatus)),
             GetModuleHandleW(nullptr),nullptr);
         SendMessageW(app.status,WM_SETFONT,reinterpret_cast<WPARAM>(app.font),TRUE);
-        layout(window); return 0;
+        layout(window); update_correction_controls(); return 0;
     case WM_GETMINMAXINFO: {
         auto* limits=reinterpret_cast<MINMAXINFO*>(lparam);
         limits->ptMinTrackSize={1320,860};
@@ -3338,14 +5037,50 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
         draw_owner_button(reinterpret_cast<const DRAWITEMSTRUCT*>(lparam));
         return TRUE;
     case WM_COMMAND:
+        if(LOWORD(wparam)==kReviewJoint&&HIWORD(wparam)==CBN_SELCHANGE) {
+            const auto selected=SendMessageW(GetDlgItem(window,kReviewJoint),CB_GETCURSEL,0,0);
+            if(selected>=0)app.review_joint=static_cast<std::size_t>(selected);
+            InvalidateRect(window,nullptr,FALSE);return 0;
+        }
         if(lparam!=0&&HIWORD(wparam)!=BN_CLICKED)return 0;
         switch(LOWORD(wparam)) {
+        case kExpertInterval: {
+            if(app.analyzing)return 0;
+            HMENU menu=CreatePopupMenu();
+            const wchar_t* values[]{L"1",L"2",L"3",L"auto"};
+            const wchar_t* labels[]{L"逐帧 · 对照",L"每 2 帧 · 风险时补算",L"每 3 帧 · 风险时补算",L"自动 · 按运动变化调整"};
+            for(int i=0;i<4;++i)AppendMenuW(menu,MF_STRING|(app.expert_interval==values[i]?MF_CHECKED:0),i+1,labels[i]);
+            RECT button_rect{};GetWindowRect(GetDlgItem(window,kExpertInterval),&button_rect);
+            const auto selected=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_NONOTIFY,
+                button_rect.left,button_rect.bottom,0,window,nullptr);
+            DestroyMenu(menu);
+            if(selected>=1&&selected<=4) {
+                app.expert_interval=values[selected-1];
+                const std::wstring caption=selected==4?L"辅助 AI · 自动 ▾":selected==1?L"辅助 AI · 逐帧 ▾":
+                    L"辅助 AI · 每 "+app.expert_interval+L" 帧 ▾";
+                SetWindowTextW(GetDlgItem(window,kExpertInterval),caption.c_str());
+                set_status(L"已设置下次捕捉的辅助 AI 频率 · 基础动捕和动画仍逐帧 · 风险帧自动加密");
+            }
+            return 0;
+        }
+        case kReviewLock:case kReviewWeight:case kReviewExclude:case kReviewClear:case kReviewRebuild:
+            review_action(LOWORD(wparam));return 0;
+        case kReviewCompare:app.review_compare=!app.review_compare;
+            SetWindowTextW(GetDlgItem(window,kReviewCompare),app.review_compare?L"叠影已开":L"原始叠影");
+            InvalidateRect(window,nullptr,FALSE);return 0;
+        case kReviewOpen:open_review_project();return 0;
+        case kReviewFront:app.yaw=0;app.pitch=0;InvalidateRect(window,nullptr,FALSE);return 0;
+        case kReviewSide:app.yaw=90;app.pitch=0;InvalidateRect(window,nullptr,FALSE);return 0;
         case kImport: import_video(); return 0;
         case kMultiview: import_multiview(); return 0;
         case kLoad: load_motion(); return 0;
         case kSaveMotion: save_motion_copy(); return 0;
         case kExportBvh: export_bvh_file(); return 0;
         case kExportVrma: export_vrma_file(); return 0;
+        case kSelectExportFrames: toggle_export_frame_selection_mode(); return 0;
+        case kSelectAuthoredExportFrames: select_authored_frames_for_blender(); return 0;
+        case kClearExportFrames: clear_blender_frame_selection(); return 0;
+        case kExportBlenderSelected: export_blender_selected_file(); return 0;
         case kSetup: setup_mmpose(); return 0;
         case kVlmSetup: setup_local_vlm(); return 0;
         case kVlmToggle: toggle_local_vlm(); return 0;
@@ -3353,9 +5088,16 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
         case kPersonFrame: begin_person_frame_selection(); return 0;
         case kResetFrame: reset_person_frame(); return 0;
         case kCharacterProfile: import_character_profile(); return 0;
+        case kAppearanceReference: import_appearance_reference(); return 0;
+        case kAppearanceToggle: toggle_appearance_assist(); return 0;
+        case kTimelineMode: toggle_timeline_mode(); return 0;
+        case kCurvePreset: cycle_curve_preset(); return 0;
         case kUndoCorrection: restore_correction(false); return 0;
         case kRedoCorrection: restore_correction(true); return 0;
         case kDeleteKeyframe: delete_current_keyframes(); return 0;
+        case kSelectAllKeyframes: select_all_keyframes(); return 0;
+        case kClearKeyframeSelection: clear_keyframe_selection(); return 0;
+        case kSmoothKeyframes: smooth_selected_keyframes(); return 0;
         case kAnalyze: start_analysis(); return 0;
         case kCalibrate: toggle_calibration(); return 0;
         case kPlay: toggle_play(); return 0;
@@ -3381,6 +5123,11 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
         if(control&&wparam=='Y') { restore_correction(true); return 0; }
         if(control&&wparam=='S') { save_motion_copy(); return 0; }
         if(control&&wparam=='P') { import_character_profile(); return 0; }
+        if(control&&wparam=='A') {
+            if(app.selecting_export_frames)select_authored_frames_for_blender();
+            else select_all_keyframes();
+            return 0;
+        }
         if(!control&&wparam==VK_SPACE) { toggle_play(); return 0; }
         if(!control&&wparam==VK_LEFT) { step_timeline(shift?-10:-1); return 0; }
         if(!control&&wparam==VK_RIGHT) { step_timeline(shift?10:1); return 0; }
@@ -3443,6 +5190,7 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
             }
         } return 0;
     case kAnalysisDone: {
+        EnableWindow(GetDlgItem(window,kExpertInterval),TRUE);
         std::unique_ptr<AnalysisResult> result(reinterpret_cast<AnalysisResult*>(lparam));
         const bool close_after_analysis=app.close_after_analysis;
         app.close_after_analysis=false;
@@ -3459,9 +5207,13 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
         EnableWindow(GetDlgItem(window,kImport),TRUE);
         EnableWindow(GetDlgItem(window,kMultiview),TRUE);
         EnableWindow(GetDlgItem(window,kCharacterProfile),TRUE);
+        EnableWindow(GetDlgItem(window,kAppearanceReference),TRUE);
+        EnableWindow(GetDlgItem(window,kAppearanceToggle),
+            !app.appearance_reference_path.empty());
         EnableWindow(GetDlgItem(window,kExportBvh),app.motion.has_value());
         EnableWindow(GetDlgItem(window,kExportVrma),app.motion.has_value());
         EnableWindow(GetDlgItem(window,kSaveMotion),app.motion.has_value());
+        update_blender_selection_controls();
         if(result->cancelled) {
             set_status(L"动作捕捉已取消 · 中间结果已保留");
         } else if (!result->error.empty()) {
@@ -3480,9 +5232,14 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
                      profile_effect_summary(*app.optimization_diagnostics)).c_str());
             app.anchor_drag_snapshot.reset();
             app.manual_corrections.clear();
+        app.review={}; app.review_inferred.clear(); app.review_base.reset(); app.review_compare=false;
             app.correction_undo.clear(); app.correction_redo.clear();
+            app.selected_keyframes.clear(); app.smoothed_keyframes.clear();
+            app.selected_export_frames.clear(); app.selecting_export_frames=false;
+            app.active_curve_correction=-1;
             update_correction_controls();
             app.motion=std::move(result->motion);
+            update_blender_selection_controls();
             EnableWindow(GetDlgItem(window,kExportBvh),TRUE);
             EnableWindow(GetDlgItem(window,kExportVrma),TRUE);
             EnableWindow(GetDlgItem(window,kSaveMotion),TRUE);
@@ -3557,6 +5314,9 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
                 set_status(L"捕捉完成 · HRNet、光流、本地视觉纠错和时序平滑已应用");
             else
                 set_status(L"捕捉完成 · HRNet、光流和时序平滑已应用");
+            if(app.appearance_assist_enabled&&!app.appearance_reference_path.empty()&&
+               result->warning.empty())
+                append_status(L" · 外观参考已参与低置信度复核");
             bool evidence_calibrated=app.pose&&app.pose->backend.find(
                 "confidence-calibration-evidence-backed")!=std::string::npos;
             for(const auto& per_view:app.multiview_poses)
@@ -3592,12 +5352,22 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
         return 0;
     }
     case WM_CTLCOLORSTATIC:
+        if(reinterpret_cast<HWND>(lparam)==GetDlgItem(window,kReviewJoint)) {
+            auto dc=reinterpret_cast<HDC>(wparam);
+            SetTextColor(dc,theme::text);SetBkColor(dc,theme::surface);
+            return reinterpret_cast<LRESULT>(app.panel_brush);
+        }
         if (reinterpret_cast<HWND>(lparam)==app.status) {
             auto dc=reinterpret_cast<HDC>(wparam);
             SetTextColor(dc,theme::text_muted);
             SetBkColor(dc,theme::background);
             return reinterpret_cast<LRESULT>(app.panel_brush);
         } break;
+    case WM_CTLCOLORLISTBOX: {
+        auto dc=reinterpret_cast<HDC>(wparam);
+        SetTextColor(dc,theme::text);SetBkColor(dc,theme::surface);
+        return reinterpret_cast<LRESULT>(app.panel_brush);
+    }
     case WM_LBUTTONDOWN: {
         POINT point{GET_X_LPARAM(lparam),GET_Y_LPARAM(lparam)};
         const auto video_rect=video_area();
@@ -3613,6 +5383,39 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
         }
         if (begin_person_frame_drag(point)) return 0;
         if (begin_anchor_drag(point)) return 0;
+        if(app.timeline_mode==TimelineMode::CurveEditor&&!app.selecting_export_frames) {
+            begin_curve_handle_drag(point);
+            if(app.dragging_curve_handle)return 0;
+        }
+        const bool control=(GetKeyState(VK_CONTROL)&0x8000)!=0;
+        const bool shift=(GetKeyState(VK_SHIFT)&0x8000)!=0;
+        if(app.selecting_export_frames) {
+            if(const auto time=timeline_time_from_point(point)) {
+                select_blender_frame_at_time(*time,control,shift);
+                return 0;
+            }
+        }
+        const auto keyframe=app.timeline_mode==TimelineMode::CurveEditor
+            ?curve_keyframe_from_point(point):keyframe_from_point(point);
+        if(keyframe) {
+            if(control) {
+                toggle_keyframe_selection(*keyframe);
+            } else {
+                app.selected_keyframes={*keyframe};
+                for(std::size_t index=0;index<app.manual_corrections.size();++index)
+                    if(!app.manual_corrections[index].frame_weights.empty()&&
+                       app.manual_corrections[index].keyframe_frame_index==*keyframe) {
+                        app.active_curve_correction=static_cast<int>(index);break;
+                    }
+                if(app.pose&&*keyframe<app.pose->frames.size()) {
+                    app.time_s=app.pose->frames[*keyframe].time_s;
+                    update_timeline();
+                }
+                update_correction_controls();
+                InvalidateRect(window,nullptr,FALSE);
+            }
+            return 0;
+        }
         if (const auto time=timeline_time_from_point(point)) {
             stop_playback();
             app.scrubbing=true;
@@ -3623,12 +5426,27 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
         }
         RECT motion=motion_area();
         if (PtInRect(&motion,point)) {
+            double nearest=18;
+            std::optional<std::size_t> hit;
+            for(const auto& [p,joint]:app.review_hit_points) {
+                const double distance=std::hypot(static_cast<double>(point.x-p.x),static_cast<double>(point.y-p.y));
+                if(distance<nearest) {nearest=distance;hit=joint;}
+            }
+            if(hit&&!app.analyzing) {
+                app.review_joint=*hit;
+                SendMessageW(GetDlgItem(window,kReviewJoint),CB_SETCURSEL,*hit,0);
+                InvalidateRect(window,nullptr,FALSE);return 0;
+            }
             app.rotating=true; app.last_mouse=point; SetCapture(window);
         } return 0;
     }
     case WM_MOUSEMOVE:
         if (app.drawing_person_frame) {
             move_person_frame({GET_X_LPARAM(lparam),GET_Y_LPARAM(lparam)});
+            return 0;
+        }
+        if(app.dragging_curve_handle) {
+            move_curve_handle({GET_X_LPARAM(lparam),GET_Y_LPARAM(lparam)});
             return 0;
         }
         if (app.scrubbing) {
@@ -3655,6 +5473,7 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
         } return 0;
     case WM_LBUTTONUP:
         if (app.drawing_person_frame) { finish_person_frame(); return 0; }
+        if(app.dragging_curve_handle) { finish_curve_handle_drag(); return 0; }
         if (app.scrubbing) {
             const double time=app.time_s;
             app.scrubbing=false;
@@ -3690,6 +5509,7 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
     case WM_DESTROY:
         KillTimer(window,kTimerPlayback);
         KillTimer(window,kTimerAnalysisProgress);
+        release_human_reference_bitmap();
         if(app.font)DeleteObject(app.font); if(app.small_font)DeleteObject(app.small_font);
         if(app.title_font)DeleteObject(app.title_font); if(app.section_font)DeleteObject(app.section_font);
         if(app.mono_font)DeleteObject(app.mono_font);
@@ -3732,10 +5552,17 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show) {
                 MessageBoxW(window,widen(error.what()).c_str(),
                     L"角色骨架预设加载失败",MB_ICONERROR);
             }
+        } else if(std::wstring_view(arguments[index])==L"--appearance-reference") {
+            app.appearance_reference_path=std::filesystem::path(arguments[++index]);
+            app.appearance_assist_enabled=true;
+            SetWindowTextW(GetDlgItem(window,kAppearanceReference),L"外观参考 · 已载入");
+            EnableWindow(GetDlgItem(window,kAppearanceToggle),TRUE);
         }
     }
     for (int index = 1; arguments && index + 1 < argument_count; ++index) {
         if(std::wstring_view(arguments[index])==L"--character-profile") {
+            ++index;
+        } else if(std::wstring_view(arguments[index])==L"--appearance-reference") {
             ++index;
         } else if (std::wstring_view(arguments[index]) == L"--multiview-folder") {
             load_multiview_folder(std::filesystem::path(arguments[++index]));
@@ -3763,7 +5590,11 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show) {
                 app.profile_refined_pose=app.pose;
                 app.anchor_drag_snapshot.reset();
                 app.manual_corrections.clear();
+        app.review={}; app.review_inferred.clear(); app.review_base.reset(); app.review_compare=false;
                 app.correction_undo.clear(); app.correction_redo.clear();
+                app.selected_keyframes.clear(); app.smoothed_keyframes.clear();
+                app.selected_export_frames.clear(); app.selecting_export_frames=false;
+                app.active_curve_correction=-1;
                 update_correction_controls();
                 set_status(L"\u89c2\u6d4b\u5df2\u52a0\u8f7d \u00b7 " +
                            std::to_wstring(app.pose->frames.size()) + L" \u5e27 \u00b7 \u65f6\u5e8f\u5e73\u6ed1");
@@ -3787,6 +5618,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show) {
                 EnableWindow(GetDlgItem(window,kExportBvh),TRUE);
                 EnableWindow(GetDlgItem(window,kExportVrma),TRUE);
                 EnableWindow(GetDlgItem(window,kSaveMotion),TRUE);
+                update_blender_selection_controls();
                 app.motion_dirty=false;
                 update_timeline();
                 set_status(L"\u52a8\u4f5c\u5df2\u52a0\u8f7d \u00b7 " + std::to_wstring(app.motion->motion.frame_count) + L" \u5e27");

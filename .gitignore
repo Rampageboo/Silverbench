@@ -14,3 +14,6 @@ graphify-out/
 .graphify_python
 .graphify_root
 .graphify_detect.json
+
+# Recreated MMEngine scratch configs
+python/animocap_ml_adapters/_mmengine_temp/

@@ -9,8 +9,12 @@ endif()
 get_filename_component(ANIMOCAP_ROOT "${ANIMOCAP_ROOT}" ABSOLUTE)
 
 add_library(animocap_core_prebuilt STATIC IMPORTED)
+if(NOT DEFINED ANIMOCAP_CORE_LIBRARY)
+    set(ANIMOCAP_CORE_LIBRARY
+        "${ANIMOCAP_ROOT}/build/windows-ninja/animocap_core.lib")
+endif()
 set_target_properties(animocap_core_prebuilt PROPERTIES
-    IMPORTED_LOCATION "${ANIMOCAP_ROOT}/build/windows-ninja/animocap_core.lib"
+    IMPORTED_LOCATION "${ANIMOCAP_CORE_LIBRARY}"
 )
 
 add_executable(multiview_ablation_harness multiview_ablation_harness.cpp)

@@ -35,6 +35,16 @@ except ImportError:  # Script entry point from this directory.
         OpenVinoNpuPoseObserver,
     )
 
+try:
+    from .maxine_vsr import MaxineVsrUpscaler
+except ImportError:  # Script entry point from this directory.
+    from maxine_vsr import MaxineVsrUpscaler  # type: ignore[no-redef]
+
+try:
+    from .expert_schedule import BODY_JOINTS, EXPERT_INTERVALS, ExpertScheduler
+except ImportError:
+    from expert_schedule import BODY_JOINTS, EXPERT_INTERVALS, ExpertScheduler
+
 SCHEMA_VERSION = "1.0.0"
 RTMW_CONFIG = (
     "configs/wholebody_2d_keypoint/rtmpose/cocktail14/"
@@ -205,13 +215,29 @@ def _number(value: Any, label: str) -> float:
     return result
 
 
+def _normalize_raw_confidence(model: str, raw: float) -> float:
+    """Convert model-specific response scales into bounded support.
+
+    RTMW SimCC checkpoints can publish unnormalised response magnitudes well
+    above one. A saturating odds transform keeps their ordering instead of
+    collapsing every response to 1.0. Probability-like experts keep their
+    native scale.
+    """
+    value = max(0.0, float(raw))
+    if not math.isfinite(value):
+        return 0.0
+    if model in {"rtmw", "rtmw-x"} and value > 1.0:
+        return value / (1.0 + value)
+    return min(1.0, value)
+
+
 class _ConfidenceCalibration:
     """Validated, deterministic raw-confidence calibration curves."""
 
     def __init__(
         self,
         curves: dict[str, dict[str, list[tuple[float, float]]]] | None = None,
-        status: str = "identity",
+        status: str = "model-normalized",
         source: Path | None = None,
     ) -> None:
         self.curves = curves or {}
@@ -239,10 +265,10 @@ class _ConfidenceCalibration:
         return None
 
     def calibrate(self, model: str, joint_index: int, raw: float) -> float:
-        raw_value = max(0.0, min(1.0, float(raw)))
+        raw_value = max(0.0, float(raw))
         curve = self._curve(model, joint_index)
         if not curve:
-            return raw_value
+            return _normalize_raw_confidence(model, raw_value)
         if raw_value <= curve[0][0]:
             return curve[0][1]
         if raw_value >= curve[-1][0]:
@@ -295,9 +321,10 @@ def _load_confidence_calibration(path: Path) -> _ConfidenceCalibration:
                 support = _number(
                     point[1], f"confidence calibration support {model}/{joint}"
                 )
-                if not 0.0 <= raw <= 1.0 or not 0.0 <= support <= 1.0:
+                if raw < 0.0 or not 0.0 <= support <= 1.0:
                     raise RuntimeError(
-                        f"confidence calibration values {model}/{joint} must be in [0,1]"
+                        f"confidence calibration raw values must be non-negative and "
+                        f"support values must be in [0,1] for {model}/{joint}"
                     )
                 if raw <= previous_raw:
                     raise RuntimeError(
@@ -353,7 +380,9 @@ def _resolve_confidence_calibration(
             "stage": "confidence_calibration",
             "message": str(error),
         }), flush=True)
-        return _ConfidenceCalibration(status="identity-auto-rejected", source=candidate)
+        return _ConfidenceCalibration(
+            status="model-normalized-auto-rejected", source=candidate
+        )
 
 
 def _roi_diagonal(
@@ -474,7 +503,7 @@ def _fuse_coco_hypotheses(
             point = points[index]
             if not isinstance(point, list) or len(point) < 2:
                 continue
-            raw_score = max(0.0, min(1.0, float(raw_scores[index])))
+            raw_score = max(0.0, float(raw_scores[index]))
             score = calibration.calibrate(model, index, raw_score)
             if score <= 0.0:
                 continue
@@ -580,10 +609,20 @@ def _fuse_coco_hypotheses(
                 / total
                 for axis in range(2)
             ])
-            fused_scores.append(min(
-                1.0,
-                max(float(item["score"]) for item in top) + 0.05 * (len(top) - 1),
-            ))
+            maximum_spread = max(
+                math.dist(left["point"], right["point"])
+                for offset, left in enumerate(top)
+                for right in top[offset + 1:]
+            )
+            agreement = 0.75 + 0.25 * math.exp(
+                -maximum_spread / compatibility_threshold
+            )
+            # Confidence is conservative support, not the most optimistic
+            # expert. The bounded agreement penalty retains failure ordering
+            # without collapsing the low end below downstream operating gates.
+            fused_scores.append(
+                min(float(item["score"]) for item in top) * agreement
+            )
             diagnostics["agreement_joints"] += 1
         diagnostics["fused_joints"] += 1
 
@@ -852,6 +891,7 @@ class _TemporalFusion:
         self.frame_index = 0
         self.mask_provider = mask_provider
         self.mask_provider_error = ""
+        self.tracking_failed = False
 
     def update_roi(self, roi: tuple[int, int, int, int]) -> None:
         if roi == self.roi:
@@ -910,9 +950,11 @@ class _TemporalFusion:
         measured_points: list[list[float]],
         scores: list[float],
     ) -> list[list[float]]:
+        self.tracking_failed = False
         x, y, width, height = self.roi
         crop = frame[y:y + height, x:x + width]
         if crop.size == 0:
+            self.tracking_failed = True
             return measured_points
         gray = self.cv2.cvtColor(crop, self.cv2.COLOR_BGR2GRAY)
         provider_mask = None
@@ -933,6 +975,7 @@ class _TemporalFusion:
         local_measured = measured - self.np.asarray([x, y], dtype=self.np.float32)
         fused = local_measured.copy()
         if self.previous_gray is not None and self.previous_points is not None:
+            self.tracking_failed = True
             tracked, status, errors = self.cv2.calcOpticalFlowPyrLK(
                 self.previous_gray,
                 gray,
@@ -955,6 +998,7 @@ class _TemporalFusion:
                     else self.np.full(len(status), 999.0)
                 )
                 diagonal = math.hypot(width, height)
+                reliable_body_points = 0
                 for index in range(min(len(fused), len(tracked))):
                     tx, ty = tracked[index]
                     inside = 0 <= tx < width and 0 <= ty < height
@@ -978,11 +1022,15 @@ class _TemporalFusion:
                     score = float(scores[index]) if index < len(scores) else 0.0
                     if disagreement > diagonal * 0.12 and score >= 0.45:
                         continue
+                    if index in BODY_JOINTS:
+                        reliable_body_points += 1
                     model_weight = max(0.28, min(0.82, 0.22 + score * 0.72))
                     fused[index] = (
                         local_measured[index] * model_weight
                         + tracked[index] * (1.0 - model_weight)
                     )
+
+                self.tracking_failed = reliable_body_points < math.ceil(len(BODY_JOINTS) * 0.7)
 
         self.previous_gray = gray
         self.previous_points = fused.copy()
@@ -1203,15 +1251,38 @@ def _base_model_name(anime_pose_weights: Path | None) -> str:
     return "character-hrnet" if anime_pose_weights is not None else "hrnet"
 
 
+def _map_crop_points_to_source(
+    points: list[list[float]],
+    offset: tuple[int, int],
+    scale: tuple[float, float],
+) -> list[list[float]]:
+    scale_x = max(float(scale[0]), 1e-9)
+    scale_y = max(float(scale[1]), 1e-9)
+    return [
+        [float(point[0]) / scale_x + offset[0],
+         float(point[1]) / scale_y + offset[1]]
+        for point in points
+    ]
+
+
 def _refine_frame_2d(
     refiner: Any,
     frame: Any,
     roi: tuple[int, int, int, int],
+    frame_index: int,
+    upscaler: MaxineVsrUpscaler | None,
 ) -> tuple[list[list[float]], list[float]] | None:
     x, y, width, height = roi
     crop = frame[y:y + height, x:x + width]
     if crop.size == 0:
         return None
+    scale_x = 1.0
+    scale_y = 1.0
+    if upscaler is not None:
+        original_height, original_width = crop.shape[:2]
+        crop = upscaler.upscale(crop, frame_index, roi)
+        scale_x = crop.shape[1] / max(original_width, 1)
+        scale_y = crop.shape[0] / max(original_height, 1)
     # The top-level video inferencer uses the mutable crop hook, but this
     # helper already passes a cropped ndarray to each independent 2D expert.
     # Disable the hook for the nested call so the ROI is not applied twice.
@@ -1232,10 +1303,9 @@ def _refine_frame_2d(
             keypoints = keypoints[0]
         if scores and isinstance(scores[0], list):
             scores = scores[0]
-        points = [
-            [float(point[0]) + x, float(point[1]) + y]
-            for point in keypoints
-        ]
+        points = _map_crop_points_to_source(
+            keypoints, (x, y), (scale_x, scale_y)
+        )
         return points, [float(score) for score in scores]
     except (RuntimeError, StopIteration, KeyError, TypeError, ValueError):
         return None
@@ -1274,7 +1344,15 @@ class MMPoseSession:
         npu_mode: str = "off",
         npu_model: Path | None = None,
         npu_sample_interval: int = 15,
+        upscale: str = "off",
+        upscale_scale: int = 2,
+        maxine_bridge: Path | None = None,
+        maxine_runtime: Path | None = None,
+        expert_interval: str | None = None,
     ) -> None:
+        if expert_interval is not None and expert_interval not in EXPERT_INTERVALS:
+            raise ValueError("expert interval must be 1, 2, 3 or auto")
+        self.expert_interval = expert_interval
         try:
             import cv2
             import numpy as np
@@ -1289,6 +1367,22 @@ class MMPoseSession:
         self.device = device
         self.quality = quality
         self.segmentation = segmentation
+        if upscale not in ("off", "maxine-vsr"):
+            raise RuntimeError("upscale must be off or maxine-vsr")
+        self.upscale = upscale
+        self.upscaler = (
+            MaxineVsrUpscaler(
+                Path(__file__).resolve().parents[2],
+                cv2,
+                np,
+                scale=upscale_scale,
+                quality_mode=4,
+                bridge_path=maxine_bridge,
+                runtime_path=maxine_runtime,
+            )
+            if upscale == "maxine-vsr"
+            else None
+        )
         self.anime_pose_config, self.anime_pose_weights = _resolve_anime_pose_model(
             anime_pose_config, anime_pose_weights
         )
@@ -1379,6 +1473,8 @@ class MMPoseSession:
         )
 
     def reset_video_state(self) -> None:
+        if self.upscaler is not None:
+            self.upscaler.reset_cache()
         for wrapper in (
             self.inferencer,
             self.high_accuracy_refiner,
@@ -1407,6 +1503,9 @@ class MMPoseSession:
         self.humanart_expert = None
         self.npu_observer = None
         self.sam2_predictor = None
+        if self.upscaler is not None:
+            self.upscaler.close()
+        self.upscaler = None
         gc.collect()
         torch_module = self.sam2_torch or sys.modules.get("torch")
         if torch_module is not None and torch_module.cuda.is_available():
@@ -1415,6 +1514,7 @@ class MMPoseSession:
 
 
 _ACTIVE_CROP_ROI: tuple[int, int, int, int] | None = None
+_ACTIVE_CROP_UPSCALER: MaxineVsrUpscaler | None = None
 
 
 def _set_active_crop(roi: tuple[int, int, int, int] | None) -> None:
@@ -1422,12 +1522,21 @@ def _set_active_crop(roi: tuple[int, int, int, int] | None) -> None:
     _ACTIVE_CROP_ROI = roi
 
 
-def _enable_center_crop(roi: tuple[int, int, int, int] | None = None) -> None:
+def _set_active_upscaler(upscaler: MaxineVsrUpscaler | None) -> None:
+    global _ACTIVE_CROP_UPSCALER
+    _ACTIVE_CROP_UPSCALER = upscaler
+
+
+def _enable_center_crop(
+    roi: tuple[int, int, int, int] | None = None,
+    upscaler: MaxineVsrUpscaler | None = None,
+) -> None:
     """Crop video frames using a mutable user or body-aware ROI."""
     import numpy as np
     from mmpose.apis.inferencers.pose2d_inferencer import Pose2DInferencer
 
     _set_active_crop(roi)
+    _set_active_upscaler(upscaler)
     original = Pose2DInferencer.preprocess_single
     if getattr(original, "_animocap_center_crop", False):
         return
@@ -1446,8 +1555,20 @@ def _enable_center_crop(roi: tuple[int, int, int, int] | None = None) -> None:
                 bottom = max(top + 2, min(height, top + roi_height))
                 self._animocap_crop_offset = (left, top)
                 input_value = input_value[top:bottom, left:right].copy()
+                self._animocap_crop_scale = (1.0, 1.0)
+                if _ACTIVE_CROP_UPSCALER is not None:
+                    original_height, original_width = input_value.shape[:2]
+                    clipped_roi = (left, top, right - left, bottom - top)
+                    input_value = _ACTIVE_CROP_UPSCALER.upscale(
+                        input_value, index, clipped_roi
+                    )
+                    self._animocap_crop_scale = (
+                        input_value.shape[1] / max(original_width, 1),
+                        input_value.shape[0] / max(original_height, 1),
+                    )
             else:
                 self._animocap_crop_offset = (0, 0)
+                self._animocap_crop_scale = (1.0, 1.0)
         return original(self, input_value, index, *args, **kwargs)
 
     preprocess_single._animocap_center_crop = True
@@ -1504,6 +1625,10 @@ def _run_mmpose_with_session(
     fps = float(capture.get(cv2.CAP_PROP_FPS) or 30.0)
     frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
     capture.release()
+    expert_interval = getattr(session, "expert_interval", None)
+    expert_scheduler = ExpertScheduler(expert_interval, quality, fps)
+    schedule_frames: list[dict[str, Any]] = []
+    expert_attempts = {"rtmw": 0, "humanart": 0}
 
     if roi is not None:
         roi_x, roi_y, roi_width, roi_height = roi
@@ -1533,7 +1658,9 @@ def _run_mmpose_with_session(
         bottom = max(top + 2, min(height, roi_y + roi_height))
         effective_roi = (left, top, right - left, bottom - top)
 
-    _enable_center_crop(effective_roi)
+    # With an automatic ROI, let the first base pass find the body without AI;
+    # the body crop then becomes the fixed VSR canvas for all remaining frames.
+    _enable_center_crop(effective_roi, session.upscaler if roi is not None else None)
     flow_capture = cv2.VideoCapture(str(input_path))
     mask_provider = session.mask_provider(input_path)
     sam2_error = session.sam2_error
@@ -1594,6 +1721,11 @@ def _run_mmpose_with_session(
     )
     for frame_index, result in enumerate(generator):
         flow_frame_ok, flow_frame = flow_capture.read()
+        schedule_row: dict[str, Any] = {
+            "frame": frame_index, "time_s": frame_index / fps,
+            "reasons": ["base-2d-unavailable"],
+            "rtmw": "base-2d-unavailable", "humanart": "base-2d-unavailable",
+        }
         predicted = _prediction(result)
         keypoints = predicted.get("keypoints")
         if keypoints is None:
@@ -1627,10 +1759,14 @@ def _run_mmpose_with_session(
                 "_animocap_crop_offset",
                 (0, 0),
             )
-            coco_points = [
-                [point[0] + crop_offset[0], point[1] + crop_offset[1]]
-                for point in coco_points
-            ]
+            crop_scale = getattr(
+                pose3d_inferencer.pose2d_model,
+                "_animocap_crop_scale",
+                (1.0, 1.0),
+            )
+            coco_points = _map_crop_points_to_source(
+                coco_points, crop_offset, crop_scale
+            )
             if hasattr(coco_scores, "tolist"):
                 coco_scores = coco_scores.tolist()
             if roi is None and frame_index == 0:
@@ -1640,34 +1776,63 @@ def _run_mmpose_with_session(
                 if body_roi is not None:
                     effective_roi = body_roi
                     _set_active_crop(body_roi)
+                    _set_active_upscaler(session.upscaler)
                     temporal_fusion.update_roi(body_roi)
+            raw_coco_points = [list(point) for point in coco_points]
             if flow_frame_ok:
                 coco_points = temporal_fusion.fuse(
                     flow_frame, coco_points, coco_scores
+                )
+            decision = expert_scheduler.observe(
+                frame_index, raw_coco_points, coco_scores,
+                tracking_failed=not flow_frame_ok or temporal_fusion.tracking_failed,
+            )
+            schedule_row.update(interval=decision.interval, reasons=list(decision.reasons))
+            want_rtmw = decision.run if expert_interval is not None else _needs_high_accuracy_pass(coco_scores, frame_index, quality)
+            want_humanart = decision.run if expert_interval is not None else _needs_humanart_pass(coco_scores, frame_index, quality)
+            for name, expert, wanted in (
+                ("rtmw", high_accuracy_refiner, want_rtmw),
+                ("humanart", humanart_expert, want_humanart),
+            ):
+                schedule_row[name] = (
+                    "disabled" if quality == "fast" else "unavailable" if expert is None
+                    else "frame-unavailable" if not flow_frame_ok else "scheduled" if wanted else "skipped"
                 )
             refined_hypothesis = None
             if (
                 high_accuracy_refiner is not None
                 and flow_frame_ok
-                and _needs_high_accuracy_pass(coco_scores, frame_index, quality)
+                and want_rtmw
             ):
+                expert_attempts["rtmw"] += 1
                 refined_hypothesis = _refine_frame_2d(
-                    high_accuracy_refiner, flow_frame, effective_roi
+                    high_accuracy_refiner,
+                    flow_frame,
+                    effective_roi,
+                    frame_index,
+                    session.upscaler,
                 )
                 if refined_hypothesis is not None:
                     high_accuracy_frames += 1
+                schedule_row["rtmw"] = "inferred" if refined_hypothesis is not None else "no-result"
 
             humanart_hypothesis = None
             if (
                 humanart_expert is not None
                 and flow_frame_ok
-                and _needs_humanart_pass(coco_scores, frame_index, quality)
+                and want_humanart
             ):
+                expert_attempts["humanart"] += 1
                 humanart_hypothesis = _refine_frame_2d(
-                    humanart_expert, flow_frame, effective_roi
+                    humanart_expert,
+                    flow_frame,
+                    effective_roi,
+                    frame_index,
+                    session.upscaler,
                 )
                 if humanart_hypothesis is not None:
                     humanart_frames += 1
+                schedule_row["humanart"] = "inferred" if humanart_hypothesis is not None else "no-result"
 
             hypotheses: dict[
                 str,
@@ -1684,6 +1849,14 @@ def _run_mmpose_with_session(
             )
             for key, value in fusion_diagnostics.items():
                 fusion_totals[key] += value
+            feedback = []
+            if fusion_diagnostics.get("conflict_joints", 0):
+                feedback.append("expert-conflict")
+            if "no-result" in (schedule_row["rtmw"], schedule_row["humanart"]):
+                feedback.append("expert-no-result")
+            if feedback:
+                expert_scheduler.report_expert_risk(frame_index)
+                schedule_row["feedback"] = feedback
             if (
                 npu_observer is not None
                 and flow_frame_ok
@@ -1740,6 +1913,7 @@ def _run_mmpose_with_session(
             points3d, points2d, scores, width, height
         )
         planar_fallback_frames += int(used_planar_fallback)
+        schedule_frames.append(schedule_row)
         frames.append({
             "time_s": frame_index / fps,
             "joints": joints,
@@ -1803,6 +1977,18 @@ def _run_mmpose_with_session(
     print(json.dumps(npu_diagnostics), flush=True)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    schedule_report = {
+        "schema_version": "1.0.0", "mode": expert_interval or "legacy",
+        "quality": quality, "base_cadence": "every-frame", "fps": fps,
+        "source_video": str(input_path.resolve()), "source_frame_count_hint": frame_count,
+        "output_frames": len(frames), "attempts": expert_attempts,
+        "successful_frames": {"rtmw": high_accuracy_frames, "humanart": humanart_frames},
+        "frames": schedule_frames,
+    }
+    output_path.with_name("expert-schedule.json").write_text(
+        json.dumps(schedule_report, indent=2, allow_nan=False), encoding="utf-8"
+    )
+    print(json.dumps({"event": "expert_schedule", **{k: v for k, v in schedule_report.items() if k != "frames"}}), flush=True)
     output_path.with_name("npu-shadow-diagnostics.json").write_text(
         json.dumps(npu_diagnostics, indent=2, sort_keys=True), encoding="utf-8"
     )
@@ -1827,7 +2013,7 @@ def _run_mmpose_with_session(
             )
             + (
                 "+rtmw-x-384-adaptive"
-                if high_accuracy_frames and quality == "balanced"
+                if high_accuracy_frames and high_accuracy_frames < len(frames)
                 else "+rtmw-x-384-full"
                 if high_accuracy_frames
                 else "+rtmw-unavailable"
@@ -1836,7 +2022,7 @@ def _run_mmpose_with_session(
             )
             + (
                 "+vitpose-humanart-adaptive"
-                if humanart_frames and quality == "balanced"
+                if humanart_frames and humanart_frames < len(frames)
                 else "+vitpose-humanart-full"
                 if humanart_frames
                 else "+vitpose-humanart-unavailable"
@@ -1846,6 +2032,7 @@ def _run_mmpose_with_session(
                 else ""
             )
             + "+joint-hypothesis-fusion"
+            + ("+expert-interval-" + expert_interval if expert_interval is not None else "")
             + (
                 "+uncertain-joint-conflicts"
                 if fusion_totals["conflict_joints"]
@@ -1854,7 +2041,7 @@ def _run_mmpose_with_session(
             + (
                 "+confidence-calibration-evidence-backed"
                 if calibration.status == "profile-evidence-backed"
-                else "+confidence-calibration-identity"
+                else "+confidence-model-normalized"
             )
             + ("+anime-finetuned-hrnet" if anime_pose_weights is not None else "")
             + (
@@ -1864,6 +2051,7 @@ def _run_mmpose_with_session(
                 if session.npu_mode == "shadow" and npu_error
                 else ""
             )
+            + ("+maxine-vsr-roi-2x" if session.upscaler is not None else "")
             + ("+user-roi" if roi is not None else "+auto-body-roi")
         ),
         "image_width": width,
@@ -1887,6 +2075,11 @@ def run_mmpose(
     npu_mode: str = "off",
     npu_model: Path | None = None,
     npu_sample_interval: int = 15,
+    upscale: str = "off",
+    upscale_scale: int = 2,
+    maxine_bridge: Path | None = None,
+    maxine_runtime: Path | None = None,
+    expert_interval: str | None = None,
 ) -> None:
     session = MMPoseSession(
         device=device,
@@ -1899,6 +2092,11 @@ def run_mmpose(
         npu_mode=npu_mode,
         npu_model=npu_model,
         npu_sample_interval=npu_sample_interval,
+        upscale=upscale,
+        upscale_scale=upscale_scale,
+        maxine_bridge=maxine_bridge,
+        maxine_runtime=maxine_runtime,
+        expert_interval=expert_interval,
     )
     try:
         session.run(input_path, output_path, roi)
@@ -1908,6 +2106,8 @@ def run_mmpose(
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--expert-interval", choices=EXPERT_INTERVALS, default=None,
+                        help="Auxiliary experts only: 1/2/3 frames or auto; risk frames force checks. Omit for legacy quality scheduling.")
     parser.add_argument("--input", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--device", default=None)
@@ -1925,6 +2125,10 @@ def main() -> int:
     parser.add_argument("--npu-mode", choices=("off", "shadow"), default="off")
     parser.add_argument("--npu-model", type=Path, default=None)
     parser.add_argument("--npu-sample-interval", type=int, default=15)
+    parser.add_argument("--upscale", choices=("off", "maxine-vsr"), default="off")
+    parser.add_argument("--upscale-scale", type=int, choices=(2,), default=2)
+    parser.add_argument("--maxine-bridge", type=Path, default=None)
+    parser.add_argument("--maxine-runtime", type=Path, default=None)
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--prepare-models", action="store_true")
     args = parser.parse_args()
@@ -1993,6 +2197,11 @@ def main() -> int:
             args.npu_mode,
             args.npu_model,
             args.npu_sample_interval,
+            args.upscale,
+            args.upscale_scale,
+            args.maxine_bridge,
+            args.maxine_runtime,
+            args.expert_interval,
         )
         print(json.dumps({"event": "complete", "output": str(args.output)}), flush=True)
         return 0

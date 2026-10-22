@@ -171,8 +171,34 @@ def _effective_roi(document: dict[str, Any],
     return left, top, max(2, right - left), max(2, bottom - top)
 
 
+def _load_reference_images(paths: list[Path], cv2: Any) -> list[str]:
+    """Encode a small, bounded set of appearance references for local VLM use."""
+    payloads: list[str] = []
+    for path in paths[:3]:
+        image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+        if image is None:
+            raise RuntimeError(f"cannot read appearance reference image: {path}")
+        height, width = image.shape[:2]
+        longest = max(height, width)
+        if longest > 1280:
+            scale = 1280.0 / float(longest)
+            image = cv2.resize(
+                image, (max(2, int(round(width * scale))),
+                        max(2, int(round(height * scale)))),
+                interpolation=cv2.INTER_AREA,
+            )
+        ok, encoded = cv2.imencode(
+            ".jpg", image, [int(cv2.IMWRITE_JPEG_QUALITY), 86]
+        )
+        if not ok:
+            raise RuntimeError(f"cannot encode appearance reference image: {path}")
+        payloads.append(base64.b64encode(encoded.tobytes()).decode("ascii"))
+    return payloads
+
+
 def _ground_frame(frame: Any, roi: tuple[int, int, int, int],
-                  endpoint: str, model: str) -> dict[str, list[float]]:
+                  endpoint: str, model: str,
+                  reference_images: list[str] | None = None) -> dict[str, list[float]]:
     import cv2
 
     x, y, width, height = roi
@@ -183,7 +209,12 @@ def _ground_frame(frame: Any, roi: tuple[int, int, int, int],
     if not ok:
         raise RuntimeError("cannot encode VLM recovery frame")
     image = base64.b64encode(encoded.tobytes()).decode("ascii")
+    images = [image, *(reference_images or [])]
     prompt = (
+        "The first image is the current capture frame and is the spatial authority. "
+        "Any following images are appearance references for the target character. "
+        "Use them only to resolve identity, silhouette, visible limbs and clothing/body "
+        "continuity; never copy their pose or coordinates into the current frame. "
         "Locate the visible humanoid body joints in this anime/game frame. "
         "Ignore wings, weapons, clothing tails, pets, UI and shadows. "
         "Return JSON only as {\"joints\":{\"head\":[x,y],...},"
@@ -201,7 +232,7 @@ def _ground_frame(frame: Any, roi: tuple[int, int, int, int],
             "messages": [{
                 "role": "user",
                 "content": prompt,
-                "images": [image],
+                "images": images,
             }],
             "options": {"temperature": 0, "num_predict": 900},
         },
@@ -304,7 +335,8 @@ def run(input_video: Path, input_pose: Path, output_pose: Path,
         endpoint: str, model: str, roi: tuple[int, int, int, int] | None,
         maximum: int, mock_response: Path | None,
         issues_output: Path | None,
-        priority_frames_path: Path | None = None) -> None:
+        priority_frames_path: Path | None = None,
+        reference_images: list[Path] | None = None) -> None:
     import cv2
 
     original = json.loads(input_pose.read_text(encoding="utf-8"))
@@ -316,6 +348,8 @@ def run(input_video: Path, input_pose: Path, output_pose: Path,
     candidates = _candidate_frames(document, maximum, npu_priority)
     effective_roi = _effective_roi(document, roi)
     mocks = _load_mock(mock_response)
+    reference_paths = [path for path in (reference_images or []) if path is not None]
+    reference_payloads = _load_reference_images(reference_paths, cv2)
     if mock_response is None:
         ready, message = check_ollama(endpoint, model)
         if not ready:
@@ -334,7 +368,9 @@ def run(input_video: Path, input_pose: Path, output_pose: Path,
             ok, frame = capture.read()
             if not ok:
                 continue
-            proposals = _ground_frame(frame, effective_roi, endpoint, model)
+            proposals = _ground_frame(
+                frame, effective_roi, endpoint, model, reference_payloads
+            )
         accepted = _apply_grounding(document, frame_index, proposals, effective_roi)
         issues.append({
             "frame": frame_index,
@@ -352,7 +388,10 @@ def run(input_video: Path, input_pose: Path, output_pose: Path,
         _refresh_planar_positions(document)
         backend = str(document.get("backend", "pose"))
         if "+qwen3-vl-local" not in backend:
-            document["backend"] = backend + "+qwen3-vl-local"
+            backend += "+qwen3-vl-local"
+        if reference_payloads and "+appearance-reference" not in backend:
+            backend += "+appearance-reference"
+        document["backend"] = backend
     output_pose.parent.mkdir(parents=True, exist_ok=True)
     output_pose.write_text(
         json.dumps(document, ensure_ascii=False, separators=(",", ":")),
@@ -364,6 +403,8 @@ def run(input_video: Path, input_pose: Path, output_pose: Path,
             json.dumps({
                 "model": model,
                 "roi": effective_roi,
+                "appearance_reference_images": [str(path) for path in reference_paths],
+                "appearance_reference_count": len(reference_payloads),
                 "npu_priority_requested": len(npu_priority),
                 "npu_priority_processed": sum(
                     frame in set(npu_priority) for frame in candidates
@@ -387,6 +428,7 @@ def main() -> int:
     parser.add_argument("--mock-response", type=Path)
     parser.add_argument("--issues-output", type=Path)
     parser.add_argument("--priority-frames", type=Path)
+    parser.add_argument("--reference-image", type=Path, action="append", default=[])
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     try:
@@ -400,7 +442,7 @@ def main() -> int:
         roi = tuple(args.roi) if args.roi is not None else None
         run(args.input_video, args.input_pose, args.output_pose, args.endpoint,
             args.model, roi, max(1, args.max_frames), args.mock_response,
-            args.issues_output, args.priority_frames)
+            args.issues_output, args.priority_frames, args.reference_image)
         print(json.dumps({"event": "complete",
                           "output": str(args.output_pose)}), flush=True)
         return 0

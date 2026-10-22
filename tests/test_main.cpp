@@ -1,4 +1,5 @@
 #include "animocap/contracts.hpp"
+#include "animocap/blender_exchange.hpp"
 #include "animocap/character_profile.hpp"
 #include "animocap/export.hpp"
 #include "animocap/fixture.hpp"
@@ -928,10 +929,18 @@ void test_animation_first_fan_rejects_corrupt_view() {
     corrupt_directional_joint_segment(views[2].pose,hand,18,33);
     animocap::MultiviewSolveOptions options;
     options.reference_view=1;
+    options.enable_reference_image_plane_anchor=true;
     const auto result=animocap::solve_directional_multiview(views,options);
     CHECK(result.motion.cameras.size()==3);
     CHECK(result.diagnostics.rejected_view_observations>0);
     CHECK(result.diagnostics.reference_anchored_observations>0);
+    auto balanced_options=options;
+    balanced_options.enable_reference_image_plane_anchor=false;
+    const auto balanced=animocap::solve_directional_multiview(
+        views,balanced_options);
+    CHECK(balanced.diagnostics.reference_anchored_observations==0);
+    CHECK(balanced.fused_pose.backend.find("balanced-multiview-image-plane")!=
+          std::string::npos);
     const auto clean=make_directional_test_pose(0.0,60,0.0,1.0,false,false);
     const double error=pose_joint_distance(result.fused_pose.frames[25].joints[hand],
                                             clean.frames[25].joints[hand]);
@@ -988,6 +997,7 @@ void test_reference_anchor_yields_to_cross_view_consensus() {
     }
     animocap::MultiviewSolveOptions options;
     options.reference_view=1;
+    options.enable_reference_image_plane_anchor=true;
     options.enable_animation_curve_stabilization=false;
     options.temporal_weight=0.0;
     const auto adaptive=animocap::solve_directional_multiview(views,options);
@@ -1306,6 +1316,63 @@ void test_vrma_export() {
     check_exchange_round_trip(package,imported,2e-5);
 }
 
+void test_blender_selected_frame_export() {
+    animocap::BlenderFrameSelection selection;
+    selection.select(12,60,false,false);
+    selection.select(24,60,true,false);
+    selection.select(48,60,true,false);
+    CHECK(selection.frames()==std::vector<std::size_t>({12,24,48}));
+    selection.select(24,60,false,false);
+    selection.select(30,60,false,true);
+    CHECK(selection.size()==7);
+    CHECK(selection.frames().front()==24);
+    CHECK(selection.frames().back()==30);
+    selection.select_only({48,12,24,24},60);
+    CHECK(selection.frames()==std::vector<std::size_t>({12,24,48}));
+
+    const auto package=animocap::make_synthetic_motion(20260822,60);
+    const auto output=test_root()/"selected.animocap-blender.json";
+    animocap::export_blender_selected_frames(package,selection.frames(),output);
+    const auto document=nlohmann::json::parse(read_text(output));
+    CHECK(document.at("schema")==1);
+    CHECK(document.at("source_motion_sha256").get<std::string>().size()==64);
+    CHECK(document.at("fps")==package.motion.fps);
+    CHECK(document.at("skeleton_id")==package.skeleton.skeleton_id);
+    CHECK(document.at("coordinate_contract").at("unit")=="meter");
+    CHECK(document.at("coordinate_contract").at("up_axis")=="Y");
+    const auto& frames=document.at("selected_frames");
+    CHECK(frames.size()==3);
+    CHECK(frames.at(0).at("source_frame")==12);
+    CHECK(frames.at(1).at("source_frame")==24);
+    CHECK(frames.at(2).at("source_frame")==48);
+    CHECK(frames.at(1).at("time_s")==package.motion.time_s[24]);
+    CHECK(frames.at(1).at("root_translation_m").at(0)==
+          package.motion.scene_root_translation_m[24].x);
+    CHECK(frames.at(1).at("hips_translation_m").at(1)==
+          package.motion.hips_translation_m[24].y);
+    const auto& rotations=frames.at(1).at("local_rotations");
+    CHECK(rotations.size()==23);
+    const auto left_arm=animocap::bone_index(
+        package.skeleton,animocap::BoneSemantic::LeftUpperArm);
+    CHECK(rotations.at("leftUpperArm").at(0)==
+          package.motion.local_rotations[24*package.motion.joint_count+left_arm].w);
+    CHECK_THROWS(animocap::export_blender_selected_frames(package,{12},output));
+    CHECK_THROWS(animocap::export_blender_selected_frames(
+        package,{},test_root()/"empty.animocap-blender.json"));
+    CHECK_THROWS(animocap::export_blender_selected_frames(
+        package,{60},test_root()/"outside.animocap-blender.json"));
+    CHECK_THROWS(animocap::export_blender_selected_frames(
+        package,{12},test_root()/"wrong.json"));
+
+    const auto fixture=nlohmann::json::parse(read_text(
+        source_path("tests/fixtures/selected_frames.animocap-blender.json")));
+    CHECK(fixture.at("schema")==1);
+    CHECK(fixture.at("selected_frames").size()==3);
+    CHECK(fixture.at("selected_frames").at(0).at("source_frame")==12);
+    CHECK(fixture.at("selected_frames").at(1).at("source_frame")==24);
+    CHECK(fixture.at("selected_frames").at(2).at("source_frame")==48);
+}
+
 void test_fixture_determinism() {
     const auto a = animocap::generate_synthetic_fixture(test_root() / "fixture-a", 123, 9);
     const auto b = animocap::generate_synthetic_fixture(test_root() / "fixture-b", 123, 9);
@@ -1325,6 +1392,9 @@ void test_license_and_asset_gate() {
         ".blend", ".blend1", ".fbx", ".glb", ".gltf", ".vrm", ".vrma",
         ".mp4", ".mov", ".avi", ".mkv", ".png", ".jpg", ".jpeg", ".webp"
     };
+    const std::set<std::string> allowed_visual_assets{
+        "assets/motion/human_outline_generic.png"
+    };
     const auto root = source_path("");
     for (const auto& entry : std::filesystem::recursive_directory_iterator(root)) {
         const auto relative = std::filesystem::relative(entry.path(), root).generic_string();
@@ -1335,6 +1405,9 @@ void test_license_and_asset_gate() {
             continue;
         }
         if (entry.is_regular_file()) {
+            if (allowed_visual_assets.contains(relative)) {
+                continue;
+            }
             auto extension = entry.path().extension().string();
             std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
             CHECK(!forbidden.contains(extension));
@@ -1375,6 +1448,7 @@ int main() {
         {"motion_clip", test_motion_clip},
         {"bvh_export", test_bvh_export},
         {"vrma_export", test_vrma_export},
+        {"blender_selected_frame_export", test_blender_selected_frame_export},
         {"fixture_determinism", test_fixture_determinism},
         {"license_and_asset_gate", test_license_and_asset_gate},
     };

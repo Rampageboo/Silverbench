@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://animocap.local/schemas/animocap-blender.schema.json",
+  "title": "AniMocap Fusion selected frames for Blender",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "source_motion_sha256",
+    "fps",
+    "selected_frames",
+    "skeleton_id",
+    "coordinate_contract"
+  ],
+  "properties": {
+    "schema": {"const": 1},
+    "source_motion_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "fps": {"type": "number", "exclusiveMinimum": 0},
+    "skeleton_id": {"type": "string", "minLength": 1},
+    "coordinate_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit", "handedness", "up_axis", "forward_axis", "source"],
+      "properties": {
+        "unit": {"const": "meter"},
+        "handedness": {"const": "right"},
+        "up_axis": {"const": "Y"},
+        "forward_axis": {"const": "Z"},
+        "source": {"const": "canonical"}
+      }
+    },
+    "selected_frames": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/selectedFrame"}
+    }
+  },
+  "$defs": {
+    "vec3": {
+      "type": "array",
+      "prefixItems": [{"type": "number"}, {"type": "number"}, {"type": "number"}],
+      "items": false
+    },
+    "quaternion": {
+      "type": "array",
+      "prefixItems": [
+        {"type": "number"}, {"type": "number"},
+        {"type": "number"}, {"type": "number"}
+      ],
+      "items": false
+    },
+    "localRotations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sceneRoot", "hips", "spine", "chest", "upperChest", "neck", "head",
+        "leftShoulder", "leftUpperArm", "leftLowerArm", "leftHand",
+        "rightShoulder", "rightUpperArm", "rightLowerArm", "rightHand",
+        "leftUpperLeg", "leftLowerLeg", "leftFoot", "leftToes",
+        "rightUpperLeg", "rightLowerLeg", "rightFoot", "rightToes"
+      ],
+      "properties": {
+        "sceneRoot": {"$ref": "#/$defs/quaternion"},
+        "hips": {"$ref": "#/$defs/quaternion"},
+        "spine": {"$ref": "#/$defs/quaternion"},
+        "chest": {"$ref": "#/$defs/quaternion"},
+        "upperChest": {"$ref": "#/$defs/quaternion"},
+        "neck": {"$ref": "#/$defs/quaternion"},
+        "head": {"$ref": "#/$defs/quaternion"},
+        "leftShoulder": {"$ref": "#/$defs/quaternion"},
+        "leftUpperArm": {"$ref": "#/$defs/quaternion"},
+        "leftLowerArm": {"$ref": "#/$defs/quaternion"},
+        "leftHand": {"$ref": "#/$defs/quaternion"},
+        "rightShoulder": {"$ref": "#/$defs/quaternion"},
+        "rightUpperArm": {"$ref": "#/$defs/quaternion"},
+        "rightLowerArm": {"$ref": "#/$defs/quaternion"},
+        "rightHand": {"$ref": "#/$defs/quaternion"},
+        "leftUpperLeg": {"$ref": "#/$defs/quaternion"},
+        "leftLowerLeg": {"$ref": "#/$defs/quaternion"},
+        "leftFoot": {"$ref": "#/$defs/quaternion"},
+        "leftToes": {"$ref": "#/$defs/quaternion"},
+        "rightUpperLeg": {"$ref": "#/$defs/quaternion"},
+        "rightLowerLeg": {"$ref": "#/$defs/quaternion"},
+        "rightFoot": {"$ref": "#/$defs/quaternion"},
+        "rightToes": {"$ref": "#/$defs/quaternion"}
+      }
+    },
+    "selectedFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_frame", "time_s", "root_translation_m", "root_rotation",
+        "hips_translation_m", "local_rotations"
+      ],
+      "properties": {
+        "source_frame": {"type": "integer", "minimum": 0},
+        "time_s": {"type": "number", "minimum": 0},
+        "root_translation_m": {"$ref": "#/$defs/vec3"},
+        "root_rotation": {"$ref": "#/$defs/quaternion"},
+        "hips_translation_m": {"$ref": "#/$defs/vec3"},
+        "local_rotations": {"$ref": "#/$defs/localRotations"}
+      }
+    }
+  }
+}

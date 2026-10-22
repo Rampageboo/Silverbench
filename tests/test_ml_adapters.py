@@ -17,6 +17,8 @@ from python.animocap_ml_adapters.mmpose_adapter import (
     _fuse_coco_hypotheses,
     _fuse_coco_observations,
     _load_confidence_calibration,
+    _map_crop_points_to_source,
+    _normalize_raw_confidence,
     _mask_ratio_is_valid,
     _needs_high_accuracy_pass,
     _needs_humanart_pass,
@@ -43,6 +45,16 @@ from python.animocap_ml_adapters.local_vlm_adapter import (
 
 
 class HighAccuracyPoseTests(unittest.TestCase):
+    def test_maxine_roi_points_map_back_to_source_coordinates(self) -> None:
+        self.assertEqual(
+            _map_crop_points_to_source(
+                [[100.0, 60.0], [360.0, 240.0]],
+                (40, 15),
+                (2.0, 2.0),
+            ),
+            [[90.0, 45.0], [220.0, 135.0]],
+        )
+
     def test_character_export_config_v11_validation(self) -> None:
         script = Path(__file__).parents[1] / "tools" / "codex-skills" / \
             "blender-character-mocap-export" / "scripts" / "export_character_layers.py"
@@ -247,9 +259,28 @@ class HighAccuracyPoseTests(unittest.TestCase):
             roi=(0, 0, 1000, 1000),
         )
         self.assertAlmostEqual(points[0][0], 99.99, places=1)
-        self.assertGreater(scores[0], 0.82)
+        self.assertGreater(scores[0], 0.70)
+        self.assertLess(scores[0], 0.78)
         self.assertEqual(diagnostics["agreement_joints"], 17)
         self.assertEqual(diagnostics["conflict_joints"], 0)
+
+    def test_unnormalized_rtmw_response_keeps_order_without_saturation(self) -> None:
+        self.assertGreater(
+            _normalize_raw_confidence("rtmw", 9.0),
+            _normalize_raw_confidence("rtmw", 3.0),
+        )
+        self.assertLess(_normalize_raw_confidence("rtmw", 9.0), 1.0)
+        _points, scores, diagnostics = _fuse_coco_hypotheses(
+            {
+                "hrnet": (self._coco_points(100.0), [0.80] * 17),
+                "vitpose-humanart": (self._coco_points(101.0), [0.78] * 17),
+                "rtmw": (self._coco_points(99.0), [7.5] * 17),
+            },
+            roi=(0, 0, 1000, 1000),
+        )
+        self.assertEqual(diagnostics["agreement_joints"], 17)
+        self.assertGreater(scores[0], 0.70)
+        self.assertLess(scores[0], 0.78)
 
     def test_clear_supported_winner_can_replace_base(self) -> None:
         points, scores, _diagnostics = _fuse_coco_hypotheses(
@@ -309,11 +340,14 @@ class HighAccuracyPoseTests(unittest.TestCase):
             for motion in ("motion-a", "motion-b"):
                 for index in range(30):
                     confidence = (index + 1) / 31.0
+                    raw_confidence = (
+                        confidence * 10.0 if model == "rtmw" else confidence
+                    )
                     samples.append({
                         "model": model,
                         "joint": "nose",
                         "motion_id": motion,
-                        "raw_confidence": confidence,
+                        "raw_confidence": raw_confidence,
                         "error_normalized": 0.02 if confidence >= 0.5 else 0.10,
                     })
         profile = fit_profile({
@@ -330,6 +364,27 @@ class HighAccuracyPoseTests(unittest.TestCase):
                 calibration.calibrate("hrnet", 0, 0.25),
                 calibration.calibrate("hrnet", 0, 0.75),
             )
+            self.assertLess(
+                calibration.calibrate("rtmw", 0, 2.5),
+                calibration.calibrate("rtmw", 0, 7.5),
+            )
+
+    def test_calibration_profile_accepts_unnormalized_rtmw_domain(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "calibration.json"
+            path.write_text(json.dumps({
+                "schema_version": "1.0.0",
+                "models": {"rtmw": {"joints": {
+                    "nose": [[0.0, 0.0], [5.0, 0.5], [10.0, 1.0]],
+                }}},
+                "evidence": {
+                    "kind": "held-out-labelled-real",
+                    "motion_ids": ["motion-a", "motion-b"],
+                    "source_sha256": "a" * 64,
+                },
+            }), encoding="utf-8")
+            calibration = _load_confidence_calibration(path)
+            self.assertAlmostEqual(calibration.calibrate("rtmw", 0, 7.5), 0.75)
 
     def test_structural_calibration_without_held_out_evidence_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -398,7 +453,8 @@ class HighAccuracyPoseTests(unittest.TestCase):
         self.assertLess(small_scores[0], 0.80)
         self.assertEqual(small_diagnostics["conflict_joints"], 17)
         self.assertNotEqual(large_points[0], [100.0, 100.0])
-        self.assertGreater(large_scores[0], 0.75)
+        self.assertGreater(large_scores[0], 0.70)
+        self.assertLess(large_scores[0], 0.75)
         self.assertEqual(large_diagnostics["agreement_joints"], 17)
 
     def test_humanart_quality_scheduling_and_fallback(self) -> None:
@@ -511,6 +567,7 @@ class HighAccuracyPoseTests(unittest.TestCase):
                 anime_pose_config=None,
                 anime_pose_weights=None,
                 confidence_calibration=calibration,
+                expert_interval="3",
                 vlm_model="qwen3-vl:4b",
                 quality="balanced",
                 segmentation="auto",
@@ -533,6 +590,7 @@ class HighAccuracyPoseTests(unittest.TestCase):
                     ):
                 self.assertEqual(multiview_pipeline.run_pipeline(args), 0)
             self.assertEqual(len(session_arguments), 1)
+            self.assertEqual(session_arguments[0]["expert_interval"], "3")
             self.assertEqual(
                 session_arguments[0]["confidence_calibration"], calibration
             )

@@ -172,6 +172,11 @@ def run_pipeline(args: argparse.Namespace) -> int:
                 npu_mode=getattr(args, "npu_mode", "off"),
                 npu_model=getattr(args, "npu_model", None),
                 npu_sample_interval=getattr(args, "npu_sample_interval", 15),
+                upscale=getattr(args, "upscale", "off"),
+                upscale_scale=getattr(args, "upscale_scale", 2),
+                maxine_bridge=getattr(args, "maxine_bridge", None),
+                maxine_runtime=getattr(args, "maxine_runtime", None),
+                expert_interval=getattr(args, "expert_interval", None),
             )
             emit(
                 "stage_finished",
@@ -243,6 +248,8 @@ def run_pipeline(args: argparse.Namespace) -> int:
                 ]
                 if requested_frames:
                     command.extend(["--priority-frames", str(npu_diagnostics)])
+                for reference_image in getattr(args, "reference_image", []):
+                    command.extend(["--reference-image", str(reference_image)])
                 if view_id in rois:
                     command.extend(["--roi", *(str(value) for value in rois[view_id])])
                 recovery_exit = run_streaming(
@@ -362,13 +369,23 @@ def main() -> int:
     parser.add_argument("--npu-mode", choices=("off", "shadow"), default="off")
     parser.add_argument("--npu-model", type=Path)
     parser.add_argument("--npu-sample-interval", type=int, default=15)
+    parser.add_argument("--expert-interval", choices=("1", "2", "3", "auto"), default=None,
+                        help="Auxiliary experts only; base observations stay frame-by-frame")
     parser.add_argument("--vlm-model", default="qwen3-vl:4b")
+    parser.add_argument(
+        "--reference-image", type=Path, action="append", default=[],
+        help="appearance reference image(s) for local VLM ambiguity recovery",
+    )
     parser.add_argument(
         "--quality", choices=("fast", "balanced", "maximum"), default="balanced"
     )
     parser.add_argument(
         "--segmentation", choices=("auto", "grabcut", "sam2"), default="auto"
     )
+    parser.add_argument("--upscale", choices=("off", "maxine-vsr"), default="off")
+    parser.add_argument("--upscale-scale", type=int, choices=(2,), default=2)
+    parser.add_argument("--maxine-bridge", type=Path, default=None)
+    parser.add_argument("--maxine-runtime", type=Path, default=None)
     parser.add_argument("--no-vlm", action="store_true")
     parser.add_argument("--skip-inference", action="store_true")
     args = parser.parse_args()

@@ -16,6 +16,11 @@ void check(bool condition, const char* expression, int line) {
 }
 
 #define CHECK(expression) check((expression), #expression, __LINE__)
+#define CHECK_THROWS(expression) do { \
+    bool threw = false; \
+    try { (void)(expression); } catch (const std::exception&) { threw = true; } \
+    check(threw, "throws(" #expression ")", __LINE__); \
+} while (false)
 
 animocap::PoseSequence make_curve_fixture() {
     const auto skeleton = animocap::make_default_skeleton();
@@ -126,6 +131,37 @@ int main() {
         result.sequence.frames.back().joints[airborne_foot].position_m.x -
         result.sequence.frames.front().joints[airborne_foot].position_m.x;
     CHECK(airborne_travel > 0.09);
+
+    const auto centered = animocap::smooth_pose_around_keyframes(
+        input, {12, 12});
+    CHECK(centered.diagnostics.selected_keyframes == 1);
+    CHECK(centered.diagnostics.protected_keyframe_samples ==
+          input.frames[12].joints.size());
+    CHECK(centered.diagnostics.corrected_samples > 0);
+    CHECK(centered.diagnostics.jitter_after < centered.diagnostics.jitter_before);
+    CHECK(centered.sequence.backend.find("keyframe-centered-smooth") !=
+          std::string::npos);
+    for (std::size_t joint = 0; joint < input.frames[12].joints.size(); ++joint) {
+        CHECK(centered.sequence.frames[12].joints[joint].position_m ==
+              input.frames[12].joints[joint].position_m);
+        CHECK(centered.sequence.frames[12].joints[joint].image_xy ==
+              input.frames[12].joints[joint].image_xy);
+    }
+    CHECK(!centered.sequence.frames[7].joints[hand].valid);
+    CHECK(centered.sequence.frames[7].joints[hand].confidence == 0.0f);
+    CHECK(centered.diagnostics.maximum_correction_m <= 0.0060001);
+    const auto centered_repeated = animocap::smooth_pose_around_keyframes(
+        centered.sequence, {12});
+    CHECK(centered_repeated.sequence.frames[6].joints[neck].position_m ==
+          centered.sequence.frames[6].joints[neck].position_m);
+    CHECK(centered_repeated.diagnostics.corrected_samples == 0);
+    animocap::KeyframeCenteredSmoothingOptions invalid_centered;
+    invalid_centered.radius_frames = 0;
+    CHECK_THROWS(animocap::smooth_pose_around_keyframes(
+        input, {12}, invalid_centered));
+    CHECK_THROWS(animocap::smooth_pose_around_keyframes(
+        input, {input.frames.size()}));
+
     const auto repeated = animocap::stabilize_pose_with_animation_curves(
         result.sequence, {}, &skeleton);
     CHECK(repeated.sequence.backend == result.sequence.backend);
