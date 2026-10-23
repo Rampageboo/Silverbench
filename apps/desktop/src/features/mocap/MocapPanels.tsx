@@ -3,6 +3,7 @@ import { useToast } from "../../components/useToast";
 import { mocapApi, type EngineStatus, type ExportRequest, type Take, type TakeIssue } from "./mocapApi";
 import { ISSUE_REASONS, STAGE_LABELS, formatDuration, frameRuns, statusLabel } from "./mocapDomain";
 import type { FrameRange } from "./MocapTimeline";
+import { PersonFrame } from "./PersonFrame";
 
 export function TakeList({ takes, selectedId, onSelect }: { takes: Take[]; selectedId: string | null; onSelect: (id: string) => void }) {
   if (!takes.length) return <p className="mc-muted mc-pad">还没有动捕。点"新建动捕"选择工作区里的视频。</p>;
@@ -25,7 +26,19 @@ export function TakeList({ takes, selectedId, onSelect }: { takes: Take[]; selec
 }
 
 /** Capture state of a take that has no motion yet, or is being captured. */
-export function CapturePanel({ take, onStart, onCancel }: { take: Take; onStart: () => void; onCancel: () => void }) {
+export function CapturePanel({
+  workspaceRoot,
+  take,
+  onStart,
+  onCancel,
+  onRoi
+}: {
+  workspaceRoot: string;
+  take: Take;
+  onStart: () => void;
+  onCancel: () => void;
+  onRoi: (roi: [number, number, number, number] | null) => void;
+}) {
   const capture = take.capture;
   if (capture.status === "capturing" || capture.status === "cancelling") {
     const percent = Math.round((capture.fraction ?? 0) * 100);
@@ -68,6 +81,9 @@ export function CapturePanel({ take, onStart, onCancel }: { take: Take; onStart:
           {take.options.characterProfile ? " · 角色预设" : ""}
         </dd>
       </dl>
+      {take.mode === "single" ? (
+        <PersonFrame workspaceRoot={workspaceRoot} video={take.sources[0].video} roi={take.options.roi} disabled={false} onChange={onRoi} />
+      ) : null}
       {capture.status === "failed" ? <pre className="mc-error">{capture.error}</pre> : null}
       {capture.status === "cancelled" ? <p className="mc-muted">已取消。中间结果和日志保留在 take 的 capture/ 与 logs/。</p> : null}
       {capture.status === "interrupted" ? <p className="mc-muted">上次捕捉时应用被关闭了。</p> : null}

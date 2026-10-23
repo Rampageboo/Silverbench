@@ -74,6 +74,11 @@ def get_take(take_id: str, workspaceRoot: str = Query(min_length=1)) -> dict[str
     return _call(takes.describe, _layout(workspaceRoot), take_id)
 
 
+@router.post("/takes/{take_id}/options")
+def update_options(take_id: str, workspaceRoot: str = Query(min_length=1), payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return _call(takes.update_options, _layout(workspaceRoot), take_id, payload)
+
+
 @router.post("/takes/{take_id}/capture")
 def start_capture(take_id: str, workspaceRoot: str = Query(min_length=1)) -> dict[str, Any]:
     return _call(takes.start_capture, _layout(workspaceRoot), take_id)
@@ -99,7 +104,7 @@ def read_edits(take_id: str, workspaceRoot: str = Query(min_length=1)) -> dict[s
     return _call(takes.read_edits, _layout(workspaceRoot), take_id)
 
 
-@router.put("/takes/{take_id}/edits")
+@router.post("/takes/{take_id}/edits")
 def save_edits(take_id: str, workspaceRoot: str = Query(min_length=1), payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return _call(takes.save_edits, _layout(workspaceRoot), take_id, payload)
 

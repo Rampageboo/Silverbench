@@ -3,7 +3,7 @@
  * (gui_main.cpp, kept at tag archive-2026-10-23) so results read the same as
  * before. No motion maths lives here: every edit goes through the engine.
  */
-import type { PoseData, Take } from "./mocapApi";
+import type { PoseData, PoseDelta, Take } from "./mocapApi";
 
 export const JOINT_LABELS: Record<string, string> = {
   sceneRoot: "根节点",
@@ -232,4 +232,26 @@ export function inferredSet(pose: PoseData) {
 /** Millimetre distance between two poses at one joint, for the A/B depth readout. */
 export function distanceMm(a: Vec3, b: Vec3) {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) * 1000;
+}
+
+/** A pose with the engine's changed frames written in (returns a new object). */
+export function applyDelta(pose: PoseData, delta: PoseDelta, inferred?: [number, number][]): PoseData {
+  const next: PoseData = {
+    ...pose,
+    image: pose.image.slice(),
+    position: pose.position.slice(),
+    confidence: pose.confidence.slice(),
+    valid: pose.valid.slice(),
+    inferred: inferred ?? pose.inferred
+  };
+  const joints = pose.joints.length;
+  delta.frames.forEach((frame, index) => {
+    for (const [key, width] of [["image", 2], ["position", 3], ["confidence", 1], ["valid", 1]] as const) {
+      const size = joints * width;
+      const source = delta[key];
+      const target = next[key];
+      for (let k = 0; k < size; k++) target[frame * size + k] = source[index * size + k];
+    }
+  });
+  return next;
 }

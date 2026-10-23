@@ -164,11 +164,21 @@ EditResult apply_edit_session(
             std::move(motion)};
 }
 
+EditSession session_from_json(const json& value);
+
 EditSession load_edit_session(const std::filesystem::path& path) {
     std::ifstream input(path);
     if (!input) throw ContractError("cannot read edit session: " + path.string());
     json value;
     input >> value;
+    return session_from_json(value);
+}
+
+EditSession parse_edit_session(const std::string& json_text) {
+    return session_from_json(json::parse(json_text));
+}
+
+EditSession session_from_json(const json& value) {
     if (value.at("version") != 1) throw ContractError("unsupported edit session version");
     EditSession session;
     for (const auto& item : value.value("corrections", json::array())) {

@@ -6,13 +6,17 @@ adapters' raw output, and derives everything else from two files:
 - ``refined.json``: the refined pose, written once by the capture and never edited;
 - ``edits.json``: the user's edits (docs/animocap-engine.md), small and replayable.
 
-``motion.amotion/``, ``pose.json`` and ``motion.amotion.areview/`` are rebuilt from
-them by ``animocap apply-edits`` and can always be regenerated. The capture runs
+``motion.amotion/``, ``pose.json`` and ``motion.amotion.areview/`` are derived
+from them and can always be regenerated. While a take is being edited a resident
+engine (``editor``) answers each edit; ``edits.json`` is written at once and the
+derived files follow shortly after (``flush``). ``edit-result.json`` records which
+edits they belong to, so stale files are rebuilt instead of trusted. The capture runs
 the same commands, options and order as AniMocap Studio.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -28,7 +32,7 @@ from typing import Any
 from backend.atomic_write import write_text_atomic
 from backend.workspace_layout import VIDEO_EXTENSIONS, WorkspaceLayout
 
-from . import engine, progress
+from . import editor, engine, progress
 
 TAKE_FORMAT_VERSION = 1
 EXPERT_INTERVALS = ("1", "2", "3", "auto")
@@ -123,26 +127,7 @@ def create_take(layout: WorkspaceLayout, request: dict[str, Any]) -> dict[str, A
             entry["timeOffset"] = float(source.get("timeOffset") or 0.0)
         sources.append(entry)
 
-    options = request.get("options") or {}
-    roi = options.get("roi")
-    if roi is not None:
-        if multiview:
-            raise MocapError("A person frame applies to single-view captures only.")
-        if not (isinstance(roi, list) and len(roi) == 4 and all(isinstance(v, (int, float)) for v in roi)) or roi[2] <= 0 or roi[3] <= 0:
-            raise MocapError("The person frame must be [x, y, width, height] in video pixels.")
-        roi = [int(round(v)) for v in roi]
-    interval = str(options.get("expertInterval", "2"))
-    if interval not in EXPERT_INTERVALS:
-        raise MocapError(f"Auxiliary AI interval must be one of {', '.join(EXPERT_INTERVALS)}.")
-    take_options = {
-        "roi": roi,
-        "vlm": bool(options.get("vlm", False)),
-        "appearanceReference": _optional_file(layout, options.get("appearanceReference"), "Appearance reference"),
-        "expertInterval": interval,
-        "upscale": bool(options.get("upscale", True)),
-        "characterProfile": _optional_file(layout, options.get("characterProfile"), "Character profile"),
-        "fps": float(options.get("fps") or 30.0),
-    }
+    take_options = _take_options(layout, request.get("options") or {}, multiview)
     take_id = _new_take_id(layout, Path(sources[0]["video"]).stem)
     take = {
         "version": TAKE_FORMAT_VERSION,
@@ -158,6 +143,41 @@ def create_take(layout: WorkspaceLayout, request: dict[str, Any]) -> dict[str, A
     folder.mkdir(parents=True)
     _write_json(folder / "take.json", take)
     _write_json(folder / "edits.json", EMPTY_EDITS)
+    return describe(layout, take_id)
+
+
+def _take_options(layout: WorkspaceLayout, options: dict[str, Any], multiview: bool) -> dict[str, Any]:
+    roi = options.get("roi")
+    if roi is not None:
+        if multiview:
+            raise MocapError("A person frame applies to single-view captures only.")
+        if not (isinstance(roi, list) and len(roi) == 4 and all(isinstance(v, (int, float)) for v in roi)) or roi[2] <= 0 or roi[3] <= 0:
+            raise MocapError("The person frame must be [x, y, width, height] in video pixels.")
+        roi = [int(round(v)) for v in roi]
+    interval = str(options.get("expertInterval", "2"))
+    if interval not in EXPERT_INTERVALS:
+        raise MocapError(f"Auxiliary AI interval must be one of {', '.join(EXPERT_INTERVALS)}.")
+    return {
+        "roi": roi,
+        "vlm": bool(options.get("vlm", False)),
+        "appearanceReference": _optional_file(layout, options.get("appearanceReference"), "Appearance reference"),
+        "expertInterval": interval,
+        "upscale": bool(options.get("upscale", True)),
+        "characterProfile": _optional_file(layout, options.get("characterProfile"), "Character profile"),
+        "fps": float(options.get("fps") or 30.0),
+    }
+
+
+def update_options(layout: WorkspaceLayout, take_id: str, changes: dict[str, Any]) -> dict[str, Any]:
+    """Change capture options (e.g. the person frame) of a take that is not captured yet."""
+    folder = take_dir(layout, take_id)
+    with _take_lock(folder):
+        take = _load(folder)
+        job = _JOBS.get(str(folder))
+        if (job is not None and job.running) or take["capture"].get("status") == "ready":
+            raise MocapError("Capture options can only change before a take is captured.")
+        take["options"] = _take_options(layout, {**take["options"], **changes}, take["mode"] == "multiview")
+        _save(folder, take)
     return describe(layout, take_id)
 
 
@@ -410,6 +430,8 @@ def _clear_capture_outputs(folder: Path) -> None:
     there are no user edits to lose; edits.json is reset because they would
     refer to the old refined pose.
     """
+    editor.close(str(folder))
+    _DIRTY.discard(str(folder))
     for name in ("capture", "logs", *DERIVED_OUTPUTS):
         path = folder / name
         if path.is_dir():
@@ -483,12 +505,33 @@ def wait_for_capture(layout: WorkspaceLayout, take_id: str, timeout: float | Non
 
 # ---------------------------------------------------------------- edits and outputs
 
-_TAKE_LOCKS: dict[str, threading.Lock] = {}
+_TAKE_LOCKS: dict[str, threading.RLock] = {}
+FLUSH_DELAY_SECONDS = 1.5
+_DIRTY: set[str] = set()
+_FLUSH_TIMERS: dict[str, threading.Timer] = {}
 
 
-def _take_lock(folder: Path) -> threading.Lock:
+def _take_lock(folder: Path) -> threading.RLock:
     with _JOBS_LOCK:
-        return _TAKE_LOCKS.setdefault(str(folder), threading.Lock())
+        return _TAKE_LOCKS.setdefault(str(folder), threading.RLock())
+
+
+def edits_hash(edits: dict[str, Any]) -> str:
+    canonical = json.dumps(edits, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _summary(edits: dict[str, Any], frame_count: int, inferred: list[Any]) -> dict[str, Any]:
+    review = edits.get("review") or {}
+    return {
+        "frameCount": frame_count,
+        "corrections": len(edits.get("corrections") or []),
+        "reviewMarks": len(review.get("marks") or []),
+        "reviewRanges": len(review.get("ranges") or []),
+        "inferred": inferred,
+        "editsHash": edits_hash(edits),
+        "updatedAt": _now(),
+    }
 
 
 def _cameras_source(folder: Path, take: dict[str, Any]) -> Path | None:
@@ -552,16 +595,12 @@ def rebuild(folder: Path, take: dict[str, Any], edits: dict[str, Any] | None = N
             if cameras is not None:
                 args += ["--cameras-from", cameras]
             result = engine.run_cli("apply-edits", *args)
-            summary = {
-                "frameCount": result["frame_count"],
-                "corrections": result["corrections"],
-                "reviewMarks": result["review_marks"],
-                "reviewRanges": result["review_ranges"],
-                "inferred": result["inferred"],
-                "updatedAt": _now(),
-            }
+            used = edits if edits is not None else _read_json(edits_path)
+            summary = _summary(used, result["frame_count"], result["inferred"])
             _write_json(stage / "edit-result.json", summary)
             _swap_all(folder, stage, DERIVED_OUTPUTS + (("edits.json",) if edits is not None else ()))
+            editor.close(str(folder))
+            _DIRTY.discard(str(folder))
             return summary
         finally:
             shutil.rmtree(stage, ignore_errors=True)
@@ -572,16 +611,123 @@ def read_edits(layout: WorkspaceLayout, take_id: str) -> dict[str, Any]:
     return _read_json(path) if path.is_file() else dict(EMPTY_EDITS)
 
 
+def _session(folder: Path, take: dict[str, Any]) -> editor.EngineSession:
+    """The take's resident engine, started on the saved edits (what the UI shows)."""
+    session = editor.get(str(folder))
+    if session is not None:
+        return session
+    refined = folder / "refined.json"
+    if not refined.is_file():
+        raise MocapError("This take has no captured pose yet.")
+    saved = _read_json(folder / "edits.json") if (folder / "edits.json").is_file() else dict(EMPTY_EDITS)
+    return editor.open_session(
+        str(folder),
+        refined=refined,
+        edits=saved,
+        profile=take["options"].get("characterProfile"),
+        cameras_from=_cameras_source(folder, take),
+    )
+
+
 def save_edits(layout: WorkspaceLayout, take_id: str, edits: dict[str, Any]) -> dict[str, Any]:
+    """Apply a whole edit session. Returns only the frames that changed since the last edit.
+
+    ``edits.json`` is written once the engine accepts the edits; a refused edit
+    changes nothing. The derived files are written by ``flush`` shortly after.
+    """
     if not isinstance(edits, dict) or edits.get("version") != 1:
         raise MocapError("Edits must be an edit session, version 1.")
     folder = take_dir(layout, take_id)
     take = _load(folder)
+    with _take_lock(folder):
+        try:
+            reply = _session(folder, take).request(cmd="apply", edits=edits)
+        except editor.Refused as error:
+            raise MocapError(f"The engine refused these edits: {error}") from error
+        except engine.EngineError:
+            # A crashed or stopped engine: start a fresh one once and retry.
+            editor.close(str(folder))
+            reply = _session(folder, take).request(cmd="apply", edits=edits)
+        _write_json(folder / "edits.json", edits)
+        _DIRTY.add(str(folder))
+    _schedule_flush(folder)
+    return {
+        "inferred": reply["inferred"],
+        "pose": reply["pose"],
+        "baseline": reply["baseline"],
+        "editsHash": edits_hash(edits),
+    }
+
+
+def _schedule_flush(folder: Path) -> None:
+    key = str(folder)
+    with _JOBS_LOCK:
+        previous = _FLUSH_TIMERS.pop(key, None)
+        if previous is not None:
+            previous.cancel()
+        timer = threading.Timer(FLUSH_DELAY_SECONDS, _flush_quietly, args=(folder,))
+        timer.daemon = True
+        _FLUSH_TIMERS[key] = timer
+        timer.start()
+
+
+def _flush_quietly(folder: Path) -> None:
     try:
-        summary = rebuild(folder, take, edits)
-    except engine.EngineError as error:
-        raise MocapError(f"The engine refused these edits: {error}") from error
-    return {**describe(layout, take_id), "inferred": summary["inferred"]}
+        flush(folder)
+    except Exception:  # noqa: BLE001 - ensure_current repairs from edits.json on the next read
+        pass
+
+
+def flush(folder: Path) -> None:
+    """Write the derived files for the latest accepted edits (from the resident engine)."""
+    key = str(folder)
+    with _take_lock(folder):
+        if key not in _DIRTY:
+            return
+        session = editor.get(key)
+        edits = _read_json(folder / "edits.json")
+        if session is None:
+            _DIRTY.discard(key)
+            rebuild(folder, _load(folder))
+            return
+        stage = folder / f".staging-{uuid.uuid4().hex[:8]}"
+        stage.mkdir()
+        try:
+            reply = session.request(
+                cmd="write",
+                output=str(stage / "motion.amotion"),
+                pose_output=str(stage / "pose.json"),
+                review_output=str(stage / "motion.amotion.areview"),
+            )
+            _write_json(stage / "edit-result.json", _summary(edits, reply["frame_count"], reply["inferred"]))
+            _swap_all(folder, stage, DERIVED_OUTPUTS)
+            _DIRTY.discard(key)
+        finally:
+            shutil.rmtree(stage, ignore_errors=True)
+
+
+def ensure_current(folder: Path) -> None:
+    """Make the derived files match ``edits.json``: flush pending edits, rebuild stale ones."""
+    flush(folder)
+    edits_path = folder / "edits.json"
+    result_path = folder / "edit-result.json"
+    if not edits_path.is_file() or not (folder / "refined.json").is_file():
+        return
+    recorded = _read_json(result_path).get("editsHash") if result_path.is_file() else None
+    if recorded != edits_hash(_read_json(edits_path)):
+        rebuild(folder, _load(folder))
+
+
+def flush_all() -> None:
+    """App shutdown: write pending edits' outputs, then stop the resident engines."""
+    with _JOBS_LOCK:
+        timers = list(_FLUSH_TIMERS.values())
+        _FLUSH_TIMERS.clear()
+    for timer in timers:
+        timer.cancel()
+    for key in list(_DIRTY):
+        _flush_quietly(Path(key))
+    editor.close_all()
 
 
 # ---------------------------------------------------------------- data for the UI
@@ -594,6 +740,8 @@ def pose_data(layout: WorkspaceLayout, take_id: str, variant: str = "current") -
     (Studio's "原始叠影"). ``refined``: the capture result before any edit.
     """
     folder = take_dir(layout, take_id)
+    if variant != "refined":
+        ensure_current(folder)
     paths = {
         "current": folder / "pose.json",
         "baseline": folder / "motion.amotion.areview" / "source.json",
@@ -672,12 +820,20 @@ def issues(layout: WorkspaceLayout, take_id: str) -> list[dict[str, Any]]:
 def export(layout: WorkspaceLayout, take_id: str, request: dict[str, Any]) -> dict[str, Any]:
     """BVH (cm or m) or VRMA into ``exports/mocap/``; a frame range exports only that range."""
     folder = take_dir(layout, take_id)
+    ensure_current(folder)
     package = folder / "motion.amotion"
     if not (package / "manifest.json").is_file():
         raise MocapError("This take has no motion yet.")
     kind = request.get("format")
-    if kind not in ("bvh", "vrma"):
-        raise MocapError("Export format must be bvh or vrma.")
+    if kind not in ("bvh", "vrma", "blender"):
+        raise MocapError("Export format must be bvh, vrma or blender.")
+    frames = request.get("frames")
+    if kind == "blender" and not (
+        isinstance(frames, list) and frames and all(isinstance(v, int) and v >= 0 for v in frames)
+    ):
+        raise MocapError("A Blender export needs the selected frame numbers.")
+    if kind == "blender":
+        frames = sorted(set(frames))
     unit = request.get("unit", "centimeters")
     if kind == "bvh" and unit not in ("centimeters", "meters"):
         raise MocapError("BVH unit must be centimeters or meters.")
@@ -701,13 +857,19 @@ def export(layout: WorkspaceLayout, take_id: str, request: dict[str, Any]) -> di
             staging.parent.mkdir(parents=True, exist_ok=True)
             engine.run_cli("trim-motion", package, "--output", staging, "--start-frame", str(first), "--end-frame", str(last))
             source, stem = staging, f"{stem}-f{first}-{last}"
-        target = out_dir / f"{stem}.{kind}"
+        # Selected-frame exports name the frames' count; the engine requires this suffix.
+        extension = "animocap-blender.json" if kind == "blender" else kind
+        if kind == "blender":
+            stem = f"{stem}-{len(frames)}frames"
+        target = out_dir / f"{stem}.{extension}"
         counter = 2
         while target.exists():
-            target, counter = out_dir / f"{stem}-{counter}.{kind}", counter + 1
+            target, counter = out_dir / f"{stem}-{counter}.{extension}", counter + 1
         args: list[Any] = [f"export-{kind}", source, "--output", target]
         if kind == "bvh":
             args += ["--unit", unit]
+        if kind == "blender":
+            args += ["--frames", ",".join(str(v) for v in frames)]
         result = engine.run_cli(*args)
     except engine.EngineError as error:
         raise MocapError(str(error)) from error

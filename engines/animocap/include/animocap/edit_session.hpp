@@ -5,6 +5,7 @@
 #include "animocap/pose_sequence.hpp"
 
 #include <filesystem>
+#include <string>
 #include <vector>
 
 namespace animocap {
@@ -59,6 +60,8 @@ EditResult apply_edit_session(
     const PoseSequence& refined, const EditSession& session, const Skeleton* character_skeleton = nullptr);
 
 EditSession load_edit_session(const std::filesystem::path& path);
+// Same format as the file, given as JSON text (animocap serve receives it inline).
+EditSession parse_edit_session(const std::string& json_text);
 void save_edit_session(const EditSession& session, const std::filesystem::path& path);
 
 }  // namespace animocap

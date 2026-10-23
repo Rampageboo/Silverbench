@@ -109,9 +109,42 @@ previous result and shows the message.
 `inspect-motion`, `inspect-video`, `fuse-multiview`, `export-bvh`, `export-vrma`,
 `trim-motion`: unchanged; see `animocap --help`.
 
+## `serve` (editing)
+
+```
+animocap serve
+```
+
+A resident editor for one take. One JSON request per stdin line, one JSON reply
+per stdout line (`{"id", "ok": true, ...}` or `{"id", "ok": false, "contract": bool,
+"error"}`; a refused request changes nothing). RWB runs one per take being edited
+(`backend/mocap/editor.py`) and closes it after 10 idle minutes.
+
+| `cmd` | Request | Reply |
+|---|---|---|
+| `open` | `refined`, `edits` (the saved session), `profile`?, `cameras_from`? | `frame_count`, `joint_count` |
+| `apply` | `edits` (the whole session), `full`? | `pose`, `baseline`: frames that changed since the previous result; `inferred`; counts |
+| `write` | `output`, `pose_output`?, `review_output`? | writes the latest result like `apply-edits` |
+| `close` | | exits |
+
+A frame delta is `{"frames": [f...], "image": [...], "position": [...],
+"confidence": [...], "valid": [...]}` with all joints of each listed frame, in
+the same flat layout as RWB's pose data. `baseline` is the pre-review pose
+(the "原始叠影" ghost).
+
+RWB saves `edits.json` as soon as an edit is accepted and writes the derived
+files about 1.5 s after the last edit (and before any read or export).
+`edit-result.json` carries `editsHash`; when it does not match `edits.json`
+(a crash before the write, an edit made elsewhere) the files are rebuilt with
+`apply-edits`.
+
 ## Latency
 
-Measured on the dev machine (400 frames, 23 joints): `apply-edits` ≈ 280 ms, of
-which ≈ 160 ms is Windows starting any freshly built unsigned exe (a hello-world
-costs the same). Fine for capture/export; the interactive edit loop will use a
-resident `animocap serve` process (plan, phase D) rather than moving maths to TS.
+Measured on the dev machine (RTX 4060 laptop, 23 joints):
+
+| Take | `apply-edits` (one-shot, writes everything) | `serve` `apply` |
+|---|---|---|
+| 400 frames | ≈ 280 ms (≈ 160 ms is Windows starting an unsigned exe) | — |
+| 3000 frames | ≈ 1.1 s, plus ≈ 0.4 s for Python to parse the 24 MB pose | ≈ 23 ms, ≈ 15 frames returned for a drag |
+
+Opening a 3000-frame take in `serve` costs ≈ 0.45 s once.

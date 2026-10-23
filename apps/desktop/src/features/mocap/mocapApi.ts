@@ -1,5 +1,6 @@
 /** Motion-capture REST contract (backend_api/mocap.py, docs/animocap-engine.md). */
 import { backendBaseUrl } from "../../lib/backendConfig";
+import type { EditSession } from "./mocapEdits";
 
 export type CaptureStatus = "new" | "capturing" | "cancelling" | "ready" | "failed" | "cancelled" | "interrupted";
 
@@ -83,7 +84,18 @@ export type EngineStatus = {
   vlm?: { ready: boolean; error?: string; [key: string]: unknown };
 };
 
-export type ExportRequest = { format: "bvh" | "vrma"; unit?: "centimeters" | "meters"; range?: [number, number] | null };
+export type ExportRequest = {
+  format: "bvh" | "vrma" | "blender";
+  unit?: "centimeters" | "meters";
+  range?: [number, number] | null;
+  /** Blender: the selected source frames (exported as complete poses, no interpolation). */
+  frames?: number[];
+};
+
+/** Frames that changed, all joints of each, in PoseData's flat layout. */
+export type PoseDelta = { frames: number[]; image: number[]; position: number[]; confidence: number[]; valid: number[] };
+
+export type EditReply = { inferred: [number, number][]; pose: PoseDelta; baseline: PoseDelta; editsHash: string };
 
 export class MocapApiError extends Error {
   constructor(
@@ -125,6 +137,11 @@ export const mocapApi = {
     request<PoseData>("GET", `${takePath(id)}/pose`, { workspaceRoot, variant }),
   issues: (workspaceRoot: string, id: string) =>
     request<{ issues: TakeIssue[] }>("GET", `${takePath(id)}/issues`, { workspaceRoot }).then((r) => r.issues),
+  edits: (workspaceRoot: string, id: string) => request<EditSession>("GET", `${takePath(id)}/edits`, { workspaceRoot }),
+  saveEdits: (workspaceRoot: string, id: string, edits: EditSession) =>
+    request<EditReply>("POST", `${takePath(id)}/edits`, { workspaceRoot }, edits),
+  updateOptions: (workspaceRoot: string, id: string, changes: Partial<TakeOptions>) =>
+    request<Take>("POST", `${takePath(id)}/options`, { workspaceRoot }, changes),
   export: (workspaceRoot: string, id: string, body: ExportRequest) =>
     request<{ path: string; relativePath: string }>("POST", `${takePath(id)}/export`, { workspaceRoot }, body)
 };

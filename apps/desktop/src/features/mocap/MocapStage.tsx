@@ -14,6 +14,9 @@ type Props = {
   showLabels: boolean;
   selectedJoint: number | null;
   onSelectJoint: (joint: number | null) => void;
+  /** Drag correction mode: dragging a joint reports its move in source pixels. */
+  editMode?: boolean;
+  onDragJoint?: (joint: number, dragPx: [number, number]) => void;
   onTime: (seconds: number) => void;
   onPlayingChange: (playing: boolean) => void;
 };
@@ -29,6 +32,8 @@ export function MocapStage({
   showLabels,
   selectedJoint,
   onSelectJoint,
+  editMode = false,
+  onDragJoint,
   onTime,
   onPlayingChange
 }: Props) {
@@ -37,6 +42,8 @@ export function MocapStage({
   const [source, setSource] = useState(video);
   const [videoError, setVideoError] = useState("");
   const [size, setSize] = useState({ width: 0, height: 0 });
+  // A joint being dragged: only it moves until the engine answers (Studio rule).
+  const [drag, setDrag] = useState<{ joint: number; startX: number; startY: number; dx: number; dy: number } | null>(null);
 
   useEffect(() => {
     setSource(video);
@@ -115,11 +122,34 @@ export function MocapStage({
     if (comparison && frame < comparison.times.length) {
       drawSkeleton(context, comparison, frame, toScreen, { ghost: true, colors, selectedJoint: null, inferred: new Set() });
     }
-    drawSkeleton(context, pose, frame, toScreen, { ghost: false, colors, selectedJoint, inferred: inferredSet(pose), labels: showLabels });
-  }, [pose, comparison, frame, size, box.x, box.y, box.scale, showLabels, selectedJoint]);
+    const moved = drag && box.scale ? { joint: drag.joint, dx: drag.dx / box.scale, dy: drag.dy / box.scale } : null;
+    drawSkeleton(context, pose, frame, toScreen, { ghost: false, colors, selectedJoint, inferred: inferredSet(pose), labels: showLabels, moved });
+  }, [pose, comparison, frame, size, box.x, box.y, box.scale, showLabels, selectedJoint, drag]);
 
   function pick(event: React.PointerEvent<HTMLCanvasElement>) {
     if (!pose) return;
+    const joint = jointAt(event);
+    onSelectJoint(joint);
+    if (editMode && joint !== null && onDragJoint) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setDrag({ joint, startX: event.clientX, startY: event.clientY, dx: 0, dy: 0 });
+    }
+  }
+
+  function moveDrag(event: React.PointerEvent<HTMLCanvasElement>) {
+    if (drag) setDrag({ ...drag, dx: event.clientX - drag.startX, dy: event.clientY - drag.startY });
+  }
+
+  function endDrag() {
+    if (!drag) return;
+    setDrag(null);
+    if (box.scale && Math.hypot(drag.dx, drag.dy) >= 1) {
+      onDragJoint?.(drag.joint, [drag.dx / box.scale, drag.dy / box.scale]);
+    }
+  }
+
+  function jointAt(event: React.PointerEvent<HTMLCanvasElement>): number | null {
+    if (!pose) return null;
     const rect = event.currentTarget.getBoundingClientRect();
     const px = event.clientX - rect.left;
     const py = event.clientY - rect.top;
@@ -133,7 +163,7 @@ export function MocapStage({
         bestDistance = distance;
       }
     });
-    onSelectJoint(best);
+    return best;
   }
 
   async function switchToProxy() {
@@ -159,7 +189,14 @@ export function MocapStage({
         onLoadedMetadata={(event) => onTime(event.currentTarget.currentTime)}
         onError={() => (source === video ? void switchToProxy() : setVideoError("预览副本也无法播放。"))}
       />
-      <canvas ref={canvasRef} className="mc-stage__overlay" onPointerDown={pick} />
+      <canvas
+        ref={canvasRef}
+        className={`mc-stage__overlay${editMode ? " is-editing" : ""}`}
+        onPointerDown={pick}
+        onPointerMove={moveDrag}
+        onPointerUp={endDrag}
+        onPointerCancel={() => setDrag(null)}
+      />
       {videoError ? <div className="mc-stage__notice">{videoError}</div> : null}
     </div>
   );
@@ -184,6 +221,8 @@ type DrawOptions = {
   selectedJoint: number | null;
   inferred: Set<number>;
   labels?: boolean;
+  /** Preview offset of a dragged joint, in source pixels. */
+  moved?: { joint: number; dx: number; dy: number } | null;
 };
 
 function drawSkeleton(
@@ -191,8 +230,12 @@ function drawSkeleton(
   pose: PoseData,
   frame: number,
   toScreen: (point: [number, number]) => [number, number],
-  { ghost, colors, selectedJoint, inferred, labels }: DrawOptions
+  { ghost, colors, selectedJoint, inferred, labels, moved }: DrawOptions
 ) {
+  const point = (joint: number): [number, number] => {
+    const [x, y] = imagePoint(pose, frame, joint);
+    return moved && moved.joint === joint ? [x + moved.dx, y + moved.dy] : [x, y];
+  };
   const joints = pose.joints.length;
   context.save();
   context.lineCap = "round";
@@ -203,8 +246,8 @@ function drawSkeleton(
     const a = sample(pose, frame, parent);
     const b = sample(pose, frame, joint);
     if (!a.valid || !b.valid) return;
-    const [x1, y1] = toScreen(imagePoint(pose, frame, parent));
-    const [x2, y2] = toScreen(imagePoint(pose, frame, joint));
+    const [x1, y1] = toScreen(point(parent));
+    const [x2, y2] = toScreen(point(joint));
     context.strokeStyle = ghost ? colors.ghost : colors.side[boneSide(pose.joints[joint])];
     context.lineWidth = ghost ? 2 : 3;
     context.beginPath();
@@ -221,7 +264,7 @@ function drawSkeleton(
   for (let joint = 0; joint < joints; joint++) {
     const { confidence, valid } = sample(pose, frame, joint);
     if (!valid) continue;
-    const [x, y] = toScreen(imagePoint(pose, frame, joint));
+    const [x, y] = toScreen(point(joint));
     const isInferred = inferred.has(frame * joints + joint);
     context.globalAlpha = confidence < 0.35 && !isInferred ? 0.5 : 1;
     context.beginPath();

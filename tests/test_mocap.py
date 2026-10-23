@@ -81,7 +81,8 @@ def workspace(tmp_path, monkeypatch):
     monkeypatch.setattr(takes, "_hand_over_gpu", lambda: None)
     layout = create_workspace(tmp_path / "ws")
     (layout.media / "dance.mp4").write_bytes(b"not decoded by the fake adapter")
-    return layout
+    yield layout
+    takes.flush_all()  # stop resident engines before the temp folder goes
 
 
 def _captured(layout, **options) -> str:
@@ -234,7 +235,7 @@ def test_api_round_trip(workspace):
         assert [t["id"] for t in listed] == [take_id] and listed[0]["capture"]["status"] == "ready"
         assert len(client.get(f"/api/mocap/takes/{take_id}/pose", params=root).json()["times"]) == 120
         assert client.get(f"/api/mocap/takes/{take_id}/issues", params=root).json() == {"issues": []}
-        bad = client.put(f"/api/mocap/takes/{take_id}/edits", params=root, json={"version": 2})
+        bad = client.post(f"/api/mocap/takes/{take_id}/edits", params=root, json={"version": 2})
         assert bad.status_code == 400 and "version 1" in bad.json()["detail"]
         assert client.get("/api/mocap/takes/../etc", params=root).status_code in (400, 404)
         assert client.get("/api/mocap/takes/nope", params=root).status_code == 400
@@ -262,7 +263,7 @@ def test_chinese_workspace_and_video_names(workspace, tmp_path):
     takes.wait_for_capture(layout, take["id"], timeout=120)
     assert takes.describe(layout, take["id"])["capture"]["status"] == "ready"
     edits = {**takes.EMPTY_EDITS, "corrections": [{"joint": 10, "keyframe": 5, "dragPx": [3, 1]}]}
-    assert takes.save_edits(layout, take["id"], edits)["edits"]["corrections"] == 1
+    assert takes.save_edits(layout, take["id"], edits)["pose"]["frames"]
     exported = takes.export(layout, take["id"], {"format": "bvh", "range": [0, 9]})
     assert exported["relativePath"] == "exports/mocap/舞蹈 第一段-f0-9.bvh" and Path(exported["path"]).is_file()
 
@@ -296,10 +297,10 @@ def test_adapters_run_with_utf8_output(workspace, monkeypatch):
     assert seen["PYTHONUTF8"] == "1" and seen["PYTHONIOENCODING"] == "utf-8"
 
 
-def test_failed_swap_rolls_back_to_the_previous_version(workspace, monkeypatch):
+def test_failed_flush_keeps_the_previous_files_and_recovers(workspace, monkeypatch):
     take_id = _captured(workspace)
     folder = workspace.path("mocap") / take_id
-    before = {name: (folder / name).read_bytes() for name in ("pose.json", "edit-result.json", "edits.json")}
+    before = {name: (folder / name).read_bytes() for name in ("pose.json", "edit-result.json")}
     real_rename = Path.rename
 
     def flaky(self, target):
@@ -310,11 +311,63 @@ def test_failed_swap_rolls_back_to_the_previous_version(workspace, monkeypatch):
 
     monkeypatch.setattr(Path, "rename", flaky)
     edits = {**takes.EMPTY_EDITS, "corrections": [{"joint": 10, "keyframe": 5, "dragPx": [9, 9]}]}
+    takes.save_edits(workspace, take_id, edits)
+    assert takes.read_edits(workspace, take_id) == edits  # the user's work is saved at once
     with pytest.raises(takes.MocapError, match="open in another program"):
-        takes.save_edits(workspace, take_id, edits)
+        takes.flush(folder)
     assert {name: (folder / name).read_bytes() for name in before} == before
     assert (folder / "motion.amotion" / "manifest.json").is_file()
     assert not list(folder.glob("*.old-*")) and not list(folder.glob(".staging-*"))
+    monkeypatch.setattr(Path, "rename", real_rename)
+    pose = takes.pose_data(workspace, take_id)  # the next read brings the files up to date
+    assert json.loads((folder / "edit-result.json").read_text())["editsHash"] == takes.edits_hash(edits)
+    assert pose["image"] != json.loads(before["pose.json"])["frames"]
+
+
+def _apply_delta(pose, delta):
+    joints = len(pose["joints"])
+    for index, frame in enumerate(delta["frames"]):
+        for key, width in (("image", 2), ("position", 3), ("confidence", 1), ("valid", 1)):
+            size = joints * width
+            pose[key][frame * size:(frame + 1) * size] = delta[key][index * size:(index + 1) * size]
+
+
+def test_edit_deltas_reproduce_the_saved_result(workspace):
+    take_id = _captured(workspace)
+    shown = takes.pose_data(workspace, take_id)
+    sequence = [
+        {**takes.EMPTY_EDITS, "corrections": [{"joint": 10, "keyframe": 60, "dragPx": [12, -8]}]},
+        {**takes.EMPTY_EDITS, "corrections": [{"joint": 10, "keyframe": 60, "dragPx": [12, -8]}, {"joint": 3, "keyframe": 20, "dragPx": [-5, 2]}]},
+        dict(takes.EMPTY_EDITS),  # undo everything
+        {**takes.EMPTY_EDITS, "corrections": [{"joint": 14, "keyframe": 100, "dragPx": [4, 4], "curve": "hold", "radius": 6}]},
+    ]
+    for edits in sequence:
+        reply = takes.save_edits(workspace, take_id, edits)
+        _apply_delta(shown, reply["pose"])
+    saved = takes.pose_data(workspace, take_id)
+    assert shown["image"] == pytest.approx(saved["image"], abs=0.01)
+    assert shown["position"] == pytest.approx(saved["position"], abs=1e-5)
+    assert shown["valid"] == saved["valid"]
+
+
+def test_engine_crash_and_stale_files_are_recovered(workspace):
+    take_id = _captured(workspace)
+    folder = workspace.path("mocap") / take_id
+    first = {**takes.EMPTY_EDITS, "corrections": [{"joint": 10, "keyframe": 60, "dragPx": [12, -8]}]}
+    takes.save_edits(workspace, take_id, first)
+    from backend.mocap import editor
+
+    editor.get(str(folder)).process.kill()  # engine crash between edits
+    second = {**takes.EMPTY_EDITS, "corrections": [{"joint": 10, "keyframe": 60, "dragPx": [20, -8]}]}
+    assert takes.save_edits(workspace, take_id, second)["pose"]["frames"]
+    takes.flush_all()
+    # edits.json changed behind the app's back (another computer, a crash before flush).
+    third = {**takes.EMPTY_EDITS, "corrections": [{"joint": 10, "keyframe": 60, "dragPx": [-30, 0]}]}
+    (folder / "edits.json").write_text(json.dumps(third), encoding="utf-8")
+    pose = takes.pose_data(workspace, take_id)
+    refined = takes.pose_data(workspace, take_id, "refined")
+    k = (60 * 23 + 10) * 2
+    assert pose["image"][k] == pytest.approx(refined["image"][k] - 30, abs=0.02)
 
 
 def test_small_request_checks(workspace):
@@ -334,3 +387,23 @@ def test_progress_ignores_diagnostics_after_the_last_frame(tmp_path):
     )
     state = progress.single_view(progress.read_log(log), progress.LogState(), vlm_enabled=False)
     assert state["stage"] == "pose" and state["fraction"] == pytest.approx(0.86)
+
+
+def test_person_frame_and_blender_frames(workspace):
+    take = takes.create_take(workspace, {"sources": [{"video": "media/dance.mp4"}]})
+    updated = takes.update_options(workspace, take["id"], {"roi": [100.4, 50, 300, 600]})
+    assert updated["options"]["roi"] == [100, 50, 300, 600] and updated["options"]["expertInterval"] == "2"
+    with pytest.raises(takes.MocapError, match="person frame"):
+        takes.update_options(workspace, take["id"], {"roi": [0, 0, -1, 5]})
+    takes.start_capture(workspace, take["id"])
+    takes.wait_for_capture(workspace, take["id"], timeout=120)
+    log = (workspace.path("mocap") / take["id"] / "logs" / "pose.log").read_text()
+    assert takes.describe(workspace, take["id"])["capture"]["status"] == "ready", log
+    with pytest.raises(takes.MocapError, match="before a take is captured"):
+        takes.update_options(workspace, take["id"], {"roi": None})
+    exported = takes.export(workspace, take["id"], {"format": "blender", "frames": [40, 3, 3, 10]})
+    assert exported["relativePath"] == "exports/mocap/dance-3frames.animocap-blender.json"
+    document = json.loads(Path(exported["path"]).read_text(encoding="utf-8"))
+    assert len(document["selected_frames"]) == 3
+    with pytest.raises(takes.MocapError, match="selected frame"):
+        takes.export(workspace, take["id"], {"format": "blender", "frames": []})

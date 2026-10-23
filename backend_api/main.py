@@ -68,10 +68,11 @@ async def _lifespan(application: FastAPI):
         yield
     finally:
         from backend_api.gallery import close_library
-        from backend.mocap.takes import cancel_all_captures
+        from backend.mocap.takes import cancel_all_captures, flush_all
 
         close_library()
         cancel_all_captures()
+        flush_all()
 
 
 app = FastAPI(title="RampageWorkbench API", lifespan=_lifespan)

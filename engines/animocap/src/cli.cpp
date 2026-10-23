@@ -1,3 +1,4 @@
+#include "animocap/blender_exchange.hpp"
 #include "animocap/contracts.hpp"
 #include "animocap/edit_session.hpp"
 #include "animocap/character_profile.hpp"
@@ -32,8 +33,10 @@ using json = nlohmann::json;
         "  animocap inspect-video <video-file>\n"
         "  animocap reconstruct-pose <pose_sequence.json> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>] [--pose-output <refined.json>] [--no-smooth]\n"
         "  animocap apply-edits <refined.json> --edits <edits.json> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>] [--pose-output <pose.json>] [--review-output <motion.amotion.areview>] [--cameras-from <motion.amotion>]\n"
+        "  animocap serve   (resident editor: JSON requests on stdin, see docs/animocap-engine.md)\n"
         "  animocap fuse-multiview <capture.json> --poses <directory> --output <motion.amotion> [--diagnostics <diagnostics.json>] [--comparison-pose <pose.json>] [--character-profile <profile-or-skeleton.json>] [--reference-image-plane-anchor]\n"
         "  animocap export-bvh <motion.amotion> --output <motion.bvh> [--unit centimeters|meters] [--force]\n"
+        "  animocap export-blender <motion.amotion> --frames <f,f,...> --output <frames.animocap-blender.json> [--force]\n"
         "  animocap export-vrma <motion.amotion> --output <motion.vrma> [--force]\n"
         "  animocap trim-motion <motion.amotion> --output <clip.amotion> --start-frame <index> --end-frame <index>\n"
         "  animocap generate-fixture --output <directory> [--seed <uint64>] [--frames <count>]\n");
@@ -246,6 +249,158 @@ int apply_edits(int argc, char** argv) {
         {"review_ranges", session.review.ranges.size()},
         {"inferred", std::move(inferred)},
     }.dump(2) << '\n';
+    return 0;
+}
+
+// ---------------------------------------------------------------- serve
+// A resident editing process: one JSON request per stdin line, one JSON reply
+// per stdout line. It keeps the refined pose and the last result in memory, so
+// an edit costs the solve, not re-reading and re-writing the whole take; replies
+// carry only the frames that changed. Protocol: docs/animocap-engine.md.
+
+json pose_delta(const animocap::PoseSequence& before, const animocap::PoseSequence& after, bool full) {
+    json frames = json::array(), image = json::array(), position = json::array(),
+         confidence = json::array(), valid = json::array();
+    for (std::size_t f = 0; f < after.frames.size(); ++f) {
+        const auto& joints = after.frames[f].joints;
+        bool changed = full || f >= before.frames.size() || before.frames[f].joints.size() != joints.size();
+        for (std::size_t j = 0; !changed && j < joints.size(); ++j) {
+            const auto& a = before.frames[f].joints[j];
+            const auto& b = joints[j];
+            changed = a.image_xy != b.image_xy || a.position_m != b.position_m ||
+                      a.confidence != b.confidence || a.valid != b.valid;
+        }
+        if (!changed) continue;
+        frames.push_back(f);
+        for (const auto& joint : joints) {
+            image.push_back(joint.image_xy.x);
+            image.push_back(joint.image_xy.y);
+            position.push_back(joint.position_m.x);
+            position.push_back(joint.position_m.y);
+            position.push_back(joint.position_m.z);
+            confidence.push_back(joint.confidence);
+            valid.push_back(joint.valid ? 1 : 0);
+        }
+    }
+    return {{"frames", std::move(frames)}, {"image", std::move(image)}, {"position", std::move(position)},
+            {"confidence", std::move(confidence)}, {"valid", std::move(valid)}};
+}
+
+json inferred_pairs(const animocap::EditResult& result) {
+    const auto joints = result.pose.frames.empty() ? std::size_t{0} : result.pose.frames.front().joints.size();
+    json pairs = json::array();
+    for (std::size_t index = 0; index < result.inferred.size(); ++index) {
+        if (result.inferred[index]) pairs.push_back({index / joints, index % joints});
+    }
+    return pairs;
+}
+
+struct ServeState {
+    std::optional<animocap::PoseSequence> refined;
+    std::optional<animocap::CharacterProfile> profile;
+    std::vector<animocap::Camera> cameras;
+    std::optional<animocap::EditResult> last;
+};
+
+json serve_request(ServeState& state, const json& request) {
+    const auto command = request.at("cmd").get<std::string>();
+    if (command == "open") {
+        ServeState next;
+        next.refined = animocap::load_pose_sequence_json(std::filesystem::path(request.at("refined").get<std::string>()));
+        if (request.contains("profile") && !request["profile"].is_null())
+            next.profile = animocap::load_character_profile(request["profile"].get<std::string>());
+        if (request.contains("cameras_from") && !request["cameras_from"].is_null())
+            next.cameras = animocap::load_motion_package(request["cameras_from"].get<std::string>()).cameras;
+        const auto edits = animocap::parse_edit_session(request.at("edits").dump());
+        next.last = animocap::apply_edit_session(*next.refined, edits, next.profile ? &next.profile->skeleton : nullptr);
+        state = std::move(next);
+        return {{"frame_count", state.refined->frames.size()},
+                {"joint_count", state.refined->frames.empty() ? 0 : state.refined->frames.front().joints.size()}};
+    }
+    if (!state.refined) throw animocap::ContractError("no take is open");
+    if (command == "apply") {
+        const auto edits = animocap::parse_edit_session(request.at("edits").dump());
+        auto result = animocap::apply_edit_session(*state.refined, edits, state.profile ? &state.profile->skeleton : nullptr);
+        const bool full = request.value("full", false);
+        json reply{
+            {"pose", pose_delta(state.last->pose, result.pose, full)},
+            {"baseline", pose_delta(state.last->corrected, result.corrected, full)},
+            {"inferred", inferred_pairs(result)},
+            {"corrections", edits.corrections.size()},
+            {"review_marks", edits.review.marks.size()},
+            {"review_ranges", edits.review.ranges.size()},
+        };
+        state.last = std::move(result);
+        return reply;
+    }
+    if (command == "write") {
+        auto motion = state.last->motion;
+        if (!state.cameras.empty()) motion.cameras = state.cameras;
+        animocap::save_motion_package(motion, std::filesystem::path(request.at("output").get<std::string>()));
+        if (request.contains("pose_output"))
+            animocap::save_pose_sequence_json(state.last->pose, request["pose_output"].get<std::string>());
+        if (request.contains("review_output"))
+            animocap::save_pose_review(state.last->corrected, state.last->review, request["review_output"].get<std::string>());
+        return {{"frame_count", motion.motion.frame_count}, {"joint_count", motion.motion.joint_count},
+                {"inferred", inferred_pairs(*state.last)}};
+    }
+    throw animocap::ContractError("unknown serve command: " + command);
+}
+
+int serve(int argc, char**) {
+    if (argc != 2) usage_error("serve takes no arguments");
+    ServeState state;
+    std::string line;
+    while (std::getline(std::cin, line)) {
+        if (line.find_first_not_of(" \t\r") == std::string::npos) continue;
+        json reply;
+        json id = nullptr;
+        try {
+            const auto request = json::parse(line);
+            id = request.value("id", json(nullptr));
+            if (request.value("cmd", std::string{}) == "close") break;
+            reply = serve_request(state, request);
+            reply["ok"] = true;
+        } catch (const animocap::ContractError& error) {
+            reply = {{"ok", false}, {"contract", true}, {"error", error.what()}};
+        } catch (const std::exception& error) {
+            reply = {{"ok", false}, {"contract", false}, {"error", error.what()}};
+        }
+        reply["id"] = id;
+        std::cout << reply.dump() << std::endl;
+    }
+    return 0;
+}
+
+int export_blender(int argc, char** argv) {
+    if (argc < 7) usage_error("export-blender requires a motion package, --frames and --output");
+    std::filesystem::path output;
+    std::vector<std::size_t> frames;
+    animocap::BlenderSelectedFrameExportOptions options;
+    for (int index = 3; index < argc; ++index) {
+        const std::string_view option(argv[index]);
+        if (option == "--output" && index + 1 < argc) {
+            output = argv[++index];
+        } else if (option == "--frames" && index + 1 < argc) {
+            // Comma-separated source frame numbers, e.g. 12,40,41.
+            std::string_view list(argv[++index]);
+            while (!list.empty()) {
+                const auto comma = list.find(',');
+                const auto item = list.substr(0, comma);
+                const auto value = parse_uint64(item, "--frames");
+                if (value > std::numeric_limits<std::size_t>::max()) usage_error("--frames value is too large");
+                frames.push_back(static_cast<std::size_t>(value));
+                list = comma == std::string_view::npos ? std::string_view{} : list.substr(comma + 1);
+            }
+        } else if (option == "--force") {
+            options.overwrite = true;
+        } else {
+            usage_error("unknown export-blender option: " + std::string(option));
+        }
+    }
+    if (output.empty() || frames.empty()) usage_error("export-blender requires --frames and --output");
+    animocap::export_blender_selected_frames(animocap::load_motion_package(argv[2]), frames, output, options);
+    std::cout << json{{"status", "exported"}, {"output", output.generic_string()}, {"frame_count", frames.size()}}.dump(2) << '\n';
     return 0;
 }
 
@@ -543,8 +698,10 @@ void print_help() {
         "  inspect-video <video-file>\n"
         "  reconstruct-pose <pose_sequence.json> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>] [--pose-output <refined.json>] [--no-smooth]\n"
         "  apply-edits <refined.json> --edits <edits.json> --output <motion.amotion> [--character-profile <profile-or-skeleton.json>] [--pose-output <pose.json>] [--review-output <motion.amotion.areview>] [--cameras-from <motion.amotion>]\n"
+        "  serve   (resident editor: JSON requests on stdin, see docs/animocap-engine.md)\n"
         "  fuse-multiview <capture.json> --poses <directory> --output <motion.amotion> [--diagnostics <diagnostics.json>] [--comparison-pose <pose.json>] [--character-profile <profile-or-skeleton.json>] [--reference-image-plane-anchor]\n"
         "  export-bvh <motion.amotion> --output <motion.bvh> [--unit centimeters|meters] [--force]\n"
+        "  export-blender <motion.amotion> --frames <f,f,...> --output <frames.animocap-blender.json> [--force]\n"
         "  export-vrma <motion.amotion> --output <motion.vrma> [--force]\n"
         "  trim-motion <motion.amotion> --output <clip.amotion> --start-frame <index> --end-frame <index>\n"
         "  generate-fixture --output <directory> [--seed <uint64>] [--frames <count>]\n";
@@ -569,9 +726,11 @@ int main(int argc, char** argv) {
         if (command == "inspect-video") return inspect_video(argc, argv);
         if (command == "reconstruct-pose") return reconstruct_pose(argc, argv);
         if (command == "apply-edits") return apply_edits(argc, argv);
+        if (command == "serve") return serve(argc, argv);
         if (command == "fuse-multiview") return fuse_multiview(argc, argv);
         if (command == "export-bvh") return export_bvh(argc, argv);
         if (command == "export-vrma") return export_vrma(argc, argv);
+        if (command == "export-blender") return export_blender(argc, argv);
         if (command == "trim-motion") return trim_motion(argc, argv);
         if (command == "generate-fixture") return generate_fixture(argc, argv);
         usage_error("unknown command: " + std::string(command));

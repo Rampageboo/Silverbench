@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "../../components/useToast";
 import { IconRefresh } from "../../ui/icons";
-import { mocapApi, type EngineStatus, type PoseData, type PoseVariant, type Take, type TakeIssue } from "./mocapApi";
-import { frameAtTime, lowConfidenceFrames, statusLabel } from "./mocapDomain";
+import { mocapApi, type EditReply, type EngineStatus, type PoseData, type PoseVariant, type Take, type TakeIssue } from "./mocapApi";
+import { applyDelta, frameAtTime, lowConfidenceFrames, statusLabel } from "./mocapDomain";
+import { BlenderFramesPanel, JointRepairPanel, KeyframePanel } from "./MocapEditPanels";
+import { addDrag, deleteKeyframe, keyframes, marksFor, rangesFor, type CurvePreset } from "./mocapEdits";
 import { CapturePanel, EnvironmentPanel, ExportPanel, IssuesPanel, TakeList } from "./MocapPanels";
 import { MocapStage } from "./MocapStage";
 import { MocapTimeline, type FrameRange } from "./MocapTimeline";
 import { NewTakeDialog } from "./NewTakeDialog";
 import { SkeletonView } from "./SkeletonView";
+import { useMocapEditor } from "./useMocapEditor";
 import "./mocap.css";
 
 type Props = { active: boolean; workspaceRoot: string; onReady?: () => void };
@@ -16,8 +19,9 @@ const POLL_MS = 1000;
 
 /**
  * 动捕: AniMocap captures of workspace videos. The engine computes everything;
- * this page shows the take (video + 2D joints, 3D view, timeline, issues) and
- * exports it. Editing arrives in the next phase (docs/plans/2026-10-23-animocap-into-rwb.md).
+ * this page shows the take (video + 2D joints, 3D view, timeline, issues), edits
+ * it (drag keyframes, per-joint repair) and exports it. Every edit is applied by
+ * the engine and saved at once; undo/redo walks the saved edit sessions.
  */
 export function MocapPage({ active, workspaceRoot, onReady }: Props) {
   const { showToast } = useToast();
@@ -36,12 +40,31 @@ export function MocapPage({ active, workspaceRoot, onReady }: Props) {
   const [showLabels, setShowLabels] = useState(false);
   const [selectedJoint, setSelectedJoint] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [curve, setCurve] = useState<CurvePreset>("smooth");
+  const [exportFrames, setExportFrames] = useState<number[]>([]);
+  const [exporting, setExporting] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => onReady?.(), [onReady]);
 
   const take = takes.find((item) => item.id === selectedId) ?? null;
   const capturing = take?.capture.status === "capturing" || take?.capture.status === "cancelling";
+  // Multiview drags are not yet rotated into the reference view (plan, phase D).
+  const dragAllowed = take?.mode === "single";
+
+  const onApplied = useCallback((reply: EditReply) => {
+    setPose((current) => (current ? applyDelta(current, reply.pose, reply.inferred) : current));
+    setComparison((current) => (current?.variant === "baseline" ? applyDelta(current, reply.baseline) : current));
+  }, []);
+  const onEditError = useCallback((message: string) => showToast(message, { variant: "error" }), [showToast]);
+  const editor = useMocapEditor({
+    workspaceRoot,
+    takeId: take?.hasMotion ? take.id : null,
+    enabled: !!take?.hasMotion,
+    onApplied,
+    onError: onEditError
+  });
 
   const refreshStatus = useCallback(async (deep = false) => {
     try {
@@ -123,6 +146,8 @@ export function MocapPage({ active, workspaceRoot, onReady }: Props) {
     setTime(0);
     setRange(null);
     setLoop(false);
+    setEditMode(false);
+    setExportFrames([]);
   }, [selectedId]);
 
   const frameCount = pose?.times.length ?? 0;
@@ -162,6 +187,10 @@ export function MocapPage({ active, workspaceRoot, onReady }: Props) {
     } else element.pause();
   }, [loop, range, frame, seek]);
 
+  const toggleExportFrame = useCallback((target: number) => {
+    setExportFrames((current) => (current.includes(target) ? current.filter((value) => value !== target) : [...current, target].sort((a, b) => a - b)));
+  }, []);
+
   const setRangeStart = useCallback(() => setRange((current) => ({ first: frame, last: Math.max(frame, current?.last ?? frameCount - 1) })), [frame, frameCount]);
   const setRangeEnd = useCallback(() => setRange((current) => ({ first: Math.min(frame, current?.first ?? 0), last: frame })), [frame]);
 
@@ -171,9 +200,18 @@ export function MocapPage({ active, workspaceRoot, onReady }: Props) {
     function onKey(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
       if (target && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) return;
-      if (event.ctrlKey || event.metaKey || event.altKey) return;
       const key = event.key.toLowerCase();
+      if (event.ctrlKey || event.metaKey) {
+        if (key === "z" && !event.shiftKey) editor.undo();
+        else if (key === "y" || (key === "z" && event.shiftKey)) editor.redo();
+        else return;
+        event.preventDefault();
+        return;
+      }
+      if (event.altKey) return;
       if (key === " ") togglePlay();
+      else if (key === "delete") editor.change((current) => deleteKeyframe(current, frame));
+      else if (key === "b") toggleExportFrame(frame);
       else if (key === "arrowleft") seek(frame - (event.shiftKey ? 10 : 1));
       else if (key === "arrowright") seek(frame + (event.shiftKey ? 10 : 1));
       else if (key === "i") setRangeStart();
@@ -184,17 +222,46 @@ export function MocapPage({ active, workspaceRoot, onReady }: Props) {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, pose, frame, range, seek, togglePlay, setRangeStart, setRangeEnd]);
+  }, [active, pose, frame, range, seek, togglePlay, setRangeStart, setRangeEnd, editor, toggleExportFrame]);
 
   const lowConfidence = useMemo(() => (pose ? lowConfidenceFrames(pose) : []), [pose]);
   const marks = useMemo(
     () => ({
       issues: [...new Set(issues.map((issue) => issue.frame))],
       inferred: pose ? [...new Set(pose.inferred.map(([inferredFrame]) => inferredFrame))] : [],
-      lowConfidence
+      lowConfidence,
+      keyframes: keyframes(editor.edits),
+      ...(selectedJoint !== null ? jointMarks(selectedJoint) : {}),
+      exportFrames
     }),
-    [issues, pose, lowConfidence]
+    // jointMarks reads editor.edits, listed here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [issues, pose, lowConfidence, editor.edits, selectedJoint, exportFrames]
   );
+
+  function jointMarks(joint: number) {
+    const marks = marksFor(editor.edits, joint);
+    const of = (trust: string) => marks.filter((mark) => mark.trust === trust).map((mark) => mark.frame);
+    return {
+      locked: of("locked"),
+      weighted: of("weighted"),
+      excluded: of("excluded"),
+      ranges: rangesFor(editor.edits, joint).map(([first, last]) => [first, last] as [number, number])
+    };
+  }
+
+  async function exportBlender() {
+    if (!take) return;
+    setExporting(true);
+    try {
+      const result = await mocapApi.export(workspaceRoot, take.id, { format: "blender", frames: exportFrames });
+      showToast(`已导出 ${result.relativePath}`, { variant: "success" });
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
+    } finally {
+      setExporting(false);
+    }
+  }
 
   // A fused multiview pose is drawn over the reference (most frontal) view.
   const referenceVideo = useMemo(() => {
@@ -206,6 +273,15 @@ export function MocapPage({ active, workspaceRoot, onReady }: Props) {
   async function startCapture(id: string) {
     try {
       const next = await mocapApi.capture(workspaceRoot, id);
+      setTakes((list) => list.map((item) => (item.id === next.id ? next : item)));
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
+    }
+  }
+
+  async function updateRoi(id: string, roi: [number, number, number, number] | null) {
+    try {
+      const next = await mocapApi.updateOptions(workspaceRoot, id, { roi });
       setTakes((list) => list.map((item) => (item.id === next.id ? next : item)));
     } catch (error) {
       showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
@@ -280,6 +356,8 @@ export function MocapPage({ active, workspaceRoot, onReady }: Props) {
               onSelectJoint={setSelectedJoint}
               onTime={onVideoTime}
               onPlayingChange={setPlaying}
+              editMode={editMode && dragAllowed && editor.loaded}
+              onDragJoint={(joint, dragPx) => editor.change((current) => addDrag(current, joint, frame, dragPx, curve))}
             />
             <MocapTimeline
               frame={frame}
@@ -302,7 +380,13 @@ export function MocapPage({ active, workspaceRoot, onReady }: Props) {
             />
           </>
         ) : take ? (
-          <CapturePanel take={take} onStart={() => void startCapture(take.id)} onCancel={() => void cancelCapture(take.id)} />
+          <CapturePanel
+            workspaceRoot={workspaceRoot}
+            take={take}
+            onStart={() => void startCapture(take.id)}
+            onCancel={() => void cancelCapture(take.id)}
+            onRoi={(roi) => void updateRoi(take.id, roi)}
+          />
         ) : (
           <div className="mc-empty">选择或新建一个动捕。</div>
         )}
@@ -315,12 +399,63 @@ export function MocapPage({ active, workspaceRoot, onReady }: Props) {
               <SkeletonView pose={pose} comparison={comparison} frame={frame} selectedJoint={selectedJoint} />
             </section>
             <section className="mc-section">
+              <h2 className="ui-eyebrow">手动修正{editor.busy ? " · 计算中…" : ""}</h2>
+              <KeyframePanel
+                edits={editor.edits}
+                frame={frame}
+                curve={curve}
+                onCurve={setCurve}
+                editMode={editMode}
+                onEditMode={setEditMode}
+                dragAllowed={dragAllowed}
+                canUndo={editor.canUndo}
+                canRedo={editor.canRedo}
+                busy={editor.busy || !editor.loaded}
+                onChange={editor.change}
+                onUndo={editor.undo}
+                onRedo={editor.redo}
+                onSeek={seek}
+              />
+            </section>
+            <section className="mc-section">
+              <h2 className="ui-eyebrow">按部位修复</h2>
+              {pose ? (
+                <JointRepairPanel
+                  pose={pose}
+                  edits={editor.edits}
+                  joint={selectedJoint}
+                  frame={frame}
+                  range={range}
+                  busy={editor.busy || !editor.loaded}
+                  onChange={editor.change}
+                  onSeek={seek}
+                />
+              ) : null}
+            </section>
+            <section className="mc-section">
               <h2 className="ui-eyebrow">问题帧</h2>
               <IssuesPanel issues={issues} lowConfidence={lowConfidence} inferredCount={pose?.inferred.length ?? 0} onSeek={seek} />
             </section>
             <section className="mc-section">
               <h2 className="ui-eyebrow">导出</h2>
               <ExportPanel workspaceRoot={workspaceRoot} take={take} range={range} />
+              <BlenderFramesPanel
+                frames={exportFrames}
+                frame={frame}
+                range={range}
+                busy={exporting}
+                onToggle={() => toggleExportFrame(frame)}
+                onAddRange={() =>
+                  range &&
+                  setExportFrames((current) => {
+                    const next = new Set(current);
+                    for (let value = range.first; value <= range.last; value++) next.add(value);
+                    return [...next].sort((a, b) => a - b);
+                  })
+                }
+                onClear={() => setExportFrames([])}
+                onExport={() => void exportBlender()}
+              />
             </section>
           </>
         ) : null}

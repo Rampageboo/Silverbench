@@ -1,6 +1,6 @@
 # AniMocap Fusion 整合进 RampageWorkbench
 
-状态：A、B、C（只读界面）完成，D 进行中（2026-10-23）。3D 视图选 Canvas 2D（复刻 Studio 投影，无新依赖）。基线：AniMocap `main` @ `50549a85`（已 subtree 进 `engines/animocap/`），RWB `main` @ `d589c203`。
+状态：A、B、C、D 完成（2026-10-23），剩 E 与多视角逐视角回看。D：常驻引擎 `animocap serve`（3000 帧每次编辑 ≈ 23 ms）、拖动关键帧与曲线、关键帧平滑、按部位锁定/加权/排除/区间重建/恢复自动、撤销/重做（每次编辑即保存）、人物范围框选、Blender 选帧导出。未做：多视角拖动方向校正（暂禁用多视角拖动）、2×4 逐视角回看。3D 视图选 Canvas 2D（复刻 Studio 投影，无新依赖）。基线：AniMocap `main` @ `50549a85`（已 subtree 进 `engines/animocap/`），RWB `main` @ `d589c203`。
 实施地点：Owner 改为这台电脑完成（"全部在这台电脑做"），另一台收尾。
 
 **Owner 2026-10-23 追加**：AniMocap 原前端不要。Studio（`gui_main.cpp` 等）已在整合时删除，不再等 E 阶段；对拍改用标签 `archive-2026-10-23` 的源码/Release 二进制在临时目录构建旧 Studio。引擎版本固定为 `50549a85`（= 该标签），归档 bundle 中唯一未合并的 `codex/multiview-architecture` 为受阻 R&D 且与 main 冲突，不合入（见 `DECISIONS.md`）。

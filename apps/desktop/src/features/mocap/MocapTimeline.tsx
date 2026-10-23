@@ -9,6 +9,15 @@ export type TimelineMarks = {
   inferred: number[];
   /** Frames with a low-confidence observation. */
   lowConfidence: number[];
+  /** Drag keyframes (all joints). */
+  keyframes?: number[];
+  /** The selected joint's review marks and rebuild ranges. */
+  locked?: number[];
+  weighted?: number[];
+  excluded?: number[];
+  ranges?: [number, number][];
+  /** Frames selected for the Blender export (a separate state). */
+  exportFrames?: number[];
 };
 
 type Props = {
@@ -117,9 +126,17 @@ export function MocapTimeline({
         }}
       >
         {range ? <div className="mc-timeline__span" style={{ left: percent(range.first), width: percent(range.last - range.first) }} /> : null}
+        {(marks.ranges ?? []).map(([first, last]) => (
+          <div key={`r${first}-${last}`} className="mc-timeline__rebuild" style={{ left: percent(first), width: percent(last - first) }} />
+        ))}
+        <MarkRow className="mc-mark--export" frames={marks.exportFrames ?? []} percent={percent} />
+        <MarkRow className="mc-mark--excluded" frames={marks.excluded ?? []} percent={percent} />
+        <MarkRow className="mc-mark--weighted" frames={marks.weighted ?? []} percent={percent} />
+        <MarkRow className="mc-mark--locked" frames={marks.locked ?? []} percent={percent} />
         <MarkRow className="mc-mark--low" frames={marks.lowConfidence} percent={percent} />
         <MarkRow className="mc-mark--inferred" frames={marks.inferred} percent={percent} />
         <MarkRow className="mc-mark--issue" frames={marks.issues} percent={percent} />
+        <MarkRow className="mc-mark--key" frames={marks.keyframes ?? []} percent={percent} />
         <div className="mc-timeline__head" style={{ left: percent(frame) }} />
       </div>
     </div>
