@@ -20,20 +20,21 @@ if (git tag --list "v$Version") { throw "v$Version already exists." }
 $notes = Join-Path $repo "docs\releases\v$Version.md"
 if (-not (Test-Path $notes)) { throw "Write the release notes first: docs\releases\v$Version.md" }
 
-function Set-JsonVersion($path) {
+function Set-JsonVersion($path, $count = 1) {
     $text = [IO.File]::ReadAllText($path)
-    $updated = [regex]::Replace($text, '("version"\s*:\s*")[^"]+(")', "`${1}$Version`${2}", 1)
+    $regex = New-Object Text.RegularExpressions.Regex '("version"\s*:\s*")[^"]+(")'
+    $updated = $regex.Replace($text, "`${1}$Version`${2}", $count)
     [IO.File]::WriteAllText($path, $updated, (New-Object Text.UTF8Encoding $false))
 }
 Set-JsonVersion (Join-Path $repo "apps\desktop\src-tauri\tauri.conf.json")
 Set-JsonVersion (Join-Path $repo "apps\desktop\package.json")
+# Only the app's own two version fields (root and packages[""]): re-resolving the lock
+# here once broke it (npm 11 tolerated an invalid tree that the release build's npm ci rejects).
+Set-JsonVersion (Join-Path $repo "apps\desktop\package-lock.json") 2
 $cargo = Join-Path $repo "apps\desktop\src-tauri\Cargo.toml"
 $text = [IO.File]::ReadAllText($cargo)
 $text = [regex]::Replace($text, '(?m)^version = "[^"]+"', "version = `"$Version`"", 1)
 [IO.File]::WriteAllText($cargo, $text, (New-Object Text.UTF8Encoding $false))
-
-Push-Location (Join-Path $repo "apps\desktop")
-try { npm install --package-lock-only --no-audit --no-fund | Out-Null } finally { Pop-Location }
 
 git add apps/desktop/src-tauri/tauri.conf.json apps/desktop/package.json apps/desktop/package-lock.json apps/desktop/src-tauri/Cargo.toml apps/desktop/src-tauri/Cargo.lock $notes
 git commit -m "Release v$Version"

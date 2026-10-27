@@ -15,9 +15,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Same npm (11) as development: npm 10 rejects the lock npm 11 writes for
+      # vitest's nested vite (esbuild is an optional peer there).
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
 
