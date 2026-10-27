@@ -1,6 +1,6 @@
 @layer app {
   /*
- * 图库与提示词: top bar over three columns.
+ * Gallery: top bar over three columns.
  *   ┌──────────────────────────────────────────────────────────┐
  *   │ title · count · search · mode · rules        size · blur │
  *   ├──────────┬─────────────────────────────┬─────────────────┤
@@ -38,11 +38,6 @@
     font-size: var(--fs-xs);
     line-height: 1.6;
     word-break: break-word;
-  }
-
-  .gal-note {
-    color: var(--c-text-3);
-    font-size: var(--fs-xs);
   }
 
   .gal-warn {
@@ -465,10 +460,6 @@
 
   .gal-selbar--idle {
     background: transparent;
-  }
-
-  .gal-hint {
-    font-size: var(--fs-2xs);
   }
 
   /* Virtual grid: the spacer has the full height; only the window is rendered. */

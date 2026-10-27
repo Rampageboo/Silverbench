@@ -3,12 +3,9 @@ import * as api from "../../api";
 import {
   pickAndImportAutoLabelModel,
   readAutoLabelModelRegistry,
-  type AutoLabelModelRegistry,
+  type AutoLabelModelRegistry
 } from "../auto-label/autoLabelModelApi";
-import {
-  activeModelFilename,
-  type AutoLabelModelKind,
-} from "../auto-label/autoLabelModelRegistry";
+import { activeModelFilename, type AutoLabelModelKind } from "../auto-label/autoLabelModelRegistry";
 import { readAutoLabelRunKeys, writeAutoLabelRunKeys } from "../auto-label/autoLabelRunRegistry";
 import type { BoxLabelEntry } from "../box-label/boxLabelCore";
 import type { BoxLabelAutoLabelResult } from "../box-label/boxLabelTypes";
@@ -23,7 +20,7 @@ import {
   shouldAutoRunClassify,
   shouldAutoRunDetect,
   useAutoLabelRunner,
-  type ClassificationClass,
+  type ClassificationClass
 } from "./useAutoLabelRunner";
 
 export {
@@ -36,7 +33,7 @@ export {
   modelRunId,
   shouldAutoRunClassify,
   shouldAutoRunDetect,
-  shouldAutoRunForEmptySample,
+  shouldAutoRunForEmptySample
 } from "./useAutoLabelRunner";
 
 type Props = {
@@ -50,7 +47,9 @@ type Props = {
   currentClassificationKey?: string | null;
   sourceImageBase64?: string | null;
   sourceImagePath?: string | null;
-  prepareSourceImageBase64?: (target: BoxLabelEntry) => Promise<string | null | undefined> | string | null | undefined;
+  prepareSourceImageBase64?: (
+    target: BoxLabelEntry
+  ) => Promise<string | null | undefined> | string | null | undefined;
   prepareSourceImagePath?: (target: BoxLabelEntry) => Promise<string | null | undefined>;
   requireSourceImageBase64?: boolean;
   sourceUnavailableMessage?: string;
@@ -58,7 +57,12 @@ type Props = {
   onApplyDetectPredictions?: (
     target: BoxLabelEntry,
     predictions: api.PtDetectPrediction[],
-    options?: { highConfidence?: number; proposalConfidence?: number; modelId?: string; persistProposals?: boolean }
+    options?: {
+      highConfidence?: number;
+      proposalConfidence?: number;
+      modelId?: string;
+      persistProposals?: boolean;
+    }
   ) => Promise<BoxLabelAutoLabelResult>;
   onAssignClassificationClass?: (classKey: string | null, basename?: string) => Promise<void>;
   onClassesChanged?: () => Promise<void> | void;
@@ -76,9 +80,7 @@ function classNamesFromModelInfo(info: api.PtModelInfo) {
     .map((item) => item.name.trim())
     .filter(Boolean);
   if (structured.length) return structured;
-  return (info.classNames || [])
-    .map((name) => String(name).trim())
-    .filter(Boolean);
+  return (info.classNames || []).map((name) => String(name).trim()).filter(Boolean);
 }
 
 function modelClassMap(classes: ClassificationClass[]) {
@@ -113,7 +115,7 @@ export function AutoLabelModelPanel({
   autoRunAllowed = true,
   onApplyDetectPredictions,
   onAssignClassificationClass,
-  onClassesChanged,
+  onClassesChanged
 }: Props) {
   const [registry, setRegistry] = useState<AutoLabelModelRegistry>({});
   const [importing, setImporting] = useState<AutoLabelModelKind | null>(null);
@@ -162,30 +164,45 @@ export function AutoLabelModelPanel({
   const classByName = useMemo(() => modelClassMap(classificationClasses), [classificationClasses]);
   const currentClassificationName = useMemo(() => {
     if (!currentClassificationKey) return "";
-    return classificationClasses.find((item) => item.key === currentClassificationKey)?.name ?? currentClassificationKey;
+    return (
+      classificationClasses.find((item) => item.key === currentClassificationKey)?.name ??
+      currentClassificationKey
+    );
   }, [classificationClasses, currentClassificationKey]);
   const sourceBase64 = typeof sourceImageBase64 === "string" ? sourceImageBase64.trim() : "";
   const sourcePath = typeof sourceImagePath === "string" ? sourceImagePath.trim() : "";
   const canPrepareBase64Source = typeof prepareSourceImageBase64 === "function";
   const canPrepareSource = typeof prepareSourceImagePath === "function";
   const hasExplicitBase64Source = typeof sourceImageBase64 === "string";
-  const sourceReady = !hasExplicitBase64Source || sourceBase64.length > 0 || canPrepareBase64Source || sourcePath.length > 0 || canPrepareSource;
+  const sourceReady =
+    !hasExplicitBase64Source ||
+    sourceBase64.length > 0 ||
+    canPrepareBase64Source ||
+    sourcePath.length > 0 ||
+    canPrepareSource;
   const currentMediaKey = autoLabelMediaKey(currentImage);
   const shouldAutoDetect = shouldAutoRunDetect(boxCount, proposalCount);
   const shouldAutoClassify = shouldAutoRunClassify(currentClassificationKey);
-  const detectAutoKey = detectModelRunId && currentMediaKey ? `detect:${detectModelRunId}:${currentMediaKey}` : "";
-  const classifyAutoKey = classifyModelRunId && currentMediaKey ? `classify:${classifyModelRunId}:${currentMediaKey}` : "";
+  const detectAutoKey =
+    detectModelRunId && currentMediaKey ? `detect:${detectModelRunId}:${currentMediaKey}` : "";
+  const classifyAutoKey =
+    classifyModelRunId && currentMediaKey ? `classify:${classifyModelRunId}:${currentMediaKey}` : "";
   const canAutoDetect = Boolean(detectAutoKey && onApplyDetectPredictions);
   const canAutoClassify = Boolean(classifyAutoKey && onAssignClassificationClass && classByName.size > 0);
   const autoRunPlanKey =
-    workspaceRoot.trim() && currentMediaKey && autoRunKeysLoaded && sourceReady && autoRunAllowed && (shouldAutoDetect || shouldAutoClassify)
+    workspaceRoot.trim() &&
+    currentMediaKey &&
+    autoRunKeysLoaded &&
+    sourceReady &&
+    autoRunAllowed &&
+    (shouldAutoDetect || shouldAutoClassify)
       ? [
           currentMediaKey,
           canAutoDetect && shouldAutoDetect ? detectAutoKey : "",
           canAutoClassify && shouldAutoClassify ? classifyAutoKey : "",
           boxCount,
           proposalCount,
-          currentClassificationKey ?? "",
+          currentClassificationKey ?? ""
         ].join("|")
       : "";
 
@@ -193,14 +210,14 @@ export function AutoLabelModelPanel({
     currentMediaKeyRef.current = currentMediaKey;
     runTokenRef.current += 1;
     setAutoRunning({ detect: false, classify: false });
-    setStatus((current) => current && current.toLowerCase().includes("running") ? null : current);
+    setStatus((current) => (current && current.toLowerCase().includes("running") ? null : current));
   }, [currentMediaKey]);
 
   useEffect(() => {
     if (autoRunAllowed && sourceReady && currentMediaKey) return;
     runTokenRef.current += 1;
     setAutoRunning({ detect: false, classify: false });
-    setStatus((current) => current && current.toLowerCase().includes("running") ? null : current);
+    setStatus((current) => (current && current.toLowerCase().includes("running") ? null : current));
   }, [autoRunAllowed, currentMediaKey, sourceReady]);
 
   async function handleImport(kind: AutoLabelModelKind) {
@@ -229,13 +246,16 @@ export function AutoLabelModelPanel({
       const info = await api.ptModelInfo(workspaceRoot, entry.activeModel);
       const names = classNamesFromModelInfo(info);
       if (!names.length) throw new Error("No classes found in this model.");
-      const result = kind === "detect"
-        ? await workspaceClasses.importDetectClasses(names)
-        : await workspaceClasses.importClfClasses(names);
+      const result =
+        kind === "detect"
+          ? await workspaceClasses.importDetectClasses(names)
+          : await workspaceClasses.importClfClasses(names);
       await workspaceClasses.load().catch(() => {});
       await onClassesChanged?.();
       dispatchWorkspaceClassesChanged(workspaceRoot);
-      setStatus(`${kind === "detect" ? "Detect" : "Clf"} classes: ${result.added} added, ${result.skipped} skipped.`);
+      setStatus(
+        `${kind === "detect" ? "Detect" : "Clf"} classes: ${result.added} added, ${result.skipped} skipped.`
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to use model classes.");
     } finally {
@@ -295,7 +315,7 @@ export function AutoLabelModelPanel({
     setStatus,
     setError,
     onApplyDetectPredictions,
-    onAssignClassificationClass,
+    onAssignClassificationClass
   });
 
   const handleRunDetectNow = useCallback(async () => {
@@ -309,7 +329,8 @@ export function AutoLabelModelPanel({
 
   const handleRunClassifyNow = useCallback(async () => {
     const target = currentImage;
-    if (!target || !classifyModel || !onAssignClassificationClass || classByName.size === 0 || !sourceReady) return;
+    if (!target || !classifyModel || !onAssignClassificationClass || classByName.size === 0 || !sourceReady)
+      return;
     setError(null);
     const token = runTokenRef.current + 1;
     runTokenRef.current = token;
@@ -388,43 +409,42 @@ export function AutoLabelModelPanel({
     // callbacks may get new identities during normal render churn; that must
     // not restart the same marker/model auto-label job.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    autoRunPlanKey,
-  ]);
+  }, [autoRunPlanKey]);
 
   const detectName = activeModelFilename(registry.detect) ?? "Not set";
   const classifyName = activeModelFilename(registry.classify) ?? "Not set";
   const detectSet = !!detectModel;
   const classifySet = !!classifyModel;
-  const detectBusy = importing === "detect" || classImporting === "detect" || autoRunning.detect || workspaceClasses.saving;
+  const detectBusy =
+    importing === "detect" || classImporting === "detect" || autoRunning.detect || workspaceClasses.saving;
   const classifyBusy =
-    importing === "classify" || classImporting === "classify" || autoRunning.classify || workspaceClasses.saving;
+    importing === "classify" ||
+    classImporting === "classify" ||
+    autoRunning.classify ||
+    workspaceClasses.saving;
   const anyImporting = importing !== null || classImporting !== null;
-  const autoLabel = autoRunning.detect && autoRunning.classify
-    ? "Auto running"
-    : autoRunning.detect
-      ? "Detecting"
-      : autoRunning.classify
-      ? "Classifying"
-      : !autoRunAllowed
-        ? "Manual"
-      : detectSet || classifySet
-        ? "Auto on"
-        : "Models not set";
-  const autoSubtitle = autoRunAllowed
-    ? "Runs once when a new image is opened."
-    : "Manual buttons only.";
+  const autoLabel =
+    autoRunning.detect && autoRunning.classify
+      ? "Auto running"
+      : autoRunning.detect
+        ? "Detecting"
+        : autoRunning.classify
+          ? "Classifying"
+          : !autoRunAllowed
+            ? "Manual"
+            : detectSet || classifySet
+              ? "Auto on"
+              : "Models not set";
   const detectRunLabel = autoLabelRunButtonText("detect", autoRunning.detect, status);
   const classifyRunLabel = autoLabelRunButtonText("classify", autoRunning.classify, status);
 
   return (
     <section className="alm-panel">
       <div className="alm-panel-head">
-        <div>
-          <div className="alm-panel-label alm-panel-title">Auto Label Models</div>
-          <div className="alm-panel-subtitle">{autoSubtitle}</div>
-        </div>
-        <span className={`alm-panel-auto-badge${autoRunning.detect || autoRunning.classify ? " active" : ""}`}>
+        <div className="alm-panel-label alm-panel-title">Auto Label Models</div>
+        <span
+          className={`alm-panel-auto-badge${autoRunning.detect || autoRunning.classify ? " active" : ""}`}
+        >
           {autoLabel}
         </span>
       </div>
@@ -433,7 +453,10 @@ export function AutoLabelModelPanel({
         <div className="alm-model-row">
           <div className="alm-panel-col">
             <div className="alm-panel-label">Detect</div>
-            <div className={`alm-panel-value${detectSet ? "" : " alm-panel-value--unset"}`} title={detectName}>
+            <div
+              className={`alm-panel-value${detectSet ? "" : " alm-panel-value--unset"}`}
+              title={detectName}
+            >
               {detectName}
             </div>
           </div>
@@ -463,7 +486,9 @@ export function AutoLabelModelPanel({
             <button
               type="button"
               className="alm-panel-btn alm-panel-btn--primary"
-              disabled={detectBusy || !detectSet || !currentImage || !onApplyDetectPredictions || !sourceReady}
+              disabled={
+                detectBusy || !detectSet || !currentImage || !onApplyDetectPredictions || !sourceReady
+              }
               aria-busy={autoRunning.detect || undefined}
               onClick={() => {
                 void handleRunDetectNow();
@@ -477,7 +502,10 @@ export function AutoLabelModelPanel({
         <div className="alm-model-row">
           <div className="alm-panel-col">
             <div className="alm-panel-label">Classify</div>
-            <div className={`alm-panel-value${classifySet ? "" : " alm-panel-value--unset"}`} title={classifyName}>
+            <div
+              className={`alm-panel-value${classifySet ? "" : " alm-panel-value--unset"}`}
+              title={classifyName}
+            >
               {classifyName}
             </div>
           </div>
@@ -507,7 +535,14 @@ export function AutoLabelModelPanel({
             <button
               type="button"
               className="alm-panel-btn alm-panel-btn--primary"
-              disabled={classifyBusy || !classifySet || !currentImage || !onAssignClassificationClass || classByName.size === 0 || !sourceReady}
+              disabled={
+                classifyBusy ||
+                !classifySet ||
+                !currentImage ||
+                !onAssignClassificationClass ||
+                classByName.size === 0 ||
+                !sourceReady
+              }
               aria-busy={autoRunning.classify || undefined}
               onClick={() => {
                 void handleRunClassifyNow();
@@ -520,11 +555,15 @@ export function AutoLabelModelPanel({
       </div>
 
       {error ? <div className="alm-panel-error">{error}</div> : null}
-      {status ? <div className="alm-panel-status">{status}</div> : !sourceReady && sourceUnavailableMessage ? (
+      {status ? (
+        <div className="alm-panel-status">{status}</div>
+      ) : !sourceReady && sourceUnavailableMessage ? (
         <div className="alm-panel-status">{sourceUnavailableMessage}</div>
       ) : null}
       <div className="alm-panel-summary">
-        <span>{currentIndex + 1} / {Math.max(entries.length, 1)}</span>
+        <span>
+          {currentIndex + 1} / {Math.max(entries.length, 1)}
+        </span>
         <span>{boxCount} box(es)</span>
         <span>{proposalCount} proposal(s)</span>
       </div>

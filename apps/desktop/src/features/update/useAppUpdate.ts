@@ -41,7 +41,7 @@ export function useAppUpdate(): UpdateState {
       setUpdate(await check());
       setLastChecked(new Date());
     } catch (reason) {
-      setError(`检查更新失败：${reason instanceof Error ? reason.message : String(reason)}`);
+      setError(`Update check failed: ${reason instanceof Error ? reason.message : String(reason)}`);
     } finally {
       busy.current = false;
       setChecking(false);
@@ -79,7 +79,7 @@ export function useAppUpdate(): UpdateState {
       await update.install();
       await relaunch();
     } catch (reason) {
-      setError(`更新失败：${reason instanceof Error ? reason.message : String(reason)}`);
+      setError(`Update failed: ${reason instanceof Error ? reason.message : String(reason)}`);
       setProgress(null);
       if (stopped) await retryRuntime(); // bring the backend back; the old version keeps working
     } finally {

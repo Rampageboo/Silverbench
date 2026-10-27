@@ -9,7 +9,7 @@ desktop = shell.SpecialFolders("Desktop")
 linkPath = desktop & "\RampageWorkbench.lnk"
 
 If Not fso.FileExists(launcher) Then
-    MsgBox "找不到启动脚本：" & launcher, vbCritical, "RampageWorkbench"
+    MsgBox "Launcher not found: " & launcher, vbCritical, "Silverbench"
     WScript.Quit 1
 End If
 
@@ -17,7 +17,7 @@ Set link = shell.CreateShortcut(linkPath)
 link.TargetPath = launcher
 link.WorkingDirectory = root
 If fso.FileExists(icon) Then link.IconLocation = icon
-link.Description = "RampageWorkbench — 视觉数据与创作工作台"
+link.Description = "Silverbench"
 link.Save
 
-MsgBox "已在桌面创建快捷方式：" & vbCrLf & linkPath, vbInformation, "RampageWorkbench"
+MsgBox "Desktop shortcut created:" & vbCrLf & linkPath, vbInformation, "Silverbench"

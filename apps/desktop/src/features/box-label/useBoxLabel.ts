@@ -79,12 +79,7 @@ function clampUnit(value: number) {
   return Math.max(0, Math.min(1, value));
 }
 
-export function useBoxLabel({
-  workspaceRoot,
-  focusFilename,
-  onFocusConsumed,
-  onReady
-}: UseBoxLabelOptions) {
+export function useBoxLabel({ workspaceRoot, focusFilename, onFocusConsumed, onReady }: UseBoxLabelOptions) {
   const { getBoxLabelCache, patchBoxLabelCacheLabelIndex, setBoxLabelCache } = useWorkspaceCache();
   const root = workspaceRoot.trim();
   const [datasetRoot, setDatasetRoot] = useState("");
@@ -95,7 +90,9 @@ export function useBoxLabel({
   const [datasetDetectPoints, setDatasetDetectPoints] = useState<DatasetDetectPoint[]>([]);
   const [includeClasses, setIncludeClasses] = useState<Set<number>>(new Set());
   const [excludeClasses, setExcludeClasses] = useState<Set<number>>(new Set());
-  const [imageViewMode, setImageViewMode] = useState<"all" | "hideReviewed" | "flagged" | "nextTraining">("all");
+  const [imageViewMode, setImageViewMode] = useState<"all" | "hideReviewed" | "flagged" | "nextTraining">(
+    "all"
+  );
   const [currentIndex, setCurrentIndex] = useState(0);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -104,7 +101,9 @@ export function useBoxLabel({
   const [restoreImagePath, setRestoreImagePath] = useState("");
   const [shiftSelectedBasenames, setShiftSelectedBasenames] = useState<Set<string>>(new Set());
   const [selectionAnchorIndex, setSelectionAnchorIndex] = useState<number | null>(null);
-  const [initialShortcutSlots, setInitialShortcutSlots] = useState<Array<BoxLabelShortcutSlot | null> | null>(null);
+  const [initialShortcutSlots, setInitialShortcutSlots] = useState<Array<BoxLabelShortcutSlot | null> | null>(
+    null
+  );
   const [initialFixedBoxSlots, setInitialFixedBoxSlots] = useState<Array<FixedBoxSlot | null> | null>(null);
   const [initialPointerToolEnabled, setInitialPointerToolEnabled] = useState(false);
   const [initialAutoFitEnabled, setInitialAutoFitEnabled] = useState(false);
@@ -214,7 +213,7 @@ export function useBoxLabel({
       clfClasses: [...clfClassCounts.entries()]
         .map(([classKey, count]) => ({ key: classKey, name: classKey, count }))
         .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
-      detectPoints: datasetDetectPoints,
+      detectPoints: datasetDetectPoints
     };
   }, [allEntries.length, datasetDetectPoints, labelIndex, metadata]);
 
@@ -241,7 +240,7 @@ export function useBoxLabel({
             className: `#${classKey}`,
             x: clampUnit(box.x),
             y: clampUnit(box.y),
-            area: clampUnit(box.w) * clampUnit(box.h),
+            area: clampUnit(box.w) * clampUnit(box.h)
           });
         }
       }
@@ -260,136 +259,152 @@ export function useBoxLabel({
     return index >= 0 ? index : 0;
   }, []);
 
-  const resolveIndexByImagePath = useCallback((list: BoxLabelEntry[], imagePath: string) => {
-    if (!imagePath) return 0;
-    const index = list.findIndex((entry) => entry.imagePath === imagePath);
-    if (index >= 0) return index;
-    const basename = imagePath.split("/").pop() || imagePath;
-    return resolveIndex(list, basename);
-  }, [resolveIndex]);
+  const resolveIndexByImagePath = useCallback(
+    (list: BoxLabelEntry[], imagePath: string) => {
+      if (!imagePath) return 0;
+      const index = list.findIndex((entry) => entry.imagePath === imagePath);
+      if (index >= 0) return index;
+      const basename = imagePath.split("/").pop() || imagePath;
+      return resolveIndex(list, basename);
+    },
+    [resolveIndex]
+  );
 
-  const load = useCallback(async (options: { background?: boolean; force?: boolean } = {}) => {
-    if (!root) {
-      setAllEntries([]);
-      setDatasetRoot("");
-      setMediaDir("media");
-      setError("Open a workspace first.");
-      notifyReady();
-      return;
-    }
-
-    const cached = getBoxLabelCache(root);
-    const cacheFresh =
-      cached &&
-      !options.force &&
-      Date.now() - cached.cachedAt < BOX_LABEL_CACHE_MS &&
-      comparablePath(cached.datasetRoot) === comparablePath(root)
-        ? cached
-        : null;
-    if (cacheFresh && !options.background) {
-      setDatasetRoot(cacheFresh.datasetRoot);
-      setMediaDir(cacheFresh.mediaDir || "media");
-      setAllEntries(cacheFresh.entries);
-      if (cacheFresh.labelIndex) setLabelIndex(cacheFresh.labelIndex);
-      setError("");
-      setPending(false);
-      notifyReady();
-      readWorkspaceSessionLite(root)
-        .then((session) => {
-          const parsed = parsePoolLabelSession(session);
-          const shortcuts = normalizeShortcutSlotsFromSession(parsed);
-          const fixedSlots = normalizeFixedBoxSlotsFromSession(parsed);
-          setInitialShortcutSlots(shortcuts);
-          setInitialFixedBoxSlots(fixedSlots);
-          if (shortcuts) shortcutSlotsRef.current = shortcuts;
-          if (fixedSlots) fixedBoxSlotsRef.current = fixedSlots;
-          const pointerTool = !!parsed.poolLabelPointerToolEnabled;
-          const autoFit = pointerTool ? false : !!parsed.poolLabelAutoFitEnabled;
-          setInitialPointerToolEnabled(pointerTool);
-          setInitialAutoFitEnabled(autoFit);
-          toolStateRef.current = { pointerToolEnabled: pointerTool, autoFitEnabled: autoFit };
-          const resumePath = resolveResumeImagePath(parsed);
-          const index = resolveIndexByImagePath(cacheFresh.entries, resumePath);
-          setCurrentIndex(index);
-          setRestoreScrollTop(parsed.galleryScrollTop ?? null);
-          setRestoreImagePath(resumePath || cacheFresh.entries[index]?.imagePath || "");
-        })
-        .catch(() => {});
-      loadMetadataMap(root).then(setMetadata).catch(() => {});
-      void load({ background: true });
-      return;
-    }
-
-    if (!options.background) {
-      setPending(true);
-      setError("");
-    }
-    try {
-      const [, dataset, session, meta] = await Promise.all([
-        api.openWorkspace(root).catch(() => {}),
-        loadMediaBoxLabelEntries(root),
-        readWorkspaceSessionLite(root),
-        loadMetadataMap(root).catch(() => new Map<string, MetadataRow>())
-      ]);
-      setDatasetRoot(dataset.datasetRoot);
-      setMediaDir(dataset.mediaDir || "media");
-      const list = [...dataset.entries].sort((a, b) => naturalCompare(a.basename, b.basename));
-      setAllEntries(list);
-      setMetadata(meta);
-      setShiftSelectedBasenames(new Set());
-      setSelectionAnchorIndex(null);
-
-      const parsed = parsePoolLabelSession(session);
-      const shortcuts = normalizeShortcutSlotsFromSession(parsed);
-      const fixedSlots = normalizeFixedBoxSlotsFromSession(parsed);
-      setInitialShortcutSlots(shortcuts);
-      setInitialFixedBoxSlots(fixedSlots);
-      if (shortcuts) shortcutSlotsRef.current = shortcuts;
-      if (fixedSlots) fixedBoxSlotsRef.current = fixedSlots;
-      const pointerTool = !!parsed.poolLabelPointerToolEnabled;
-      const autoFit = pointerTool ? false : !!parsed.poolLabelAutoFitEnabled;
-      setInitialPointerToolEnabled(pointerTool);
-      setInitialAutoFitEnabled(autoFit);
-      toolStateRef.current = { pointerToolEnabled: pointerTool, autoFitEnabled: autoFit };
-
-      const resumePath = resolveResumeImagePath(parsed);
-      const index = resolveIndexByImagePath(list, resumePath);
-      setCurrentIndex(index);
-      setRestoreScrollTop(parsed.galleryScrollTop ?? null);
-      setRestoreImagePath(resumePath || list[index]?.imagePath || "");
-
-      if (focusFilename) {
-        pendingFocusFilename.current = focusFilename;
-      }
-      setBoxLabelCache(root, {
-        datasetRoot: dataset.datasetRoot,
-        mediaDir: dataset.mediaDir || "media",
-        entries: list,
-        labelIndex: cacheFresh?.labelIndex ?? null
-      });
-      notifyReady();
-      loadDetectDatasetClassIndex(dataset.datasetRoot, list, dataset.filePaths)
-        .then((indexMap) => {
-          setLabelIndex(indexMap);
-          patchBoxLabelCacheLabelIndex(root, indexMap);
-        })
-        .catch(() => {});
-      setStatusText(
-        list.length
-          ? `${list.length} media image(s) ready for detect + clf labeling.`
-          : "No media images found. Import images into media to start labeling."
-      );
-    } catch (err) {
-      if (!options.background) {
+  const load = useCallback(
+    async (options: { background?: boolean; force?: boolean } = {}) => {
+      if (!root) {
         setAllEntries([]);
         setDatasetRoot("");
-        setError(errMessage(err));
+        setMediaDir("media");
+        setError("Open a workspace first.");
         notifyReady();
+        return;
       }
-    } finally {
-      if (!options.background) setPending(false);
-    }
-  }, [focusFilename, getBoxLabelCache, notifyReady, patchBoxLabelCacheLabelIndex, resolveIndexByImagePath, root, setBoxLabelCache]);
+
+      const cached = getBoxLabelCache(root);
+      const cacheFresh =
+        cached &&
+        !options.force &&
+        Date.now() - cached.cachedAt < BOX_LABEL_CACHE_MS &&
+        comparablePath(cached.datasetRoot) === comparablePath(root)
+          ? cached
+          : null;
+      if (cacheFresh && !options.background) {
+        setDatasetRoot(cacheFresh.datasetRoot);
+        setMediaDir(cacheFresh.mediaDir || "media");
+        setAllEntries(cacheFresh.entries);
+        if (cacheFresh.labelIndex) setLabelIndex(cacheFresh.labelIndex);
+        setError("");
+        setPending(false);
+        notifyReady();
+        readWorkspaceSessionLite(root)
+          .then((session) => {
+            const parsed = parsePoolLabelSession(session);
+            const shortcuts = normalizeShortcutSlotsFromSession(parsed);
+            const fixedSlots = normalizeFixedBoxSlotsFromSession(parsed);
+            setInitialShortcutSlots(shortcuts);
+            setInitialFixedBoxSlots(fixedSlots);
+            if (shortcuts) shortcutSlotsRef.current = shortcuts;
+            if (fixedSlots) fixedBoxSlotsRef.current = fixedSlots;
+            const pointerTool = !!parsed.poolLabelPointerToolEnabled;
+            const autoFit = pointerTool ? false : !!parsed.poolLabelAutoFitEnabled;
+            setInitialPointerToolEnabled(pointerTool);
+            setInitialAutoFitEnabled(autoFit);
+            toolStateRef.current = { pointerToolEnabled: pointerTool, autoFitEnabled: autoFit };
+            const resumePath = resolveResumeImagePath(parsed);
+            const index = resolveIndexByImagePath(cacheFresh.entries, resumePath);
+            setCurrentIndex(index);
+            setRestoreScrollTop(parsed.galleryScrollTop ?? null);
+            setRestoreImagePath(resumePath || cacheFresh.entries[index]?.imagePath || "");
+          })
+          .catch(() => {});
+        loadMetadataMap(root)
+          .then(setMetadata)
+          .catch(() => {});
+        void load({ background: true });
+        return;
+      }
+
+      if (!options.background) {
+        setPending(true);
+        setError("");
+      }
+      try {
+        const [, dataset, session, meta] = await Promise.all([
+          api.openWorkspace(root).catch(() => {}),
+          loadMediaBoxLabelEntries(root),
+          readWorkspaceSessionLite(root),
+          loadMetadataMap(root).catch(() => new Map<string, MetadataRow>())
+        ]);
+        setDatasetRoot(dataset.datasetRoot);
+        setMediaDir(dataset.mediaDir || "media");
+        const list = [...dataset.entries].sort((a, b) => naturalCompare(a.basename, b.basename));
+        setAllEntries(list);
+        setMetadata(meta);
+        setShiftSelectedBasenames(new Set());
+        setSelectionAnchorIndex(null);
+
+        const parsed = parsePoolLabelSession(session);
+        const shortcuts = normalizeShortcutSlotsFromSession(parsed);
+        const fixedSlots = normalizeFixedBoxSlotsFromSession(parsed);
+        setInitialShortcutSlots(shortcuts);
+        setInitialFixedBoxSlots(fixedSlots);
+        if (shortcuts) shortcutSlotsRef.current = shortcuts;
+        if (fixedSlots) fixedBoxSlotsRef.current = fixedSlots;
+        const pointerTool = !!parsed.poolLabelPointerToolEnabled;
+        const autoFit = pointerTool ? false : !!parsed.poolLabelAutoFitEnabled;
+        setInitialPointerToolEnabled(pointerTool);
+        setInitialAutoFitEnabled(autoFit);
+        toolStateRef.current = { pointerToolEnabled: pointerTool, autoFitEnabled: autoFit };
+
+        const resumePath = resolveResumeImagePath(parsed);
+        const index = resolveIndexByImagePath(list, resumePath);
+        setCurrentIndex(index);
+        setRestoreScrollTop(parsed.galleryScrollTop ?? null);
+        setRestoreImagePath(resumePath || list[index]?.imagePath || "");
+
+        if (focusFilename) {
+          pendingFocusFilename.current = focusFilename;
+        }
+        setBoxLabelCache(root, {
+          datasetRoot: dataset.datasetRoot,
+          mediaDir: dataset.mediaDir || "media",
+          entries: list,
+          labelIndex: cacheFresh?.labelIndex ?? null
+        });
+        notifyReady();
+        loadDetectDatasetClassIndex(dataset.datasetRoot, list, dataset.filePaths)
+          .then((indexMap) => {
+            setLabelIndex(indexMap);
+            patchBoxLabelCacheLabelIndex(root, indexMap);
+          })
+          .catch(() => {});
+        setStatusText(
+          list.length
+            ? `${list.length} media image(s) ready for detect + clf labeling.`
+            : "No media images found. Import images into media to start labeling."
+        );
+      } catch (err) {
+        if (!options.background) {
+          setAllEntries([]);
+          setDatasetRoot("");
+          setError(errMessage(err));
+          notifyReady();
+        }
+      } finally {
+        if (!options.background) setPending(false);
+      }
+    },
+    [
+      focusFilename,
+      getBoxLabelCache,
+      notifyReady,
+      patchBoxLabelCacheLabelIndex,
+      resolveIndexByImagePath,
+      root,
+      setBoxLabelCache
+    ]
+  );
 
   useEffect(() => {
     readyNotified.current = false;
@@ -558,7 +573,11 @@ export function useBoxLabel({
   }, []);
 
   const selectedOrCurrentBasenames = useCallback(() => {
-    const names = selectedBasenames.size ? [...selectedBasenames] : currentEntry ? [currentEntry.basename] : [];
+    const names = selectedBasenames.size
+      ? [...selectedBasenames]
+      : currentEntry
+        ? [currentEntry.basename]
+        : [];
     return [...new Set(names)];
   }, [currentEntry, selectedBasenames]);
 
@@ -606,84 +625,87 @@ export function useBoxLabel({
     ? isTaskExportEnabled(metadata.get(currentEntry.basename), "clf")
     : true;
 
-  const toggleTaskExportEnabled = useCallback(async (task: "detect" | "clf") => {
-    if (!root || !currentEntry) return;
-    const filename = currentEntry.basename;
-    const nextEnabled = !isTaskExportEnabled(metadata.get(filename), task);
-    setMetadata((current) => {
-      const next = new Map(current);
-      const row = next.get(filename);
-      next.set(filename, {
-        ...(row || { filename }),
-        filename,
-        [task === "detect" ? "detect_export_enabled" : "clf_export_enabled"]: nextEnabled
+  const toggleTaskExportEnabled = useCallback(
+    async (task: "detect" | "clf") => {
+      if (!root || !currentEntry) return;
+      const filename = currentEntry.basename;
+      const nextEnabled = !isTaskExportEnabled(metadata.get(filename), task);
+      setMetadata((current) => {
+        const next = new Map(current);
+        const row = next.get(filename);
+        next.set(filename, {
+          ...(row || { filename }),
+          filename,
+          [task === "detect" ? "detect_export_enabled" : "clf_export_enabled"]: nextEnabled
+        });
+        return next;
       });
-      return next;
-    });
-    setStatusText(`${task === "detect" ? "Detect" : "Clf"} export ${nextEnabled ? "enabled" : "disabled"} for ${filename}.`);
-    try {
-      await setTaskExportEnabled(root, filename, task, nextEnabled);
-      await reloadMetadata();
-    } catch (err) {
-      await reloadMetadata().catch(() => {});
-      setStatusText(`Failed to update ${task} export flag: ${errMessage(err)}`);
-      throw err;
-    }
-  }, [currentEntry, metadata, reloadMetadata, root]);
+      setStatusText(
+        `${task === "detect" ? "Detect" : "Clf"} export ${nextEnabled ? "enabled" : "disabled"} for ${filename}.`
+      );
+      try {
+        await setTaskExportEnabled(root, filename, task, nextEnabled);
+        await reloadMetadata();
+      } catch (err) {
+        await reloadMetadata().catch(() => {});
+        setStatusText(`Failed to update ${task} export flag: ${errMessage(err)}`);
+        throw err;
+      }
+    },
+    [currentEntry, metadata, reloadMetadata, root]
+  );
 
   const toggleDetectExportEnabled = useCallback(
     () => toggleTaskExportEnabled("detect"),
     [toggleTaskExportEnabled]
   );
-  const toggleClfExportEnabled = useCallback(
-    () => toggleTaskExportEnabled("clf"),
-    [toggleTaskExportEnabled]
-  );
+  const toggleClfExportEnabled = useCallback(() => toggleTaskExportEnabled("clf"), [toggleTaskExportEnabled]);
 
-  const assignClassificationClass = useCallback(async (classKey: string | null, basename?: string) => {
-    if (!root) return;
-    const trimmedKey = classKey?.trim() ?? "";
-    const filename = (basename || currentEntry?.basename || "").trim();
-    if (!filename) return;
-    const existing = metadata.get(filename);
-    const update: Record<string, unknown> = {
-      filename,
-      clf_enabled: Boolean(trimmedKey),
-      clf_class: trimmedKey
-    };
-
-    setMetadata((current) => {
-      const next = new Map(current);
-      const currentRow = current.get(filename) || existing;
-      next.set(filename, {
-        ...(currentRow || { filename }),
+  const assignClassificationClass = useCallback(
+    async (classKey: string | null, basename?: string) => {
+      if (!root) return;
+      const trimmedKey = classKey?.trim() ?? "";
+      const filename = (basename || currentEntry?.basename || "").trim();
+      if (!filename) return;
+      const existing = metadata.get(filename);
+      const update: Record<string, unknown> = {
         filename,
         clf_enabled: Boolean(trimmedKey),
-        clf_class: trimmedKey,
-        detect_enabled: currentRow?.detect_enabled ?? false
+        clf_class: trimmedKey
+      };
+
+      setMetadata((current) => {
+        const next = new Map(current);
+        const currentRow = current.get(filename) || existing;
+        next.set(filename, {
+          ...(currentRow || { filename }),
+          filename,
+          clf_enabled: Boolean(trimmedKey),
+          clf_class: trimmedKey,
+          detect_enabled: currentRow?.detect_enabled ?? false
+        });
+        return next;
       });
-      return next;
-    });
-    setStatusText(trimmedKey ? `Assigned ${filename} -> ${trimmedKey}.` : `Removed classification from ${filename}.`);
-    try {
-      const result = await api.upsertMetadataRows(root, [update]);
-      if (result.ok === false) throw new Error(result.error || "Failed to assign classification class.");
-      await reloadMetadata();
-    } catch (err) {
-      await reloadMetadata().catch(() => {});
-      setStatusText(`Failed to assign classification class: ${errMessage(err)}`);
-      throw err;
-    }
-  }, [currentEntry, metadata, reloadMetadata, root]);
+      setStatusText(
+        trimmedKey ? `Assigned ${filename} -> ${trimmedKey}.` : `Removed classification from ${filename}.`
+      );
+      try {
+        const result = await api.upsertMetadataRows(root, [update]);
+        if (result.ok === false) throw new Error(result.error || "Failed to assign classification class.");
+        await reloadMetadata();
+      } catch (err) {
+        await reloadMetadata().catch(() => {});
+        setStatusText(`Failed to assign classification class: ${errMessage(err)}`);
+        throw err;
+      }
+    },
+    [currentEntry, metadata, reloadMetadata, root]
+  );
 
   const markJunk = useCallback(async () => {
     if (!root) return;
     const targets = (
-      selectedBasenames.size > 0
-        ? [...selectedBasenames]
-        : currentEntry
-          ? [currentEntry.basename]
-          : []
+      selectedBasenames.size > 0 ? [...selectedBasenames] : currentEntry ? [currentEntry.basename] : []
     ).filter((name) => {
       const row = metadata.get(name);
       return !isDetectJunk(row) || !isClfJunk(row);
@@ -735,22 +757,18 @@ export function useBoxLabel({
     const snapshots = popJunkUndo("pool-label", root);
     setCanUndoJunk(hasJunkUndo("pool-label", root));
     if (!snapshots?.length) {
-      setStatusText("没有可撤回的废片操作。");
+      setStatusText("Nothing to undo.");
       return;
     }
     await restoreMetadataSnapshots(root, snapshots);
     await reloadMetadata();
     await load({ background: true });
-    setStatusText("已撤回上一步废片操作。");
+    setStatusText("Undid the last junk action.");
   }, [load, reloadMetadata, root]);
 
   const junkButtonLabel = useMemo(() => {
     const names =
-      selectedBasenames.size > 0
-        ? [...selectedBasenames]
-        : currentEntry
-          ? [currentEntry.basename]
-          : [];
+      selectedBasenames.size > 0 ? [...selectedBasenames] : currentEntry ? [currentEntry.basename] : [];
     const pendingCount = names.filter((name) => {
       const row = metadata.get(name);
       return !isDetectJunk(row) || !isClfJunk(row);
@@ -762,16 +780,19 @@ export function useBoxLabel({
     return "Mark Junk";
   }, [currentEntry, metadata, selectedBasenames]);
 
-  const updateLabelIndexForFile = useCallback((basename: string, boxes: api.LabelBox[]) => {
-    setLabelIndex((current) => {
-      const next = new Map(current);
-      const classIds = new Set(boxes.map((box) => box.classId));
-      if (classIds.size) next.set(basename, classIds);
-      else next.delete(basename);
-      if (root) patchBoxLabelCacheLabelIndex(root, next);
-      return next;
-    });
-  }, [patchBoxLabelCacheLabelIndex, root]);
+  const updateLabelIndexForFile = useCallback(
+    (basename: string, boxes: api.LabelBox[]) => {
+      setLabelIndex((current) => {
+        const next = new Map(current);
+        const classIds = new Set(boxes.map((box) => box.classId));
+        if (classIds.size) next.set(basename, classIds);
+        else next.delete(basename);
+        if (root) patchBoxLabelCacheLabelIndex(root, next);
+        return next;
+      });
+    },
+    [patchBoxLabelCacheLabelIndex, root]
+  );
 
   return {
     datasetRoot,

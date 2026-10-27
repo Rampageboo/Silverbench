@@ -156,7 +156,7 @@ def _take_options(layout: WorkspaceLayout, options: dict[str, Any], multiview: b
         roi = [int(round(v)) for v in roi]
     interval = str(options.get("expertInterval", "2"))
     if interval not in EXPERT_INTERVALS:
-        raise MocapError(f"Auxiliary AI interval must be one of {', '.join(EXPERT_INTERVALS)}.")
+        raise MocapError(f"Expert interval must be one of {', '.join(EXPERT_INTERVALS)}.")
     return {
         "roi": roi,
         "vlm": bool(options.get("vlm", False)),
@@ -318,7 +318,7 @@ class CaptureJob:
         _save(self.folder, self.take)
         try:
             if not engine.python_exe().is_file():
-                raise MocapError("The capture environment (.venv-mmpose) is not installed. Install it from the 本机环境 panel on the Motion capture page.")
+                raise MocapError("The capture environment (.venv-mmpose) is not installed. Install it from This computer on the Motion capture page.")
             _hand_over_gpu()
             _clear_capture_outputs(self.folder)
             self.capture_dir.mkdir(parents=True, exist_ok=True)
@@ -631,15 +631,15 @@ def _session(folder: Path, take: dict[str, Any]) -> editor.EngineSession:
 
 # Engine refusals a user can cause while editing, in the UI's language.
 _REFUSALS = {
-    "Lock the selected joint at both interval endpoints first": "重建区间前，要先在区间两端各锁定一次这个部位。",
-    "Missing interval endpoint": "重建区间前，要先在区间两端各锁定一次这个部位。",
-    "Gap exceeds 0.75 seconds": "连续缺失或排除超过 0.75 秒，请在中间补一个锁定或加权的可信点。",
-    "Cannot trust a missing joint": "这个部位在这一帧没有观测，不能锁定或加权；先拖动修正它，或改用排除。",
-    "Duplicate review sample": "这一帧的这个部位已经有标记。",
-    "Invalid review interval": "区间无效：终点要在起点之后。",
-    "Unsolvable review interval": "这个区间无法求解，请缩小区间或补充可信点。",
-    "Review sample outside clip": "标记超出了动作的帧范围。",
-    "Review weight must be in [1,100]": "可信权重必须在 1–100 之间。",
+    "Lock the selected joint at both interval endpoints first": "Lock this joint at both ends of the range first.",
+    "Missing interval endpoint": "Lock this joint at both ends of the range first.",
+    "Gap exceeds 0.75 seconds": "A gap is longer than 0.75 s. Lock or weight a frame inside it.",
+    "Cannot trust a missing joint": "This joint is missing on this frame, so it cannot be locked or weighted. Drag it into place or exclude it.",
+    "Duplicate review sample": "This joint is already marked on this frame.",
+    "Invalid review interval": "Invalid range: the end must come after the start.",
+    "Unsolvable review interval": "This range cannot be solved. Shorten it or add trusted frames.",
+    "Review sample outside clip": "The mark is outside the take's frames.",
+    "Review weight must be in [1,100]": "Weight must be between 1 and 100.",
 }
 
 
@@ -647,7 +647,7 @@ def explain_refusal(message: str) -> str:
     for prefix, text in _REFUSALS.items():
         if message.startswith(prefix):
             return text
-    return f"引擎拒绝了这次修改：{message}"
+    return f"The engine refused this edit: {message}"
 
 
 def save_edits(layout: WorkspaceLayout, take_id: str, edits: dict[str, Any]) -> dict[str, Any]:
@@ -758,7 +758,7 @@ def pose_data(layout: WorkspaceLayout, take_id: str, variant: str = "current") -
     """A pose sequence as flat arrays the UI can draw directly.
 
     ``current``: after all edits. ``baseline``: before the joint review rebuild
-    (Studio's "原始叠影"). ``refined``: the capture result before any edit.
+    (the "before reconstruction" overlay). ``refined``: the capture result before any edit.
     """
     folder = take_dir(layout, take_id)
     if variant != "refined":

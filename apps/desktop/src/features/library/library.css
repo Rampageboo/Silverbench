@@ -89,14 +89,6 @@
     font-weight: 600;
   }
 
-  .ov-stage__copy {
-    min-height: 3.2em;
-    padding: 0 var(--sp-1);
-    color: var(--c-text-3);
-    font-size: var(--fs-xs);
-    line-height: 1.5;
-  }
-
   .ov-stage__tools {
     display: grid;
     align-content: start;
@@ -373,12 +365,5 @@
     gap: var(--sp-2);
     padding: var(--sp-3) var(--sp-5);
     border-top: 1px solid var(--c-line);
-  }
-
-  .cls-card__note {
-    padding: 0 var(--sp-5) var(--sp-4);
-    color: var(--c-text-3);
-    font-size: var(--fs-xs);
-    line-height: 1.5;
   }
 }

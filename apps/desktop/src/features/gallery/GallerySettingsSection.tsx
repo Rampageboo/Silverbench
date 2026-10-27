@@ -16,16 +16,6 @@ const DEFAULT_KINDS: ControlKind[] = ["pose", "depth", "lineart"];
 import { errorText } from "./useGallery";
 import "./gallery.css";
 
-const UNIMPLEMENTED_LABELS: Record<string, string> = {
-  "watch/poll ingestion": "文件夹监视 / NAS 轮询入库",
-  "semantic search": "语义搜索 / 以图搜图",
-  "near-duplicate search": "近似去重",
-  "artist references": "画师参考与候选",
-  "two-machine workers": "双机工作节点",
-  "GPU scheduling": "跨应用显存调度",
-  "ComfyUI roundtrip": "ComfyUI 回环验证"
-};
-
 type Fields = {
   wdModelPath: string;
   wdTagsPath: string;
@@ -57,8 +47,20 @@ function fieldsFrom(settings: GallerySettings): Fields {
 }
 
 function AdapterState({ name, adapter }: { name: string; adapter: GalleryCapabilities["adapters"][string] }) {
-  const state = adapter.runtimeVerified ? "实机验证过" : adapter.ready ? "可尝试运行（未验证）" : adapter.implemented ? "已实现，前提不足" : "未实现";
-  const tone = adapter.runtimeVerified ? "ok" : adapter.ready ? "info" : adapter.implemented ? "warn" : "muted";
+  const state = adapter.runtimeVerified
+    ? "Verified"
+    : adapter.ready
+      ? "Ready (unverified)"
+      : adapter.implemented
+        ? "Not ready"
+        : "Not implemented";
+  const tone = adapter.runtimeVerified
+    ? "ok"
+    : adapter.ready
+      ? "info"
+      : adapter.implemented
+        ? "warn"
+        : "muted";
   return (
     <div className="gset-adapter">
       <div className="gset-adapter__head">
@@ -80,7 +82,7 @@ function ComfyUiStatus({ check }: { check: ComfyUiCheck | null }) {
   if (!check || !check.configured) return null;
   return check.ok ? (
     <span className="ui-field__hint gset-ok">
-      已找到 ComfyUI{check.portable ? "（便携版）" : ""}：参考图从 {check.inputDir} 读取
+      ComfyUI found{check.portable ? " (portable)" : ""}: {check.inputDir}
     </span>
   ) : (
     <span className="ui-field__hint gset-bad">{check.error}</span>
@@ -93,8 +95,10 @@ function ServerStatus({ check }: { check: ComfyServerCheck | null }) {
   const available = ALL_KINDS.filter((kind) => check.preprocessors[kind]);
   return (
     <span className={`ui-field__hint ${check.warning ? "gset-warn" : "gset-ok"}`}>
-      已连上 ComfyUI {check.version}；可用：{available.map((kind) => `${CONTROL_KIND_LABELS[kind]}（${check.preprocessors[kind]}）`).join("、") || "无"}
-      {check.warning ? `。${check.warning}` : ""}
+      Connected to ComfyUI {check.version}; available:{" "}
+      {available.map((kind) => `${CONTROL_KIND_LABELS[kind]} (${check.preprocessors[kind]})`).join(", ") ||
+        "none"}
+      {check.warning ? `. ${check.warning}` : ""}
     </span>
   );
 }
@@ -199,31 +203,29 @@ export function GallerySettingsSection({ open }: { open: boolean }) {
     <section className="settings-group">
       <div className="settings-group__head settings-group__head--row">
         <div>
-          <h3>图库模型与路径</h3>
-          <p>
-            每台电脑各自保存（本机的应用数据里），换电脑时在这里重新选一次。软件不会自动下载权重，也不会悄悄退回 CPU。
-          </p>
+          <h3>Gallery models and paths</h3>
         </div>
         <button type="button" className="ui-btn--sm" onClick={() => void save()} disabled={!fields || saving}>
-          {saving ? "保存中…" : "保存"}
+          {saving ? "Saving…" : "Save"}
         </button>
       </div>
       {error ? <div className="ui-error">{error}</div> : null}
-      {saved ? <p className="settings-muted">已保存并重新检查能力。</p> : null}
+      {saved ? <p className="settings-muted">Saved</p> : null}
       {!fields ? (
-        error ? null : <p className="settings-muted">读取中…</p>
+        error ? null : (
+          <p className="settings-muted">Loading…</p>
+        )
       ) : (
         <div className="gset-fields">
           <PathField
-            label="ComfyUI 文件夹"
+            label="ComfyUI folder"
             value={fields.comfyuiPath}
             onChange={(value) => set({ comfyuiPath: value })}
             placeholder="D:\ComfyUI_windows_portable"
             status={<ComfyUiStatus check={comfyCheck} />}
-            hint="用于找回 ControlNet / IPAdapter 参考图（PNG 里只记了文件名，图在 ComfyUI 的 input 文件夹）。选便携版外层或 ComfyUI 本体都可以。"
           />
           <label className="ui-field">
-            <span className="ui-field__label">ComfyUI 地址（生成控制图用）</span>
+            <span className="ui-field__label">ComfyUI URL</span>
             <input
               value={fields.comfyuiUrl}
               onChange={(event) => set({ comfyuiUrl: event.target.value })}
@@ -231,12 +233,9 @@ export function GallerySettingsSection({ open }: { open: boolean }) {
               spellCheck={false}
             />
             <ServerStatus check={serverCheck} />
-            <span className="ui-field__hint">
-              可以是本机，也可以是另一台电脑的局域网地址（那台 ComfyUI 需用 --listen 启动）。需要装 comfyui_controlnet_aux。
-            </span>
           </label>
           <div className="ui-field">
-            <span className="ui-field__label">无元数据的图生成这些控制图</span>
+            <span className="ui-field__label">Control maps for images without metadata</span>
             <div className="gset-kinds">
               {ALL_KINDS.map((kind) => (
                 <label key={kind} className="gal-check">
@@ -257,11 +256,15 @@ export function GallerySettingsSection({ open }: { open: boolean }) {
             </div>
           </div>
           <label className="gal-check">
-            <input type="checkbox" checked={fields.autoReverse} onChange={(event) => set({ autoReverse: event.target.checked })} />
-            扫描后，没有生成元数据的图自动进入反推队列（打标与控制图，各自就绪时运行）
+            <input
+              type="checkbox"
+              checked={fields.autoReverse}
+              onChange={(event) => set({ autoReverse: event.target.checked })}
+            />
+            Queue images without metadata for reverse after each scan
           </label>
           <PathField
-            label="WD 模型 (.onnx)"
+            label="WD model (.onnx)"
             kind="file"
             filters={[{ name: "ONNX", extensions: ["onnx"] }]}
             value={fields.wdModelPath}
@@ -269,7 +272,7 @@ export function GallerySettingsSection({ open }: { open: boolean }) {
             placeholder="N:\Models\.taggers\wd-eva02-large-v3\model.onnx"
           />
           <PathField
-            label="WD 标签表 (selected_tags.csv)"
+            label="WD tag list (selected_tags.csv)"
             kind="file"
             filters={[{ name: "CSV", extensions: ["csv"] }]}
             value={fields.wdTagsPath}
@@ -277,27 +280,41 @@ export function GallerySettingsSection({ open }: { open: boolean }) {
           />
           <div className="ui-field-row">
             <label className="ui-field">
-              <span className="ui-field__label">WD 模型 ID</span>
-              <input value={fields.wdModelId} placeholder="SmilingWolf/wd-eva02-large-tagger-v3" onChange={(event) => set({ wdModelId: event.target.value })} spellCheck={false} />
+              <span className="ui-field__label">WD model ID</span>
+              <input
+                value={fields.wdModelId}
+                placeholder="SmilingWolf/wd-eva02-large-tagger-v3"
+                onChange={(event) => set({ wdModelId: event.target.value })}
+                spellCheck={false}
+              />
             </label>
             <label className="ui-field">
-              <span className="ui-field__label">GPU 编号</span>
-              <input type="number" min={0} value={fields.deviceId} placeholder="0" onChange={(event) => set({ deviceId: event.target.value })} />
+              <span className="ui-field__label">GPU index</span>
+              <input
+                type="number"
+                min={0}
+                value={fields.deviceId}
+                placeholder="0"
+                onChange={(event) => set({ deviceId: event.target.value })}
+              />
             </label>
           </div>
           <label className="gal-check">
-            <input type="checkbox" checked={fields.wdProfileV3} onChange={(event) => set({ wdProfileV3: event.target.checked })} />
-            这是 WD v3 ONNX 模型与对应标签表（wd-v3 规格）
+            <input
+              type="checkbox"
+              checked={fields.wdProfileV3}
+              onChange={(event) => set({ wdProfileV3: event.target.checked })}
+            />
+            WD v3 ONNX model and tag list (wd-v3 profile)
           </label>
           <PathField
-            label="PixAI Tagger 权重"
+            label="PixAI Tagger weights"
             kind="file"
             value={fields.pixaiModelPath}
             onChange={(value) => set({ pixaiModelPath: value })}
-            hint="需要本人在 Hugging Face 同意下载条款。仅填路径不会让尚未实现的适配器变为可用。"
           />
           <PathField
-            label="描述模型"
+            label="Caption model"
             kind="file"
             value={fields.captionModelPath}
             onChange={(value) => set({ captionModelPath: value })}
@@ -310,12 +327,12 @@ export function GallerySettingsSection({ open }: { open: boolean }) {
             <AdapterState key={name} name={name} adapter={adapter} />
           ))}
           {capabilities.selectionBlockers?.length ? (
-            <p className="settings-muted">模型组合与阈值尚未验收：{capabilities.selectionBlockers.join("；")}</p>
+            <p className="settings-muted">
+              Model selection not validated: {capabilities.selectionBlockers.join("; ")}
+            </p>
           ) : null}
           {capabilities.unimplemented?.length ? (
-            <p className="settings-muted">
-              尚未接入：{capabilities.unimplemented.map((item) => UNIMPLEMENTED_LABELS[item] ?? item).join("、")}
-            </p>
+            <p className="settings-muted">Not available yet: {capabilities.unimplemented.join(", ")}</p>
           ) : null}
         </div>
       ) : null}

@@ -26,7 +26,7 @@ type Props = {
 
 function Thumb({ id, obscured }: { id: string; obscured: boolean }) {
   const [failed, setFailed] = useState(false);
-  if (failed) return <span className="gal-tile__broken">无法生成缩略图</span>;
+  if (failed) return <span className="gal-tile__broken">No thumbnail</span>;
   return (
     <img
       src={galleryImageUrl(id)}
@@ -51,7 +51,16 @@ type TileProps = {
 };
 
 // Memoized so a window shift only renders the tiles that enter it.
-const Tile = memo(function Tile({ asset, index, focused, isSelected, obscured, onFocus, onToggleSelect, onRangeSelect }: TileProps) {
+const Tile = memo(function Tile({
+  asset,
+  index,
+  focused,
+  isSelected,
+  obscured,
+  onFocus,
+  onToggleSelect,
+  onRangeSelect
+}: TileProps) {
   function onClick(event: MouseEvent) {
     if (event.shiftKey) onRangeSelect(index);
     else if (event.ctrlKey || event.metaKey) onToggleSelect(asset.id, index);
@@ -80,7 +89,7 @@ const Tile = memo(function Tile({ asset, index, focused, isSelected, obscured, o
         className={`gal-tile__check${isSelected ? " is-on" : ""}`}
         role="checkbox"
         aria-checked={isSelected}
-        aria-label={isSelected ? "取消选择" : "选择"}
+        aria-label={isSelected ? "Deselect" : "Select"}
         onClick={(event) => {
           event.stopPropagation();
           if (event.shiftKey) onRangeSelect(index);
@@ -91,14 +100,17 @@ const Tile = memo(function Tile({ asset, index, focused, isSelected, obscured, o
       </span>
       <span className="gal-tile__badges">
         {asset.hasMetadata ? (
-          <span className="gal-badge gal-badge--meta" title={`原始元数据：${METADATA_FORMAT_LABELS[asset.metadata?.format] ?? asset.metadata?.format}`}>
-            元
+          <span
+            className="gal-badge gal-badge--meta"
+            title={`Original metadata: ${METADATA_FORMAT_LABELS[asset.metadata?.format] ?? asset.metadata?.format}`}
+          >
+            Meta
           </span>
         ) : null}
-        {asset.missing ? <span className="gal-badge gal-badge--missing">离线</span> : null}
+        {asset.missing ? <span className="gal-badge gal-badge--missing">Offline</span> : null}
       </span>
       {asset.rating ? (
-        <span className="gal-tile__rating" aria-label={`${asset.rating} 星`}>
+        <span className="gal-tile__rating" aria-label={`${asset.rating} stars`}>
           <IconStar size={10} />
           {asset.rating}
         </span>
@@ -131,7 +143,9 @@ export function GalleryGrid({
   for (let index = grid.startIndex; index < grid.endIndex; index += 1) {
     const asset = getItem(index);
     if (!asset) {
-      slots.push(<span key={`slot-${index}`} className="gal-tile gal-tile--placeholder" aria-hidden="true" />);
+      slots.push(
+        <span key={`slot-${index}`} className="gal-tile gal-tile--placeholder" aria-hidden="true" />
+      );
       continue;
     }
     slots.push(
@@ -155,12 +169,12 @@ export function GalleryGrid({
       className={`gal-scroll${loading ? " is-loading" : ""}`}
       style={{ padding: `${GRID_PADDING}px` }}
       role="listbox"
-      aria-label="图片"
+      aria-label="Images"
       aria-multiselectable="true"
       aria-setsize={total ?? undefined}
     >
       {total === null ? (
-        <div className="gal-grid-empty gal-muted">加载中…</div>
+        <div className="gal-grid-empty gal-muted">Loading…</div>
       ) : total === 0 ? (
         <div className="gal-grid-empty">{empty}</div>
       ) : (

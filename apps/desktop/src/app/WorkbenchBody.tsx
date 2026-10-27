@@ -60,7 +60,6 @@ function WorkspaceRequired({ onReady }: { onReady?: () => void }) {
         <IconFolder size={20} />
       </span>
       <strong>No workspace open</strong>
-      <span>This tool works inside a workspace folder.</span>
       <div className="shell-requires-ws__actions">
         <button type="button" className="ui-btn--solid" onClick={() => void launcher.openFolder()}>
           Open folder…
@@ -180,14 +179,13 @@ function WorkbenchShell({ onNativeTabReady, backendConnected }: WorkbenchBodyPro
 
   const commands = useMemo<PaletteCommand[]>(() => {
     const list: PaletteCommand[] = [];
-    const navCommand = (item: NavItem, section: string, hint: string): PaletteCommand => {
+    const navCommand = (item: NavItem, section: string, groupLabel?: string | null): PaletteCommand => {
       const Icon = item.icon;
       return {
         id: `go-${item.id}`,
         section,
         label: item.label,
-        hint,
-        keywords: `${item.keywords} ${item.labelZh}`,
+        keywords: groupLabel ? `${item.keywords} ${groupLabel}` : item.keywords,
         icon: <Icon />,
         disabled: !isItemEnabled(item),
         run: () => navigate(item)
@@ -195,10 +193,10 @@ function WorkbenchShell({ onNativeTabReady, backendConnected }: WorkbenchBodyPro
     };
     for (const group of NAV_GROUPS) {
       for (const item of group.items) {
-        list.push(navCommand(item, "Go to", group.label ? `${group.label} · ${item.labelZh}` : item.labelZh));
+        list.push(navCommand(item, "Go to", group.label));
       }
     }
-    for (const item of SECONDARY_NAV_ITEMS) list.push(navCommand(item, "More tools", item.labelZh));
+    for (const item of SECONDARY_NAV_ITEMS) list.push(navCommand(item, "More tools"));
 
     list.push(
       {
@@ -280,7 +278,7 @@ function WorkbenchShell({ onNativeTabReady, backendConnected }: WorkbenchBodyPro
         <div className="shell-banners">
           {!backendConnected ? (
             <div className="shell-offline" role="status" aria-live="polite">
-              后端连接已断开，正在重试…（若长时间无法恢复，请重启应用）
+              Backend disconnected — retrying… Restart the app if this persists.
             </div>
           ) : null}
           <MigrationReviewBar />

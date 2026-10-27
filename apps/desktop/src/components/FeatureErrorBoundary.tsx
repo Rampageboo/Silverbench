@@ -2,7 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 import { errMessage } from "../lib/errors";
 
 type FeatureErrorBoundaryProps = {
-  /** Human-readable feature name shown in the fallback, e.g. "图片标注". */
+  /** Human-readable feature name shown in the fallback, e.g. "Label". */
   label: string;
   children: ReactNode;
 };
@@ -14,12 +14,9 @@ type FeatureErrorBoundaryState = {
 /**
  * Isolates a feature panel so a runtime exception (e.g. a malformed label
  * file) renders an inline error card instead of crashing the whole React
- * tree. "重试" remounts only this panel's subtree.
+ * tree. "Retry" remounts only this panel's subtree.
  */
-export class FeatureErrorBoundary extends Component<
-  FeatureErrorBoundaryProps,
-  FeatureErrorBoundaryState
-> {
+export class FeatureErrorBoundary extends Component<FeatureErrorBoundaryProps, FeatureErrorBoundaryState> {
   state: FeatureErrorBoundaryState = { error: null };
 
   static getDerivedStateFromError(error: unknown): FeatureErrorBoundaryState {
@@ -53,7 +50,7 @@ export class FeatureErrorBoundary extends Component<
         }}
       >
         <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
-          {this.props.label} 加载出错
+          {this.props.label} failed to load
         </div>
         <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 14, wordBreak: "break-word" }}>
           {errMessage(error)}
@@ -71,7 +68,7 @@ export class FeatureErrorBoundary extends Component<
             cursor: "pointer"
           }}
         >
-          重试
+          Retry
         </button>
       </div>
     );

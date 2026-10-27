@@ -12,8 +12,8 @@ type Props = {
 
 /** Studio's direction presets for separately recorded multiview clips. */
 const PRESETS: Record<string, { label: string; yaws: number[] }> = {
-  fan3: { label: "扇形 3 视角（左前 / 正面 / 右前）", yaws: [-45, 0, 45] },
-  cardinal4: { label: "四方向（正 / 右 / 背 / 左）", yaws: [0, 90, 180, 270] }
+  fan3: { label: "Fan of 3 (−45°, 0°, 45°)", yaws: [-45, 0, 45] },
+  cardinal4: { label: "4 sides (0°, 90°, 180°, 270°)", yaws: [0, 90, 180, 270] }
 };
 
 export function NewTakeDialog({ workspaceRoot, onClose, onCreated }: Props) {
@@ -33,7 +33,7 @@ export function NewTakeDialog({ workspaceRoot, onClose, onCreated }: Props) {
     listWorkspaceVideos(workspaceRoot)
       .then(setVideos)
       .catch((reason) =>
-        setError(`无法列出视频：${reason instanceof Error ? reason.message : String(reason)}`)
+        setError(`Cannot list videos: ${reason instanceof Error ? reason.message : String(reason)}`)
       );
   }, [workspaceRoot]);
 
@@ -89,16 +89,16 @@ export function NewTakeDialog({ workspaceRoot, onClose, onCreated }: Props) {
 
   return (
     <Dialog
-      title="新建动捕"
+      title="New capture"
       onClose={onClose}
       footer={
         <>
           {error ? <span className="ui-error mc-dialog-error">{error}</span> : null}
           <button type="button" className="ui-btn--ghost" onClick={onClose}>
-            取消
+            Cancel
           </button>
           <button type="button" disabled={busy || !selected.length} onClick={() => void create(false)}>
-            仅创建
+            Create only
           </button>
           <button
             type="button"
@@ -106,18 +106,18 @@ export function NewTakeDialog({ workspaceRoot, onClose, onCreated }: Props) {
             disabled={busy || !selected.length}
             onClick={() => void create(true)}
           >
-            创建并开始捕捉
+            Create and capture
           </button>
         </>
       }
     >
       <div className="mc-form">
         <div className="ui-field">
-          <span className="ui-eyebrow">视频（选 1 个为单视角，2–8 个为分别录制的多视角）</span>
+          <span className="ui-eyebrow">Videos</span>
           <div className="mc-video-list">
-            {videos === null ? <span className="mc-muted">正在读取工作区视频…</span> : null}
+            {videos === null ? <span className="mc-muted">Reading workspace videos…</span> : null}
             {videos?.length === 0 ? (
-              <span className="mc-muted">工作区 media/ 里没有视频。先在图片库或视频页导入。</span>
+              <span className="mc-muted">No videos in media/. Import some first</span>
             ) : null}
             {videos?.map((video) => {
               const index = selected.indexOf(video.path);
@@ -130,7 +130,7 @@ export function NewTakeDialog({ workspaceRoot, onClose, onCreated }: Props) {
                   </span>
                   {multiview && index >= 0 ? (
                     <span className="mc-video-row__yaw">
-                      方向
+                      Yaw
                       <input
                         type="number"
                         step={15}
@@ -148,7 +148,7 @@ export function NewTakeDialog({ workspaceRoot, onClose, onCreated }: Props) {
           </div>
           {multiview ? (
             <div className="mc-inline">
-              <span className="mc-muted">方向预设：</span>
+              <span className="mc-muted">Presets</span>
               {Object.entries(PRESETS).map(([key, preset]) => (
                 <button
                   key={key}
@@ -160,58 +160,54 @@ export function NewTakeDialog({ workspaceRoot, onClose, onCreated }: Props) {
                   {preset.label}
                 </button>
               ))}
-              <span className="mc-muted">分别录制的方向视频不等于同步多相机。</span>
             </div>
           ) : null}
         </div>
         <label className="ui-field">
-          <span className="ui-eyebrow">名称（可选）</span>
+          <span className="ui-eyebrow">Name</span>
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="默认用视频文件名"
+            placeholder="Video file name"
           />
         </label>
         <div className="mc-options">
           <label className="ui-field">
-            <span className="ui-eyebrow">辅助 AI 间隔</span>
+            <span className="ui-eyebrow">Expert interval</span>
             <select
               value={interval}
               onChange={(event) => setExpertInterval(event.target.value as TakeOptions["expertInterval"])}
             >
-              <option value="1">每帧</option>
-              <option value="2">每 2 帧（试用默认）</option>
-              <option value="3">每 3 帧</option>
-              <option value="auto">自动</option>
+              <option value="1">Every frame</option>
+              <option value="2">Every 2 frames</option>
+              <option value="3">Every 3 frames</option>
+              <option value="auto">Auto</option>
             </select>
-            <span className="mc-muted">只调度 RTMW 与 Human-Art；基础捕捉仍逐帧。</span>
           </label>
           <label className="mc-check">
             <input type="checkbox" checked={upscale} onChange={(event) => setUpscale(event.target.checked)} />
-            人物区域 AI 放大（Maxine VSR 2×）
+            AI upscale (Maxine VSR 2×)
           </label>
           <label className="mc-check">
             <input type="checkbox" checked={vlm} onChange={(event) => setVlm(event.target.checked)} />
-            本地视觉纠错（Qwen3-VL，需要 Ollama）
+            Visual correction (Qwen3-VL, needs Ollama)
           </label>
         </div>
         {vlm ? (
           <PathField
-            label="外观参考图（可选）"
+            label="Appearance reference"
             kind="file"
             value={reference}
             onChange={setReference}
-            filters={[{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp"] }]}
-            hint="只辅助识别人物外观；坐标仍以视频为准。"
+            filters={[{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] }]}
           />
         ) : null}
         <PathField
-          label="角色骨架预设（可选）"
+          label="Character profile"
           kind="file"
           value={profile}
           onChange={setProfile}
           filters={[{ name: "JSON", extensions: ["json"] }]}
-          hint="AniMocap 角色 profile 或骨架 JSON；不选则用默认比例。"
         />
       </div>
     </Dialog>
@@ -245,7 +241,7 @@ function Dialog({
             type="button"
             className="ui-btn--ghost ui-btn--icon ui-btn--sm"
             onClick={onClose}
-            aria-label="关闭"
+            aria-label="Close"
           >
             <IconClose size={14} />
           </button>

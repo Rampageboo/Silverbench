@@ -23,10 +23,7 @@ export function HomePage({ onReady }: Props) {
       <div className="start">
         <header className="start__hero">
           <img src="/assets/app-icon.png" width={40} height={40} alt="" />
-          <div>
-            <h1 className="start__title">RampageWorkbench</h1>
-            <p className="start__sub">视觉数据与创作工作台</p>
-          </div>
+          <h1 className="start__title">Silverbench</h1>
         </header>
 
         {currentRoot ? (
@@ -43,22 +40,20 @@ export function HomePage({ onReady }: Props) {
             <IconFolder size={20} />
             <span>
               <strong>Open folder</strong>
-              <small>Use an existing workspace or dataset folder</small>
             </span>
           </button>
           <button type="button" className="start__action" onClick={launcher.requestCreate}>
             <IconFolderPlus size={20} />
             <span>
               <strong>New workspace</strong>
-              <small>Set up folders, task type and classes</small>
             </span>
           </button>
         </div>
         {launcher.error ? <div className="ui-error">{launcher.error}</div> : null}
 
-        <section className="start__recent">
-          <div className="ui-eyebrow">Recent</div>
-          {recent.length ? (
+        {recent.length ? (
+          <section className="start__recent">
+            <div className="ui-eyebrow">Recent</div>
             <ul>
               {recent.map((path) => (
                 <li key={path}>
@@ -84,10 +79,8 @@ export function HomePage({ onReady }: Props) {
                 </li>
               ))}
             </ul>
-          ) : (
-            <p className="start__recent-empty">Workspaces you open will appear here.</p>
-          )}
-        </section>
+          </section>
+        ) : null}
       </div>
     </div>
   );

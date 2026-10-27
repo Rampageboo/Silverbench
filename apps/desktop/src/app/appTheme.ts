@@ -2,13 +2,9 @@ export type AppTheme = "graphite" | "paper";
 
 const STORAGE_KEY = "yoloworkbench.theme";
 
-export const APP_THEME_OPTIONS: Array<{ value: AppTheme; title: string; desc: string }> = [
-  {
-    value: "graphite",
-    title: "Graphite",
-    desc: "Dark neutral surfaces. Easiest on the eyes for long labeling sessions."
-  },
-  { value: "paper", title: "Paper", desc: "Light warm surfaces for bright rooms." }
+export const APP_THEME_OPTIONS: Array<{ value: AppTheme; title: string }> = [
+  { value: "graphite", title: "Graphite" },
+  { value: "paper", title: "Paper" }
 ];
 
 /** Older builds stored "dark" / "obsidian"; both map to graphite. */

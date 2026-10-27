@@ -268,13 +268,7 @@ export function ClassesPage({ onReady }: Props) {
     <div className="ui-page">
       <div className="ui-page__inner cls-page">
         <header className="ui-page__head">
-          <div>
-            <div className="ui-eyebrow">Workspace</div>
-            <h1 className="ui-page__title">Classes</h1>
-            <p className="ui-page__sub">
-              Single source of class names for labeling, review, export and the orchestrator.
-            </p>
-          </div>
+          <h1 className="ui-page__title">Classes</h1>
           <div className="cls-page__tools">
             {taskType ? <span className="ui-badge ui-badge--accent">{TASK_LABELS[taskType]}</span> : null}
             {saving ? <span className="ui-badge">Saving…</span> : null}
@@ -337,10 +331,6 @@ export function ClassesPage({ onReady }: Props) {
                   disabled={loading || saving}
                   onAdd={(name) => classes.addDetect(name).then(() => {})}
                 />
-                <p className="cls-card__note">
-                  IDs are positional: new classes are appended and archived classes keep their slot, so
-                  existing label files stay valid.
-                </p>
               </section>
             ) : null}
 
@@ -380,9 +370,6 @@ export function ClassesPage({ onReady }: Props) {
                   disabled={loading || saving}
                   onAdd={(name) => classes.addClf(name).then(() => {})}
                 />
-                <p className="cls-card__note">
-                  Names become folder-safe keys. Renaming changes the display name only; the key stays stable.
-                </p>
               </section>
             ) : null}
           </div>

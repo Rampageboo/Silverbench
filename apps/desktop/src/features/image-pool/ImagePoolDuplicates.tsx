@@ -43,10 +43,10 @@ export function ImagePoolDuplicates({
   const [expanded, setExpanded] = useState(false);
   const dupCount = scan?.duplicateFiles || 0;
   const statusText = useMemo(() => {
-    if (pending) return "扫描中...";
-    if (!scan) return "未扫描";
+    if (pending) return "Scanning…";
+    if (!scan) return "Not scanned";
     const groups = scan.groupCount || 0;
-    return groups ? `${groups} 组，${dupCount} 张多余` : `${scan.totalImages || 0} 张无重复`;
+    return groups ? `${groups} groups, ${dupCount} extra` : `${scan.totalImages || 0} images, no duplicates`;
   }, [pending, scan, dupCount]);
 
   return (
@@ -54,13 +54,37 @@ export function ImagePoolDuplicates({
       <button
         type="button"
         className={`image-pool-dup-fab${dupCount > 0 ? " has-dup" : ""}`}
-        title={expanded ? "收起重复图片" : dupCount > 0 ? `${dupCount} 张重复（点击展开）` : "重复图片"}
+        title={expanded ? "Collapse duplicates" : dupCount > 0 ? `${dupCount} duplicates` : "Duplicates"}
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
       >
-        <svg className="image-pool-dup-fab-icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-          <rect x="3" y="5" width="12" height="12" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
-          <rect x="9" y="7" width="12" height="12" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <svg
+          className="image-pool-dup-fab-icon"
+          viewBox="0 0 24 24"
+          width="22"
+          height="22"
+          aria-hidden="true"
+        >
+          <rect
+            x="3"
+            y="5"
+            width="12"
+            height="12"
+            rx="2"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+          />
+          <rect
+            x="9"
+            y="7"
+            width="12"
+            height="12"
+            rx="2"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+          />
         </svg>
         {dupCount > 0 ? (
           <span className="image-pool-dup-badge">{dupCount > 99 ? "99+" : dupCount}</span>
@@ -70,7 +94,12 @@ export function ImagePoolDuplicates({
         <div className="image-pool-dup-panel-head">
           <span className="image-pool-dup-title">Duplicates</span>
           <span className="status">{statusText}</span>
-          <button type="button" className="image-pool-dup-close" title="Collapse" onClick={() => setExpanded(false)}>
+          <button
+            type="button"
+            className="image-pool-dup-close"
+            title="Collapse"
+            onClick={() => setExpanded(false)}
+          >
             ×
           </button>
         </div>
@@ -83,11 +112,10 @@ export function ImagePoolDuplicates({
               Clear Duplicates
             </button>
           </div>
-          <div className="hint">Scans media only. Each group keeps one image (an annotated one when there is one); the rest are deleted with their labels and status.</div>
           <div className="duplicate-photo-results">
             {!scan?.groups?.length ? (
               <div className="empty">
-                {pending ? "正在扫描 media..." : "Click Find Duplicates to scan identical files."}
+                {pending ? "Scanning media…" : "Click Find Duplicates to scan identical files."}
               </div>
             ) : (
               scan.groups.map((group, groupIndex) => {
@@ -96,9 +124,9 @@ export function ImagePoolDuplicates({
                 return (
                   <div key={`group-${groupIndex}`} className="duplicate-photo-group">
                     <div className="duplicate-photo-group-head">
-                      <span>组 {groupIndex + 1}</span>
+                      <span>Group {groupIndex + 1}</span>
                       <span>
-                        {group.count} 张 | {formatBytes(group.size || 0)}
+                        {group.count} images | {formatBytes(group.size || 0)}
                       </span>
                     </div>
                     <div className="duplicate-photo-grid">
@@ -113,10 +141,14 @@ export function ImagePoolDuplicates({
                             <span title={filename}>{filename}</span>
                             <div className="duplicate-photo-item-actions">
                               {isKeeper ? (
-                                <span className="status">保留</span>
+                                <span className="status">Keep</span>
                               ) : (
-                                <button type="button" className="danger" onClick={() => onDeleteFile(filename)}>
-                                  删除
+                                <button
+                                  type="button"
+                                  className="danger"
+                                  onClick={() => onDeleteFile(filename)}
+                                >
+                                  Delete
                                 </button>
                               )}
                             </div>

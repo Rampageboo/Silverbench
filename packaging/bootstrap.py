@@ -80,7 +80,7 @@ def sync_engine(source: Path, target: Path, version: str, status: Status) -> Non
     marker = target / ".rwb-engine-version"
     if marker.is_file() and marker.read_text(encoding="utf-8").strip() == version:
         return
-    status.update(stage="engine", message="正在更新动捕引擎…", percent=2)
+    status.update(stage="engine", message="Updating the motion capture engine…", percent=2)
     target.mkdir(parents=True, exist_ok=True)
     for name in ENGINE_CODE:
         destination = target / name
@@ -110,7 +110,7 @@ def _run(command: list[str], status: Status) -> None:
     for line in process.stdout:
         status.line(line)
     if process.wait() != 0:
-        raise RuntimeError(f"命令失败（退出码 {process.returncode}）：{' '.join(command[1:4])} …")
+        raise RuntimeError(f"Command failed (exit code {process.returncode}): {' '.join(command[1:4])} …")
 
 
 def ensure_venv(venv: Path, lock: Path, status: Status) -> None:
@@ -124,7 +124,7 @@ def ensure_venv(venv: Path, lock: Path, status: Status) -> None:
         except (OSError, ValueError):
             pass
     if not python.is_file():
-        status.update(stage="venv", message="正在创建 Python 运行环境…", percent=5)
+        status.update(stage="venv", message="Creating the Python environment…", percent=5)
         _run([sys.executable, "-m", "venv", str(venv)], status)
 
     pins = [line.strip() for line in lock.read_text(encoding="utf-8").splitlines() if line.strip() and not line.startswith("#")]
@@ -135,11 +135,11 @@ def ensure_venv(venv: Path, lock: Path, status: Status) -> None:
     # --no-deps: the lock is the complete, tested set; resolving would re-add the
     # conflicting opencv-python that ultralytics declares.
     pip = [str(python), "-m", "pip", "install", "--no-deps", "--progress-bar", "off"]
-    status.update(stage="torch", message="正在下载 PyTorch（CUDA，约 2.5 GB，首次较慢）…", percent=10)
+    status.update(stage="torch", message="Downloading PyTorch (CUDA, about 2.5 GB)…", percent=10)
     _run(pip + ["--index-url", TORCH_INDEX, *torch_pins], status)
-    status.update(stage="packages", message="正在安装其余依赖…", percent=70)
+    status.update(stage="packages", message="Installing other packages…", percent=70)
     _run(pip + ["-r", str(rest)], status)
-    status.update(stage="verify", message="正在检查运行环境…", percent=95)
+    status.update(stage="verify", message="Checking the environment…", percent=95)
     _run([str(python), "-c", "import fastapi, uvicorn, numpy, cv2, torch, ultralytics; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"], status)
     marker.write_text(json.dumps({"lockHash": lock_hash, "python": sys.version, "createdAt": time.time()}), encoding="utf-8")
 
@@ -153,13 +153,13 @@ def main() -> int:
     args = parser.parse_args()
     status = Status(args.status)
     try:
-        status.update(stage="checking", message="正在检查运行环境…", percent=1)
+        status.update(stage="checking", message="Checking the environment…", percent=1)
         sync_engine(args.app / "engines" / "animocap", args.data / "animocap", args.version, status)
         ensure_venv(args.data / "runtime" / "venv", args.app / "packaging" / "requirements.lock.txt", status)
-        status.update(stage="ready", message="运行环境已就绪", percent=100, done=True)
+        status.update(stage="ready", message="Environment ready", percent=100, done=True)
         return 0
     except Exception as error:  # noqa: BLE001 - the window shows any failure with the log
-        status.update(stage="failed", message="运行环境准备失败", error=str(error), done=True)
+        status.update(stage="failed", message="Environment setup failed", error=str(error), done=True)
         return 1
 
 

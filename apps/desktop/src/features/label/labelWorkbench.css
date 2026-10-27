@@ -906,7 +906,6 @@
     font-weight: 600;
   }
 
-  .alm-panel-subtitle,
   .alm-panel-status,
   .alm-panel-summary {
     color: var(--c-text-3);

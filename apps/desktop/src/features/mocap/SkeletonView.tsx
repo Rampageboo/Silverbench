@@ -132,13 +132,13 @@ export function SkeletonView({ pose, comparison, frame, selectedJoint }: Props) 
     <div className="mc-skeleton">
       <div className="mc-skeleton__tools">
         <button type="button" className="ui-btn--sm" onClick={() => setView({ yaw: 0, pitch: 0 })}>
-          正面
+          Front
         </button>
         <button type="button" className="ui-btn--sm" onClick={() => setView({ yaw: 90, pitch: 0 })}>
-          侧面
+          Side
         </button>
         <button type="button" className="ui-btn--ghost ui-btn--sm" onClick={() => setView(DEFAULT_VIEW)}>
-          重置视角
+          Reset view
         </button>
       </div>
       <div
@@ -165,12 +165,12 @@ export function SkeletonView({ pose, comparison, frame, selectedJoint }: Props) 
         {readout ? (
           <>
             <strong>{readout.name}</strong>
-            <span>置信度 {readout.confidence.toFixed(2)}</span>
-            <span>深度 {readout.depth.toFixed(3)} m</span>
-            {readout.delta !== null ? <span>与叠影相差 {readout.delta.toFixed(0)} mm</span> : null}
+            <span>Confidence {readout.confidence.toFixed(2)}</span>
+            <span>Depth {readout.depth.toFixed(3)} m</span>
+            {readout.delta !== null ? <span>{readout.delta.toFixed(0)} mm from overlay</span> : null}
           </>
         ) : (
-          <span className="mc-muted">单目视频的深度是估计值 · 点击视频上的关节查看</span>
+          <span className="mc-muted">Click a joint to inspect it</span>
         )}
       </div>
     </div>

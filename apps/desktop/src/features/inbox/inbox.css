@@ -84,12 +84,6 @@
     z-index: 2;
   }
 
-  .inbox-assign-legend {
-    margin: 0 0 10px;
-    font-size: 11px;
-    line-height: 1.45;
-  }
-
   .inbox-entry .inbox-meta-tag {
     color: var(--muted);
     font-size: 11px;
@@ -109,10 +103,6 @@
     gap: 8px;
     flex: 1;
     min-height: 0;
-  }
-
-  .inbox-detect-assign-hint {
-    margin: 0;
   }
 
   .inbox-create-assign-row {

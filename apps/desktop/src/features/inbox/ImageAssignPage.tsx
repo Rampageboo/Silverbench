@@ -24,10 +24,7 @@ export function ImageAssignPage({ onReady, onStatusText }: ImageAssignPageProps)
     (err: unknown) => showToast(errMessage(err), { variant: "error" }),
     [showToast]
   );
-  const onScanUpdate = useCallback(
-    (count: number) => setImagePoolNewCount(count),
-    [setImagePoolNewCount]
-  );
+  const onScanUpdate = useCallback((count: number) => setImagePoolNewCount(count), [setImagePoolNewCount]);
   const assign = useImageAssign({
     workspaceRoot,
     onReady,
@@ -73,10 +70,20 @@ export function ImageAssignPage({ onReady, onStatusText }: ImageAssignPageProps)
           </div>
           <div className="panel-body inbox-body">
             <div className="row inbox-toolbar">
-              <button type="button" className="primary" id="inboxOpenFolderBtn" onClick={() => chooseWorkspaceFolder().catch(showError)}>
+              <button
+                type="button"
+                className="primary"
+                id="inboxOpenFolderBtn"
+                onClick={() => chooseWorkspaceFolder().catch(showError)}
+              >
                 Open Workspace
               </button>
-              <button type="button" id="inboxRefreshBtn" disabled={assign.pending} onClick={() => assign.refresh()}>
+              <button
+                type="button"
+                id="inboxRefreshBtn"
+                disabled={assign.pending}
+                onClick={() => assign.refresh()}
+              >
                 Refresh
               </button>
               <button type="button" id="inboxSelectAllBtn" onClick={assign.selectAllVisible}>
@@ -102,8 +109,13 @@ export function ImageAssignPage({ onReady, onStatusText }: ImageAssignPageProps)
               >
                 {assign.junkSelection.clearLabel}
               </button>
-              <button type="button" id="inboxUndoJunkBtn" disabled={!assign.canUndoJunk || assign.assigning} onClick={() => assign.undoJunk()}>
-                撤回废片
+              <button
+                type="button"
+                id="inboxUndoJunkBtn"
+                disabled={!assign.canUndoJunk || assign.assigning}
+                onClick={() => assign.undoJunk()}
+              >
+                Undo junk
               </button>
             </div>
             <div className="inbox-filters">
@@ -182,11 +194,9 @@ export function ImageAssignPage({ onReady, onStatusText }: ImageAssignPageProps)
           previewIndex !== null && previewSubset.length !== previewItems.length
             ? Math.max(
                 0,
-                previewSubset.findIndex(
-                  (item) => item.filename === assign.items[previewIndex ?? 0]?.filename
-                )
+                previewSubset.findIndex((item) => item.filename === assign.items[previewIndex ?? 0]?.filename)
               )
-            : previewIndex ?? 0
+            : (previewIndex ?? 0)
         }
         onClose={() => setPreviewIndex(null)}
         onIndexChange={(index) => {

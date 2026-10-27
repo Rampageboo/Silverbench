@@ -20,9 +20,9 @@ import type { FrameRange } from "./MocapTimeline";
 
 type Change = (build: (edits: EditSession) => EditSession) => void;
 
-const TRUST_LABELS = { locked: "锁定", weighted: "加权", excluded: "排除" } as const;
+const TRUST_LABELS = { locked: "Locked", weighted: "Weighted", excluded: "Excluded" } as const;
 
-/** 手动修正: drag keyframes on the video, their curves, smoothing, undo/redo. */
+/** Keyframes: drag keyframes on the video, their curves, smoothing, undo/redo. */
 export function KeyframePanel({
   edits,
   frame,
@@ -59,14 +59,14 @@ export function KeyframePanel({
   return (
     <div className="mc-edit">
       <div className="mc-inline">
-        <label className="mc-check" title={dragAllowed ? "在视频上拖动关节，生成当前帧的关键帧" : undefined}>
+        <label className="mc-check">
           <input
             type="checkbox"
             checked={editMode && dragAllowed}
             disabled={!dragAllowed}
             onChange={(event) => onEditMode(event.target.checked)}
           />
-          拖动修正
+          Drag to fix
         </label>
         <select
           value={curve}
@@ -75,11 +75,10 @@ export function KeyframePanel({
             onCurve(next);
             if (atKey) onChange((current) => setCurveAt(current, frame, next));
           }}
-          title="影响曲线：用于下一次拖动；在关键帧上时也应用到该关键帧"
         >
           {Object.entries(CURVE_LABELS).map(([value, label]) => (
             <option key={value} value={value}>
-              曲线 · {label}
+              Curve · {label}
             </option>
           ))}
         </select>
@@ -89,23 +88,21 @@ export function KeyframePanel({
           className="ui-btn--sm"
           onClick={onUndo}
           disabled={!canUndo || busy}
-          title="撤销 (Ctrl+Z)"
+          title="Ctrl+Z"
         >
-          撤销
+          Undo
         </button>
         <button
           type="button"
           className="ui-btn--sm"
           onClick={onRedo}
           disabled={!canRedo || busy}
-          title="重做 (Ctrl+Y)"
+          title="Ctrl+Y"
         >
-          重做
+          Redo
         </button>
       </div>
-      {!dragAllowed ? (
-        <p className="mc-muted">正在回看其他视角（只读）。切回"融合（参考视角）"后可编辑。</p>
-      ) : null}
+      {!dragAllowed ? <p className="mc-muted">Other views are read-only. Switch to Fused to edit</p> : null}
       <div className="mc-inline">
         <button
           type="button"
@@ -113,7 +110,7 @@ export function KeyframePanel({
           disabled={!atKey || busy}
           onClick={() => onChange((current) => toggleSmoothing(current, frame))}
         >
-          {edits.smoothedKeyframes.includes(frame) ? "取消关键帧平滑" : "以此关键帧平滑"}
+          {edits.smoothedKeyframes.includes(frame) ? "Unsmooth keyframe" : "Smooth keyframe"}
         </button>
         <button
           type="button"
@@ -122,7 +119,7 @@ export function KeyframePanel({
           onClick={() => onChange((current) => deleteKeyframe(current, frame))}
           title="Delete"
         >
-          删除当前键
+          Delete keyframe
         </button>
       </div>
       {keys.length ? (
@@ -135,18 +132,18 @@ export function KeyframePanel({
               onClick={() => onSeek(key)}
             >
               ◆ {key}
-              {edits.smoothedKeyframes.includes(key) ? " · 平滑" : ""}
+              {edits.smoothedKeyframes.includes(key) ? " · smooth" : ""}
             </button>
           ))}
         </div>
       ) : (
-        <p className="mc-muted">没有关键帧。打开"拖动修正"后在视频上拖动错位的关节。</p>
+        <p className="mc-muted">No keyframes. Turn on Drag to fix, then drag a misplaced joint</p>
       )}
     </div>
   );
 }
 
-/** 按部位修复: lock, weight or exclude the selected joint, then rebuild a range. */
+/** Joint repair: lock, weight or exclude the selected joint, then rebuild a range. */
 export function JointRepairPanel({
   pose,
   edits,
@@ -166,7 +163,7 @@ export function JointRepairPanel({
   onChange: Change;
   onSeek: (frame: number) => void;
 }) {
-  if (joint === null) return <p className="mc-muted">点击视频上的关节选择要修复的部位。</p>;
+  if (joint === null) return <p className="mc-muted">Click a joint on the video to repair it</p>;
   const span = range ?? { first: frame, last: frame };
   const marks = marksFor(edits, joint);
   const ranges = rangesFor(edits, joint);
@@ -175,8 +172,8 @@ export function JointRepairPanel({
       <div className="mc-inline">
         <strong>{jointLabel(pose.joints[joint])}</strong>
         <span className="mc-muted">
-          帧 {frame}
-          {range ? ` · 区间 ${range.first}–${range.last}` : ""}
+          Frame {frame}
+          {range ? ` · range ${range.first}–${range.last}` : ""}
         </span>
       </div>
       <div className="mc-inline">
@@ -186,9 +183,9 @@ export function JointRepairPanel({
           disabled={busy}
           onClick={() => onChange((current) => trustCurrent(current, pose, joint, frame, "locked"))}
         >
-          锁定此帧
+          Lock frame
         </button>
-        <span className="mc-muted">可信权重</span>
+        <span className="mc-muted">Weight</span>
         {[4, 8, 16].map((weight) => (
           <button
             key={weight}
@@ -210,18 +207,18 @@ export function JointRepairPanel({
           disabled={busy}
           onClick={() => onChange((current) => exclude(current, joint, span.first, span.last))}
         >
-          排除此部位
+          Exclude
         </button>
         <button
           type="button"
           className="ui-btn--sm"
           disabled={busy || !range}
-          title={range ? "区间两端必须先锁定" : "先在时间轴上设起点/终点"}
+          title={range ? "Lock both ends first" : "Set a range on the timeline first"}
           onClick={() =>
             range && onChange((current) => rebuildRange(current, joint, range.first, range.last))
           }
         >
-          重建区间
+          Rebuild range
         </button>
         <button
           type="button"
@@ -229,13 +226,9 @@ export function JointRepairPanel({
           disabled={busy}
           onClick={() => onChange((current) => restoreAuto(current, joint, span.first, span.last))}
         >
-          恢复自动
+          Restore auto
         </button>
       </div>
-      <p className="mc-muted">
-        锁定与加权作用于当前帧；排除与恢复自动作用于选区（无选区时为当前帧）。重建区间要求两端锁定，缺口不超过
-        0.75 秒。
-      </p>
       {ranges.length ? (
         <div className="mc-chips">
           {ranges.map(([first, last]) => (
@@ -245,7 +238,7 @@ export function JointRepairPanel({
               className="mc-chip mc-chip--range"
               onClick={() => onSeek(first)}
             >
-              重建 {first}–{last}
+              Rebuild {first}–{last}
             </button>
           ))}
         </div>
@@ -258,14 +251,14 @@ export function JointRepairPanel({
               type="button"
               className={`mc-chip mc-chip--${mark.trust}${isPending(edits, mark) ? " is-pending" : ""}`}
               onClick={() => onSeek(mark.frame)}
-              title={isPending(edits, mark) ? "尚未生效：需要覆盖它的重建区间" : undefined}
+              title={isPending(edits, mark) ? "Needs a rebuild range" : undefined}
             >
               {TRUST_LABELS[mark.trust]}
               {mark.trust === "weighted" ? ` ${mark.weight}×` : ""} {mark.frame}
-              {isPending(edits, mark) ? " · 待重建" : ""}
+              {isPending(edits, mark) ? " · pending" : ""}
             </button>
           ))}
-          {marks.length > 80 ? <span className="mc-muted">还有 {marks.length - 80} 个</span> : null}
+          {marks.length > 80 ? <span className="mc-muted">{marks.length - 80} more</span> : null}
         </div>
       ) : null}
     </div>
@@ -296,10 +289,10 @@ export function BlenderFramesPanel({
     <div className="mc-edit">
       <div className="mc-inline">
         <button type="button" className="ui-btn--sm" onClick={onToggle} title="B">
-          {frames.includes(frame) ? "取消选中此帧" : "选中此帧"}
+          {frames.includes(frame) ? "Unselect frame" : "Select frame"}
         </button>
         <button type="button" className="ui-btn--sm" onClick={onAddRange} disabled={!range}>
-          选中区间
+          Select range
         </button>
         <button
           type="button"
@@ -307,14 +300,14 @@ export function BlenderFramesPanel({
           onClick={onClear}
           disabled={!frames.length}
         >
-          清除
+          Clear
         </button>
       </div>
       <div className="mc-inline">
-        <span className="mc-muted">已选 {frames.length} 帧 · 导出完整姿态，在 Blender 新建 Action</span>
+        <span className="mc-muted">{frames.length} frames selected</span>
         <span className="mc-spacer" />
         <button type="button" onClick={onExport} disabled={!frames.length || busy}>
-          导出到 Blender
+          Export to Blender
         </button>
       </div>
     </div>

@@ -220,13 +220,13 @@ export function MocapStage({
   }
 
   async function switchToProxy() {
-    setVideoError("正在生成可播放的预览副本…");
+    setVideoError("Creating a playable preview copy…");
     try {
       const result = await ensureVideoProxy(workspaceRoot, video);
       setSource(result.path);
       setVideoError("");
     } catch (error) {
-      setVideoError(`无法播放此视频：${error instanceof Error ? error.message : String(error)}`);
+      setVideoError(`Cannot play this video: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -244,7 +244,9 @@ export function MocapStage({
           else onTime(event.currentTarget.currentTime);
           ready.current = true;
         }}
-        onError={() => (source === video ? void switchToProxy() : setVideoError("预览副本也无法播放。"))}
+        onError={() =>
+          source === video ? void switchToProxy() : setVideoError("The preview copy cannot be played either")
+        }
       />
       <canvas
         ref={canvasRef}

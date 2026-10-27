@@ -35,7 +35,12 @@ function Dialog({
       >
         <header className="ui-dialog__head">
           <h2 className="ui-dialog__title">{title}</h2>
-          <button type="button" className="ui-btn--ghost ui-btn--icon ui-btn--sm" onClick={onClose} aria-label="关闭">
+          <button
+            type="button"
+            className="ui-btn--ghost ui-btn--icon ui-btn--sm"
+            onClick={onClose}
+            aria-label="Close"
+          >
             <IconClose size={14} />
           </button>
         </header>
@@ -60,16 +65,14 @@ function MigrationBody({ folder }: { folder: Extract<PendingFolder, { kind: "leg
     <>
       <p>
         <strong>{folder.name}</strong> is an older {SOURCE_LABEL[migration.sourceKind]}
-        {migration.activeVersion ? ` — the active version is ${migration.activeVersion}` : ""}. RampageWorkbench
-        only opens the current format, so it needs to be migrated first.
+        {migration.activeVersion ? ` (active version ${migration.activeVersion})` : ""} and must be migrated
+        before it can open.
       </p>
       <ul className="pending-folder__facts">
-        <li>
-          {moved} items are moved into the new layout (renamed, never copied — media stays where it is on disk).
-        </li>
-        <li>{rewritten} annotation files are rewritten to name files after their media instead of hashes.</li>
-        <li>Old datasets and configs go to exports/legacy-… and .rwb/migrated — nothing is deleted.</li>
-        <li>Right after migrating you can check the result and undo it completely.</li>
+        <li>{moved} items moved into the new layout (not copied)</li>
+        <li>{rewritten} annotation files rewritten</li>
+        <li>Old datasets and configs kept in exports/legacy-… and .rwb/migrated</li>
+        <li>You can undo the migration afterwards</li>
       </ul>
       {migration.warnings.length ? (
         <div className="pending-folder__list">
@@ -165,9 +168,9 @@ export function PendingFolderDialog() {
         }
       >
         <p>
-          <strong>{folder.name}</strong> looks like an exported {folder.task === "classify" ? "classification" : "detection"}{" "}
-          dataset. Datasets are products of a workspace: work on the workspace and export again, or use the dataset
-          tools (Train prep, Merge, Crop) directly on this folder.
+          <strong>{folder.name}</strong> is an exported{" "}
+          {folder.task === "classify" ? "classification" : "detection"} dataset. Open its workspace instead,
+          or use Dataset prep, Merge or Batch crop on it.
         </p>
         <code className="pending-folder__path">{folder.root}</code>
       </Dialog>
@@ -194,9 +197,7 @@ export function PendingFolderDialog() {
     >
       <p>
         <strong>{workspaceDisplayName(folder.root)}</strong> is not a workspace yet.
-        {folder.empty
-          ? " It is empty, so it can become one."
-          : " Files already in it stay where they are; add images and videos to the workspace with Import."}
+        {folder.empty ? "" : " Existing files stay where they are."}
       </p>
       <code className="pending-folder__path">{folder.root}</code>
       {error ? <p className="ui-error">{error}</p> : null}
@@ -239,10 +240,7 @@ export function MigrationReviewBar() {
 
   return (
     <div className="shell-review" role="status">
-      <span>
-        This workspace was just migrated to the new format. Look around, then keep it — or undo to restore the
-        old layout exactly.
-      </span>
+      <span>Workspace migrated. Keep it, or undo to restore the old layout.</span>
       {error ? <span className="ui-error">{error}</span> : null}
       <button type="button" className="ui-btn--sm" disabled={busy} onClick={() => void undo()}>
         Undo migration

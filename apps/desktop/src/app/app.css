@@ -9,10 +9,6 @@
       width: 56px;
       height: 56px;
     }
-
-    .startup-features {
-      grid-template-columns: 1fr;
-    }
   }
 
   .app-workbench-root--booting {
@@ -102,12 +98,6 @@
   .workbench-page .merge-workspace .panel,
   .workbench-page .mask-noise-workspace .panel {
     min-height: 0;
-  }
-
-  @media (max-width: 720px) {
-    .startup-features {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
   }
 
   .workbench-page .react-image-pool-page {

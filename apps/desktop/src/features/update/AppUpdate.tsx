@@ -39,25 +39,23 @@ export function UpdateStatus({ collapsed }: { collapsed: boolean }) {
         type="button"
         className={`shell-status__item shell-status__btn${open ? " is-open" : ""}`}
         onClick={() => setOpen((value) => !value)}
-        title={`新版本 ${update.version} 可用`}
+        title={`Version ${update.version} available`}
         aria-expanded={open}
       >
         <span className="ui-dot ui-dot--ok" />
-        {collapsed ? null : <span>新版本 {update.version}</span>}
+        {collapsed ? null : <span>Update {update.version}</span>}
       </button>
       {open ? (
         <div ref={menuRef} className="ui-menu shell-models__menu" role="dialog">
-          <div className="ui-menu__label ui-eyebrow">RampageWorkbench {update.version}</div>
+          <div className="ui-menu__label ui-eyebrow">Silverbench {update.version}</div>
           <UpdateDetails />
           <div className="ui-menu__sep" />
           <div className="shell-models__foot">
             <span className="ui-menu__item-sub">
-              {progress
-                ? `正在下载 ${progressText(progress)}…`
-                : error || "下载并校验后自动安装、重启。未保存的编辑已自动保存。"}
+              {progress ? `Downloading ${progressText(progress)}…` : error}
             </span>
             <button type="button" className="ui-btn--sm" onClick={() => void install()} disabled={!!progress}>
-              {progress ? "更新中…" : "更新并重启"}
+              {progress ? "Updating…" : "Update and restart"}
             </button>
           </div>
         </div>
@@ -72,38 +70,37 @@ function UpdateDetails() {
   return (
     <div className="update-notes">
       <span className="ui-menu__item-sub">
-        当前 {info?.version ?? update.currentVersion}
-        {update.date ? ` · 发布于 ${update.date.slice(0, 10)}` : ""}
+        Current {info?.version ?? update.currentVersion}
+        {update.date ? ` · Released ${update.date.slice(0, 10)}` : ""}
       </span>
       {update.body ? <pre className="update-notes__body">{update.body}</pre> : null}
     </div>
   );
 }
 
-/** Settings → 关于与更新. */
+/** Settings → About & updates. */
 export function UpdateSettingsSection() {
   const { info, update, checking, progress, error, lastChecked, check, install } = useUpdateState();
   return (
     <section className="settings-group">
       <div className="settings-group__head">
         <h3>About &amp; updates</h3>
-        <p>关于与更新 · 新版本从 GitHub Release 下载，签名校验后安装。</p>
       </div>
       <dl className="settings-kv">
         <div>
           <dt>Version</dt>
-          <dd>{info ? info.version : "浏览器版"}</dd>
+          <dd>{info ? info.version : "Browser build"}</dd>
         </div>
         <div>
           <dt>Updates</dt>
           <dd>
             {!info?.packaged
-              ? "源码运行：用 update.bat 更新"
+              ? "Source build: update with update.bat"
               : update
-                ? `新版本 ${update.version} 可用`
+                ? `Version ${update.version} available`
                 : lastChecked
-                  ? `已是最新（${lastChecked.toLocaleTimeString()} 检查）`
-                  : "尚未检查"}
+                  ? `Up to date (checked ${lastChecked.toLocaleTimeString()})`
+                  : "Not checked yet"}
           </dd>
         </div>
       </dl>
@@ -117,11 +114,11 @@ export function UpdateSettingsSection() {
             onClick={() => void check()}
             disabled={checking || !!progress}
           >
-            {checking ? "检查中…" : "检查更新"}
+            {checking ? "Checking…" : "Check for updates"}
           </button>
           {update ? (
             <button type="button" className="ui-btn--sm" onClick={() => void install()} disabled={!!progress}>
-              {progress ? `下载中 ${progressText(progress)}` : "更新并重启"}
+              {progress ? `Downloading ${progressText(progress)}` : "Update and restart"}
             </button>
           ) : null}
         </div>

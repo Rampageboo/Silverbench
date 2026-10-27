@@ -1,11 +1,4 @@
 @layer app {
-  .settings-dialog__zh {
-    margin-left: 6px;
-    color: var(--c-text-3);
-    font-size: var(--fs-md);
-    font-weight: 400;
-  }
-
   .settings-group {
     display: grid;
     gap: var(--sp-3);
@@ -75,12 +68,6 @@
 
   .settings-choice__copy strong {
     font-size: var(--fs-md);
-  }
-
-  .settings-choice__copy span {
-    color: var(--c-text-3);
-    font-size: var(--fs-xs);
-    line-height: 1.45;
   }
 
   .settings-swatch {

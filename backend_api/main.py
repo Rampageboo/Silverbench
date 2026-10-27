@@ -75,7 +75,7 @@ async def _lifespan(application: FastAPI):
         flush_all()
 
 
-app = FastAPI(title="RampageWorkbench API", lifespan=_lifespan)
+app = FastAPI(title="Silverbench API", lifespan=_lifespan)
 from backend_api.gallery import router as gallery_router
 from backend_api.mocap import router as mocap_router
 

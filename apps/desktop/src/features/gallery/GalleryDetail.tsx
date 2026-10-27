@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { galleryImageUrl, type GalleryAssetDetail, type GalleryPrompt, type GalleryPrompts, type JsonObject } from "./galleryApi";
+import {
+  galleryImageUrl,
+  type GalleryAssetDetail,
+  type GalleryPrompt,
+  type GalleryPrompts,
+  type JsonObject
+} from "./galleryApi";
 import {
   METADATA_FORMAT_LABELS,
   TAG_CATEGORY_LABELS,
@@ -8,6 +14,7 @@ import {
   groupTags,
   promptOverride,
   promptSourceLabel,
+  rootSourceLabel,
   withPromptOverride,
   type AssetDraft,
   type GalleryMode,
@@ -48,7 +55,9 @@ function SourceBadge({ source }: { source: string }) {
 }
 
 function KeyValues({ value, empty }: { value: JsonObject | undefined; empty: string }) {
-  const entries = Object.entries(value ?? {}).filter(([, item]) => item !== null && item !== undefined && item !== "");
+  const entries = Object.entries(value ?? {}).filter(
+    ([, item]) => item !== null && item !== undefined && item !== ""
+  );
   if (!entries.length) return <p className="gal-muted">{empty}</p>;
   return (
     <dl className="gal-kv">
@@ -82,7 +91,14 @@ function PromptEditor({
   const override = promptOverride(draft.userEdits, format, field);
   const auto = prompt ? (field === "positive" ? prompt.positive : prompt.negative) : "";
   const value = override ?? auto;
-  const source = override !== undefined ? "user" : prompt ? (field === "positive" ? prompt.source : prompt.negativeSource) : "none";
+  const source =
+    override !== undefined
+      ? "user"
+      : prompt
+        ? field === "positive"
+          ? prompt.source
+          : prompt.negativeSource
+        : "none";
 
   return (
     <div className="gal-prompt">
@@ -94,18 +110,23 @@ function PromptEditor({
           <button
             type="button"
             className="ui-btn--ghost ui-btn--sm"
-            title="去掉人工覆盖，使用自动结果"
-            onClick={() => onDraftChange({ ...draft, userEdits: withPromptOverride(draft.userEdits, format, field, undefined) })}
+            title="Discard the manual edit"
+            onClick={() =>
+              onDraftChange({
+                ...draft,
+                userEdits: withPromptOverride(draft.userEdits, format, field, undefined)
+              })
+            }
           >
-            恢复自动
+            Use auto
           </button>
         ) : null}
         <button
           type="button"
           className="ui-btn--ghost ui-btn--icon ui-btn--sm"
-          title={`复制${label}`}
-          aria-label={`复制${label}`}
-          onClick={() => onCopy(value, label)}
+          title={`Copy ${label.toLowerCase()} prompt`}
+          aria-label={`Copy ${label.toLowerCase()} prompt`}
+          onClick={() => onCopy(value, `${label.toLowerCase()} prompt`)}
           disabled={!value}
         >
           <IconCopy size={13} />
@@ -116,12 +137,14 @@ function PromptEditor({
         value={value}
         spellCheck={false}
         rows={field === "positive" ? 5 : 3}
-        placeholder={prompt ? "（空）" : "正在生成预览…"}
+        placeholder={prompt ? "(empty)" : "Generating preview…"}
         onChange={(event) =>
-          onDraftChange({ ...draft, userEdits: withPromptOverride(draft.userEdits, format, field, event.target.value) })
+          onDraftChange({
+            ...draft,
+            userEdits: withPromptOverride(draft.userEdits, format, field, event.target.value)
+          })
         }
       />
-      {override === "" ? <p className="gal-note">已人工清空，导出时保持为空。</p> : null}
     </div>
   );
 }
@@ -154,14 +177,24 @@ export function GalleryDetail({
   const originalParameters = metadata?.source === "metadata" ? metadata.parameters : undefined;
 
   return (
-    <aside className="gal-detail" aria-label="图片详情">
+    <aside className="gal-detail" aria-label="Image details">
       <div className="gal-detail__scroll">
-        <button type="button" className="gal-detail__preview" onClick={obscured ? onReveal : onOpenImage} title={obscured ? "显示此图" : "查看原图"}>
-          <img src={galleryImageUrl(asset.id)} alt="" className={obscured ? "is-obscured" : undefined} draggable={false} />
+        <button
+          type="button"
+          className="gal-detail__preview"
+          onClick={obscured ? onReveal : onOpenImage}
+          title={obscured ? "Show image" : "Open full size"}
+        >
+          <img
+            src={galleryImageUrl(asset.id)}
+            alt=""
+            className={obscured ? "is-obscured" : undefined}
+            draggable={false}
+          />
           {obscured ? (
             <span className="gal-tile__veil">
               <IconEyeOff size={18} />
-              <span>{contentRatingLabel(asset.contentRating)} · 点击显示</span>
+              <span>{contentRatingLabel(asset.contentRating)} · Click to show</span>
             </span>
           ) : null}
         </button>
@@ -172,21 +205,23 @@ export function GalleryDetail({
             {asset.path}
           </p>
           <p className="gal-detail__facts">
-            {asset.width}×{asset.height} · {asset.format.toUpperCase()} · {asset.source || "未标来源"} · 分级 {contentRatingLabel(asset.contentRating)}
+            {asset.width}×{asset.height} · {asset.format.toUpperCase()} ·{" "}
+            {asset.source ? rootSourceLabel(asset.source) : "No source"} ·{" "}
+            {contentRatingLabel(asset.contentRating)}
           </p>
           {asset.missing ? (
             <p className="gal-warn">
               <IconAlert size={14} />
-              源文件当前不可用：NAS 可能离线，或文件被移动后尚未重新扫描。记录与修改会保留。
+              Source file unavailable (offline or moved). Your edits are kept
             </p>
           ) : null}
         </header>
 
         <section className="gal-section">
-          <h3 className="gal-section__title">整理</h3>
+          <h3 className="gal-section__title">Organize</h3>
           <div className="gal-field gal-field--inline">
-            <span>评分</span>
-            <div className="gal-stars gal-stars--lg" role="radiogroup" aria-label="评分">
+            <span>Rating</span>
+            <div className="gal-stars gal-stars--lg" role="radiogroup" aria-label="Rating">
               {[1, 2, 3, 4, 5].map((value) => (
                 <button
                   key={value}
@@ -195,7 +230,7 @@ export function GalleryDetail({
                   aria-checked={draft.rating === value}
                   className={`gal-stars__star${value <= draft.rating ? " is-on" : ""}`}
                   onClick={() => onDraftChange({ ...draft, rating: draft.rating === value ? 0 : value })}
-                  title={`${value} 星（数字键 ${value}）`}
+                  title={`${value} stars (key ${value})`}
                 >
                   <IconStar size={16} />
                 </button>
@@ -203,11 +238,11 @@ export function GalleryDetail({
             </div>
           </div>
           <label className="gal-field">
-            <span>集合</span>
+            <span>Collection</span>
             <input
               list="gallery-collections"
               value={draft.collection}
-              placeholder="未归集"
+              placeholder="Unsorted"
               onChange={(event) => onDraftChange({ ...draft, collection: event.target.value })}
             />
             <datalist id="gallery-collections">
@@ -217,46 +252,72 @@ export function GalleryDetail({
             </datalist>
           </label>
           <label className="gal-field">
-            <span>个人标签</span>
+            <span>Personal tags</span>
             <input
               value={draft.personalTags}
-              placeholder="用逗号分隔，与 Danbooru tag 分开"
+              placeholder="Comma separated"
               onChange={(event) => onDraftChange({ ...draft, personalTags: event.target.value })}
             />
           </label>
           <label className="gal-field">
-            <span>备注</span>
-            <textarea rows={2} value={draft.notes} onChange={(event) => onDraftChange({ ...draft, notes: event.target.value })} />
+            <span>Notes</span>
+            <textarea
+              rows={2}
+              value={draft.notes}
+              onChange={(event) => onDraftChange({ ...draft, notes: event.target.value })}
+            />
           </label>
         </section>
 
         <section className="gal-section">
           <div className="gal-section__head">
-            <h3 className="gal-section__title">提示词 · {mode === "train" ? "训练集模式" : "提示词模式"}</h3>
-            <div className="ui-seg" role="tablist" aria-label="提示词写法">
+            <h3 className="gal-section__title">Prompts</h3>
+            <div className="ui-seg" role="tablist" aria-label="Prompt format">
               {(Object.keys(FORMAT_LABELS) as PromptFormat[]).map((key) => (
-                <button key={key} type="button" role="tab" aria-selected={format === key} onClick={() => setFormat(key)}>
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={format === key}
+                  onClick={() => setFormat(key)}
+                >
                   {FORMAT_LABELS[key]}
                 </button>
               ))}
             </div>
           </div>
-          {promptError ? <div className="ui-error">预览失败：{promptError}</div> : null}
-          <PromptEditor label="正面" prompt={prompt} field="positive" format={format} draft={draft} onDraftChange={onDraftChange} onCopy={onCopy} />
-          <PromptEditor label="负面" prompt={prompt} field="negative" format={format} draft={draft} onDraftChange={onDraftChange} onCopy={onCopy} />
+          {promptError ? <div className="ui-error">Preview failed: {promptError}</div> : null}
+          <PromptEditor
+            label="Positive"
+            prompt={prompt}
+            field="positive"
+            format={format}
+            draft={draft}
+            onDraftChange={onDraftChange}
+            onCopy={onCopy}
+          />
+          <PromptEditor
+            label="Negative"
+            prompt={prompt}
+            field="negative"
+            format={format}
+            draft={draft}
+            onDraftChange={onDraftChange}
+            onCopy={onCopy}
+          />
           {mode === "train" && promptOverride(draft.userEdits, format, "positive") !== undefined ? (
             <p className="gal-warn">
               <IconAlert size={14} />
-              人工覆盖的正面提示词会原样导出，训练集删除规则不会改写它，请自行复核。
+              Edited positive prompts are exported as-is; training rules do not apply to them
             </p>
           ) : null}
           <div className="gal-params">
             <div>
-              <h4>原始参数</h4>
-              <KeyValues value={originalParameters} empty="无原始生成参数（无元数据）。" />
+              <h4>Original parameters</h4>
+              <KeyValues value={originalParameters} empty="None" />
             </div>
             <div>
-              <h4>建议参数</h4>
+              <h4>Suggested parameters</h4>
               <KeyValues value={recommendations} empty="—" />
             </div>
           </div>
@@ -264,16 +325,23 @@ export function GalleryDetail({
             <button
               type="button"
               className="ui-btn--sm"
-              onClick={() => onCopy(Object.entries(originalParameters).map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join(", "), "原始参数")}
+              onClick={() =>
+                onCopy(
+                  Object.entries(originalParameters)
+                    .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`)
+                    .join(", "),
+                  "original parameters"
+                )
+              }
             >
-              <IconCopy size={13} /> 复制原始参数
+              <IconCopy size={13} /> Copy original parameters
             </button>
           ) : null}
         </section>
 
         {prompts?.warnings.length ? (
           <section className="gal-section">
-            <h3 className="gal-section__title">需要复核</h3>
+            <h3 className="gal-section__title">Needs review</h3>
             <ul className="gal-warn-list">
               {prompts.warnings.map((warning, index) => (
                 <li key={index}>{warning}</li>
@@ -283,7 +351,7 @@ export function GalleryDetail({
         ) : null}
 
         <section className="gal-section">
-          <h3 className="gal-section__title">标签</h3>
+          <h3 className="gal-section__title">Tags</h3>
           {tagGroups.length ? (
             tagGroups.map((group) => (
               <div key={group.category} className="gal-tags">
@@ -298,13 +366,15 @@ export function GalleryDetail({
                         className={`gal-tag${tag.selected ? "" : " is-dropped"}${tag.metadata ? " is-meta" : ""}`}
                         style={{ ["--p" as string]: String(Math.max(0.15, Math.min(1, strength))) }}
                         title={[
-                          tag.selected ? "已采用" : "低于当前阈值，未采用",
-                          `来源：${promptSourceLabel(tag.source).label}`,
-                          ...Object.entries(tag.probabilities ?? {}).map(([model, value]) => `${model}: ${Math.round(value * 100)}%`)
+                          tag.selected ? "Used" : "Below threshold, not used",
+                          `Source: ${promptSourceLabel(tag.source).label}`,
+                          ...Object.entries(tag.probabilities ?? {}).map(
+                            ([model, value]) => `${model}: ${Math.round(value * 100)}%`
+                          )
                         ].join("\n")}
                       >
                         {tag.name}
-                        {probability ? <em>{probability}</em> : <em className="gal-tag__meta">元数据</em>}
+                        {probability ? <em>{probability}</em> : <em className="gal-tag__meta">metadata</em>}
                       </span>
                     );
                   })}
@@ -312,7 +382,7 @@ export function GalleryDetail({
               </div>
             ))
           ) : (
-            <p className="gal-muted">{prompts ? "没有标签：既无元数据标签，也还没有模型打标结果。" : "加载中…"}</p>
+            <p className="gal-muted">{prompts ? "No tags yet" : "Loading…"}</p>
           )}
         </section>
 
@@ -320,15 +390,15 @@ export function GalleryDetail({
         <GalleryControls assetId={asset.id} refreshKey={refreshKey} onMessage={onMessage} />
 
         <section className="gal-section">
-          <h3 className="gal-section__title">原始元数据</h3>
+          <h3 className="gal-section__title">Original metadata</h3>
           <dl className="gal-kv">
             <div>
-              <dt>格式</dt>
+              <dt>Format</dt>
               <dd>{METADATA_FORMAT_LABELS[metadata?.format ?? "none"] ?? metadata?.format}</dd>
             </div>
             {metadata?.model ? (
               <div>
-                <dt>模型</dt>
+                <dt>Model</dt>
                 <dd>{metadata.model}</dd>
               </div>
             ) : null}
@@ -337,7 +407,10 @@ export function GalleryDetail({
                 <dt>LoRA</dt>
                 <dd>
                   {metadata.loras
-                    .map((lora) => `${String(lora.name ?? lora.path ?? "?")}${lora.weight !== undefined ? `:${String(lora.weight)}` : ""}`)
+                    .map(
+                      (lora) =>
+                        `${String(lora.name ?? lora.path ?? "?")}${lora.weight !== undefined ? `:${String(lora.weight)}` : ""}`
+                    )
                     .join(", ")}
                 </dd>
               </div>
@@ -350,10 +423,9 @@ export function GalleryDetail({
               ))}
             </ul>
           ) : null}
-          {metadata?.source === "none" ? <p className="gal-muted">无元数据：上面的提示词来自格式转换或模型反推，不等于原作者写法。</p> : null}
           {metadata?.raw && Object.keys(metadata.raw).length ? (
             <details className="gal-raw">
-              <summary>原始数据</summary>
+              <summary>Raw data</summary>
               <pre>{JSON.stringify(metadata.raw, null, 2)}</pre>
             </details>
           ) : null}
@@ -361,12 +433,26 @@ export function GalleryDetail({
       </div>
 
       <footer className={`gal-detail__foot${dirty ? " is-dirty" : ""}`}>
-        {saveError ? <span className="gal-detail__error">{saveError}</span> : <span className="gal-muted">{dirty ? "有未保存的修改" : "已保存"}</span>}
-        <button type="button" className="ui-btn--ghost ui-btn--sm" onClick={onRevert} disabled={!dirty || saving}>
-          放弃
+        {saveError ? (
+          <span className="gal-detail__error">{saveError}</span>
+        ) : (
+          <span className="gal-muted">{dirty ? "Unsaved changes" : "Saved"}</span>
+        )}
+        <button
+          type="button"
+          className="ui-btn--ghost ui-btn--sm"
+          onClick={onRevert}
+          disabled={!dirty || saving}
+        >
+          Discard
         </button>
-        <button type="button" className="ui-btn--solid ui-btn--sm" onClick={onSave} disabled={!dirty || saving}>
-          {saving ? "保存中…" : "保存"}
+        <button
+          type="button"
+          className="ui-btn--solid ui-btn--sm"
+          onClick={onSave}
+          disabled={!dirty || saving}
+        >
+          {saving ? "Saving…" : "Save"}
         </button>
       </footer>
     </aside>

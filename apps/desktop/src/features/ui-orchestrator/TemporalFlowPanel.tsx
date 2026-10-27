@@ -139,7 +139,6 @@ export function TemporalFlowPanel({ doc, onChange, status, setStatus }: Temporal
     <div className="uio-temporal-panel">
       <div className="uio-temporal-toolbar">
         <div>
-          <span className="uio-panel-kicker">Schema 2.0</span>
           <strong>Temporal state-machine workbench</strong>
         </div>
         <div className="uio-temporal-template-actions">
@@ -158,7 +157,6 @@ export function TemporalFlowPanel({ doc, onChange, status, setStatus }: Temporal
         <section className="uio-panel uio-temporal-source">
           <div className="uio-panel-heading">
             <div>
-              <span className="uio-panel-kicker">Author</span>
               <strong>Validated document</strong>
             </div>
             <button type="button" className="primary" onClick={applySource}>
@@ -178,14 +176,13 @@ export function TemporalFlowPanel({ doc, onChange, status, setStatus }: Temporal
               ))}
             </ol>
           ) : (
-            <p className="uio-temporal-ok">Closed validator · no schema errors.</p>
+            <p className="uio-temporal-ok">No schema errors</p>
           )}
         </section>
 
         <section className="uio-panel uio-temporal-graph-panel">
           <div className="uio-panel-heading">
             <div>
-              <span className="uio-panel-kicker">Inspect</span>
               <strong>Decision graph</strong>
             </div>
             <select
@@ -231,7 +228,6 @@ export function TemporalFlowPanel({ doc, onChange, status, setStatus }: Temporal
         <section className="uio-panel uio-temporal-replay">
           <div className="uio-panel-heading">
             <div>
-              <span className="uio-panel-kicker">Simulate</span>
               <strong>Ordered temporal events</strong>
             </div>
             <button type="button" className="primary" onClick={replay}>
@@ -259,8 +255,7 @@ export function TemporalFlowPanel({ doc, onChange, status, setStatus }: Temporal
         <section className="uio-panel uio-temporal-result">
           <div className="uio-panel-heading">
             <div>
-              <span className="uio-panel-kicker">Result</span>
-              <strong>{result?.status ?? "Not replayed"}</strong>
+              <strong>{result ? `Result: ${result.status}` : "Not replayed"}</strong>
             </div>
             {result?.currentNodeId ? <code>{result.currentNodeId}</code> : null}
           </div>
@@ -289,12 +284,7 @@ export function TemporalFlowPanel({ doc, onChange, status, setStatus }: Temporal
                 ))}
               </ol>
             </>
-          ) : (
-            <p className="uio-empty-copy">
-              Replay a golden or edited event stream. This simulator emits intent only and never dispatches
-              input.
-            </p>
-          )}
+          ) : null}
         </section>
       </div>
     </div>

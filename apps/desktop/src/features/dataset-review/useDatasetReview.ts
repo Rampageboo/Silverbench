@@ -25,7 +25,12 @@ import {
 import type { DatasetTask } from "./datasetCore";
 import { mergeCropQueue, pairToCropItem, readCropQueue, saveCropQueue } from "../shared/cropQueue";
 import { boxesToText, resolveLabelPathForWrite } from "./labelUtils";
-import { readDatasetReviewSession, saveDatasetReviewSession, type ImageViewMode, type YoloViewMode } from "./session";
+import {
+  readDatasetReviewSession,
+  saveDatasetReviewSession,
+  type ImageViewMode,
+  type YoloViewMode
+} from "./session";
 
 type UseDatasetReviewOptions = {
   workspaceRoot: string;
@@ -65,7 +70,9 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
   const readyNotified = useRef(false);
   const sessionTimer = useRef<number | null>(null);
   const loadingRef = useRef(false);
-  const loadDatasetRef = useRef<(mode: YoloViewMode, options?: { silent?: boolean }) => Promise<void>>(async () => {});
+  const loadDatasetRef = useRef<(mode: YoloViewMode, options?: { silent?: boolean }) => Promise<void>>(
+    async () => {}
+  );
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
 
@@ -148,7 +155,15 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
       nextFlagged = flaggedPaths,
       index = classIndex
     ) => {
-      const filtered = applyFilters(source, nextInclude, nextExclude, nextImageViewMode, nextReviewed, nextFlagged, index);
+      const filtered = applyFilters(
+        source,
+        nextInclude,
+        nextExclude,
+        nextImageViewMode,
+        nextReviewed,
+        nextFlagged,
+        index
+      );
       setPairs(filtered);
       return filtered;
     },
@@ -202,7 +217,9 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
         const [session, meta] = await Promise.all([readDatasetReviewSession(root), loadMetadataMap(root)]);
         const datasetPath = nextMode === "clf" ? info.clfDataset : info.detectDataset;
         if (!datasetPath) {
-          throw new Error(`${nextMode === "clf" ? "Clf" : "Detect"} dataset path is missing in workspace config.`);
+          throw new Error(
+            `${nextMode === "clf" ? "Clf" : "Detect"} dataset path is missing in workspace config.`
+          );
         }
         setMode(nextMode);
         setJunkScope(nextMode);
@@ -331,7 +348,8 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
     return [...paths].map((path) => byPath.get(path)).filter(Boolean) as DatasetPair[];
   }, [allPairs, currentPair, shiftSelectedPaths]);
 
-  const canSendToDetect = mode === "clf" && datasetTask === "classify" && Boolean(root) && selectedPairs.length > 0;
+  const canSendToDetect =
+    mode === "clf" && datasetTask === "classify" && Boolean(root) && selectedPairs.length > 0;
 
   const toggleReviewed = useCallback(async () => {
     if (!selectedPairs.length) return;
@@ -344,7 +362,17 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
     setReviewedPaths(next);
     recomputePairs(allPairs, include, exclude, imageViewMode, next, flaggedPaths);
     queueSessionSave({ reviewedPaths: next });
-  }, [allPairs, exclude, flaggedPaths, imageViewMode, include, queueSessionSave, recomputePairs, reviewedPaths, selectedPairs]);
+  }, [
+    allPairs,
+    exclude,
+    flaggedPaths,
+    imageViewMode,
+    include,
+    queueSessionSave,
+    recomputePairs,
+    reviewedPaths,
+    selectedPairs
+  ]);
 
   const toggleFlagged = useCallback(async () => {
     if (!currentPair) return;
@@ -354,7 +382,17 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
     setFlaggedPaths(next);
     recomputePairs(allPairs, include, exclude, imageViewMode, reviewedPaths, next);
     queueSessionSave({ flaggedPaths: next });
-  }, [allPairs, currentPair, exclude, flaggedPaths, imageViewMode, include, queueSessionSave, recomputePairs, reviewedPaths]);
+  }, [
+    allPairs,
+    currentPair,
+    exclude,
+    flaggedPaths,
+    imageViewMode,
+    include,
+    queueSessionSave,
+    recomputePairs,
+    reviewedPaths
+  ]);
 
   const nextIssue = useCallback(() => {
     for (let i = currentIndex + 1; i < pairs.length; i += 1) {
@@ -426,9 +464,7 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
       updateLabelCache(currentPair.imagePath, boxes);
       if (!currentPair.labelPath) {
         setAllPairs((current) =>
-          current.map((pair) =>
-            pair.imagePath === currentPair.imagePath ? { ...pair, labelPath } : pair
-          )
+          current.map((pair) => (pair.imagePath === currentPair.imagePath ? { ...pair, labelPath } : pair))
         );
       }
       setStatus(`Saved labels for ${currentPair.imagePath.split("/").pop()}.`);
@@ -438,30 +474,34 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
 
   const sendFilteredToCrop = useCallback(async () => {
     if (!canSendToCrop || !root) {
-      throw new Error("请先在 YOLO View 打开分类数据集。");
+      throw new Error("Open a classification dataset in YOLO View first.");
     }
-    if (!pairs.length) throw new Error("当前没有可见图片。");
+    if (!pairs.length) throw new Error("No visible images.");
     const queue = await readCropQueue(root);
     const items = pairs.map((pair) =>
-      pairToCropItem(datasetRoot, pair.imagePath, pair.className || classDisplay(classNames, pair.classId ?? 0))
+      pairToCropItem(
+        datasetRoot,
+        pair.imagePath,
+        pair.className || classDisplay(classNames, pair.classId ?? 0)
+      )
     );
     const { queue: nextQueue, added } = mergeCropQueue(queue, items, {
       source: "filtered",
-      label: `当前可见列表 (${pairs.length})`
+      label: `Visible list (${pairs.length})`
     });
-    if (!added) throw new Error("没有新图片加入队列（可能已在队列中）。");
+    if (!added) throw new Error("No new images added (they may already be queued).");
     await saveCropQueue(root, nextQueue);
-    setStatus(`已加入裁切队列：${added} 张（共 ${nextQueue.items.length} 张）`);
+    setStatus(`Added ${added} images to the crop queue (${nextQueue.items.length} total)`);
     return added;
   }, [canSendToCrop, classNames, datasetRoot, pairs, root]);
 
   const sendClassToCrop = useCallback(
     async (classId: number) => {
       if (!canSendToCrop || !root) {
-        throw new Error("请先在 YOLO View 打开分类数据集。");
+        throw new Error("Open a classification dataset in YOLO View first.");
       }
       const paths = classIndex.get(classId) || new Set<string>();
-      if (!paths.size) throw new Error("该类没有图片。");
+      if (!paths.size) throw new Error("This class has no images.");
       const byPath = new Map(allPairs.map((pair) => [pair.imagePath, pair]));
       const queue = await readCropQueue(root);
       const items = [...paths].map((imagePath) => {
@@ -471,33 +511,30 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
       });
       const label = `class ${classDisplay(classNames, classId)} (${paths.size})`;
       const { queue: nextQueue, added } = mergeCropQueue(queue, items, { source: "class", label });
-      if (!added) throw new Error("没有新图片加入队列（可能已在队列中）。");
+      if (!added) throw new Error("No new images added (they may already be queued).");
       await saveCropQueue(root, nextQueue);
-      setStatus(`已加入裁切队列：${added} 张（${label}）`);
+      setStatus(`Added ${added} images to the crop queue (${label})`);
       return added;
     },
     [allPairs, canSendToCrop, classIndex, classNames, datasetRoot, root]
   );
 
   const sendSelectedToDetect = useCallback(async () => {
-    if (!canSendToDetect || !root) throw new Error("请先在 Clf 分类数据集下选择图片。");
+    if (!canSendToDetect || !root) throw new Error("Select images in a Clf dataset first.");
     const filenames = [
-      ...new Set(
-        selectedPairs
-          .map((pair) => pair.imagePath.split("/").pop())
-          .filter(Boolean) as string[]
-      )
+      ...new Set(selectedPairs.map((pair) => pair.imagePath.split("/").pop()).filter(Boolean) as string[])
     ];
     const pending = filenames.filter((filename) => {
       const row = metadata.get(filename);
       if (isJunkFile(row, "detect")) return false;
       return !row?.detect_enabled;
     });
-    if (!pending.length) throw new Error("所选图片无法发送到 Detect（废片或已在 Detect 中）。");
+    if (!pending.length)
+      throw new Error("The selected images can't be sent to Detect (junk or already in Detect).");
     if (
       !(await confirm({
         title: "Send to Detect",
-        message: `将 ${pending.length} 张图片发送到 Detect？\n\n会把它们标记为参与 Detect（detect_enabled=1）；下次导出数据集时生效。`,
+        message: `Send ${pending.length} images to Detect?\n\nThey are marked detect_enabled=1 and take effect on the next dataset export.`,
         confirmLabel: "Send"
       }))
     ) {
@@ -508,7 +545,7 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
       pending.map((filename) => ({ filename, detect_enabled: true }))
     );
     setMetadata(await loadMetadataMap(root));
-    setStatus(`已发送 ${pending.length} 张到 Detect，下次导出数据集时生效。`);
+    setStatus(`Sent ${pending.length} images to Detect; applies on the next dataset export`);
   }, [canSendToDetect, confirm, metadata, root, selectedPairs]);
 
   const addClassificationFolder = useCallback(
@@ -538,7 +575,14 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
         target.classId != null && classNames.has(target.classId)
           ? classDisplay(classNames, target.classId)
           : target.folderName;
-      if (!(await confirm({ title: "Move images", message: `Move ${selectedPairs.length} image(s) to ${label}?`, confirmLabel: "Move" }))) return;
+      if (
+        !(await confirm({
+          title: "Move images",
+          message: `Move ${selectedPairs.length} image(s) to ${label}?`,
+          confirmLabel: "Move"
+        }))
+      )
+        return;
       const result = await api.moveImagesToClass(
         datasetRoot,
         selectedPairs.map((pair) => pair.imagePath),
@@ -552,10 +596,24 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
         if (index >= 0) navigate(index);
       }
       if (result.skipped?.length) {
-        showToast(`Moved ${result.moved?.length || 0} image(s).\nSkipped ${result.skipped.length}.`, { variant: "info" });
+        showToast(`Moved ${result.moved?.length || 0} image(s).\nSkipped ${result.skipped.length}.`, {
+          variant: "info"
+        });
       }
     },
-    [classNames, confirm, currentPair?.imagePath, datasetRoot, datasetTask, loadDataset, mode, navigate, pairs, selectedPairs, showToast]
+    [
+      classNames,
+      confirm,
+      currentPair?.imagePath,
+      datasetRoot,
+      datasetTask,
+      loadDataset,
+      mode,
+      navigate,
+      pairs,
+      selectedPairs,
+      showToast
+    ]
   );
 
   const changeImageViewMode = useCallback(
@@ -682,21 +740,33 @@ export function useDatasetReview({ workspaceRoot, onReady }: UseDatasetReviewOpt
   const filterStatus = useMemo(() => {
     const parts: string[] = [];
     if (include.size) {
-      parts.push(`include: ${[...include].sort((a, b) => a - b).map((id) => classDisplay(classNames, id)).join(", ")}`);
+      parts.push(
+        `include: ${[...include]
+          .sort((a, b) => a - b)
+          .map((id) => classDisplay(classNames, id))
+          .join(", ")}`
+      );
     }
     if (exclude.size) {
-      parts.push(`exclude: ${[...exclude].sort((a, b) => a - b).map((id) => classDisplay(classNames, id)).join(", ")}`);
+      parts.push(
+        `exclude: ${[...exclude]
+          .sort((a, b) => a - b)
+          .map((id) => classDisplay(classNames, id))
+          .join(", ")}`
+      );
     }
     return parts.length ? parts.join("; ") : "No class filter. Showing all images.";
   }, [classNames, exclude, include]);
 
   const classFilterItems = useMemo(() => {
     const ids = new Set([...classNames.keys(), ...classIndex.keys()]);
-    return [...ids].sort((a, b) => a - b).map((id) => ({
-      id,
-      name: classDisplay(classNames, id),
-      imageCount: classIndex.get(id)?.size || 0
-    }));
+    return [...ids]
+      .sort((a, b) => a - b)
+      .map((id) => ({
+        id,
+        name: classDisplay(classNames, id),
+        imageCount: classIndex.get(id)?.size || 0
+      }));
   }, [classIndex, classNames]);
 
   return {

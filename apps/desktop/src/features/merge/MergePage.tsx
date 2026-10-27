@@ -6,7 +6,13 @@ import { useRunWithConfirm } from "../../components/workbench/useRunWithConfirm"
 import { useToast } from "../../components/useToast";
 import { errMessage } from "../../lib/errors";
 import { mergeDatasets, type MergeSource } from "./mergeLogic";
-import { chooseMergeDirectory, loadMergeWorkspace, moveMergeValBackToTrain, openMergeFolder, type MergeTask } from "./mergeApi";
+import {
+  chooseMergeDirectory,
+  loadMergeWorkspace,
+  moveMergeValBackToTrain,
+  openMergeFolder,
+  type MergeTask
+} from "./mergeApi";
 import { isZipFile, readFileArrayBuffer } from "./mergeZip";
 import "./merge.css";
 
@@ -31,7 +37,10 @@ export function MergePage({ onReady }: Props) {
   const [progress, setProgress] = useState({ value: 0, total: 1, detail: "" });
   const zipInputRef = useRef<HTMLInputElement>(null);
 
-  const showError = useCallback((err: unknown) => showToast(errMessage(err), { variant: "error" }), [showToast]);
+  const showError = useCallback(
+    (err: unknown) => showToast(errMessage(err), { variant: "error" }),
+    [showToast]
+  );
 
   const syncTarget = useCallback(async (root: string, mergeTask: MergeTask, explicit: boolean) => {
     if (explicit || !root.trim()) return;
@@ -63,7 +72,9 @@ export function MergePage({ onReady }: Props) {
       }
     }
     void load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [workspaceRoot, task, targetExplicit, onReady, showError, syncTarget]);
 
   async function addSourceFolder() {
@@ -75,7 +86,10 @@ export function MergePage({ onReady }: Props) {
       return;
     }
     if (sources.some((source) => source.kind === "folder" && source.root === opened.root)) return;
-    setSources((items) => [...items, { kind: "folder", root: opened.root!, name: opened.name || baseName(opened.root!) }]);
+    setSources((items) => [
+      ...items,
+      { kind: "folder", root: opened.root!, name: opened.name || baseName(opened.root!) }
+    ]);
     setLog(`Added source folder: ${opened.root}`);
   }
 
@@ -85,7 +99,13 @@ export function MergePage({ onReady }: Props) {
       return;
     }
     const buffer = await readFileArrayBuffer(file);
-    if (sources.some((source) => source.kind === "zip" && source.name === file.name && source.buffer.byteLength === buffer.byteLength)) return;
+    if (
+      sources.some(
+        (source) =>
+          source.kind === "zip" && source.name === file.name && source.buffer.byteLength === buffer.byteLength
+      )
+    )
+      return;
     setSources((items) => [...items, { kind: "zip", name: file.name, buffer }]);
     setLog(`Added ZIP: ${file.name}`);
   }
@@ -156,7 +176,10 @@ export function MergePage({ onReady }: Props) {
     await runWithConfirm(
       {
         title: "Val to train",
-        message: task === "classify" ? "Move classification val images back to train?" : "Move detection val back to train?",
+        message:
+          task === "classify"
+            ? "Move classification val images back to train?"
+            : "Move detection val back to train?",
         confirmLabel: "Move"
       },
       async () => {
@@ -182,7 +205,11 @@ export function MergePage({ onReady }: Props) {
     let added = 0;
     for (const file of files) {
       if (isZipFile(file)) {
-        void addZipFile(file).then(() => { added += 1; }).catch(showError);
+        void addZipFile(file)
+          .then(() => {
+            added += 1;
+          })
+          .catch(showError);
       }
     }
     if (!added) setLog("Drop ZIP files onto the dashed box, or use Add Folder.");
@@ -198,30 +225,64 @@ export function MergePage({ onReady }: Props) {
         <div className="panel-body">
           <div
             className="merge-drop"
-            onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("drop-hover"); }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.currentTarget.classList.add("drop-hover");
+            }}
             onDragLeave={(e) => e.currentTarget.classList.remove("drop-hover")}
             onDrop={onDrop}
           >
             Drop dataset folders or ZIP files here.
           </div>
           <div className="row" style={{ marginTop: 12 }}>
-            <button className="primary" type="button" onClick={() => chooseWorkspaceFolder().catch(showError)} disabled={running}>Open Workspace</button>
-            <button className="primary" type="button" onClick={() => void addSourceFolder()} disabled={running}>Add Folder</button>
-            <button type="button" onClick={() => zipInputRef.current?.click()} disabled={running}>Add ZIP</button>
-            <button type="button" onClick={() => setSources([])} disabled={running || !sources.length}>Clear</button>
+            <button
+              className="primary"
+              type="button"
+              onClick={() => chooseWorkspaceFolder().catch(showError)}
+              disabled={running}
+            >
+              Open Workspace
+            </button>
+            <button
+              className="primary"
+              type="button"
+              onClick={() => void addSourceFolder()}
+              disabled={running}
+            >
+              Add Folder
+            </button>
+            <button type="button" onClick={() => zipInputRef.current?.click()} disabled={running}>
+              Add ZIP
+            </button>
+            <button type="button" onClick={() => setSources([])} disabled={running || !sources.length}>
+              Clear
+            </button>
           </div>
-          <input ref={zipInputRef} type="file" accept=".zip,application/zip" multiple hidden onChange={(e) => {
-            const files = [...(e.target.files || [])];
-            for (const file of files) void addZipFile(file).catch(showError);
-            e.target.value = "";
-          }} />
+          <input
+            ref={zipInputRef}
+            type="file"
+            accept=".zip,application/zip"
+            multiple
+            hidden
+            onChange={(e) => {
+              const files = [...(e.target.files || [])];
+              for (const file of files) void addZipFile(file).catch(showError);
+              e.target.value = "";
+            }}
+          />
           <div className="merge-list">
-            {sources.length ? sources.map((source, index) => (
-              <div className="merge-source" key={`${source.kind}-${source.name}-${index}`}>
-                <span>{source.name}</span>
-                <button type="button" onClick={() => removeSource(index)} disabled={running}>Remove</button>
-              </div>
-            )) : <div className="empty">No source folders or ZIP files added.</div>}
+            {sources.length ? (
+              sources.map((source, index) => (
+                <div className="merge-source" key={`${source.kind}-${source.name}-${index}`}>
+                  <span>{source.name}</span>
+                  <button type="button" onClick={() => removeSource(index)} disabled={running}>
+                    Remove
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="empty">No source folders or ZIP files added.</div>
+            )}
           </div>
         </div>
       </section>
@@ -233,8 +294,34 @@ export function MergePage({ onReady }: Props) {
         </div>
         <div className="panel-body">
           <div className="segmented merge-task-segmented">
-            <label><input type="radio" name="mergeTask" value="detect" checked={task === "detect"} onChange={() => { setTask("detect"); void syncTarget(workspaceRoot, "detect", targetExplicit); }} disabled={running} />Detect</label>
-            <label><input type="radio" name="mergeTask" value="classify" checked={task === "classify"} onChange={() => { setTask("classify"); void syncTarget(workspaceRoot, "classify", targetExplicit); }} disabled={running} />Classify</label>
+            <label>
+              <input
+                type="radio"
+                name="mergeTask"
+                value="detect"
+                checked={task === "detect"}
+                onChange={() => {
+                  setTask("detect");
+                  void syncTarget(workspaceRoot, "detect", targetExplicit);
+                }}
+                disabled={running}
+              />
+              Detect
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="mergeTask"
+                value="classify"
+                checked={task === "classify"}
+                onChange={() => {
+                  setTask("classify");
+                  void syncTarget(workspaceRoot, "classify", targetExplicit);
+                }}
+                disabled={running}
+              />
+              Classify
+            </label>
           </div>
           <FolderPickerRow
             label="Target folder"
@@ -249,16 +336,31 @@ export function MergePage({ onReady }: Props) {
             onBrowse={() => void chooseTarget()}
           />
           <div className="row merge-actions-row">
-            <button className="primary" type="button" onClick={() => void runMerge()} disabled={running || !sources.length || !targetRoot}>Merge</button>
-            <label><input type="checkbox" checked={autoRename} onChange={(e) => setAutoRename(e.target.checked)} disabled={running} /> Auto rename conflicts</label>
+            <button
+              className="primary"
+              type="button"
+              onClick={() => void runMerge()}
+              disabled={running || !sources.length || !targetRoot}
+            >
+              Merge
+            </button>
+            <label>
+              <input
+                type="checkbox"
+                checked={autoRename}
+                onChange={(e) => setAutoRename(e.target.checked)}
+                disabled={running}
+              />{" "}
+              Auto rename conflicts
+            </label>
           </div>
-          <div className="hint">Detect output keeps CVAT-style structure: images/train, labels/train, train.txt, and d1_/d2_/d3_ prefixes.</div>
           <div className="merge-val-train-card">
             <div className="group-title">Val → Train</div>
             <div className="row">
-              <button type="button" onClick={() => void runValToTrain()} disabled={running || !targetRoot}>Val → Train</button>
+              <button type="button" onClick={() => void runValToTrain()} disabled={running || !targetRoot}>
+                Val → Train
+              </button>
             </div>
-            <div className="hint">Move val data back to train on the selected target folder.</div>
           </div>
           <div style={{ marginTop: 12 }}>
             <LogPanel>{log}</LogPanel>
@@ -271,7 +373,9 @@ export function MergePage({ onReady }: Props) {
           <div className="export-progress-card" role="dialog" aria-labelledby="mergeProgressTitle">
             <h2 id="mergeProgressTitle">Merging</h2>
             <progress value={progress.value} max={progress.total || 1} />
-            <div className="export-progress-count">{progress.value} / {progress.total}</div>
+            <div className="export-progress-count">
+              {progress.value} / {progress.total}
+            </div>
             <div className="export-progress-detail">{progress.detail}</div>
           </div>
         </div>

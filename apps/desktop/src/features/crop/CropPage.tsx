@@ -47,8 +47,15 @@ function queueSummary(queue: CropQueueState) {
     .sort(([a], [b]) => naturalCompare(a, b))
     .map(([name, count]) => `${name}: ${count}`)
     .join(" | ");
-  const sourceLines = (queue.sources || []).slice(-3).map((entry) => `+${entry.added} ${entry.label}`).join("\n");
-  return [`Queue: ${queue.items.length} image(s)`, classLines ? `Classes: ${classLines}` : "", sourceLines ? `Recent:\n${sourceLines}` : ""]
+  const sourceLines = (queue.sources || [])
+    .slice(-3)
+    .map((entry) => `+${entry.added} ${entry.label}`)
+    .join("\n");
+  return [
+    `Queue: ${queue.items.length} image(s)`,
+    classLines ? `Classes: ${classLines}` : "",
+    sourceLines ? `Recent:\n${sourceLines}` : ""
+  ]
     .filter(Boolean)
     .join("\n");
 }
@@ -66,7 +73,9 @@ export function CropPage({ onReady }: CropPageProps) {
   const [classAnchors, setClassAnchors] = useState<Record<string, CropAnchor>>({});
   const [queue, setQueue] = useState<CropQueueState>(emptyCropQueue());
   const [status, setStatus] = useState("Choose folders");
-  const [batchLog, setBatchLog] = useState("For 2560x1660 to 2560x1440, Center crops 110px from top and bottom.");
+  const [batchLog, setBatchLog] = useState(
+    "For 2560x1660 to 2560x1440, Center crops 110px from top and bottom."
+  );
   const [pending, setPending] = useState(false);
 
   const [datasetRoot, setDatasetRoot] = useState("");
@@ -74,13 +83,21 @@ export function CropPage({ onReady }: CropPageProps) {
   const [labelCache, setLabelCache] = useState<Map<string, import("../../api").LabelBox[]>>(new Map());
   const [classNames, setClassNames] = useState<Map<number, string>>(new Map());
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [smartSettings, setSmartSettings] = useState<SmartCropSettings>({ targetW: 2560, targetH: 1440, maxPerImage: 3, boxMarginPx: 80 });
+  const [smartSettings, setSmartSettings] = useState<SmartCropSettings>({
+    targetW: 2560,
+    targetH: 1440,
+    maxPerImage: 3,
+    boxMarginPx: 80
+  });
   const [smartLog, setSmartLog] = useState("Open a detect dataset to preview smart crops.");
   const [smartRunning, setSmartRunning] = useState(false);
   const stopSmartRef = useRef(false);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  const showError = useCallback((err: unknown) => showToast(errMessage(err), { variant: "error" }), [showToast]);
+  const showError = useCallback(
+    (err: unknown) => showToast(errMessage(err), { variant: "error" }),
+    [showToast]
+  );
 
   const refreshQueue = useCallback(async () => {
     if (!workspaceRoot.trim()) {
@@ -112,7 +129,9 @@ export function CropPage({ onReady }: CropPageProps) {
       }
     }
     void load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [workspaceRoot, inputRoot, outputRoot, datasetRoot, onReady, refreshQueue, showError]);
 
   const queueClasses = useMemo(() => {
@@ -150,7 +169,9 @@ export function CropPage({ onReady }: CropPageProps) {
       setClassNames(await readClassNamesFromDataset(path, fileSet));
       setCurrentIndex(0);
       setSmartLog(`Loaded ${pairs.length} image(s) from detect dataset.`);
-      setStatus(`${pairs.length} images, ${[...index.labelCache.values()].filter((boxes) => boxes.length).length} labeled`);
+      setStatus(
+        `${pairs.length} images, ${[...index.labelCache.values()].filter((boxes) => boxes.length).length} labeled`
+      );
     } catch (err) {
       showError(err);
     } finally {
@@ -172,7 +193,15 @@ export function CropPage({ onReady }: CropPageProps) {
       async () => {
         setPending(true);
         try {
-          const result = await runBatchCropImages(inputRoot, outputRoot, width, height, anchor, classAnchors, workers);
+          const result = await runBatchCropImages(
+            inputRoot,
+            outputRoot,
+            width,
+            height,
+            anchor,
+            classAnchors,
+            workers
+          );
           setStatus(`Done: ${result.cropped || 0}/${result.total || 0}`);
           setBatchLog(formatBatchCropResult(result, outputRoot));
           showToast("Crop finished.");
@@ -194,7 +223,15 @@ export function CropPage({ onReady }: CropPageProps) {
     }
     setPending(true);
     try {
-      const result = await runBatchCropFiles(outputRoot, width, height, anchor, classAnchors, queue.items, workers);
+      const result = await runBatchCropFiles(
+        outputRoot,
+        width,
+        height,
+        anchor,
+        classAnchors,
+        queue.items,
+        workers
+      );
       setStatus(`Queue crop: ${result.cropped || 0}/${result.total || 0}`);
       setBatchLog(formatBatchCropResult(result, outputRoot));
       showToast("Queue crop finished.");
@@ -232,7 +269,9 @@ export function CropPage({ onReady }: CropPageProps) {
     bitmap.close();
     setSmartLog(
       plans.length
-        ? plans.map((plan, i) => `crop ${i + 1}: ${plan.rect.w}x${plan.rect.h}, ${plan.boxes.length} box(es)`).join("\n")
+        ? plans
+            .map((plan, i) => `crop ${i + 1}: ${plan.rect.w}x${plan.rect.h}, ${plan.boxes.length} box(es)`)
+            .join("\n")
         : "Preview: no valid crop for this image."
     );
   }
@@ -252,7 +291,10 @@ export function CropPage({ onReady }: CropPageProps) {
     const runId = cropRunId();
     const outputPrefix = `smart_crops_${runId}`;
     const trainLines: string[] = [];
-    const log: string[] = [`Smart crop run ${runId}`, `Target: ${smartSettings.targetW}x${smartSettings.targetH}`];
+    const log: string[] = [
+      `Smart crop run ${runId}`,
+      `Target: ${smartSettings.targetW}x${smartSettings.targetH}`
+    ];
     try {
       for (let index = 0; index < labeled.length; index += 1) {
         if (stopSmartRef.current) {
@@ -297,22 +339,63 @@ export function CropPage({ onReady }: CropPageProps) {
         </div>
         <div className="panel-body train-prep-stack">
           <div className="row">
-            <button className="primary" type="button" onClick={() => chooseWorkspaceFolder().catch(showError)} disabled={pending || smartRunning}>Open Workspace</button>
+            <button
+              className="primary"
+              type="button"
+              onClick={() => chooseWorkspaceFolder().catch(showError)}
+              disabled={pending || smartRunning}
+            >
+              Open Workspace
+            </button>
           </div>
           <div className="batch-crop-queue-panel">
             <div className="row">
               <span className="group-title">Crop Queue</span>
-              <button type="button" onClick={() => void clearQueue()} disabled={pending || !queue.items.length}>Clear Queue</button>
+              <button
+                type="button"
+                onClick={() => void clearQueue()}
+                disabled={pending || !queue.items.length}
+              >
+                Clear Queue
+              </button>
             </div>
             <LogPanel>{queueSummary(queue)}</LogPanel>
           </div>
           <div className="train-grid">
-            <label>Output<input value={outputRoot} onChange={(e) => setOutputRoot(e.target.value)} readOnly placeholder="cropped output folder" /></label>
-            <label>Width<input type="number" value={width} onChange={(e) => setWidth(Math.max(1, Number(e.target.value) || 1))} disabled={pending} /></label>
-            <label>Height<input type="number" value={height} onChange={(e) => setHeight(Math.max(1, Number(e.target.value) || 1))} disabled={pending} /></label>
+            <label>
+              Output
+              <input
+                value={outputRoot}
+                onChange={(e) => setOutputRoot(e.target.value)}
+                readOnly
+                placeholder="cropped output folder"
+              />
+            </label>
+            <label>
+              Width
+              <input
+                type="number"
+                value={width}
+                onChange={(e) => setWidth(Math.max(1, Number(e.target.value) || 1))}
+                disabled={pending}
+              />
+            </label>
+            <label>
+              Height
+              <input
+                type="number"
+                value={height}
+                onChange={(e) => setHeight(Math.max(1, Number(e.target.value) || 1))}
+                disabled={pending}
+              />
+            </label>
             <label>
               Anchor
-              <select value={anchor} onChange={(e) => setAnchor(e.target.value as CropAnchor)} disabled={pending}>
+              <select
+                value={anchor}
+                onChange={(e) => setAnchor(e.target.value as CropAnchor)}
+                disabled={pending}
+              >
                 <option value="center">Center</option>
                 <option value="top">Top</option>
                 <option value="bottom">Bottom</option>
@@ -320,18 +403,46 @@ export function CropPage({ onReady }: CropPageProps) {
             </label>
           </div>
           <div className="row">
-            <button type="button" onClick={() => void runQueueCrop()} disabled={pending || !queue.items.length}>Run Queue Crop</button>
-            <button type="button" onClick={() => chooseOutput().catch(showError)} disabled={pending}>Output Folder</button>
-            <button className="primary" type="button" onClick={() => void runFolderCrop()} disabled={pending}>Batch Crop Folder</button>
+            <button
+              type="button"
+              onClick={() => void runQueueCrop()}
+              disabled={pending || !queue.items.length}
+            >
+              Run Queue Crop
+            </button>
+            <button type="button" onClick={() => chooseOutput().catch(showError)} disabled={pending}>
+              Output Folder
+            </button>
+            <button className="primary" type="button" onClick={() => void runFolderCrop()} disabled={pending}>
+              Batch Crop Folder
+            </button>
           </div>
           <details className="batch-crop-advanced">
-            <summary>Advanced: import from folder (legacy flow)</summary>
+            <summary>Import from folder</summary>
             <div className="train-grid" style={{ marginTop: 8 }}>
-              <label>Input<input value={inputRoot} onChange={(e) => setInputRoot(e.target.value)} readOnly placeholder="source image folder" /></label>
-              <label>Workers<input type="number" value={workers} onChange={(e) => setWorkers(Math.max(0, Number(e.target.value) || 0))} disabled={pending} /></label>
+              <label>
+                Input
+                <input
+                  value={inputRoot}
+                  onChange={(e) => setInputRoot(e.target.value)}
+                  readOnly
+                  placeholder="source image folder"
+                />
+              </label>
+              <label>
+                Workers
+                <input
+                  type="number"
+                  value={workers}
+                  onChange={(e) => setWorkers(Math.max(0, Number(e.target.value) || 0))}
+                  disabled={pending}
+                />
+              </label>
             </div>
             <div className="row" style={{ marginTop: 8 }}>
-              <button type="button" onClick={() => chooseInput().catch(showError)} disabled={pending}>Input Folder</button>
+              <button type="button" onClick={() => chooseInput().catch(showError)} disabled={pending}>
+                Input Folder
+              </button>
             </div>
           </details>
           {queueClasses.length ? (
@@ -341,7 +452,9 @@ export function CropPage({ onReady }: CropPageProps) {
                   <span>{className}</span>
                   <select
                     value={classAnchors[className] || anchor}
-                    onChange={(e) => setClassAnchors((prev) => ({ ...prev, [className]: e.target.value as CropAnchor }))}
+                    onChange={(e) =>
+                      setClassAnchors((prev) => ({ ...prev, [className]: e.target.value as CropAnchor }))
+                    }
                     disabled={pending}
                   >
                     <option value="center">Center</option>
@@ -353,7 +466,9 @@ export function CropPage({ onReady }: CropPageProps) {
               ))}
             </div>
           ) : (
-            <div className="class-anchor-list"><div className="empty">Open a classification dataset queue to set per-class anchors.</div></div>
+            <div className="class-anchor-list">
+              <div className="empty">Open a classification dataset queue to set per-class anchors.</div>
+            </div>
           )}
           <LogPanel>{batchLog}</LogPanel>
         </div>
@@ -362,29 +477,110 @@ export function CropPage({ onReady }: CropPageProps) {
       <section className="panel">
         <div className="panel-header">
           <span>Smart Crop YOLO Dataset</span>
-          <span className="status">{datasetRoot ? `${labeledCount}/${datasetPairs.length} labeled` : "No dataset loaded"}</span>
+          <span className="status">
+            {datasetRoot ? `${labeledCount}/${datasetPairs.length} labeled` : "No dataset loaded"}
+          </span>
         </div>
         <div className="panel-body train-prep-stack">
           <div className="row">
-            <button type="button" onClick={() => void openDetectDataset()} disabled={pending || smartRunning}>Open Detect Dataset</button>
+            <button type="button" onClick={() => void openDetectDataset()} disabled={pending || smartRunning}>
+              Open Detect Dataset
+            </button>
           </div>
           <div className="crop-grid">
-            <label>Width<input type="number" value={smartSettings.targetW} onChange={(e) => setSmartSettings((s) => ({ ...s, targetW: Math.max(64, Number(e.target.value) || 2560) }))} disabled={smartRunning} /></label>
-            <label>Height<input type="number" value={smartSettings.targetH} onChange={(e) => setSmartSettings((s) => ({ ...s, targetH: Math.max(64, Number(e.target.value) || 1440) }))} disabled={smartRunning} /></label>
-            <label>Max / image<input type="number" value={smartSettings.maxPerImage} onChange={(e) => setSmartSettings((s) => ({ ...s, maxPerImage: Math.max(1, Math.min(12, Number(e.target.value) || 3)) }))} disabled={smartRunning} /></label>
-            <label>Margin px<input type="number" value={smartSettings.boxMarginPx} onChange={(e) => setSmartSettings((s) => ({ ...s, boxMarginPx: Math.max(0, Number(e.target.value) || 0) }))} disabled={smartRunning} /></label>
+            <label>
+              Width
+              <input
+                type="number"
+                value={smartSettings.targetW}
+                onChange={(e) =>
+                  setSmartSettings((s) => ({ ...s, targetW: Math.max(64, Number(e.target.value) || 2560) }))
+                }
+                disabled={smartRunning}
+              />
+            </label>
+            <label>
+              Height
+              <input
+                type="number"
+                value={smartSettings.targetH}
+                onChange={(e) =>
+                  setSmartSettings((s) => ({ ...s, targetH: Math.max(64, Number(e.target.value) || 1440) }))
+                }
+                disabled={smartRunning}
+              />
+            </label>
+            <label>
+              Max / image
+              <input
+                type="number"
+                value={smartSettings.maxPerImage}
+                onChange={(e) =>
+                  setSmartSettings((s) => ({
+                    ...s,
+                    maxPerImage: Math.max(1, Math.min(12, Number(e.target.value) || 3))
+                  }))
+                }
+                disabled={smartRunning}
+              />
+            </label>
+            <label>
+              Margin px
+              <input
+                type="number"
+                value={smartSettings.boxMarginPx}
+                onChange={(e) =>
+                  setSmartSettings((s) => ({ ...s, boxMarginPx: Math.max(0, Number(e.target.value) || 0) }))
+                }
+                disabled={smartRunning}
+              />
+            </label>
           </div>
           {currentPair ? (
             <div className="row">
-              <button type="button" onClick={() => setCurrentIndex((i) => Math.max(0, i - 1))} disabled={smartRunning || currentIndex <= 0}>Prev</button>
+              <button
+                type="button"
+                onClick={() => setCurrentIndex((i) => Math.max(0, i - 1))}
+                disabled={smartRunning || currentIndex <= 0}
+              >
+                Prev
+              </button>
               <span className="status">{currentPair.imagePath}</span>
-              <button type="button" onClick={() => setCurrentIndex((i) => Math.min(datasetPairs.length - 1, i + 1))} disabled={smartRunning || currentIndex >= datasetPairs.length - 1}>Next</button>
+              <button
+                type="button"
+                onClick={() => setCurrentIndex((i) => Math.min(datasetPairs.length - 1, i + 1))}
+                disabled={smartRunning || currentIndex >= datasetPairs.length - 1}
+              >
+                Next
+              </button>
             </div>
           ) : null}
           <div className="row">
-            <button type="button" onClick={() => void renderSmartPreview()} disabled={!datasetRoot || !currentPair || smartRunning}>Preview Current</button>
-            <button className="primary" type="button" onClick={() => void applySmartCrop()} disabled={!datasetRoot || smartRunning}>Apply Dataset</button>
-            <button className="danger" type="button" onClick={() => { stopSmartRef.current = true; }} disabled={!smartRunning}>Stop</button>
+            <button
+              type="button"
+              onClick={() => void renderSmartPreview()}
+              disabled={!datasetRoot || !currentPair || smartRunning}
+            >
+              Preview Current
+            </button>
+            <button
+              className="primary"
+              type="button"
+              onClick={() => void applySmartCrop()}
+              disabled={!datasetRoot || smartRunning}
+            >
+              Apply Dataset
+            </button>
+            <button
+              className="danger"
+              type="button"
+              onClick={() => {
+                stopSmartRef.current = true;
+              }}
+              disabled={!smartRunning}
+            >
+              Stop
+            </button>
           </div>
           <div className="smart-crop-preview-wrap">
             <canvas ref={previewCanvasRef} className="smart-crop-preview-canvas" />

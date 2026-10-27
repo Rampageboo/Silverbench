@@ -1,7 +1,6 @@
 # RampageWorkbench as an installed app with GitHub Release auto-update
 
-Status: built and verified locally (2026-10-27); first public release waits for the Owner's go (repository visibility, Actions secrets). Local check: installer 0.1.1 → first-run bootstrap → backend from the per-user runtime (192 backend tests pass in that runtime) → update check reaches the endpoint → 0.1.2 installed over it (10.7 s to a healthy backend, engine re-synced, `.venv-mmpose`/`private`/`ui_maps`/runtime kept) → uninstall keeps user data. Not exercised locally: clicking 更新并重启 in the native window (first real release). Owner decisions: the repository becomes
-public (anonymous Release downloads); releases are built by GitHub Actions
+Status: built and verified locally (2026-10-27); first public release waits for the Owner's go (repository visibility, Actions secrets). Local check: installer 0.1.1 → first-run bootstrap → backend from the per-user runtime (192 backend tests pass in that runtime) → update check reaches the endpoint → 0.1.2 installed over it (10.7 s to a healthy backend, engine re-synced, `.venv-mmpose`/`private`/`ui_maps`/runtime kept) → uninstall keeps user data. Not exercised locally: clicking Update and restart in the native window (first real release). Owner decisions: the product is renamed Silverbench and published from a new public repository `Rampageboo/Silverbench` with cleaned history (the old repository stays private: its pull requests keep old commits reachable); English-only UI; releases are built by GitHub Actions
 (free for public repos, independent of which computer is used for development).
 
 ## Outcome
@@ -34,7 +33,7 @@ public (anonymous Release downloads); releases are built by GitHub Actions
 - **Updater**: tauri-plugin-updater + NSIS `createUpdaterArtifacts`, minisign key.
   Private key + password are GitHub Actions secrets (the Owner keeps an offline
   copy; losing it means users must reinstall manually once). Endpoint:
-  `releases/latest/download/latest.json` of this repo.
+  `releases/latest/download/latest.json` of `Rampageboo/Silverbench`.
 - **Before installing an update the backend process tree is stopped** (uvicorn,
   resident engines, capture adapters), so no file is locked.
 - App settings stay in `%APPDATA%\RampageWorkbench` (unchanged), so switching the

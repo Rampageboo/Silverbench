@@ -4,7 +4,7 @@ import { videoFrameUrl } from "../video/videoCaptureApi";
 type Roi = [number, number, number, number];
 
 /**
- * 人物范围: draw the box the person stays in, on the first frame, in source
+ * Person box: draw the box the person stays in, on the first frame, in source
  * pixels. Without one the capture finds the person automatically. Exclude
  * wings, weapons, pets and game UI from the box.
  */
@@ -76,7 +76,7 @@ export function PersonFrame({
         <img
           ref={imageRef}
           src={src}
-          alt="第一帧"
+          alt="First frame"
           draggable={false}
           onLoad={(event) =>
             setNatural({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })
@@ -96,9 +96,7 @@ export function PersonFrame({
       </div>
       <div className="mc-inline">
         <span className="mc-muted">
-          {roi
-            ? `人物范围 ${roi[2]}×${roi[3]}（左上 ${roi[0]}, ${roi[1]}）`
-            : "自动人物范围 · 在画面上拖出一个框可手动指定"}
+          {roi ? `Person box ${roi[2]}×${roi[3]} at ${roi[0]}, ${roi[1]}` : "Person box: auto · drag to set"}
         </span>
         <span className="mc-spacer" />
         {roi ? (
@@ -108,11 +106,10 @@ export function PersonFrame({
             disabled={disabled}
             onClick={() => onChange(null)}
           >
-            改回自动
+            Use auto
           </button>
         ) : null}
       </div>
-      <p className="mc-muted">框住人物活动的整个范围，不包括翅膀、武器、宠物和游戏界面。</p>
     </div>
   );
 }

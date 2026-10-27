@@ -43,11 +43,11 @@ export const EMPTY_EDITS: EditSession = {
 };
 
 export const CURVE_LABELS: Record<CurvePreset, string> = {
-  smooth: "平滑",
-  linear: "线性",
-  "ease-in": "缓入",
-  "ease-out": "缓出",
-  hold: "保持"
+  smooth: "Smooth",
+  linear: "Linear",
+  "ease-in": "Ease in",
+  "ease-out": "Ease out",
+  hold: "Hold"
 };
 
 export function normalizeEdits(value: Partial<EditSession> | null | undefined): EditSession {
@@ -126,7 +126,7 @@ function withoutMarks(marks: ReviewMark[], joint: number, first: number, last: n
   return marks.filter((mark) => mark.joint !== joint || mark.frame < first || mark.frame > last);
 }
 
-/** 锁定此帧 / 可信权重: keep the current value as an exact (locked) or soft (weighted) target. */
+/** Lock / weight: keep the current value as an exact (locked) or soft (weighted) target. */
 export function trustCurrent(
   edits: EditSession,
   pose: PoseData,
@@ -148,7 +148,7 @@ export function trustCurrent(
   };
 }
 
-/** 排除此部位: the joint's observations in [first, last] are ignored by a range rebuild. */
+/** Exclude: the joint's observations in [first, last] are ignored by a range rebuild. */
 export function exclude(edits: EditSession, joint: number, first: number, last: number): EditSession {
   const added: ReviewMark[] = [];
   for (let frame = first; frame <= last; frame++) added.push({ frame, joint, trust: "excluded" });
@@ -158,13 +158,13 @@ export function exclude(edits: EditSession, joint: number, first: number, last: 
   };
 }
 
-/** 重建区间: solve the joint between two locked frames. Overlapping ranges of the joint are replaced. */
+/** Rebuild range: solve the joint between two locked frames. Overlapping ranges of the joint are replaced. */
 export function rebuildRange(edits: EditSession, joint: number, first: number, last: number): EditSession {
   const ranges = edits.review.ranges.filter(([a, b, j]) => j !== joint || b < first || a > last);
   return { ...edits, review: { ...edits.review, ranges: [...ranges, [first, last, joint]] } };
 }
 
-/** 恢复自动: drop the joint's marks in [first, last] and any rebuild that lost an endpoint. */
+/** Restore auto: drop the joint's marks in [first, last] and any rebuild that lost an endpoint. */
 export function restoreAuto(edits: EditSession, joint: number, first: number, last: number): EditSession {
   const marks = withoutMarks(edits.review.marks, joint, first, last);
   const locked = new Set(marks.filter((m) => m.joint === joint && m.trust === "locked").map((m) => m.frame));

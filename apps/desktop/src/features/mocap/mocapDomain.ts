@@ -6,29 +6,29 @@
 import type { PoseData, PoseDelta, Take, TakeView } from "./mocapApi";
 
 export const JOINT_LABELS: Record<string, string> = {
-  sceneRoot: "根节点",
-  hips: "骨盆",
-  spine: "脊柱",
-  chest: "胸部",
-  upperChest: "上胸",
-  neck: "颈部",
-  head: "头部",
-  leftShoulder: "左锁骨",
-  leftUpperArm: "左肩",
-  leftLowerArm: "左肘",
-  leftHand: "左手",
-  rightShoulder: "右锁骨",
-  rightUpperArm: "右肩",
-  rightLowerArm: "右肘",
-  rightHand: "右手",
-  leftUpperLeg: "左髋",
-  leftLowerLeg: "左膝",
-  leftFoot: "左踝",
-  leftToes: "左脚尖",
-  rightUpperLeg: "右髋",
-  rightLowerLeg: "右膝",
-  rightFoot: "右踝",
-  rightToes: "右脚尖"
+  sceneRoot: "root",
+  hips: "hips",
+  spine: "spine",
+  chest: "chest",
+  upperChest: "upper chest",
+  neck: "neck",
+  head: "head",
+  leftShoulder: "left clavicle",
+  leftUpperArm: "left shoulder",
+  leftLowerArm: "left elbow",
+  leftHand: "left wrist",
+  rightShoulder: "right clavicle",
+  rightUpperArm: "right shoulder",
+  rightLowerArm: "right elbow",
+  rightHand: "right wrist",
+  leftUpperLeg: "left hip",
+  leftLowerLeg: "left knee",
+  leftFoot: "left ankle",
+  leftToes: "left toes",
+  rightUpperLeg: "right hip",
+  rightLowerLeg: "right knee",
+  rightFoot: "right ankle",
+  rightToes: "right toes"
 };
 
 export function jointLabel(semantic: string) {
@@ -43,32 +43,32 @@ export function boneSide(semantic: string): BoneSide {
   return "center";
 }
 
-/** Capture stage codes from backend/mocap/progress.py, in Studio's words. */
+/** Capture stage codes from backend/mocap/progress.py. */
 export const STAGE_LABELS: Record<string, string> = {
-  loading_models: "正在加载模型",
-  pose: "HRNet + 光流动作捕捉",
-  visual_recovery_starting: "正在启动本地视觉纠错",
-  visual_recovery: "本地视觉纠错",
-  visual_recovery_finishing: "正在整理视觉纠错结果",
-  pose_per_view: "逐视角提取关节",
-  visual_recovery_per_view: "逐视角本地视觉纠错",
-  multiview_solve: "相位对齐与多视角联合求解",
-  triangulation: "标定透视三角化",
-  kinematic_reconstruction: "运动学重建",
-  refining: "骨架优化",
-  building: "生成动作",
-  finishing: "正在整理动作数据",
-  failing: "正在整理失败信息"
+  loading_models: "Loading models",
+  pose: "Tracking pose (HRNet + optical flow)",
+  visual_recovery_starting: "Starting visual correction",
+  visual_recovery: "Visual correction",
+  visual_recovery_finishing: "Collecting visual corrections",
+  pose_per_view: "Tracking joints per view",
+  visual_recovery_per_view: "Visual correction per view",
+  multiview_solve: "Aligning and solving views",
+  triangulation: "Triangulating",
+  kinematic_reconstruction: "Kinematic reconstruction",
+  refining: "Refining skeleton",
+  building: "Building motion",
+  finishing: "Finishing motion data",
+  failing: "Collecting failure details"
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  new: "未捕捉",
-  capturing: "捕捉中",
-  cancelling: "正在取消",
-  ready: "已完成",
-  failed: "失败",
-  cancelled: "已取消",
-  interrupted: "已中断"
+  new: "Not captured",
+  capturing: "Capturing",
+  cancelling: "Cancelling",
+  ready: "Ready",
+  failed: "Failed",
+  cancelled: "Cancelled",
+  interrupted: "Interrupted"
 };
 
 export function statusLabel(take: Take) {
@@ -76,19 +76,19 @@ export function statusLabel(take: Take) {
 }
 
 export const ISSUE_REASONS: Record<string, string> = {
-  left_right_swap: "左右交换",
-  missing_joints: "关节缺失",
-  gpu_npu_disagreement: "双设备分歧"
+  left_right_swap: "Left/right swap",
+  missing_joints: "Missing joints",
+  gpu_npu_disagreement: "GPU/NPU disagreement"
 };
 
 /** Studio ``format_elapsed``. */
 export function formatDuration(seconds: number | null | undefined) {
-  if (seconds == null || !Number.isFinite(seconds) || seconds < 1) return "计算中";
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 1) return "estimating";
   const rounded = Math.round(seconds);
-  if (rounded < 60) return `${rounded}秒`;
+  if (rounded < 60) return `${rounded} s`;
   const minutes = Math.floor(rounded / 60);
-  if (minutes < 60) return `${minutes}分${rounded % 60}秒`;
-  return `${Math.floor(minutes / 60)}小时${minutes % 60}分`;
+  if (minutes < 60) return `${minutes} min ${rounded % 60} s`;
+  return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
 }
 
 /**

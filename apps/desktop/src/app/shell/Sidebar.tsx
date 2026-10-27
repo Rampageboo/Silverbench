@@ -53,7 +53,7 @@ export function Sidebar({
     <nav className={`shell-sidebar${collapsed ? " is-collapsed" : ""}`} aria-label="Workbench navigation">
       <div className="shell-brand">
         <img className="shell-brand__icon" src="/assets/app-icon.png" width={20} height={20} alt="" />
-        {collapsed ? null : <span className="shell-brand__name">RampageWorkbench</span>}
+        {collapsed ? null : <span className="shell-brand__name">Silverbench</span>}
         <button
           type="button"
           className="ui-btn--ghost ui-btn--icon ui-btn--sm shell-brand__toggle"
@@ -103,7 +103,7 @@ export function Sidebar({
                   className={`shell-nav__item${active ? " is-active" : ""}`}
                   aria-current={active ? "page" : undefined}
                   disabled={!isItemEnabled(item)}
-                  title={collapsed ? `${item.label} · ${item.labelZh}` : item.labelZh}
+                  title={collapsed ? item.label : undefined}
                   onClick={() => onNavigate(item)}
                 >
                   <Icon size={16} />
@@ -121,7 +121,7 @@ export function Sidebar({
           type="button"
           className="shell-nav__item"
           onClick={onOpenSettings}
-          title={collapsed ? "Settings · 设置" : "设置"}
+          title={collapsed ? "Settings" : undefined}
         >
           <IconSettings size={16} />
           {collapsed ? null : <span className="shell-nav__text">Settings</span>}

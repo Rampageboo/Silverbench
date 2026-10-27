@@ -213,7 +213,7 @@ export async function requireCurrentBackend() {
   const schema = Number(data.apiSchemaVersion || 0);
   if (!data.ok || schema < REQUIRED_API_SCHEMA_VERSION) {
     throw new Error(
-      `Backend is out of date (API schema ${schema || "unknown"}; need ${REQUIRED_API_SCHEMA_VERSION}). Restart RampageWorkbench or the backend process before creating a workspace.`
+      `Backend is out of date (API schema ${schema || "unknown"}; need ${REQUIRED_API_SCHEMA_VERSION}). Restart Silverbench or the backend process before creating a workspace.`
     );
   }
   return data;

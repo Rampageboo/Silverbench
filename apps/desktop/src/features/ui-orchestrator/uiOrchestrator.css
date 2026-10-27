@@ -25,18 +25,8 @@
     letter-spacing: -0.02em;
   }
 
-  .uio-eyebrow,
   .uio-subtitle {
     margin: 0;
-  }
-
-  .uio-eyebrow,
-  .uio-panel-kicker {
-    color: var(--c-accent-text);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
   }
 
   .uio-subtitle {
@@ -290,11 +280,6 @@
     border-bottom: 1px solid var(--c-line);
     color: var(--c-text-2);
     font-size: 11px;
-  }
-
-  .uio-canvas-hint {
-    margin-left: auto;
-    color: var(--c-text-3);
   }
 
   .uio-canvas-stage {
@@ -731,10 +716,6 @@
 
     .uio-header {
       align-items: flex-start;
-    }
-
-    .uio-canvas-hint {
-      display: none;
     }
   }
 }

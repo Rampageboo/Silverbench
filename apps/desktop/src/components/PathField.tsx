@@ -55,7 +55,7 @@ export function PathField({
           disabled={disabled}
         />
         <button type="button" onClick={() => void browse()} disabled={disabled || picking}>
-          <IconFolder size={14} /> {picking ? "选择中…" : "浏览…"}
+          <IconFolder size={14} /> {picking ? "Choosing…" : "Browse…"}
         </button>
       </div>
       {status}

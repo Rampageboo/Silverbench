@@ -83,15 +83,21 @@ export function MaskNoisePage({ onReady }: Props) {
   const outputRef = useRef<HTMLCanvasElement>(null);
   const diffRef = useRef<HTMLCanvasElement>(null);
 
-  const showError = useCallback((err: unknown) => showToast(errMessage(err), { variant: "error" }), [showToast]);
+  const showError = useCallback(
+    (err: unknown) => showToast(errMessage(err), { variant: "error" }),
+    [showToast]
+  );
 
   useEffect(() => {
     onReady?.();
   }, [onReady]);
 
-  const updateSetting = useCallback(<K extends keyof MaskNoiseSettings>(key: K, value: MaskNoiseSettings[K]) => {
-    setSettings((prev) => ({ ...prev, [key]: value }));
-  }, []);
+  const updateSetting = useCallback(
+    <K extends keyof MaskNoiseSettings>(key: K, value: MaskNoiseSettings[K]) => {
+      setSettings((prev) => ({ ...prev, [key]: value }));
+    },
+    []
+  );
 
   const loadFolder = useCallback(async (rootPath: string, keepSelected = new Set<string>()) => {
     const paths = await listMaskFolderImages(rootPath);
@@ -208,7 +214,9 @@ export function MaskNoisePage({ onReady }: Props) {
       const payload = await maskNoisePreview(photoPath, maskPath, settings);
       await drawBase64ToCanvas(outputRef.current, payload.outputBase64);
       await drawBase64ToCanvas(diffRef.current, payload.diffBase64);
-      setLog(`Generated preview.\nblack noise=${payload.stats?.changed || 0}, gray erase=${payload.stats?.grayChanged || 0}`);
+      setLog(
+        `Generated preview.\nblack noise=${payload.stats?.changed || 0}, gray erase=${payload.stats?.grayChanged || 0}`
+      );
     } catch (err) {
       showError(err);
     } finally {
@@ -247,7 +255,9 @@ export function MaskNoisePage({ onReady }: Props) {
         await drawBase64ToCanvas(diffRef.current, result.firstPreview.diffBase64);
       }
       const errorText = result.errors?.length ? `\nErrors:\n${result.errors.join("\n")}` : "";
-      setLog(`Export complete.\nExported ${result.exported}/${result.total}, failed ${result.failed}.\nOutput: ${result.output}${errorText}`);
+      setLog(
+        `Export complete.\nExported ${result.exported}/${result.total}, failed ${result.failed}.\nOutput: ${result.output}${errorText}`
+      );
       showToast("Mask noise export finished.");
     } catch (err) {
       showError(err);
@@ -270,9 +280,16 @@ export function MaskNoisePage({ onReady }: Props) {
     const high = Math.max(duplicateMin, duplicateMax);
     setPending(true);
     try {
-      const result = await duplicateMaskImages(folderRoot, items.map((item) => item.path), low, high);
+      const result = await duplicateMaskImages(
+        folderRoot,
+        items.map((item) => item.path),
+        low,
+        high
+      );
       await loadFolder(folderRoot, new Set(result.created || []));
-      setLog(`Duplicate complete.\nCreated images: ${result.createdImages}\nCreated labels: ${result.createdLabels}`);
+      setLog(
+        `Duplicate complete.\nCreated images: ${result.createdImages}\nCreated labels: ${result.createdLabels}`
+      );
     } catch (err) {
       showError(err);
     } finally {
@@ -282,7 +299,9 @@ export function MaskNoisePage({ onReady }: Props) {
 
   async function deleteSelected(item: FolderItem) {
     if (!folderRoot) return;
-    const items = selectedPaths.has(item.path) ? folderItems.filter((i) => selectedPaths.has(i.path)) : [item];
+    const items = selectedPaths.has(item.path)
+      ? folderItems.filter((i) => selectedPaths.has(i.path))
+      : [item];
     await runWithConfirm(
       {
         title: "Delete images",
@@ -326,39 +345,148 @@ export function MaskNoisePage({ onReady }: Props) {
         </div>
         <div className="panel-body mask-noise-stack">
           <div className="row">
-            <button type="button" onClick={() => void importFolder()} disabled={pending}>Import Folder</button>
-            <button type="button" onClick={() => void chooseOutput()} disabled={pending}>Output Folder</button>
-            <button type="button" className="primary" onClick={() => void exportAll()} disabled={pending}>Export All</button>
-            <button type="button" className="primary" onClick={() => void openImage("photo")} disabled={pending}>Open Photo</button>
-            <button type="button" onClick={() => void openImage("mask")} disabled={pending}>Open B/W Mask</button>
-            <button type="button" onClick={() => void generatePreview()} disabled={pending}>Generate</button>
-            <button type="button" onClick={() => void saveOne()} disabled={pending}>Save PNG</button>
+            <button type="button" onClick={() => void importFolder()} disabled={pending}>
+              Import Folder
+            </button>
+            <button type="button" onClick={() => void chooseOutput()} disabled={pending}>
+              Output Folder
+            </button>
+            <button type="button" className="primary" onClick={() => void exportAll()} disabled={pending}>
+              Export All
+            </button>
+            <button
+              type="button"
+              className="primary"
+              onClick={() => void openImage("photo")}
+              disabled={pending}
+            >
+              Open Photo
+            </button>
+            <button type="button" onClick={() => void openImage("mask")} disabled={pending}>
+              Open B/W Mask
+            </button>
+            <button type="button" onClick={() => void generatePreview()} disabled={pending}>
+              Generate
+            </button>
+            <button type="button" onClick={() => void saveOne()} disabled={pending}>
+              Save PNG
+            </button>
           </div>
           <div className="mask-noise-grid">
-            <label>Black threshold<input type="number" min="0" max="255" value={settings.threshold} onChange={(e) => updateSetting("threshold", Number(e.target.value))} disabled={pending} /></label>
-            <label>Noise sigma<input type="number" min="0" max="40" value={settings.noiseAmount} onChange={(e) => updateSetting("noiseAmount", Number(e.target.value))} disabled={pending} /></label>
-            <label>Blur radius<input type="number" min="0" max="12" value={settings.blurRadius} onChange={(e) => updateSetting("blurRadius", Number(e.target.value))} disabled={pending} /></label>
-            <label>Effect mix<input type="number" min="0" max="1" step="0.05" value={settings.effectMix} onChange={(e) => updateSetting("effectMix", Number(e.target.value))} disabled={pending} /></label>
-            <label>Gray max<input type="number" min="0" max="255" value={settings.grayMax} onChange={(e) => updateSetting("grayMax", Number(e.target.value))} disabled={pending} /></label>
-            <label>Gray erase mix<input type="number" min="0" max="1" step="0.05" value={settings.grayMix} onChange={(e) => updateSetting("grayMix", Number(e.target.value))} disabled={pending} /></label>
+            <label>
+              Black threshold
+              <input
+                type="number"
+                min="0"
+                max="255"
+                value={settings.threshold}
+                onChange={(e) => updateSetting("threshold", Number(e.target.value))}
+                disabled={pending}
+              />
+            </label>
+            <label>
+              Noise sigma
+              <input
+                type="number"
+                min="0"
+                max="40"
+                value={settings.noiseAmount}
+                onChange={(e) => updateSetting("noiseAmount", Number(e.target.value))}
+                disabled={pending}
+              />
+            </label>
+            <label>
+              Blur radius
+              <input
+                type="number"
+                min="0"
+                max="12"
+                value={settings.blurRadius}
+                onChange={(e) => updateSetting("blurRadius", Number(e.target.value))}
+                disabled={pending}
+              />
+            </label>
+            <label>
+              Effect mix
+              <input
+                type="number"
+                min="0"
+                max="1"
+                step="0.05"
+                value={settings.effectMix}
+                onChange={(e) => updateSetting("effectMix", Number(e.target.value))}
+                disabled={pending}
+              />
+            </label>
+            <label>
+              Gray max
+              <input
+                type="number"
+                min="0"
+                max="255"
+                value={settings.grayMax}
+                onChange={(e) => updateSetting("grayMax", Number(e.target.value))}
+                disabled={pending}
+              />
+            </label>
+            <label>
+              Gray erase mix
+              <input
+                type="number"
+                min="0"
+                max="1"
+                step="0.05"
+                value={settings.grayMix}
+                onChange={(e) => updateSetting("grayMix", Number(e.target.value))}
+                disabled={pending}
+              />
+            </label>
           </div>
-          <div className="hint">Black mask areas receive light blur/noise. Gray mask areas get randomized background-like erasing. White areas stay unchanged.</div>
           <div className="duplicate-panel">
             <div className="row duplicate-head">
               <div className="group-title">Duplicate Selected</div>
-              <span className="status">{folderItems.length ? `${selectedCount}/${folderItems.length} selected` : "No grid selection"}</span>
+              <span className="status">
+                {folderItems.length ? `${selectedCount}/${folderItems.length} selected` : "No grid selection"}
+              </span>
             </div>
             <div className="mask-noise-grid">
-              <label>Min copies / image<input type="number" min="0" max="100" step="0.1" value={duplicateMin} onChange={(e) => setDuplicateMin(Number(e.target.value))} disabled={pending} /></label>
-              <label>Max copies / image<input type="number" min="0" max="100" step="0.1" value={duplicateMax} onChange={(e) => setDuplicateMax(Number(e.target.value))} disabled={pending} /></label>
+              <label>
+                Min copies / image
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  value={duplicateMin}
+                  onChange={(e) => setDuplicateMin(Number(e.target.value))}
+                  disabled={pending}
+                />
+              </label>
+              <label>
+                Max copies / image
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  value={duplicateMax}
+                  onChange={(e) => setDuplicateMax(Number(e.target.value))}
+                  disabled={pending}
+                />
+              </label>
             </div>
             <div className="row">
-              <button type="button" onClick={() => void duplicateSelected()} disabled={pending}>Duplicate Selected</button>
+              <button type="button" onClick={() => void duplicateSelected()} disabled={pending}>
+                Duplicate Selected
+              </button>
             </div>
           </div>
           <div
             className="mask-mini-preview"
-            onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("drop-hover"); }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.currentTarget.classList.add("drop-hover");
+            }}
             onDragLeave={(e) => e.currentTarget.classList.remove("drop-hover")}
             onDrop={(e) => {
               e.preventDefault();
@@ -390,18 +518,26 @@ export function MaskNoisePage({ onReady }: Props) {
             <canvas ref={diffRef} id="maskDiffCanvas" />
           </div>
           <div className="mask-folder-grid" id="maskFolderGrid">
-            {shownItems.length ? shownItems.map((item, index) => (
-              <MaskFolderThumb
-                key={item.path}
-                item={item}
-                selected={selectedPaths.has(item.path)}
-                ensureUrl={ensureThumbUrl}
-                onSelect={(event) => void selectFolderItem(item, index, event)}
-                onDelete={() => void deleteSelected(item)}
-                disabled={pending}
-              />
-            )) : <div className="empty">Import a folder to show image thumbnails.</div>}
-            {folderItems.length > GRID_LIMIT ? <div className="empty">Showing first {GRID_LIMIT}/{folderItems.length} images.</div> : null}
+            {shownItems.length ? (
+              shownItems.map((item, index) => (
+                <MaskFolderThumb
+                  key={item.path}
+                  item={item}
+                  selected={selectedPaths.has(item.path)}
+                  ensureUrl={ensureThumbUrl}
+                  onSelect={(event) => void selectFolderItem(item, index, event)}
+                  onDelete={() => void deleteSelected(item)}
+                  disabled={pending}
+                />
+              ))
+            ) : (
+              <div className="empty">Import a folder to see images.</div>
+            )}
+            {folderItems.length > GRID_LIMIT ? (
+              <div className="empty">
+                Showing first {GRID_LIMIT}/{folderItems.length} images.
+              </div>
+            ) : null}
           </div>
         </div>
       </section>
@@ -427,16 +563,37 @@ function MaskFolderThumb({
   const [src, setSrc] = useState("");
   useEffect(() => {
     let cancelled = false;
-    ensureUrl(item).then((url) => { if (!cancelled) setSrc(url); }).catch(() => {});
-    return () => { cancelled = true; };
+    ensureUrl(item)
+      .then((url) => {
+        if (!cancelled) setSrc(url);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [item, ensureUrl]);
 
   return (
-    <div className={`mask-folder-item${selected ? " selected" : ""}`} onClick={onSelect} role="button" tabIndex={0}>
+    <div
+      className={`mask-folder-item${selected ? " selected" : ""}`}
+      onClick={onSelect}
+      role="button"
+      tabIndex={0}
+    >
       {src ? <img src={src} alt={item.name} loading="lazy" /> : <div className="empty">{item.name}</div>}
       <div className="mask-folder-name">{item.path}</div>
       <div className="mask-folder-actions">
-        <button type="button" className="danger" disabled={disabled} onClick={(e) => { e.stopPropagation(); onDelete(); }}>Delete</button>
+        <button
+          type="button"
+          className="danger"
+          disabled={disabled}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+        >
+          Delete
+        </button>
       </div>
     </div>
   );

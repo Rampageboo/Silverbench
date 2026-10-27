@@ -24,13 +24,7 @@ type Props = {
   onReady?: () => void;
 };
 
-const STAGE_COPY: Record<string, string> = {
-  data: "Bring images and video frames into the workspace.",
-  annotate: "Draw boxes and assign classes, by hand or with a model.",
-  curate: "Filter, fix and clean what has been labeled.",
-  ship: "Split, merge and write datasets for training.",
-  automate: "Author UI maps and decision flows from trained models."
-};
+const STAGE_IDS = new Set(["data", "annotate", "curate", "ship", "automate"]);
 
 function formatTime(iso: string) {
   const date = new Date(iso);
@@ -48,7 +42,9 @@ function ExportCard({ root }: { root: string }) {
     setResult(null);
     setProgress({ done: 0, total: 1 });
     try {
-      setResult(await runExportDatasetJob(root, { rebuild: true }, (done, total) => setProgress({ done, total })));
+      setResult(
+        await runExportDatasetJob(root, { rebuild: true }, (done, total) => setProgress({ done, total }))
+      );
     } catch (err) {
       setError(errMessage(err));
     } finally {
@@ -59,14 +55,7 @@ function ExportCard({ root }: { root: string }) {
   return (
     <section className="ui-card ov-versions">
       <div className="ui-card__head">
-        <div>
-          <div className="ui-card__title">Dataset export</div>
-          <div className="ui-field__hint">
-            Writes a YOLO detect + classify dataset to exports/dataset from the current labels and classes, decoding
-            annotated video timestamps into frames. Edit the workspace, then export again — the export is rebuilt each
-            time.
-          </div>
-        </div>
+        <div className="ui-card__title">Dataset export</div>
         <button type="button" onClick={() => void exportDataset()} disabled={progress !== null}>
           {progress ? `Exporting ${progress.done}/${progress.total}…` : "Export dataset"}
         </button>
@@ -80,7 +69,11 @@ function ExportCard({ root }: { root: string }) {
             {result.skippedRows ? ` · ${result.skippedRows} skipped` : ""}
           </span>
           {result.exportRoot ? (
-            <button type="button" className="ui-btn--ghost ui-btn--sm" onClick={() => void openDirectory(result.exportRoot!)}>
+            <button
+              type="button"
+              className="ui-btn--ghost ui-btn--sm"
+              onClick={() => void openDirectory(result.exportRoot!)}
+            >
               Open folder
             </button>
           ) : null}
@@ -137,7 +130,12 @@ function SnapshotsCard({ root }: { root: string }) {
 
   const restore = (id: string) =>
     run(id, async () => {
-      if (!window.confirm(`Replace the current labels and classes with ${id}? The current state is snapshotted first.`)) return;
+      if (
+        !window.confirm(
+          `Replace the current labels and classes with ${id}? The current state is snapshotted first.`
+        )
+      )
+        return;
       await restoreSnapshot(root, id);
       // Open editors hold labels in memory; reload so nothing stale is saved over the restored files.
       window.location.reload();
@@ -154,12 +152,7 @@ function SnapshotsCard({ root }: { root: string }) {
   return (
     <section className="ui-card ov-versions">
       <div className="ui-card__head">
-        <div>
-          <div className="ui-card__title">Snapshots</div>
-          <div className="ui-field__hint">
-            A snapshot saves the labels and classes (not the media), so it takes a moment and little space.
-          </div>
-        </div>
+        <div className="ui-card__title">Snapshots</div>
       </div>
       <form
         className="ov-versions__new"
@@ -175,7 +168,7 @@ function SnapshotsCard({ root }: { root: string }) {
         <input
           type="text"
           value={note}
-          placeholder="Note (optional), e.g. before relabeling cars"
+          placeholder="Note (optional)"
           onChange={(event) => setNote(event.target.value)}
           disabled={busy !== ""}
         />
@@ -195,7 +188,8 @@ function SnapshotsCard({ root }: { root: string }) {
               <strong>{snapshot.id}</strong>
               <span className="ov-version__src">
                 {snapshot.note || formatTime(snapshot.createdAt)}
-                {snapshot.note ? ` · ${formatTime(snapshot.createdAt)}` : ""} · {snapshot.imageLabels} image labels
+                {snapshot.note ? ` · ${formatTime(snapshot.createdAt)}` : ""} · {snapshot.imageLabels} image
+                labels
                 {snapshot.videoLabels ? `, ${snapshot.videoLabels} videos` : ""}
               </span>
               <button
@@ -245,13 +239,12 @@ export function LibraryPage({ onReady }: Props) {
     setActiveTab(item.target.tab);
   }
 
-  const stages = NAV_GROUPS.filter((group) => group.id in STAGE_COPY);
+  const stages = NAV_GROUPS.filter((group) => STAGE_IDS.has(group.id));
 
   return (
     <div className="ui-page">
       <div className="ui-page__inner ov-page">
         <header className="ov-hero">
-          <div className="ui-eyebrow">Workspace</div>
           <h1 className="ov-hero__name">{workspaceDisplayName(workspaceRoot)}</h1>
           <code className="ov-hero__path">{workspaceRoot}</code>
           <div className="ov-hero__stats">
@@ -284,7 +277,6 @@ export function LibraryPage({ onReady }: Props) {
                 <span className="ov-stage__index">{String(index + 1).padStart(2, "0")}</span>
                 <span className="ov-stage__title">{group.label}</span>
               </div>
-              <p className="ov-stage__copy">{STAGE_COPY[group.id]}</p>
               <div className="ov-stage__tools">
                 {group.items.map((item) => {
                   const Icon = item.icon;

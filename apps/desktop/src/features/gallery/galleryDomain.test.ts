@@ -113,7 +113,11 @@ describe("prompt options", () => {
   });
 
   it("omits training-only fields outside training mode", () => {
-    const options = buildPromptOptions("prompt", { ...DEFAULT_RULES, trigger: "remielle", removeTags: "wings" });
+    const options = buildPromptOptions("prompt", {
+      ...DEFAULT_RULES,
+      trigger: "remielle",
+      removeTags: "wings"
+    });
     expect(options.trigger).toBeUndefined();
     expect(options.removeTags).toBeUndefined();
   });
@@ -161,7 +165,7 @@ describe("jobs", () => {
     const text = jobProgressText(
       job({ progress: { scanned: 40, processed: 40, imported: 30, skipped: 10, errors: ["bad.png"] } })
     );
-    expect(text).toBe("已处理 40 · 新增 30 · 跳过 10 · 错误 1");
+    expect(text).toBe("Processed 40 · New 30 · Skipped 10 · Errors 1");
     expect(text).not.toContain("%");
   });
 });

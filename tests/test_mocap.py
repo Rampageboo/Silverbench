@@ -153,7 +153,7 @@ def test_edits_replay_and_refusals_leave_files_alone(workspace):
 
     before = (folder / "pose.json").read_bytes()
     broken = {**edits, "review": {"marks": [{"frame": 70, "joint": 10, "trust": "excluded"}], "ranges": [[60, 80, 10]]}}
-    with pytest.raises(takes.MocapError, match="区间两端"):
+    with pytest.raises(takes.MocapError, match="both ends of the range"):
         takes.save_edits(workspace, take_id, broken)
     assert takes.read_edits(workspace, take_id) == edits
     assert (folder / "pose.json").read_bytes() == before

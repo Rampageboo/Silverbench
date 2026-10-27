@@ -7,7 +7,7 @@
     ],
     "createUpdaterArtifacts": true,
     "publisher": "Rampageboo",
-    "shortDescription": "RampageWorkbench",
+    "shortDescription": "Silverbench · 银狼工作台",
     "resources": {
       "../../../packaging/stage/app/": "app/",
       "../../../packaging/stage/python/": "python/"

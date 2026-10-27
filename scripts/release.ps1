@@ -1,6 +1,6 @@
 # Publish a new version: set the version everywhere, commit, tag, push.
 # GitHub Actions (.github/workflows/release.yml) then builds, signs and publishes the
-# installer; installed apps offer the update within six hours or on "检查更新".
+# installer; installed apps offer the update within six hours or on "Check for updates".
 #
 #   scripts\release.ps1 -Version 0.3.0
 #
@@ -39,4 +39,4 @@ git add apps/desktop/src-tauri/tauri.conf.json apps/desktop/package.json apps/de
 git commit -m "Release v$Version"
 git tag "v$Version"
 git push origin main "v$Version"
-Write-Host "Pushed v$Version. Build progress: https://github.com/Rampageboo/RampageWorkbench/actions" -ForegroundColor Green
+Write-Host "Pushed v$Version. Build progress: https://github.com/Rampageboo/Silverbench/actions" -ForegroundColor Green

@@ -40,7 +40,7 @@ export function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
           <>
             <span className="shell-ws__text">
               <span className="shell-ws__name">{name}</span>
-              <span className="shell-ws__path">{root || "Open or create a workspace"}</span>
+              {root ? <span className="shell-ws__path">{root}</span> : null}
             </span>
             <IconChevronDown size={14} className="shell-ws__chev" />
           </>

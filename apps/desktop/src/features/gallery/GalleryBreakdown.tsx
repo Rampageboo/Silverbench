@@ -29,10 +29,16 @@ function Reference({
   image: ReferenceImage;
   configured: boolean;
 }) {
-  if (!image) return <span className="gal-muted">没有找到参考图节点</span>;
+  if (!image) return <span className="gal-muted">No reference image node</span>;
   if (image.found) {
     return (
-      <a className="gal-ref" href={galleryReferenceUrl(assetId, image.node)} target="_blank" rel="noreferrer" title={image.path}>
+      <a
+        className="gal-ref"
+        href={galleryReferenceUrl(assetId, image.node)}
+        target="_blank"
+        rel="noreferrer"
+        title={image.path}
+      >
         <img src={galleryReferenceUrl(assetId, image.node)} alt={image.filename} loading="lazy" />
         <span>{image.filename}</span>
       </a>
@@ -40,7 +46,8 @@ function Reference({
   }
   return (
     <span className="gal-muted">
-      参考图 {image.filename}：{configured ? "已不在 ComfyUI 的 input 文件夹" : "在设置里选择本机的 ComfyUI 文件夹后可找回"}
+      Reference {image.filename}:{" "}
+      {configured ? "no longer in the ComfyUI input folder" : "set the ComfyUI folder in Settings to find it"}
     </span>
   );
 }
@@ -58,7 +65,7 @@ function samplerText(sampler: JsonObject) {
   const seed = sampler.seed ?? sampler.noise_seed;
   return [
     seed !== undefined ? `seed ${fmt(seed)}` : "",
-    sampler.steps !== undefined ? `${fmt(sampler.steps)} 步` : "",
+    sampler.steps !== undefined ? `${fmt(sampler.steps)} steps` : "",
     sampler.cfg !== undefined ? `CFG ${fmt(sampler.cfg)}` : "",
     fmt(sampler.sampler_name),
     fmt(sampler.scheduler),
@@ -90,7 +97,9 @@ export function GalleryBreakdown({ assetId, filename, onCopy }: Props) {
     // Through a blob: the backend is another origin, so a plain link would navigate instead of saving.
     try {
       const graph = await galleryApi.workflow(assetId);
-      const url = URL.createObjectURL(new Blob([JSON.stringify(graph, null, 2)], { type: "application/json" }));
+      const url = URL.createObjectURL(
+        new Blob([JSON.stringify(graph, null, 2)], { type: "application/json" })
+      );
       const link = document.createElement("a");
       link.href = url;
       link.download = `${filename.replace(/\.[^.]+$/, "") || assetId}.workflow.json`;
@@ -103,7 +112,7 @@ export function GalleryBreakdown({ assetId, filename, onCopy }: Props) {
 
   async function copyWorkflow() {
     try {
-      onCopy(JSON.stringify(await galleryApi.workflow(assetId), null, 2), "工作流");
+      onCopy(JSON.stringify(await galleryApi.workflow(assetId), null, 2), "workflow");
     } catch (err) {
       setError(errorText(err));
     }
@@ -112,7 +121,7 @@ export function GalleryBreakdown({ assetId, filename, onCopy }: Props) {
   if (error) {
     return (
       <section className="gal-section">
-        <h3 className="gal-section__title">生成拆解</h3>
+        <h3 className="gal-section__title">Generation</h3>
         <p className="gal-detail__error">{error}</p>
       </section>
     );
@@ -123,32 +132,36 @@ export function GalleryBreakdown({ assetId, filename, onCopy }: Props) {
   const controlnets = data.controlnets ?? [];
   const ipadapters = data.ipadapters ?? [];
   const usedNodes = new Set(
-    [...controlnets, ...ipadapters].map((unit) => unit.image?.node).filter((node): node is string => Boolean(node))
+    [...controlnets, ...ipadapters]
+      .map((unit) => unit.image?.node)
+      .filter((node): node is string => Boolean(node))
   );
   const otherInputs = (data.inputImages ?? []).filter((image) => !usedNodes.has(image.node));
 
   return (
     <section className="gal-section">
       <div className="gal-section__head">
-        <h3 className="gal-section__title">生成拆解</h3>
+        <h3 className="gal-section__title">Generation</h3>
         {data.workflowAvailable ? (
           <span className="gal-breakdown__actions">
-            <button type="button" className="ui-btn--sm" onClick={() => void downloadWorkflow()} title="拖进 ComfyUI 即可还原节点">
-              下载 workflow.json
+            <button type="button" className="ui-btn--sm" onClick={() => void downloadWorkflow()}>
+              Download workflow.json
             </button>
-            <button type="button" className="ui-btn--ghost ui-btn--sm ui-btn--icon" onClick={() => void copyWorkflow()} title="复制工作流 JSON">
+            <button
+              type="button"
+              className="ui-btn--ghost ui-btn--sm ui-btn--icon"
+              onClick={() => void copyWorkflow()}
+              title="Copy workflow JSON"
+            >
               <IconCopy size={13} />
             </button>
           </span>
         ) : null}
       </div>
-      {data.workflowAvailable ? (
-        <p className="gal-muted">原图本身也能直接拖进 ComfyUI；导出的 JSON 用于元数据可能丢失的场合。</p>
-      ) : null}
 
       <dl className="gal-kv">
         {data.checkpoints?.map((item) => (
-          <Row key={`ckpt-${item.node}`} label="模型">
+          <Row key={`ckpt-${item.node}`} label="Model">
             {item.name}
           </Row>
         ))}
@@ -161,16 +174,21 @@ export function GalleryBreakdown({ assetId, filename, onCopy }: Props) {
           <Row key={`lora-${item.node}-${index}`} label="LoRA">
             {item.name}
             {item.strength_model !== undefined ? ` · ${fmt(item.strength_model)}` : ""}
-            {item.strength_clip !== undefined && item.strength_clip !== item.strength_model ? ` / clip ${fmt(item.strength_clip)}` : ""}
+            {item.strength_clip !== undefined && item.strength_clip !== item.strength_model
+              ? ` / clip ${fmt(item.strength_clip)}`
+              : ""}
           </Row>
         ))}
         {data.samplers?.map((item) => (
-          <Row key={`sampler-${item.node}`} label={data.samplers!.length > 1 ? `采样 #${item.node}` : "采样"}>
+          <Row
+            key={`sampler-${item.node}`}
+            label={data.samplers!.length > 1 ? `Sampler #${item.node}` : "Sampler"}
+          >
             {samplerText(item)}
           </Row>
         ))}
         {data.upscalers?.map((item) => (
-          <Row key={`up-${item.node}`} label="放大">
+          <Row key={`up-${item.node}`} label="Upscaler">
             {item.name}
           </Row>
         ))}
@@ -181,11 +199,15 @@ export function GalleryBreakdown({ assetId, filename, onCopy }: Props) {
           {controlnets.map((unit, index) => (
             <div key={unit.node ?? `unit-${unit.unit ?? index}`} className="gal-breakdown__unit">
               <strong>ControlNet{unit.unit !== undefined ? ` ${unit.unit}` : ""}</strong>
-              <span>{unit.model || "（未知模型）"}</span>
+              <span>{unit.model || "(unknown model)"}</span>
               <span className="gal-muted">
                 {[
                   unit.preprocessor || unit.preprocessors?.join(" → "),
-                  unit.strength !== undefined ? `强度 ${fmt(unit.strength)}` : unit.weight ? `权重 ${unit.weight}` : "",
+                  unit.strength !== undefined
+                    ? `strength ${fmt(unit.strength)}`
+                    : unit.weight
+                      ? `weight ${unit.weight}`
+                      : "",
                   unit.start_percent !== undefined || unit.end_percent !== undefined
                     ? `${fmt(unit.start_percent ?? 0)}–${fmt(unit.end_percent ?? 1)}`
                     : unit.start || unit.end
@@ -198,7 +220,7 @@ export function GalleryBreakdown({ assetId, filename, onCopy }: Props) {
               {data.format === "comfyui" ? (
                 <Reference assetId={assetId} image={unit.image} configured={configured} />
               ) : (
-                <span className="gal-muted">A1111/Forge 不保存控制图本身</span>
+                <span className="gal-muted">A1111/Forge does not save the control image</span>
               )}
             </div>
           ))}
@@ -211,7 +233,13 @@ export function GalleryBreakdown({ assetId, filename, onCopy }: Props) {
             <div key={unit.node} className="gal-breakdown__unit">
               <strong>{unit.type}</strong>
               <span className="gal-muted">
-                {[unit.weight !== undefined ? `权重 ${fmt(unit.weight)}` : "", fmt(unit.weight_type), fmt(unit.preset)].filter(Boolean).join(" · ")}
+                {[
+                  unit.weight !== undefined ? `weight ${fmt(unit.weight)}` : "",
+                  fmt(unit.weight_type),
+                  fmt(unit.preset)
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               </span>
               <Reference assetId={assetId} image={unit.image} configured={configured} />
             </div>
@@ -223,7 +251,7 @@ export function GalleryBreakdown({ assetId, filename, onCopy }: Props) {
         <div className="gal-breakdown__units">
           {otherInputs.map((image) => (
             <div key={image.node} className="gal-breakdown__unit">
-              <strong>输入图（图生图 / 局部重绘等）</strong>
+              <strong>Input image</strong>
               <Reference assetId={assetId} image={image} configured={configured} />
             </div>
           ))}
@@ -244,7 +272,7 @@ export function GalleryBreakdown({ assetId, filename, onCopy }: Props) {
       ) : null}
       {data.hires && Object.keys(data.hires).length ? (
         <details className="gal-raw">
-          <summary>高清修复</summary>
+          <summary>Hires fix</summary>
           <dl className="gal-kv">
             {Object.entries(data.hires).map(([key, value]) => (
               <Row key={key} label={key}>
@@ -256,7 +284,7 @@ export function GalleryBreakdown({ assetId, filename, onCopy }: Props) {
       ) : null}
       {data.nodeTypes && Object.keys(data.nodeTypes).length ? (
         <details className="gal-raw">
-          <summary>全部节点（{data.nodeCount}）</summary>
+          <summary>All nodes ({data.nodeCount})</summary>
           <dl className="gal-kv">
             {Object.entries(data.nodeTypes).map(([kind, count]) => (
               <Row key={kind} label={String(count)}>

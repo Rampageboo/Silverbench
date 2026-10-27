@@ -1,6 +1,13 @@
 import { useMemo, useState } from "react";
 import { interpretFlow } from "./previewInterpreter";
-import { validateDoc, type DecisionResult, type Flow, type Node, type Predictions, type UiOrchestrationDoc } from "./schema";
+import {
+  validateDoc,
+  type DecisionResult,
+  type Flow,
+  type Node,
+  type Predictions,
+  type UiOrchestrationDoc
+} from "./schema";
 
 type FlowGraphPanelProps = {
   doc: UiOrchestrationDoc;
@@ -78,7 +85,10 @@ export function FlowGraphPanel({
 
   const deleteFlow = () => {
     if (!flow) return;
-    onChange((current) => ({ ...current, flows: current.flows.filter((candidate) => candidate.id !== flow.id) }));
+    onChange((current) => ({
+      ...current,
+      flows: current.flows.filter((candidate) => candidate.id !== flow.id)
+    }));
     onDecision(null);
   };
 
@@ -139,7 +149,10 @@ export function FlowGraphPanel({
   const addEdge = () => {
     updateFlow((current) => ({
       ...current,
-      edges: [...current.edges, { from: current.nodes[0]?.id ?? "", to: current.nodes[0]?.id ?? "", on: "Next" }]
+      edges: [
+        ...current.edges,
+        { from: current.nodes[0]?.id ?? "", to: current.nodes[0]?.id ?? "", on: "Next" }
+      ]
     }));
   };
 
@@ -160,7 +173,9 @@ export function FlowGraphPanel({
   const validate = () => {
     const result = validateDoc(doc);
     setErrors(result.ok ? [] : result.errors);
-    setStatus(result.ok ? "Document is valid against schema 1.0." : `Validation failed (${result.errors.length}).`);
+    setStatus(
+      result.ok ? "Document is valid against schema 1.0." : `Validation failed (${result.errors.length}).`
+    );
     return result.ok;
   };
 
@@ -186,14 +201,13 @@ export function FlowGraphPanel({
       <aside className="uio-panel uio-flow-panel">
         <div className="uio-panel-heading">
           <div>
-            <span className="uio-panel-kicker">Layer B</span>
             <strong>Flows</strong>
           </div>
           <button type="button" onClick={addFlow}>
             + Flow
           </button>
         </div>
-        <p className="uio-empty-copy">No flows yet. Add a flow to author the decision graph.</p>
+        <p className="uio-empty-copy">No flows yet.</p>
       </aside>
     );
   }
@@ -202,7 +216,6 @@ export function FlowGraphPanel({
     <aside className="uio-panel uio-flow-panel">
       <div className="uio-panel-heading">
         <div>
-          <span className="uio-panel-kicker">Layer B</span>
           <strong>Flow graph</strong>
         </div>
         <button type="button" onClick={addFlow}>
@@ -256,7 +269,10 @@ export function FlowGraphPanel({
               </div>
               {node.kind === "Observe" ? (
                 <div className="uio-node-fields">
-                  <select value={node.page} onChange={(event) => updateNode(node.id, { page: event.target.value })}>
+                  <select
+                    value={node.page}
+                    onChange={(event) => updateNode(node.id, { page: event.target.value })}
+                  >
                     <option value="">— page —</option>
                     {doc.pages.map((page) => (
                       <option key={page.id} value={page.id}>
@@ -332,7 +348,10 @@ export function FlowGraphPanel({
             const outcomes = fromNode ? OUTCOMES_BY_KIND[fromNode.kind] : ["Next"];
             return (
               <div className="uio-edge-row" key={`edge-${index}`}>
-                <select value={edge.from} onChange={(event) => updateEdge(index, { from: event.target.value })}>
+                <select
+                  value={edge.from}
+                  onChange={(event) => updateEdge(index, { from: event.target.value })}
+                >
                   {flow.nodes.map((node) => (
                     <option key={node.id} value={node.id}>
                       {node.id}
@@ -341,7 +360,9 @@ export function FlowGraphPanel({
                 </select>
                 <select
                   value={edge.on}
-                  onChange={(event) => updateEdge(index, { on: event.target.value as Flow["edges"][number]["on"] })}
+                  onChange={(event) =>
+                    updateEdge(index, { on: event.target.value as Flow["edges"][number]["on"] })
+                  }
                 >
                   {(outcomes.length ? outcomes : ["Next"]).map((outcome) => (
                     <option key={outcome} value={outcome}>
@@ -372,10 +393,6 @@ export function FlowGraphPanel({
             Run preview
           </button>
         </div>
-        <p className="uio-empty-copy">
-          Runs the flow through the preview interpreter on the current model predictions and renders the intended
-          point on the canvas. Never dispatches input.
-        </p>
         {errors.length ? (
           <ol className="uio-flow-errors">
             {errors.map((error, index) => (

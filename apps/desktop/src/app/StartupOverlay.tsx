@@ -2,18 +2,6 @@ import { useEffect, useRef } from "react";
 import "./startup.css";
 import "./app.css";
 
-const STARTUP_FEATURES = [
-  { title: "视频截帧", detail: "从视频批量截取训练图片" },
-  { title: "图片库", detail: "管理 media 素材与去重" },
-  { title: "框标注", detail: "检测框绘制、跟踪与备份恢复" },
-  { title: "数据集审核", detail: "浏览、标记与修正标注" },
-  { title: "数据集准备", detail: "划分 train/val、生成 data.yaml" },
-  { title: "自动标注", detail: "用 .pt 模型预标注或分类" },
-  { title: "批量裁剪", detail: "智能裁剪 YOLO 数据集" },
-  { title: "掩码清理", detail: "清理分割掩码噪点" },
-  { title: "数据集合并", detail: "合并多个数据源或 ZIP" }
-] as const;
-
 type StartupOverlayProps = {
   visible: boolean;
   done?: boolean;
@@ -69,7 +57,6 @@ export function StartupOverlay({
   if (!visible) return null;
 
   const percent = Math.max(0, Math.min(100, Math.round(progress)));
-  const isMinimal = mode === "minimal";
 
   return (
     <div
@@ -78,7 +65,7 @@ export function StartupOverlay({
       aria-live="polite"
       aria-busy={!done}
     >
-      <section className="startup-panel" aria-label="RampageWorkbench startup">
+      <section className="startup-panel" aria-label="Silverbench startup">
         <header className="startup-hero">
           <img
             className="startup-brand-mark startup-brand-image"
@@ -91,20 +78,9 @@ export function StartupOverlay({
             RW
           </div>
           <div className="startup-copy">
-            <h1>RampageWorkbench</h1>
-            {!isMinimal ? <p className="startup-tagline">视觉数据与创作工作台</p> : null}
+            <h1>Silverbench</h1>
           </div>
         </header>
-        {!isMinimal ? (
-          <ul className="startup-features" aria-label="Workbench features">
-            {STARTUP_FEATURES.map((feature) => (
-              <li key={feature.title}>
-                <strong>{feature.title}</strong>
-                <span>{feature.detail}</span>
-              </li>
-            ))}
-          </ul>
-        ) : null}
         <div className="startup-loading">
           <p>{stage}</p>
           <progress value={percent} max={100} />
@@ -116,9 +92,9 @@ export function StartupOverlay({
             <div className="startup-failure">
               {failure.log.length ? <pre>{failure.log.slice(-8).join("\n")}</pre> : null}
               <button type="button" onClick={failure.onRetry}>
-                重试
+                Retry
               </button>
-              <span>日志：%LOCALAPPDATA%\RampageWorkbench\logs</span>
+              <span>Logs: %LOCALAPPDATA%\RampageWorkbench\logs</span>
             </div>
           ) : null}
         </div>

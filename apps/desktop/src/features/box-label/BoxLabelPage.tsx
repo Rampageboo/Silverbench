@@ -137,7 +137,7 @@ export function BoxLabelSurface({
         >
           <div className="page-loading" role="status" aria-live="polite">
             <span className="page-loading-spinner" aria-hidden="true" />
-            <span className="page-loading-title">正在加载 Box Label</span>
+            <span className="page-loading-title">Loading Box Label</span>
             <span className="page-loading-detail">Loading media images...</span>
           </div>
         </div>
@@ -280,7 +280,6 @@ function ImageLabelEditor({ pool, viewProps, reviewStatus, nextTraining, showErr
       {
         id: "image-next-training",
         label: "Next Training",
-        description: "Star this image so it can be added to the next training batch.",
         actions: [
           {
             id: "training.toggleNext",

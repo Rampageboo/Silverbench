@@ -56,7 +56,7 @@ jobs:
         shell: pwsh
         run: |
           $file = "docs/releases/${{ github.ref_name }}.md"
-          $body = if (Test-Path $file) { Get-Content $file -Raw -Encoding UTF8 } else { "RampageWorkbench ${{ github.ref_name }}" }
+          $body = if (Test-Path $file) { Get-Content $file -Raw -Encoding UTF8 } else { "Silverbench ${{ github.ref_name }}" }
           "body<<RWB_NOTES_END`n$body`nRWB_NOTES_END" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Build, sign and publish
@@ -68,7 +68,7 @@ jobs:
         with:
           projectPath: apps/desktop
           tagName: ${{ github.ref_name }}
-          releaseName: RampageWorkbench ${{ github.ref_name }}
+          releaseName: Silverbench ${{ github.ref_name }}
           releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: false

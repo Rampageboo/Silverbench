@@ -1,8 +1,8 @@
 @layer app {
   /*
-   * 动捕: takes on the left, the take in the middle, 3D and panels on the right.
+   * Motion capture: takes on the left, the take in the middle, 3D and panels on the right.
    *   ┌──────────────────────────────────────────────────────────┐
-   *   │ 动捕 · take · status                         新建动捕   │
+   *   │ Motion capture · take · status            New capture   │
    *   ├──────────┬─────────────────────────────┬─────────────────┤
    *   │ takes    │ video + 2D joints           │ 3D observation  │
    *   │          │                             │ issues          │
@@ -176,6 +176,8 @@
     min-width: 0;
     min-height: 0;
     display: grid;
+    /* A shrinkable column: otherwise the toolbar's content width pushes the stage over the right panel. */
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr) auto;
   }
 
@@ -188,8 +190,9 @@
 
   .mc-stage-tools {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 16px;
+    gap: 6px 16px;
     padding: 6px 12px;
   }
 

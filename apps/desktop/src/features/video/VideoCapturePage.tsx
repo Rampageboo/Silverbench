@@ -22,7 +22,11 @@ import {
   type VideoItem,
   type VideoSegment as CaptureSegment
 } from "./videoCaptureApi";
-import { WORKSPACE_MEDIA_CHANGED_EVENT, isSameWorkspaceRoot, isWorkspaceMediaChangedEvent } from "../shared/mediaEvents";
+import {
+  WORKSPACE_MEDIA_CHANGED_EVENT,
+  isSameWorkspaceRoot,
+  isWorkspaceMediaChangedEvent
+} from "../shared/mediaEvents";
 import {
   loadVideoSegmentManifest,
   saveVideoSegmentManifest,
@@ -72,7 +76,12 @@ function secondsToMs(seconds: number) {
 }
 
 function fileStem(name: string) {
-  return (name || "video").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 80) || "video";
+  return (
+    (name || "video")
+      .replace(/\.[^.]+$/, "")
+      .replace(/[^a-zA-Z0-9_-]+/g, "_")
+      .slice(0, 80) || "video"
+  );
 }
 
 function defaultCaptureSegments(duration: number): CaptureSegment[] {
@@ -137,11 +146,6 @@ function VideoModeSwitch({ mode, disabled, onChange }: VideoModeSwitchProps) {
           Workspace Project
         </button>
       </div>
-      <div className="hint">
-        {mode === "quick"
-          ? "Choose videos and an output folder directly. No workspace is required."
-          : "Load workspace media, save reusable segments, and default output to the image pool."}
-      </div>
     </div>
   );
 }
@@ -204,7 +208,10 @@ type SegmentsTabProps = {
   manifest: VideoSegmentManifest | null;
   saving: boolean;
   onAddSegment: () => void;
-  onUpdateSegment: (id: string, patch: Partial<Pick<ManifestSegment, "startMs" | "endMs" | "label" | "enabled">>) => void;
+  onUpdateSegment: (
+    id: string,
+    patch: Partial<Pick<ManifestSegment, "startMs" | "endMs" | "label" | "enabled">>
+  ) => void;
   onRemoveSegment: (id: string) => void;
   onSave: () => void;
   onSetCurrentTime: (seconds: number) => void;
@@ -264,30 +271,28 @@ function SegmentsTab({
         disabled={!current}
         aria-label="Video progress"
       />
-      <div className="video-time">{formatClock(scrubTime)} / {formatClock(duration)}</div>
+      <div className="video-time">
+        {formatClock(scrubTime)} / {formatClock(duration)}
+      </div>
 
       {/* Segment manifest panel */}
       <div className="segment-box">
         <div className="row" style={{ alignItems: "center" }}>
-          <div className="group-title" style={{ margin: 0 }}>Segments</div>
+          <div className="group-title" style={{ margin: 0 }}>
+            Segments
+          </div>
           <button type="button" onClick={onAddSegment} disabled={!current || saving}>
             Add at Playhead
           </button>
-          <button
-            type="button"
-            className="primary"
-            onClick={onSave}
-            disabled={!manifest || saving}
-          >
+          <button type="button" className="primary" onClick={onSave} disabled={!manifest || saving}>
             {saving ? "Saving..." : "Save Segments"}
           </button>
         </div>
-        <div className="hint" style={{ marginTop: 4 }}>
-          Segments defined here are used by Video Label for random sampling.
-        </div>
 
         {segments.length === 0 ? (
-          <div className="empty" style={{ marginTop: 8 }}>No segments yet. Scrub to a point and click "Add at Playhead".</div>
+          <div className="empty" style={{ marginTop: 8 }}>
+            No segments yet. Scrub to a point and click "Add at Playhead".
+          </div>
         ) : (
           <table style={{ width: "100%", marginTop: 8, borderCollapse: "collapse", fontSize: "0.85em" }}>
             <thead>
@@ -475,7 +480,9 @@ function ExportTab({
 
   const segmentSummary = current?.segments.length
     ? current.segments
-        .map((seg, i) => `seg${String(i + 1).padStart(2, "0")} ${formatClock(seg.start)}-${formatClock(seg.end)}`)
+        .map(
+          (seg, i) => `seg${String(i + 1).padStart(2, "0")} ${formatClock(seg.start)}-${formatClock(seg.end)}`
+        )
         .join(" · ")
     : "Segments: none";
 
@@ -517,7 +524,9 @@ function ExportTab({
           />
           <div className="segment-box">
             <div className="row">
-              <div className="group-title" style={{ margin: 0 }}>Export Segments</div>
+              <div className="group-title" style={{ margin: 0 }}>
+                Export Segments
+              </div>
             </div>
             <div className="segment-summary">{segmentSummary}</div>
             {current?.segments.map((segment, index) => (
@@ -555,7 +564,9 @@ function ExportTab({
                   />
                 </label>
                 <div className="row" style={{ alignItems: "end" }}>
-                  <span className="hint" style={{ margin: 0 }}>{frameCount([segment])} frames</span>
+                  <span className="hint" style={{ margin: 0 }}>
+                    {frameCount([segment])} frames
+                  </span>
                 </div>
               </div>
             ))}
@@ -587,7 +598,9 @@ function ExportTab({
           {outputRoot ? (
             <div className="video-output-path">
               <span>{outputRoot}</span>
-              <button type="button" onClick={onOpenOutput} disabled={running}>Open</button>
+              <button type="button" onClick={onOpenOutput} disabled={running}>
+                Open
+              </button>
             </div>
           ) : (
             <div className="hint video-output-required">Choose an output folder to enable export.</div>
@@ -595,10 +608,7 @@ function ExportTab({
           <div className="video-list">
             {videos.length ? (
               videos.map((video, index) => (
-                <div
-                  className={`video-list-item${index === currentIndex ? " active" : ""}`}
-                  key={video.path}
-                >
+                <div className={`video-list-item${index === currentIndex ? " active" : ""}`} key={video.path}>
                   <button
                     type="button"
                     className="video-list-select"
@@ -682,10 +692,6 @@ function ExportTab({
               />
             </label>
           </div>
-          <div className="hint">
-            Interval controls which frames are sampled. Similarity removal is independent and only decides whether each sampled frame is written.
-            Export naming: video_seg01_000001_timestamp.png. Each video is numbered independently.
-          </div>
           <div className="row">
             <button
               type="button"
@@ -712,11 +718,6 @@ function ExportTab({
             total={job?.total || totalFrames || 1}
             detail={status}
           />
-          <div className="hint">
-            {mode === "quick"
-              ? "Quick Export uses only the selected video and output paths; it does not create or modify a workspace."
-              : "Workspace Project keeps segment manifests connected to Video Label and defaults output to the workspace image pool."}
-          </div>
           <LogPanel>{log}</LogPanel>
         </div>
       </aside>
@@ -775,7 +776,10 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
 
   const debouncedScrubTime = useDebouncedValue(scrubTime, isScrubbing ? PREVIEW_DEBOUNCE_MS : 0);
 
-  const showError = useCallback((err: unknown) => showToast(errMessage(err), { variant: "error" }), [showToast]);
+  const showError = useCallback(
+    (err: unknown) => showToast(errMessage(err), { variant: "error" }),
+    [showToast]
+  );
   const current = currentIndex >= 0 ? videos[currentIndex] : null;
   const running = job?.status === "running";
   const totalFrames = useMemo(() => videos.reduce((sum, v) => sum + frameCount(v.segments), 0), [videos]);
@@ -793,7 +797,9 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
         const workspaceVideos = (await listWorkspaceVideos(root))
           .filter((item) => item.ok !== false && item.path)
           .map(normalizeVideo);
-        setWorkspaceVideos((items) => options.replace ? workspaceVideos : mergeVideoItems(items, workspaceVideos));
+        setWorkspaceVideos((items) =>
+          options.replace ? workspaceVideos : mergeVideoItems(items, workspaceVideos)
+        );
         setWorkspaceCurrentIndex((index) => {
           if (options.replace) {
             if (!workspaceVideos.length) return -1;
@@ -849,7 +855,9 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
       }
     }
     void load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [mode, workspaceRoot, onReady, showError, loadWorkspaceVideos]);
 
   useEffect(() => {
@@ -872,9 +880,15 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
     let cancelled = false;
     const durationMs = secondsToMs(current.duration);
     loadVideoSegmentManifest(workspaceRoot, current.path, durationMs)
-      .then((m) => { if (!cancelled) setManifest(m); })
-      .catch((err) => { if (!cancelled) showError(err); });
-    return () => { cancelled = true; };
+      .then((m) => {
+        if (!cancelled) setManifest(m);
+      })
+      .catch((err) => {
+        if (!cancelled) showError(err);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [mode, current?.path, current?.duration, workspaceRoot, showError]);
 
   // Fetch frame preview
@@ -896,22 +910,30 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
       .finally(() => {
         if (!cancelled && requestId === previewRequestIdRef.current) setPending(false);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [active, current?.path, debouncedScrubTime, format, showError]);
 
-  const updateCaptureJobState = useCallback((next: CaptureJob) => {
-    setJob(next);
-    const processed = next.processed ?? next.saved ?? 0;
-    const summary = next.skipped ? `, saved ${next.saved || 0}, skipped ${next.skipped}` : "";
-    setStatus(`${next.status}: ${processed}/${next.total || totalFrames}${summary}`);
-    setLog(JSON.stringify(next, null, 2));
-  }, [totalFrames]);
+  const updateCaptureJobState = useCallback(
+    (next: CaptureJob) => {
+      setJob(next);
+      const processed = next.processed ?? next.saved ?? 0;
+      const summary = next.skipped ? `, saved ${next.saved || 0}, skipped ${next.skipped}` : "";
+      setStatus(`${next.status}: ${processed}/${next.total || totalFrames}${summary}`);
+      setLog(JSON.stringify(next, null, 2));
+    },
+    [totalFrames]
+  );
 
-  const notifyCaptureJobTerminal = useCallback((next: CaptureJob) => {
-    if (next.status !== "running") {
-      showToast(`Video export ${next.status}: saved ${next.saved || 0}, skipped ${next.skipped || 0}.`);
-    }
-  }, [showToast]);
+  const notifyCaptureJobTerminal = useCallback(
+    (next: CaptureJob) => {
+      if (next.status !== "running") {
+        showToast(`Video export ${next.status}: saved ${next.saved || 0}, skipped ${next.skipped || 0}.`);
+      }
+    },
+    [showToast]
+  );
 
   // Poll running export job
   usePollingJob({
@@ -970,16 +992,18 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
   }
 
   function updateCaptureSegment(segmentIndex: number, patch: Partial<CaptureSegment>) {
-    setVideos((items) => items.map((video, videoIndex) => {
-      if (videoIndex !== currentIndex) return video;
-      return {
-        ...video,
-        segments: video.segments.map((segment, index) => {
-          if (index !== segmentIndex) return segment;
-          return updateVideoCaptureSegment(segment, patch, video.duration);
-        })
-      };
-    }));
+    setVideos((items) =>
+      items.map((video, videoIndex) => {
+        if (videoIndex !== currentIndex) return video;
+        return {
+          ...video,
+          segments: video.segments.map((segment, index) => {
+            if (index !== segmentIndex) return segment;
+            return updateVideoCaptureSegment(segment, patch, video.duration);
+          })
+        };
+      })
+    );
   }
 
   async function addVideos() {
@@ -1088,7 +1112,13 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
       return;
     }
     try {
-      const written = await saveVideoFrame(current.path, outputRoot, scrubTime, prefix || fileStem(current.name), format);
+      const written = await saveVideoFrame(
+        current.path,
+        outputRoot,
+        scrubTime,
+        prefix || fileStem(current.name),
+        format
+      );
       setLog(`Saved ${written}`);
       setStatus(`Saved frame at ${formatClock(scrubTime)}.`);
     } catch (err) {
@@ -1116,7 +1146,11 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
       async () => {
         try {
           const next = await startCaptureJobs({
-            jobs: selectedVideos.map((v) => ({ path: v.path, prefix: prefix || fileStem(v.name), segments: v.segments })),
+            jobs: selectedVideos.map((v) => ({
+              path: v.path,
+              prefix: prefix || fileStem(v.name),
+              segments: v.segments
+            })),
             outputRoot,
             prefix,
             format,
@@ -1208,12 +1242,7 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
                 >
                   Open Workspace
                 </button>
-                <button
-                  className="primary"
-                  type="button"
-                  onClick={() => void addVideos()}
-                  disabled={running}
-                >
+                <button className="primary" type="button" onClick={() => void addVideos()} disabled={running}>
                   Add Video
                 </button>
               </div>
@@ -1255,10 +1284,6 @@ export function VideoCapturePage({ onReady, active = true }: Props) {
                   {manifest.updatedAt ? ` · saved ${new Date(manifest.updatedAt).toLocaleString()}` : ""}
                 </div>
               ) : null}
-
-              <div className="hint" style={{ marginTop: 8 }}>
-                Segments are saved to <code>labels/segments/</code> in your workspace and consumed by Video Label for random-frame sampling.
-              </div>
             </div>
           </aside>
         </>

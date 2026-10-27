@@ -14,7 +14,7 @@ export type OverviewTile = {
 };
 
 /**
- * 多视角总览: every view at the current reference time, each with its own 2D
+ * Multiview overview: every view at the current reference time, each with its own 2D
  * pose. Click a view to review it on the reference timeline (read-only).
  */
 export function MultiviewOverview({
@@ -37,7 +37,7 @@ export function MultiviewOverview({
         >
           <OverviewFrame workspaceRoot={workspaceRoot} tile={tile} />
           <span className="mc-overview__label">
-            {tile.label} · 帧 {tile.frame}
+            {tile.label} · frame {tile.frame}
           </span>
         </button>
       ))}

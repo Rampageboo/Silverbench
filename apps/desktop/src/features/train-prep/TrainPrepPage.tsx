@@ -62,7 +62,8 @@ function resultSummary(result: TrainPrepResult) {
   const lines = [result.message || (result.ok ? "Operation finished." : "Operation failed.")];
   if (typeof result.moved === "number") lines.push(`Moved: ${result.moved}`);
   if (typeof result.skipped === "number" && result.skipped > 0) lines.push(`Skipped: ${result.skipped}`);
-  if (result.dataYaml?.updated?.length) lines.push(`data.yaml updated: ${result.dataYaml.updated.join(", ")}`);
+  if (result.dataYaml?.updated?.length)
+    lines.push(`data.yaml updated: ${result.dataYaml.updated.join(", ")}`);
   if (result.yamlWarning) lines.push(`Warning: ${result.yamlWarning}`);
   if (result.failures?.length) lines.push(`Failures:\n${result.failures.slice(0, 8).join("\n")}`);
   return lines.filter(Boolean).join("\n");
@@ -188,7 +189,10 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
       const code = parseInt((e as MessageEvent<string>).data, 10);
       setTrainExitCode(code);
       setTrainPhase(code === 0 ? "done" : "error");
-      if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
+      if (elapsedTimerRef.current) {
+        clearInterval(elapsedTimerRef.current);
+        elapsedTimerRef.current = null;
+      }
       es.close();
       esRef.current = null;
     });
@@ -197,27 +201,40 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
       // SSE closed (process ended or network drop); phase will be set by "done" event or left as-is
       es.close();
       esRef.current = null;
-      if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
+      if (elapsedTimerRef.current) {
+        clearInterval(elapsedTimerRef.current);
+        elapsedTimerRef.current = null;
+      }
     };
   }, []);
 
   // On mount: check if training is already running
   useEffect(() => {
     let cancelled = false;
-    getTrainingStatus().then((status) => {
-      if (cancelled) return;
-      if (status.running) {
-        connectStream(true);
-      } else if (status.lineCount > 0) {
-        setTrainLines([]);
-        setTrainExitCode(status.exitCode ?? null);
-        setTrainPhase(
-          status.exitCode === 0 ? "done" : status.stopped ? "stopped" : status.exitCode != null ? "error" : "idle"
-        );
-        // Replay the buffer once to show prior output
-        connectStream(false);
-      }
-    }).catch(() => { /* backend not yet started */ });
+    getTrainingStatus()
+      .then((status) => {
+        if (cancelled) return;
+        if (status.running) {
+          connectStream(true);
+        } else if (status.lineCount > 0) {
+          setTrainLines([]);
+          setTrainExitCode(status.exitCode ?? null);
+          setTrainPhase(
+            status.exitCode === 0
+              ? "done"
+              : status.stopped
+                ? "stopped"
+                : status.exitCode != null
+                  ? "error"
+                  : "idle"
+          );
+          // Replay the buffer once to show prior output
+          connectStream(false);
+        }
+      })
+      .catch(() => {
+        /* backend not yet started */
+      });
     return () => {
       cancelled = true;
       esRef.current?.close();
@@ -244,7 +261,10 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
     const result = await stopTraining().catch(() => ({ ok: false, message: "Request failed" }));
     if (result.ok) {
       setTrainPhase("stopped");
-      if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
+      if (elapsedTimerRef.current) {
+        clearInterval(elapsedTimerRef.current);
+        elapsedTimerRef.current = null;
+      }
     } else {
       showToast(result.message ?? "Failed to stop", { variant: "error" });
     }
@@ -271,12 +291,11 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
     }
   }, [workspaceRoot, onReady, showError]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
 
-  const datasetRoot = useMemo(
-    () => datasetRootForTask(state.info, task),
-    [state.info, task]
-  );
+  const datasetRoot = useMemo(() => datasetRootForTask(state.info, task), [state.info, task]);
   const detect = detectStats(state.detectFiles);
   const classify = classifyStats(state.classifyFiles);
   const totalFiles = state.detectFiles.length + state.classifyFiles.length;
@@ -293,7 +312,8 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
 
     if (cmdMode === "export") {
       return [
-        "yolo", "export",
+        "yolo",
+        "export",
         `model=${shellArg(toPosix(model))}`,
         "format=onnx",
         `imgsz=${task === "classify" ? 224 : cmdImgsz}`,
@@ -301,14 +321,17 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
       ].join(" ");
     }
 
-    const dataPath = task === "classify"
-      ? toPosix(state.info?.clfDataset || "dataset")
-      : toPosix(state.info?.detectDataset ? `${state.info.detectDataset}/data.yaml` : "data.yaml");
+    const dataPath =
+      task === "classify"
+        ? toPosix(state.info?.clfDataset || "dataset")
+        : toPosix(state.info?.detectDataset ? `${state.info.detectDataset}/data.yaml` : "data.yaml");
 
     const project = cmdProject.trim() || (task === "classify" ? "runs/classify" : "runs/detect");
 
     const args = [
-      "yolo", task, "train",
+      "yolo",
+      task,
+      "train",
       `model=${shellArg(toPosix(model))}`,
       `data=${shellArg(dataPath)}`,
       `epochs=${cmdEpochs}`,
@@ -320,7 +343,19 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
       `name=${shellArg(cmdName || "train")}`
     ];
     return args.join(" ");
-  }, [cmdMode, cmdModel, cmdEpochs, cmdBatch, cmdImgsz, cmdDevice, cmdWorkers, cmdProject, cmdName, task, state.info]);
+  }, [
+    cmdMode,
+    cmdModel,
+    cmdEpochs,
+    cmdBatch,
+    cmdImgsz,
+    cmdDevice,
+    cmdWorkers,
+    cmdProject,
+    cmdName,
+    task,
+    state.info
+  ]);
 
   async function copyCommand() {
     try {
@@ -373,8 +408,10 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
         confirmLabel: "Create split",
         danger: true
       },
-      () => runOperation("Creating validation split…", () =>
-        prepareTrainPrepValidationSplit(datasetRoot, task, safeRatio))
+      () =>
+        runOperation("Creating validation split…", () =>
+          prepareTrainPrepValidationSplit(datasetRoot, task, safeRatio)
+        )
     );
   }
 
@@ -393,8 +430,7 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
         confirmLabel: "Move",
         danger: true
       },
-      () => runOperation("Moving val back to train…", () =>
-        moveTrainPrepValBackToTrain(datasetRoot, task))
+      () => runOperation("Moving val back to train…", () => moveTrainPrepValBackToTrain(datasetRoot, task))
     );
   }
 
@@ -408,33 +444,29 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
       );
       return;
     }
-    void runOperation(
-      `Preparing ${readyNextTraining.length} starred image(s)…`,
-      async () => {
-        const result = await runExportDatasetJob(
-          workspaceRoot,
-          { filenames: readyNextTraining, rebuild: false },
-          (done, total, detail) => {
-            setOpStatus(`Starred batch ${done}/${total}${detail ? ` · ${detail}` : ""}`);
-          }
-        );
-        const built = result.builtFilenames?.length ?? 0;
-        const errors = result.errors ?? [];
-        return {
-          ok: errors.length === 0,
-          message: `Prepared ${built} starred image(s) for the ${task === "detect" ? "Detection" : "Classification"} dataset.`,
-          skipped: Math.max(0, readyNextTraining.length - built),
-          failures: errors,
-        };
-      }
-    );
+    void runOperation(`Preparing ${readyNextTraining.length} starred image(s)…`, async () => {
+      const result = await runExportDatasetJob(
+        workspaceRoot,
+        { filenames: readyNextTraining, rebuild: false },
+        (done, total, detail) => {
+          setOpStatus(`Starred batch ${done}/${total}${detail ? ` · ${detail}` : ""}`);
+        }
+      );
+      const built = result.builtFilenames?.length ?? 0;
+      const errors = result.errors ?? [];
+      return {
+        ok: errors.length === 0,
+        message: `Prepared ${built} starred image(s) for the ${task === "detect" ? "Detection" : "Classification"} dataset.`,
+        skipped: Math.max(0, readyNextTraining.length - built),
+        failures: errors
+      };
+    });
   }
 
   const wsName = state.info?.name || (workspaceRoot ? workspaceRoot.split(/[\\/]/).pop() : "");
 
   return (
     <main className="train-prep-workspace">
-
       {/* ── Left panel: controls ── */}
       <section className="panel">
         <div className="panel-header">
@@ -442,16 +474,22 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
           {wsName ? <span className="status">{wsName}</span> : null}
         </div>
         <div className="panel-body train-prep-stack" style={{ overflowY: "auto" }}>
-
           {/* Workspace */}
           <div className="tp-section">
             <div className="row">
-              <button className="primary" type="button"
-                onClick={() => chooseWorkspaceFolder().catch(showError)} disabled={pending}>
+              <button
+                className="primary"
+                type="button"
+                onClick={() => chooseWorkspaceFolder().catch(showError)}
+                disabled={pending}
+              >
                 Open Workspace
               </button>
-              <button type="button" onClick={() => void refresh()}
-                disabled={pending || !workspaceRoot.trim()}>
+              <button
+                type="button"
+                onClick={() => void refresh()}
+                disabled={pending || !workspaceRoot.trim()}
+              >
                 {loading ? "Loading…" : "Refresh"}
               </button>
             </div>
@@ -477,9 +515,6 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
                 Prepare Starred Batch
               </button>
             </div>
-            <p className="hint">
-              Starred images stay queued after preparation, so a failed or repeated training run does not lose the selection.
-            </p>
           </div>
 
           <div className="tp-divider" />
@@ -490,35 +525,53 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
             <div className="train-grid">
               <label>
                 Task
-                <select value={task} onChange={(e) => setTask(e.target.value as DatasetTask)} disabled={pending}>
+                <select
+                  value={task}
+                  onChange={(e) => setTask(e.target.value as DatasetTask)}
+                  disabled={pending}
+                >
                   <option value="detect">Detection</option>
                   <option value="classify">Classification</option>
                 </select>
               </label>
               <label>
                 Val ratio
-                <input type="number" min="0.05" max="0.4" step="0.01" value={ratio}
-                  onChange={(e) => setRatio(clampRatio(Number(e.target.value)))} disabled={pending} />
+                <input
+                  type="number"
+                  min="0.05"
+                  max="0.4"
+                  step="0.01"
+                  value={ratio}
+                  onChange={(e) => setRatio(clampRatio(Number(e.target.value)))}
+                  disabled={pending}
+                />
               </label>
             </div>
             <label style={{ fontSize: 12, color: "var(--muted)", display: "grid", gap: 4 }}>
               Dataset root
-              <input value={datasetRoot || ""} readOnly placeholder="Open a workspace first"
-                style={{ fontFamily: "monospace", fontSize: 11 }} />
+              <input
+                value={datasetRoot || ""}
+                readOnly
+                placeholder="Open a workspace first"
+                style={{ fontFamily: "monospace", fontSize: 11 }}
+              />
             </label>
             <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
               <button type="button" onClick={handleCreateValSplit} disabled={pending || !datasetRoot}>
                 Create Val Split
               </button>
-              <button type="button" onClick={handleFixDataYaml}
-                disabled={pending || !datasetRoot || task !== "detect"}>
+              <button
+                type="button"
+                onClick={handleFixDataYaml}
+                disabled={pending || !datasetRoot || task !== "detect"}
+              >
                 Fix data.yaml
               </button>
               <button type="button" onClick={handleMoveValBack} disabled={pending || !datasetRoot}>
                 Move Val → Train
               </button>
             </div>
-            <p className="hint">Create Val Split moves files on disk and cannot be undone by this tool.</p>
+            <p className="hint">Create Val Split moves files on disk and cannot be undone.</p>
           </div>
 
           <div className="tp-divider" />
@@ -537,9 +590,11 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
               </label>
               <label>
                 Model / weights
-                <input value={cmdModel}
+                <input
+                  value={cmdModel}
                   onChange={(e) => setCmdModel(e.target.value)}
-                  placeholder={task === "classify" ? "yolov8n-cls.pt" : "yolov8n.pt"} />
+                  placeholder={task === "classify" ? "yolov8n-cls.pt" : "yolov8n.pt"}
+                />
               </label>
             </div>
 
@@ -547,18 +602,31 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
               <div className="train-grid" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
                 <label>
                   Epochs
-                  <input type="number" min="1" value={cmdEpochs}
-                    onChange={(e) => setCmdEpochs(Math.max(1, Number(e.target.value)))} />
+                  <input
+                    type="number"
+                    min="1"
+                    value={cmdEpochs}
+                    onChange={(e) => setCmdEpochs(Math.max(1, Number(e.target.value)))}
+                  />
                 </label>
                 <label>
                   Batch
-                  <input type="number" min="1" value={cmdBatch}
-                    onChange={(e) => setCmdBatch(Math.max(1, Number(e.target.value)))} />
+                  <input
+                    type="number"
+                    min="1"
+                    value={cmdBatch}
+                    onChange={(e) => setCmdBatch(Math.max(1, Number(e.target.value)))}
+                  />
                 </label>
                 <label>
                   Imgsz
-                  <input type="number" min="32" step="32" value={cmdImgsz}
-                    onChange={(e) => setCmdImgsz(Math.max(32, Number(e.target.value)))} />
+                  <input
+                    type="number"
+                    min="32"
+                    step="32"
+                    value={cmdImgsz}
+                    onChange={(e) => setCmdImgsz(Math.max(32, Number(e.target.value)))}
+                  />
                 </label>
                 <label>
                   Device
@@ -566,8 +634,12 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
                 </label>
                 <label>
                   Workers
-                  <input type="number" min="0" value={cmdWorkers}
-                    onChange={(e) => setCmdWorkers(Math.max(0, Number(e.target.value)))} />
+                  <input
+                    type="number"
+                    min="0"
+                    value={cmdWorkers}
+                    onChange={(e) => setCmdWorkers(Math.max(0, Number(e.target.value)))}
+                  />
                 </label>
                 <label>
                   Run name
@@ -578,8 +650,13 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
               <div className="train-grid">
                 <label>
                   Imgsz
-                  <input type="number" min="32" step="32" value={cmdImgsz}
-                    onChange={(e) => setCmdImgsz(Math.max(32, Number(e.target.value)))} />
+                  <input
+                    type="number"
+                    min="32"
+                    step="32"
+                    value={cmdImgsz}
+                    onChange={(e) => setCmdImgsz(Math.max(32, Number(e.target.value)))}
+                  />
                 </label>
                 <label>
                   Device
@@ -591,9 +668,11 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
             {cmdMode !== "export" ? (
               <label style={{ fontSize: 12, color: "var(--muted)", display: "grid", gap: 4 }}>
                 Project dir
-                <input value={cmdProject}
+                <input
+                  value={cmdProject}
                   onChange={(e) => setCmdProject(e.target.value)}
-                  placeholder={task === "classify" ? "runs/classify" : "runs/detect"} />
+                  placeholder={task === "classify" ? "runs/classify" : "runs/detect"}
+                />
               </label>
             ) : null}
 
@@ -630,7 +709,6 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
               </div>
             </div>
           </div>
-
         </div>
       </section>
 
@@ -640,12 +718,13 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
           <span>Dataset Status</span>
           <span className="status">
             {workspaceRoot.trim()
-              ? (loading ? "Loading…" : `${totalFiles} files indexed`)
+              ? loading
+                ? "Loading…"
+                : `${totalFiles} files indexed`
               : "No workspace open"}
           </span>
         </div>
         <div className="panel-body train-prep-stack">
-
           <div className="train-grid">
             {/* Detect card */}
             <div className="info-card">
@@ -678,16 +757,16 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
             </div>
           ) : null}
 
-          <LogPanel>
-            {log || (loading ? "Loading dataset status…" : "No operation run yet.")}
-          </LogPanel>
+          <LogPanel>{log || (loading ? "Loading dataset status…" : "No operation run yet.")}</LogPanel>
 
           <div className="tp-divider" />
 
           {/* Training output */}
           <div className="tp-section">
             <div className="tp-train-header">
-              <p className="tp-section-title" style={{ margin: 0 }}>Training Output</p>
+              <p className="tp-section-title" style={{ margin: 0 }}>
+                Training Output
+              </p>
               <span className={`tp-train-badge ${trainPhase}`}>
                 {trainPhase === "running" && <span className="tp-spinner" style={{ width: 8, height: 8 }} />}
                 {trainPhase}
@@ -695,9 +774,7 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
               {(trainPhase === "running" || trainElapsed > 0) && (
                 <span className="tp-train-elapsed">{formatElapsed(trainElapsed)}</span>
               )}
-              {trainExitCode != null && (
-                <span className="tp-train-elapsed">exit {trainExitCode}</span>
-              )}
+              {trainExitCode != null && <span className="tp-train-elapsed">exit {trainExitCode}</span>}
               {trainLines.length > 0 && (
                 <span className="tp-train-elapsed" style={{ marginLeft: "auto" }}>
                   {trainLines.length} lines
@@ -717,29 +794,35 @@ export function TrainPrepPage({ onReady }: TrainPrepPageProps) {
                 <button
                   type="button"
                   style={{ fontSize: 11, padding: "2px 8px" }}
-                  onClick={() => { setTrainLines([]); setTrainExitCode(null); setTrainPhase("idle"); setTrainElapsed(0); }}
+                  onClick={() => {
+                    setTrainLines([]);
+                    setTrainExitCode(null);
+                    setTrainPhase("idle");
+                    setTrainElapsed(0);
+                  }}
                 >
                   Clear
                 </button>
               )}
             </div>
             <div className="tp-train-log" ref={logRef}>
-              {trainLines.length > 0
-                ? trainLines.map((line, i) => (
-                    <span key={i} className="tp-train-line">{line || " "}</span>
-                  ))
-                : <span className="tp-train-placeholder">
-                    {trainPhase === "idle"
-                      ? "Press ▶ Train to start. Output will appear here."
-                      : "Waiting for output…"}
+              {trainLines.length > 0 ? (
+                trainLines.map((line, i) => (
+                  <span key={i} className="tp-train-line">
+                    {line || " "}
                   </span>
-              }
+                ))
+              ) : (
+                <span className="tp-train-placeholder">
+                  {trainPhase === "idle"
+                    ? "Press ▶ Train to start. Output will appear here."
+                    : "Waiting for output…"}
+                </span>
+              )}
             </div>
           </div>
-
         </div>
       </section>
-
     </main>
   );
 }

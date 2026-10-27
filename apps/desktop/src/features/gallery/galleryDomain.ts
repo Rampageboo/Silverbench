@@ -24,48 +24,74 @@ export function shouldObscure(contentRating: string | null | undefined, revealAl
 }
 
 export const CONTENT_RATING_LABELS: Record<string, string> = {
-  general: "全年龄",
-  sensitive: "敏感",
-  questionable: "成人",
-  explicit: "露骨"
+  general: "General",
+  sensitive: "Sensitive",
+  questionable: "Questionable",
+  explicit: "Explicit"
 };
 
 export function contentRatingLabel(value: string | null | undefined) {
-  return value ? (CONTENT_RATING_LABELS[value] ?? value) : "未知分级";
+  return value ? (CONTENT_RATING_LABELS[value] ?? value) : "Unrated";
 }
 
 // ── Provenance ───────────────────────────────────────────────────────────────
 
-export const PROMPT_SOURCE_LABELS: Record<string, { label: string; tone: "ok" | "info" | "accent" | "warn" | "muted" }> = {
-  metadata: { label: "原始元数据", tone: "ok" },
-  "derived-metadata": { label: "由元数据转换", tone: "info" },
-  "derived-model": { label: "模型反推", tone: "accent" },
-  user: { label: "用户修改", tone: "warn" },
-  none: { label: "无依据", tone: "muted" }
+/** Locations added before the English UI stored these source labels verbatim. */
+const LEGACY_ROOT_SOURCES: Record<string, string> = {
+  "ComfyUI 输出": "ComfyUI output",
+  下载图集: "Downloads",
+  训练集: "Training set",
+  "Blender 渲染": "Blender renders",
+  其他: "Other"
+};
+
+export function rootSourceLabel(source: string) {
+  return LEGACY_ROOT_SOURCES[source] ?? source;
+}
+
+export const PROMPT_SOURCE_LABELS: Record<
+  string,
+  { label: string; tone: "ok" | "info" | "accent" | "warn" | "muted" }
+> = {
+  metadata: { label: "Original metadata", tone: "ok" },
+  "derived-metadata": { label: "Converted from metadata", tone: "info" },
+  "derived-model": { label: "Model tagger", tone: "accent" },
+  user: { label: "Edited", tone: "warn" },
+  none: { label: "No source", tone: "muted" }
 };
 
 export function promptSourceLabel(source: string | null | undefined) {
-  return PROMPT_SOURCE_LABELS[source || "none"] ?? { label: source || "未知来源", tone: "muted" as const };
+  return (
+    PROMPT_SOURCE_LABELS[source || "none"] ?? { label: source || "Unknown source", tone: "muted" as const }
+  );
 }
 
 export const METADATA_FORMAT_LABELS: Record<string, string> = {
   a1111: "A1111 / Forge",
   comfyui: "ComfyUI",
   novelai: "NovelAI",
-  none: "无元数据"
+  none: "No metadata"
 };
 
 export const TAG_CATEGORY_LABELS: Record<TagCategory, string> = {
-  quality: "质量",
-  rating: "分级",
-  count: "人数",
-  character: "角色",
-  copyright: "作品",
-  artist: "画师",
-  general: "通用"
+  quality: "Quality",
+  rating: "Rating",
+  count: "Count",
+  character: "Character",
+  copyright: "Copyright",
+  artist: "Artist",
+  general: "General"
 };
 
-export const TAG_CATEGORY_ORDER: TagCategory[] = ["quality", "rating", "count", "character", "copyright", "artist", "general"];
+export const TAG_CATEGORY_ORDER: TagCategory[] = [
+  "quality",
+  "rating",
+  "count",
+  "character",
+  "copyright",
+  "artist",
+  "general"
+];
 
 export function groupTags(tags: GalleryTag[]) {
   const groups = new Map<TagCategory, GalleryTag[]>();
@@ -108,7 +134,11 @@ export function withPromptOverride(
   return next;
 }
 
-export function promptOverride(edits: GalleryUserEdits, format: PromptFormat, field: PromptField): string | undefined {
+export function promptOverride(
+  edits: GalleryUserEdits,
+  format: PromptFormat,
+  field: PromptField
+): string | undefined {
   return edits[format]?.[field];
 }
 
@@ -121,7 +151,9 @@ export type AssetDraft = {
   userEdits: GalleryUserEdits;
 };
 
-export function draftFromAsset(asset: Pick<GalleryAsset, "rating" | "collection" | "personalTags" | "notes" | "userEdits">): AssetDraft {
+export function draftFromAsset(
+  asset: Pick<GalleryAsset, "rating" | "collection" | "personalTags" | "notes" | "userEdits">
+): AssetDraft {
   return {
     rating: asset.rating,
     collection: asset.collection,
@@ -149,8 +181,12 @@ function sameJson(a: unknown, b: unknown) {
 }
 
 /** Only fields that actually differ; userEdits is sent whole (the API replaces it). */
-export function draftPatch(asset: Pick<GalleryAsset, "rating" | "collection" | "personalTags" | "notes" | "userEdits">, draft: AssetDraft) {
-  const patch: Partial<Pick<GalleryAsset, "rating" | "collection" | "personalTags" | "notes" | "userEdits">> = {};
+export function draftPatch(
+  asset: Pick<GalleryAsset, "rating" | "collection" | "personalTags" | "notes" | "userEdits">,
+  draft: AssetDraft
+) {
+  const patch: Partial<Pick<GalleryAsset, "rating" | "collection" | "personalTags" | "notes" | "userEdits">> =
+    {};
   if (draft.rating !== asset.rating) patch.rating = draft.rating;
   if (draft.collection !== asset.collection) patch.collection = draft.collection;
   const tags = parsePersonalTags(draft.personalTags);
@@ -233,18 +269,18 @@ export function isDefaultPromptOptions(options: PromptOptions) {
 // ── Jobs ─────────────────────────────────────────────────────────────────────
 
 export const JOB_STATUS_LABELS: Record<GalleryJob["status"], string> = {
-  queued: "排队中",
-  running: "运行中",
-  paused: "已暂停",
-  completed: "已完成",
-  cancelled: "已取消",
-  failed: "失败"
+  queued: "Queued",
+  running: "Running",
+  paused: "Paused",
+  completed: "Completed",
+  cancelled: "Cancelled",
+  failed: "Failed"
 };
 
 export const JOB_TYPE_LABELS: Record<GalleryJob["type"], string> = {
-  scan: "扫描",
-  wd: "WD 打标",
-  control: "控制图"
+  scan: "Scan",
+  wd: "WD tagging",
+  control: "Control maps"
 };
 
 export function isActiveJob(job: GalleryJob) {
@@ -262,10 +298,10 @@ export function jobsSignature(jobs: GalleryJob[], total: number) {
 /** Scans do not know their total up front; report counts, never an invented percentage. */
 export function jobProgressText(job: GalleryJob) {
   const p = job.progress ?? ({} as GalleryJob["progress"]);
-  const parts = [`已处理 ${p.processed ?? p.scanned ?? job.processed ?? 0}`];
-  if (p.imported) parts.push(`新增 ${p.imported}`);
-  if (p.skipped) parts.push(`跳过 ${p.skipped}`);
-  if (p.missing) parts.push(`离线 ${p.missing}`);
-  if (p.errors?.length) parts.push(`错误 ${p.errors.length}`);
+  const parts = [`Processed ${p.processed ?? p.scanned ?? job.processed ?? 0}`];
+  if (p.imported) parts.push(`New ${p.imported}`);
+  if (p.skipped) parts.push(`Skipped ${p.skipped}`);
+  if (p.missing) parts.push(`Offline ${p.missing}`);
+  if (p.errors?.length) parts.push(`Errors ${p.errors.length}`);
   return parts.join(" · ");
 }

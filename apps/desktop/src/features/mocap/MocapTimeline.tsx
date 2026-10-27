@@ -72,42 +72,42 @@ export function MocapTimeline({
           type="button"
           className="ui-btn--sm"
           onClick={() => onSeek(frame - 10)}
-          title="后退 10 帧 (Shift+←)"
+          title="Back 10 frames (Shift+←)"
         >
           −10
         </button>
-        <button type="button" className="ui-btn--sm" onClick={() => onSeek(frame - 1)} title="上一帧 (←)">
-          ◀
-        </button>
         <button
           type="button"
-          className="mc-timeline__play ui-btn--sm"
-          onClick={onTogglePlay}
-          title="播放/暂停 (空格)"
+          className="ui-btn--sm"
+          onClick={() => onSeek(frame - 1)}
+          title="Previous frame (←)"
         >
-          {playing ? "暂停" : "播放"}
+          ◀
         </button>
-        <button type="button" className="ui-btn--sm" onClick={() => onSeek(frame + 1)} title="下一帧 (→)">
+        <button type="button" className="mc-timeline__play ui-btn--sm" onClick={onTogglePlay} title="Space">
+          {playing ? "Pause" : "Play"}
+        </button>
+        <button type="button" className="ui-btn--sm" onClick={() => onSeek(frame + 1)} title="Next frame (→)">
           ▶
         </button>
         <button
           type="button"
           className="ui-btn--sm"
           onClick={() => onSeek(frame + 10)}
-          title="前进 10 帧 (Shift+→)"
+          title="Forward 10 frames (Shift+→)"
         >
           +10
         </button>
         <span className="mc-timeline__readout">
-          帧 <strong>{frame}</strong> / {Math.max(frameCount - 1, 0)} · {time.toFixed(3)} s ·{" "}
+          Frame <strong>{frame}</strong> / {Math.max(frameCount - 1, 0)} · {time.toFixed(3)} s ·{" "}
           {fps.toFixed(fps % 1 ? 2 : 0)} fps
         </span>
         <span className="mc-timeline__spacer" />
-        <button type="button" className="ui-btn--sm" onClick={onSetRangeStart} title="设为起点 (I)">
-          起点
+        <button type="button" className="ui-btn--sm" onClick={onSetRangeStart} title="Set range start (I)">
+          Start
         </button>
-        <button type="button" className="ui-btn--sm" onClick={onSetRangeEnd} title="设为终点 (O)">
-          终点
+        <button type="button" className="ui-btn--sm" onClick={onSetRangeEnd} title="Set range end (O)">
+          End
         </button>
         <button
           type="button"
@@ -115,17 +115,17 @@ export function MocapTimeline({
           aria-pressed={loop}
           onClick={onToggleLoop}
           disabled={!range}
-          title="区间循环 (L)"
+          title="Loop range (L)"
         >
-          循环
+          Loop
         </button>
         {range ? (
           <>
             <span className="mc-timeline__range">
-              区间 {range.first}–{range.last}（{range.last - range.first + 1} 帧）
+              Range {range.first}–{range.last} ({range.last - range.first + 1} frames)
             </span>
             <button type="button" className="ui-btn--ghost ui-btn--sm" onClick={onClearRange}>
-              清除
+              Clear
             </button>
           </>
         ) : null}

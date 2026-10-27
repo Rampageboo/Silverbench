@@ -5,7 +5,7 @@ import { useDismiss } from "../../ui/useDismiss";
 const POLL_MS = 15_000;
 
 function minutes(seconds: number) {
-  return seconds < 60 ? "刚用过" : `${Math.round(seconds / 60)} 分钟前用过`;
+  return seconds < 60 ? "Used just now" : `Used ${Math.round(seconds / 60)} min ago`;
 }
 
 /**
@@ -53,7 +53,7 @@ export function ModelMemoryStatus({ connected, collapsed }: { connected: boolean
   const models = state?.models ?? [];
   if (!connected || !models.length) return null;
   const gpu = state?.gpu.reservedMB;
-  const label = `模型 ${models.length}${gpu ? ` · ${gpu >= 1024 ? `${(gpu / 1024).toFixed(1)} GB` : `${gpu} MB`}` : ""}`;
+  const label = `Models ${models.length}${gpu ? ` · ${gpu >= 1024 ? `${(gpu / 1024).toFixed(1)} GB` : `${gpu} MB`}` : ""}`;
 
   return (
     <span className="shell-models">
@@ -62,7 +62,7 @@ export function ModelMemoryStatus({ connected, collapsed }: { connected: boolean
         type="button"
         className={`shell-status__item shell-status__btn${open ? " is-open" : ""}`}
         onClick={() => setOpen((value) => !value)}
-        title="已加载到内存/显存的模型"
+        title="Loaded models"
         aria-expanded={open}
       >
         <span className="ui-dot ui-dot--warn" />
@@ -70,15 +70,20 @@ export function ModelMemoryStatus({ connected, collapsed }: { connected: boolean
       </button>
       {open ? (
         <div ref={menuRef} className="ui-menu shell-models__menu" role="menu">
-          <div className="ui-menu__label ui-eyebrow">已加载的模型</div>
+          <div className="ui-menu__label ui-eyebrow">Loaded models</div>
           {models.map((model) => (
             <div key={model.path} className="shell-models__row" title={model.path}>
               <span className="shell-models__text">
                 <span>{model.name}</span>
                 <span className="ui-menu__item-sub">{minutes(model.idleSeconds)}</span>
               </span>
-              <button type="button" className="ui-btn--ghost ui-btn--sm" onClick={() => void release(model.path)} disabled={busy}>
-                释放
+              <button
+                type="button"
+                className="ui-btn--ghost ui-btn--sm"
+                onClick={() => void release(model.path)}
+                disabled={busy}
+              >
+                Release
               </button>
             </div>
           ))}
@@ -86,12 +91,11 @@ export function ModelMemoryStatus({ connected, collapsed }: { connected: boolean
           <div className="shell-models__foot">
             <span className="ui-menu__item-sub">
               {state?.gpu.reservedMB !== undefined
-                ? `显存占用 ${state.gpu.reservedMB} MB（已分配 ${state.gpu.allocatedMB ?? 0} MB）`
-                : "未使用 GPU"}
-              {state ? ` · 闲置 ${Math.round(state.idleReleaseSeconds / 60)} 分钟后自动释放` : ""}
+                ? `GPU ${state.gpu.reservedMB} MB reserved (${state.gpu.allocatedMB ?? 0} MB allocated)`
+                : "GPU not in use"}
             </span>
             <button type="button" className="ui-btn--sm" onClick={() => void release()} disabled={busy}>
-              {busy ? "释放中…" : "全部释放"}
+              {busy ? "Releasing…" : "Release all"}
             </button>
           </div>
         </div>

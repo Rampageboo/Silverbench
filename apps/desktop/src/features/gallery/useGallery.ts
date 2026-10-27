@@ -22,7 +22,7 @@ export function errorText(error: unknown): string {
     return typeof error.detail === "string" ? error.detail : error.message;
   }
   // fetch() rejects with a bare TypeError when nothing is listening.
-  if (error instanceof TypeError) return `后端未运行或无法访问（${error.message}）`;
+  if (error instanceof TypeError) return `Backend not running or unreachable (${error.message})`;
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -129,7 +129,10 @@ export function useAssetWindow(
       pendingRef.current.set(chunk, controller);
       setPendingCount(pendingRef.current.size);
       galleryApi
-        .assets({ ...(JSON.parse(key) as AssetQuery), offset: chunk * ASSET_CHUNK, limit: ASSET_CHUNK }, controller.signal)
+        .assets(
+          { ...(JSON.parse(key) as AssetQuery), offset: chunk * ASSET_CHUNK, limit: ASSET_CHUNK },
+          controller.signal
+        )
         .then((result) => {
           if (generation !== generationRef.current) return;
           chunksRef.current.set(chunk, result.items);

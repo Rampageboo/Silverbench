@@ -811,20 +811,12 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
     <section className="ui-orchestrator-page">
       <header className="uio-header">
         <div>
-          <p className="uio-eyebrow">
-            {mode === "temporal"
-              ? "Cross-frame authoring · schema 2.0"
-              : "Page and single-frame authoring · schema 1.0"}
-          </p>
           <h1>UI Orchestrator</h1>
-          <p className="uio-subtitle">
-            {mode === "temporal"
-              ? "Build, validate, replay, and export a temporal state machine without dispatching input."
-              : "Draw reference boxes, bind workspace taxonomy classes, and export a validated UI map."}
-            {mode !== "temporal" && doc.flows.length
-              ? ` ${doc.flows.length} loaded flow${doc.flows.length === 1 ? " is" : "s are"} preserved read-only.`
-              : ""}
-          </p>
+          {mode !== "temporal" && doc.flows.length ? (
+            <p className="uio-subtitle">
+              {doc.flows.length} loaded flow{doc.flows.length === 1 ? " is" : "s are"} preserved read-only.
+            </p>
+          ) : null}
         </div>
         <div className="uio-header-actions">
           <div className="uio-mode-toggle" role="tablist">
@@ -882,7 +874,6 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
             <aside className="uio-panel uio-pages-panel">
               <div className="uio-panel-heading">
                 <div>
-                  <span className="uio-panel-kicker">Document</span>
                   <strong>Pages</strong>
                 </div>
                 <button type="button" onClick={addPage}>
@@ -978,7 +969,7 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
                       </label>
                     ))
                   ) : (
-                    <small>Add elements to configure a fail-closed guard.</small>
+                    <small>No elements yet.</small>
                   )}
                 </div>
               </div>
@@ -990,9 +981,6 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
                   Choose reference image
                 </button>
                 <span>{imageName || "No reference image loaded"}</span>
-                <span className="uio-canvas-hint">
-                  Select an element, then drag to draw. Drag existing boxes to edit.
-                </span>
               </div>
               <div className="uio-canvas-stage">
                 <canvas
@@ -1058,9 +1046,7 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
                     </ul>
                   </div>
                 ) : (
-                  <p className="uio-empty-copy">
-                    Pick a detector and/or classifier .pt, then run predictions on the reference frame.
-                  </p>
+                  <p className="uio-empty-copy">Choose a model and run predictions.</p>
                 )}
               </div>
             </main>
@@ -1069,7 +1055,6 @@ export function UiOrchestratorPage({ workspaceRoot, onReady }: UiOrchestratorPag
               <aside className="uio-panel uio-elements-panel">
                 <div className="uio-panel-heading">
                   <div>
-                    <span className="uio-panel-kicker">Layer A</span>
                     <strong>Elements</strong>
                   </div>
                   <button type="button" onClick={addElement}>

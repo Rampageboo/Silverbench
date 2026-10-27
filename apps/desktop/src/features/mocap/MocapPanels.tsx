@@ -14,7 +14,8 @@ export function TakeList({
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
-  if (!takes.length) return <p className="mc-muted mc-pad">还没有动捕。点"新建动捕"选择工作区里的视频。</p>;
+  if (!takes.length)
+    return <p className="mc-muted mc-pad">No captures yet. Click New capture to pick a video</p>;
   return (
     <ul className="mc-takes">
       {takes.map((take) => (
@@ -27,8 +28,8 @@ export function TakeList({
             <span className="mc-take__name">{take.name}</span>
             <span className="mc-take__meta">
               <span className={`mc-status mc-status--${take.capture.status}`}>{statusLabel(take)}</span>
-              {take.mode === "multiview" ? `${take.sources.length} 视角` : "单视角"}
-              {take.edits ? ` · ${take.edits.frameCount} 帧` : ""}
+              {take.mode === "multiview" ? `${take.sources.length} views` : "Single view"}
+              {take.edits ? ` · ${take.edits.frameCount} frames` : ""}
             </span>
           </button>
         </li>
@@ -58,10 +59,10 @@ export function CapturePanel({
       <div className="mc-capture">
         <div className="mc-capture__stage">
           {capture.status === "cancelling"
-            ? "正在取消 · 已生成的中间结果会保留"
+            ? "Cancelling"
             : (STAGE_LABELS[capture.stage ?? ""] ?? capture.stage)}
           {capture.view && capture.viewCount
-            ? ` · 视角 ${capture.viewIndex}/${capture.viewCount}（${capture.view}）`
+            ? ` · view ${capture.viewIndex}/${capture.viewCount} (${capture.view})`
             : ""}
         </div>
         <div className="mc-progress">
@@ -71,18 +72,18 @@ export function CapturePanel({
           <span>{percent}%</span>
           {capture.total ? (
             <span>
-              帧 {capture.item}/{capture.total}
+              Frame {capture.item}/{capture.total}
             </span>
           ) : null}
-          <span>已用 {formatDuration(capture.elapsedSeconds)}</span>
+          <span>Elapsed {formatDuration(capture.elapsedSeconds)}</span>
           <span>
             {capture.remainingSeconds != null
-              ? `预计剩余 ${formatDuration(capture.remainingSeconds)}`
-              : "正在估算剩余时间"}
+              ? `${formatDuration(capture.remainingSeconds)} left`
+              : "Estimating time left"}
           </span>
         </div>
         <button type="button" onClick={onCancel} disabled={capture.status === "cancelling"}>
-          取消捕捉
+          Cancel capture
         </button>
       </div>
     );
@@ -90,7 +91,7 @@ export function CapturePanel({
   return (
     <div className="mc-capture">
       <dl className="mc-facts">
-        <dt>视频</dt>
+        <dt>Video</dt>
         <dd>
           {take.sources.map((source) => (
             <div key={source.id}>
@@ -99,11 +100,11 @@ export function CapturePanel({
             </div>
           ))}
         </dd>
-        <dt>选项</dt>
+        <dt>Options</dt>
         <dd>
-          辅助 AI 间隔 {take.options.expertInterval} · {take.options.upscale ? "AI 放大" : "不放大"} ·{" "}
-          {take.options.vlm ? "视觉纠错" : "无视觉纠错"}
-          {take.options.characterProfile ? " · 角色预设" : ""}
+          Expert interval {take.options.expertInterval} · {take.options.upscale ? "AI upscale" : "No upscale"}{" "}
+          · {take.options.vlm ? "Visual correction" : "No visual correction"}
+          {take.options.characterProfile ? " · Character preset" : ""}
         </dd>
       </dl>
       {take.mode === "single" ? (
@@ -117,11 +118,13 @@ export function CapturePanel({
       ) : null}
       {capture.status === "failed" ? <pre className="mc-error">{capture.error}</pre> : null}
       {capture.status === "cancelled" ? (
-        <p className="mc-muted">已取消。中间结果和日志保留在 take 的 capture/ 与 logs/。</p>
+        <p className="mc-muted">Cancelled. Partial results and logs are kept</p>
       ) : null}
-      {capture.status === "interrupted" ? <p className="mc-muted">上次捕捉时应用被关闭了。</p> : null}
+      {capture.status === "interrupted" ? (
+        <p className="mc-muted">The app closed during the last capture</p>
+      ) : null}
       <button type="button" className="mc-primary" onClick={onStart}>
-        {capture.status === "new" ? "开始捕捉" : "重新捕捉"}
+        {capture.status === "new" ? "Start capture" : "Capture again"}
       </button>
     </div>
   );
@@ -139,13 +142,11 @@ export function IssuesPanel({
   onSeek: (frame: number) => void;
 }) {
   const runs = frameRuns(lowConfidence);
-  if (!issues.length && !runs.length && !inferredCount) return <p className="mc-muted">没有标记的问题帧。</p>;
+  if (!issues.length && !runs.length && !inferredCount) return <p className="mc-muted">No issues</p>;
   return (
     <div className="mc-issues">
       {inferredCount ? (
-        <p className="mc-muted">
-          推算样本 {inferredCount} 个（橙色）：由区间重建生成，置信度为 0，不是观测。
-        </p>
+        <p className="mc-muted">{inferredCount} inferred samples (orange) are not observations</p>
       ) : null}
       {issues.map((issue, index) => (
         <button
@@ -154,20 +155,20 @@ export function IssuesPanel({
           className="mc-issue"
           onClick={() => onSeek(issue.frame)}
         >
-          <span>帧 {issue.frame}</span>
+          <span>Frame {issue.frame}</span>
           <span className="mc-muted">
             {issue.view} ·{" "}
-            {issue.reasons.map((reason) => ISSUE_REASONS[reason] ?? reason).join(" · ") || "复查"}
+            {issue.reasons.map((reason) => ISSUE_REASONS[reason] ?? reason).join(" · ") || "Review"}
           </span>
         </button>
       ))}
-      {runs.length ? <div className="mc-issues__head">低置信度（&lt; 0.35）</div> : null}
+      {runs.length ? <div className="mc-issues__head">Low confidence (&lt; 0.35)</div> : null}
       {runs.slice(0, 50).map(([first, last]) => (
         <button key={first} type="button" className="mc-issue" onClick={() => onSeek(first)}>
-          <span>{first === last ? `帧 ${first}` : `帧 ${first}–${last}`}</span>
+          <span>{first === last ? `Frame ${first}` : `Frames ${first}–${last}`}</span>
         </button>
       ))}
-      {runs.length > 50 ? <p className="mc-muted">还有 {runs.length - 50} 段</p> : null}
+      {runs.length > 50 ? <p className="mc-muted">{runs.length - 50} more</p> : null}
     </div>
   );
 }
@@ -193,7 +194,7 @@ export function ExportPanel({
         unit,
         range: range ? [range.first, range.last] : null
       });
-      showToast(`已导出 ${result.relativePath}`, { variant: "success" });
+      showToast(`Exported ${result.relativePath}`, { variant: "success" });
     } catch (error) {
       showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
     } finally {
@@ -203,19 +204,17 @@ export function ExportPanel({
 
   return (
     <div className="mc-export">
-      <p className="mc-muted">
-        {range ? `只导出区间 ${range.first}–${range.last}` : "导出整段"} · 写到 exports/mocap/
-      </p>
+      <p className="mc-muted">{range ? `Frames ${range.first}–${range.last}` : "Whole take"}</p>
       <div className="mc-inline">
         <select value={unit} onChange={(event) => setUnit(event.target.value as "centimeters" | "meters")}>
-          <option value="centimeters">厘米</option>
-          <option value="meters">米</option>
+          <option value="centimeters">Centimeters</option>
+          <option value="meters">Meters</option>
         </select>
         <button type="button" disabled={busy} onClick={() => void run("bvh")}>
-          导出 BVH
+          Export BVH
         </button>
         <button type="button" disabled={busy} onClick={() => void run("vrma")}>
-          导出 VRMA
+          Export VRMA
         </button>
       </div>
     </div>
@@ -223,10 +222,10 @@ export function ExportPanel({
 }
 
 const SETUP_LABELS: Record<string, string> = {
-  mmpose: "动作捕捉环境（MMPose）",
-  local_vlm: "本地视觉纠错（Qwen3-VL）",
-  openvino_npu: "NPU 复查（OpenVINO）",
-  sam2: "人物分割（SAM 2.1）"
+  mmpose: "capture environment (MMPose)",
+  local_vlm: "visual correction (Qwen3-VL)",
+  openvino_npu: "NPU review (OpenVINO)",
+  sam2: "person segmentation (SAM 2.1)"
 };
 
 /** What is installed on this computer, and how to install the rest. */
@@ -239,12 +238,14 @@ export function EnvironmentPanel({
 }) {
   const { showToast } = useToast();
   const [checking, setChecking] = useState(false);
-  if (!status) return <p className="mc-muted">正在检查动捕引擎…</p>;
+  if (!status) return <p className="mc-muted">Checking capture engine…</p>;
 
   async function setup(name: string) {
     try {
       await mocapApi.openSetup(name);
-      showToast('安装窗口已打开。完成后点"检查环境"。', { variant: "info" });
+      showToast("Setup opened in a new window. Click Check environment when it finishes", {
+        variant: "info"
+      });
     } catch (error) {
       showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
     }
@@ -255,27 +256,27 @@ export function EnvironmentPanel({
       <div className="mc-env__row">
         <span className={`ui-dot ${status.engine.built ? "ui-dot--ok" : "ui-dot--danger"}`} />
         {status.engine.built
-          ? `动捕引擎 ${status.engine.version ?? ""}`
-          : "动捕引擎未构建：运行 update.bat（需要 Visual Studio C++ 工具）"}
+          ? `Capture engine ${status.engine.version ?? ""}`
+          : "Capture engine not built: run update.bat (needs Visual Studio C++ tools)"}
       </div>
       <div className="mc-env__row">
         <span
           className={`ui-dot ${status.pose?.ready ? "ui-dot--ok" : status.environment.present ? "ui-dot--warn" : "ui-dot--danger"}`}
         />
         {status.pose?.ready
-          ? `捕捉环境就绪${status.pose.cuda ? " · CUDA" : " · 仅 CPU"}`
+          ? `Capture environment ready${status.pose.cuda ? " · CUDA" : " · CPU only"}`
           : status.environment.present
             ? status.pose?.error
-              ? `捕捉环境有问题：${status.pose.error}`
-              : "捕捉环境已安装（未检查）"
-            : "捕捉环境未安装"}
+              ? `Capture environment error: ${status.pose.error}`
+              : "Capture environment installed (not checked)"
+            : "Capture environment not installed"}
       </div>
       {status.vlm ? (
         <div className="mc-env__row">
           <span className={`ui-dot ${status.vlm.ready ? "ui-dot--ok" : "ui-dot--warn"}`} />
           {status.vlm.ready
-            ? "本地视觉纠错就绪"
-            : `本地视觉纠错不可用${status.vlm.error ? `：${status.vlm.error}` : ""}`}
+            ? "Visual correction ready"
+            : `Visual correction unavailable${status.vlm.error ? `: ${status.vlm.error}` : ""}`}
         </div>
       ) : null}
       <div className="mc-inline">
@@ -292,7 +293,7 @@ export function EnvironmentPanel({
             }
           }}
         >
-          {checking ? "检查中…" : "检查环境"}
+          {checking ? "Checking…" : "Check environment"}
         </button>
         {Object.entries(status.setup)
           .filter(([, present]) => present)
@@ -302,15 +303,12 @@ export function EnvironmentPanel({
               type="button"
               className="ui-btn--ghost ui-btn--sm"
               onClick={() => void setup(name)}
-              title="在新窗口运行 AniMocap 的安装脚本"
             >
-              安装{SETUP_LABELS[name] ?? name}
+              Install {SETUP_LABELS[name] ?? name}
             </button>
           ))}
       </div>
-      <p className="mc-muted">
-        安装会下载数 GB 的依赖和模型，可能用 winget 安装 Python 3.12；在单独的窗口中运行，可随时关闭。
-      </p>
+      <p className="mc-muted">Setup downloads several GB and may install Python 3.12</p>
     </div>
   );
 }

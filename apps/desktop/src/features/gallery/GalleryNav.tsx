@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { galleryApi, type GalleryJob, type GalleryRoot, type ReverseStatus } from "./galleryApi";
-import { JOB_STATUS_LABELS, JOB_TYPE_LABELS, isActiveJob, jobProgressText } from "./galleryDomain";
+import {
+  JOB_STATUS_LABELS,
+  JOB_TYPE_LABELS,
+  isActiveJob,
+  jobProgressText,
+  rootSourceLabel
+} from "./galleryDomain";
 import { IconClose, IconFolder, IconPause, IconPlay, IconPlus, IconRefresh, IconStar } from "../../ui/icons";
 
 export type GalleryFilters = {
@@ -30,7 +36,15 @@ type Props = {
  * Metadata first: images that carry no generation metadata wait here for the tagger.
  * Refreshes whenever the job list changes (a scan or a tagging run finished).
  */
-function ReverseQueue({ jobs, onShow, onMessage }: { jobs: GalleryJob[]; onShow: () => void; onMessage: (message: string) => void }) {
+function ReverseQueue({
+  jobs,
+  onShow,
+  onMessage
+}: {
+  jobs: GalleryJob[];
+  onShow: () => void;
+  onMessage: (message: string) => void;
+}) {
   const [status, setStatus] = useState<ReverseStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const jobKey = jobs.map((job) => `${job.id}:${job.status}`).join(",");
@@ -57,10 +71,10 @@ function ReverseQueue({ jobs, onShow, onMessage }: { jobs: GalleryJob[]; onShow:
       setStatus(result);
       onMessage(
         result.jobs.length
-          ? `已加入反推：${result.jobs.map((job) => `${job.type === "control" ? "控制图" : "标签"} ${job.progress.total ?? 0} 张`).join("，")}`
+          ? `Queued: ${result.jobs.map((job) => `${job.type === "control" ? "control maps" : "tags"} for ${job.progress.total ?? 0} images`).join(", ")}`
           : result.blocked.length
-            ? `暂时无法反推：${result.blocked.join("；")}`
-            : "没有需要反推的图。"
+            ? `Cannot reverse yet: ${result.blocked.join("; ")}`
+            : "Nothing to reverse"
       );
     } catch (err) {
       onMessage(err instanceof Error ? err.message : String(err));
@@ -71,22 +85,23 @@ function ReverseQueue({ jobs, onShow, onMessage }: { jobs: GalleryJob[]; onShow:
 
   return (
     <div className="gal-reverse">
-      <button type="button" className="gal-reverse__count" onClick={onShow} title="只看这些图">
-        {status.pending} 张无元数据{status.queued ? `（${status.queued} 张反推中）` : ""}
+      <button type="button" className="gal-reverse__count" onClick={onShow} title="Show these images">
+        {status.pending} without metadata{status.queued ? ` (${status.queued} in progress)` : ""}
       </button>
       <span className="gal-reverse__stage" title={status.ready ? "" : status.blockers.join("\n")}>
-        标签：{status.tags.pending} 张待处理{status.ready ? "" : "（打标模型未就绪）"}
+        Tags: {status.tags.pending} pending{status.ready ? "" : " (tagger not ready)"}
       </span>
       {status.controls.enabled ? (
         <span className="gal-reverse__stage" title={status.controls.error}>
-          控制图：{status.controls.pending} 张待处理{status.controls.ready ? "" : "（ComfyUI 未连上）"}
+          Control maps: {status.controls.pending} pending
+          {status.controls.ready ? "" : " (ComfyUI not connected)"}
         </span>
       ) : (
-        <span className="gal-reverse__stage gal-muted">控制图：在设置里填 ComfyUI 地址后启用</span>
+        <span className="gal-reverse__stage gal-muted">Control maps: set a ComfyUI URL in Settings</span>
       )}
       {runnable ? (
         <button type="button" className="ui-btn--sm" onClick={() => void start()} disabled={busy}>
-          {busy ? "加入中…" : "开始反推"}
+          {busy ? "Queuing…" : "Start reverse"}
         </button>
       ) : null}
     </div>
@@ -94,7 +109,12 @@ function ReverseQueue({ jobs, onShow, onMessage }: { jobs: GalleryJob[]; onShow:
 }
 
 function rootLabel(path: string) {
-  return path.replace(/[/\\]+$/, "").split(/[/\\]/).at(-1) || path;
+  return (
+    path
+      .replace(/[/\\]+$/, "")
+      .split(/[/\\]/)
+      .at(-1) || path
+  );
 }
 
 export function GalleryNav({
@@ -114,11 +134,16 @@ export function GalleryNav({
   const recentJobs = jobs.filter((job) => !isActiveJob(job)).slice(0, 3);
 
   return (
-    <aside className="gal-nav" aria-label="图库导航">
+    <aside className="gal-nav" aria-label="Gallery navigation">
       <section className="gal-nav__section">
         <header className="gal-nav__head">
-          <span className="ui-eyebrow">位置</span>
-          <button type="button" className="ui-btn--ghost ui-btn--icon ui-btn--sm" onClick={onAddRoot} title="添加位置">
+          <span className="ui-eyebrow">Locations</span>
+          <button
+            type="button"
+            className="ui-btn--ghost ui-btn--icon ui-btn--sm"
+            onClick={onAddRoot}
+            title="Add location"
+          >
             <IconPlus size={14} />
           </button>
         </header>
@@ -128,17 +153,22 @@ export function GalleryNav({
           onClick={() => set({ rootId: undefined })}
         >
           <IconFolder size={14} />
-          <span className="gal-nav__text">全部位置</span>
+          <span className="gal-nav__text">All locations</span>
         </button>
         {roots.map((root) => (
           <div key={root.id} className={`gal-nav__row${filters.rootId === root.id ? " is-active" : ""}`}>
-            <button type="button" className="gal-nav__item" onClick={() => set({ rootId: root.id })} title={root.path}>
+            <button
+              type="button"
+              className="gal-nav__item"
+              onClick={() => set({ rootId: root.id })}
+              title={root.path}
+            >
               <IconFolder size={14} />
               <span className="gal-nav__text">
                 <span>{rootLabel(root.path)}</span>
                 <small>
-                  {root.source}
-                  {root.recursive ? "" : " · 不含子目录"}
+                  {rootSourceLabel(root.source)}
+                  {root.recursive ? "" : " · No subfolders"}
                 </small>
               </span>
             </button>
@@ -146,20 +176,25 @@ export function GalleryNav({
               type="button"
               className="ui-btn--ghost ui-btn--icon ui-btn--sm gal-nav__row-action"
               onClick={() => onRescan(root.id)}
-              title="增量扫描此位置"
-              aria-label={`扫描 ${root.path}`}
+              title="Rescan"
+              aria-label={`Rescan ${root.path}`}
             >
               <IconRefresh size={13} />
             </button>
           </div>
         ))}
-        {roots.length ? null : <p className="gal-nav__empty">还没有添加图片位置。</p>}
+        {roots.length ? null : <p className="gal-nav__empty">No locations</p>}
       </section>
 
       <section className="gal-nav__section">
         <header className="gal-nav__head">
-          <span className="ui-eyebrow">集合</span>
-          <button type="button" className="ui-btn--ghost ui-btn--icon ui-btn--sm" onClick={onAddCollection} title="新建集合">
+          <span className="ui-eyebrow">Collections</span>
+          <button
+            type="button"
+            className="ui-btn--ghost ui-btn--icon ui-btn--sm"
+            onClick={onAddCollection}
+            title="New collection"
+          >
             <IconPlus size={14} />
           </button>
         </header>
@@ -168,14 +203,14 @@ export function GalleryNav({
           className={`gal-nav__item${filters.collection === undefined ? " is-active" : ""}`}
           onClick={() => set({ collection: undefined })}
         >
-          <span className="gal-nav__text">全部</span>
+          <span className="gal-nav__text">All</span>
         </button>
         <button
           type="button"
           className={`gal-nav__item${filters.collection === "" ? " is-active" : ""}`}
           onClick={() => set({ collection: "" })}
         >
-          <span className="gal-nav__text gal-nav__text--muted">未归集</span>
+          <span className="gal-nav__text gal-nav__text--muted">Unsorted</span>
         </button>
         {collections.map((name) => (
           <button
@@ -191,20 +226,20 @@ export function GalleryNav({
 
       <section className="gal-nav__section">
         <header className="gal-nav__head">
-          <span className="ui-eyebrow">筛选</span>
+          <span className="ui-eyebrow">Filters</span>
           {filters.minRating || filters.hasMetadata !== undefined || filters.needsReverse ? (
             <button
               type="button"
               className="ui-btn--ghost ui-btn--sm"
               onClick={() => set({ minRating: 0, hasMetadata: undefined, needsReverse: false })}
             >
-              清除
+              Clear
             </button>
           ) : null}
         </header>
         <div className="gal-nav__field">
-          <span>最低评分</span>
-          <div className="gal-stars" role="radiogroup" aria-label="最低评分">
+          <span>Min rating</span>
+          <div className="gal-stars" role="radiogroup" aria-label="Min rating">
             {[1, 2, 3, 4, 5].map((value) => (
               <button
                 key={value}
@@ -213,7 +248,7 @@ export function GalleryNav({
                 aria-checked={filters.minRating === value}
                 className={`gal-stars__star${value <= filters.minRating ? " is-on" : ""}`}
                 onClick={() => set({ minRating: filters.minRating === value ? 0 : value })}
-                title={`≥ ${value} 星`}
+                title={`≥ ${value} stars`}
               >
                 <IconStar size={14} />
               </button>
@@ -221,13 +256,13 @@ export function GalleryNav({
           </div>
         </div>
         <div className="gal-nav__field">
-          <span>生成元数据</span>
+          <span>Metadata</span>
           <div className="ui-seg">
             {(
               [
-                [undefined, "全部"],
-                [true, "有"],
-                [false, "无"]
+                [undefined, "All"],
+                [true, "Yes"],
+                [false, "No"]
               ] as const
             ).map(([value, label]) => (
               <button
@@ -242,10 +277,10 @@ export function GalleryNav({
             <button
               type="button"
               aria-pressed={filters.needsReverse}
-              title="没有生成元数据、也还没被模型打标的图"
+              title="No metadata and not tagged yet"
               onClick={() => set({ hasMetadata: undefined, needsReverse: true })}
             >
-              待反推
+              To reverse
             </button>
           </div>
         </div>
@@ -253,10 +288,15 @@ export function GalleryNav({
 
       <section className="gal-nav__section gal-nav__jobs">
         <header className="gal-nav__head">
-          <span className="ui-eyebrow">后台任务</span>
+          <span className="ui-eyebrow">Jobs</span>
           {roots.length ? (
-            <button type="button" className="ui-btn--ghost ui-btn--sm" onClick={() => onRescan()} title="增量扫描全部位置">
-              全部扫描
+            <button
+              type="button"
+              className="ui-btn--ghost ui-btn--sm"
+              onClick={() => onRescan()}
+              title="Rescan all locations"
+            >
+              Rescan all
             </button>
           ) : null}
         </header>
@@ -272,7 +312,9 @@ export function GalleryNav({
                 <strong>{JOB_TYPE_LABELS[job.type] ?? job.type}</strong>
                 <span className="gal-job__status">{JOB_STATUS_LABELS[job.status] ?? job.status}</span>
               </div>
-              {job.status === "running" || job.status === "queued" ? <div className="gal-job__bar" aria-hidden="true" /> : null}
+              {job.status === "running" || job.status === "queued" ? (
+                <div className="gal-job__bar" aria-hidden="true" />
+              ) : null}
               <div className="gal-job__text">{jobProgressText(job)}</div>
               {job.progress?.currentPath && job.status === "running" ? (
                 <div className="gal-job__path" title={job.progress.currentPath}>
@@ -281,7 +323,7 @@ export function GalleryNav({
               ) : null}
               {job.progress?.errors?.length ? (
                 <details className="gal-job__errors">
-                  <summary>{job.progress.errors.length} 个文件出错</summary>
+                  <summary>{job.progress.errors.length} files failed</summary>
                   <ul>
                     {job.progress.errors.slice(0, 20).map((error, index) => (
                       <li key={index}>{error}</li>
@@ -293,22 +335,26 @@ export function GalleryNav({
                 <div className="gal-job__actions">
                   {job.status === "paused" ? (
                     <button type="button" className="ui-btn--sm" onClick={() => onJobAction(job, "resume")}>
-                      <IconPlay size={12} /> 继续
+                      <IconPlay size={12} /> Resume
                     </button>
                   ) : (
                     <button type="button" className="ui-btn--sm" onClick={() => onJobAction(job, "pause")}>
-                      <IconPause size={12} /> 暂停
+                      <IconPause size={12} /> Pause
                     </button>
                   )}
-                  <button type="button" className="ui-btn--sm ui-btn--ghost" onClick={() => onJobAction(job, "cancel")}>
-                    <IconClose size={12} /> 取消
+                  <button
+                    type="button"
+                    className="ui-btn--sm ui-btn--ghost"
+                    onClick={() => onJobAction(job, "cancel")}
+                  >
+                    <IconClose size={12} /> Cancel
                   </button>
                 </div>
               ) : null}
             </div>
           ))
         ) : (
-          <p className="gal-nav__empty">没有任务。</p>
+          <p className="gal-nav__empty">No jobs</p>
         )}
       </section>
     </aside>

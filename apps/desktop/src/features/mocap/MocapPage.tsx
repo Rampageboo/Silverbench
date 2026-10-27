@@ -36,7 +36,7 @@ type Props = { active: boolean; workspaceRoot: string; onReady?: () => void };
 const POLL_MS = 1000;
 
 /**
- * 动捕: AniMocap captures of workspace videos. The engine computes everything;
+ * Motion capture: AniMocap captures of workspace videos. The engine computes everything;
  * this page shows the take (video + 2D joints, 3D view, timeline, issues), edits
  * it (drag keyframes, per-joint repair) and exports it. Every edit is applied by
  * the engine and saved at once; undo/redo walks the saved edit sessions.
@@ -322,7 +322,7 @@ export function MocapPage({ active, workspaceRoot, onReady }: Props) {
         format: "blender",
         frames: exportFrames
       });
-      showToast(`已导出 ${result.relativePath}`, { variant: "success" });
+      showToast(`Exported ${result.relativePath}`, { variant: "success" });
     } catch (error) {
       showToast(error instanceof Error ? error.message : String(error), { variant: "error" });
     } finally {
@@ -344,7 +344,7 @@ export function MocapPage({ active, workspaceRoot, onReady }: Props) {
     if (!pose || !overview) return [];
     const fused: OverviewTile = {
       id: null,
-      label: "融合（参考视角）",
+      label: "Fused",
       video: referenceVideo,
       pose,
       frame,
@@ -391,17 +391,16 @@ export function MocapPage({ active, workspaceRoot, onReady }: Props) {
   }
 
   if (!workspaceRoot) {
-    return <div className="mc-page mc-page--empty">打开一个工作区后使用动捕。</div>;
+    return <div className="mc-page mc-page--empty">Open a workspace to use motion capture</div>;
   }
 
   return (
     <div className="mc-page">
       <header className="mc-head">
-        <h1 className="mc-title">动捕</h1>
+        <h1 className="mc-title">Motion capture</h1>
         {take ? (
           <span className="mc-muted">
             {take.name} · {statusLabel(take)}
-            {pose ? ` · ${pose.backend}` : ""}
           </span>
         ) : null}
         <span className="mc-spacer" />
@@ -409,7 +408,8 @@ export function MocapPage({ active, workspaceRoot, onReady }: Props) {
           type="button"
           className="ui-btn--ghost ui-btn--icon ui-btn--sm"
           onClick={() => void refreshTakes()}
-          title="刷新"
+          title="Refresh"
+          aria-label="Refresh"
         >
           <IconRefresh size={14} />
         </button>
@@ -419,13 +419,13 @@ export function MocapPage({ active, workspaceRoot, onReady }: Props) {
           onClick={() => setCreating(true)}
           disabled={!status?.engine.built}
         >
-          新建动捕
+          New capture
         </button>
       </header>
       <aside className="mc-left">
         <TakeList takes={takes} selectedId={selectedId} onSelect={setSelectedId} />
         <section className="mc-section">
-          <h2 className="ui-eyebrow">本机环境</h2>
+          <h2 className="ui-eyebrow">This computer</h2>
           <EnvironmentPanel status={status} onRefresh={refreshStatus} />
         </section>
       </aside>
@@ -439,25 +439,25 @@ export function MocapPage({ active, workspaceRoot, onReady }: Props) {
                   checked={showLabels}
                   onChange={(event) => setShowLabels(event.target.checked)}
                 />
-                关节名
+                Joint names
               </label>
               <label className="mc-check">
-                叠影
+                Overlay
                 <select
                   value={comparisonVariant ?? ""}
                   onChange={(event) =>
                     setComparisonVariant((event.target.value || null) as PoseVariant | null)
                   }
                 >
-                  <option value="">无</option>
-                  <option value="baseline">原始叠影（重建前）</option>
-                  <option value="refined">捕捉结果（未修正）</option>
+                  <option value="">None</option>
+                  <option value="baseline">Before reconstruction</option>
+                  <option value="refined">Captured (unedited)</option>
                 </select>
               </label>
               {take.mode === "multiview" ? (
                 <>
                   <label className="mc-check">
-                    视角
+                    View
                     <select
                       value={activeView ?? ""}
                       onChange={(event) => {
@@ -465,11 +465,11 @@ export function MocapPage({ active, workspaceRoot, onReady }: Props) {
                         setOverview(false);
                       }}
                     >
-                      <option value="">融合（参考视角，可编辑）</option>
+                      <option value="">Fused (editable)</option>
                       {views.map((item) => (
                         <option key={item.id} value={item.id}>
                           {item.id}
-                          {item.yaw != null ? ` · ${item.yaw}°` : ""}（只读）
+                          {item.yaw != null ? ` · ${item.yaw}°` : ""} (read-only)
                         </option>
                       ))}
                     </select>
@@ -484,7 +484,7 @@ export function MocapPage({ active, workspaceRoot, onReady }: Props) {
                       setOverview((value) => !value);
                     }}
                   >
-                    总览
+                    Overview
                   </button>
                 </>
               ) : null}
@@ -547,18 +547,18 @@ export function MocapPage({ active, workspaceRoot, onReady }: Props) {
             onRoi={(roi) => void updateRoi(take.id, roi)}
           />
         ) : (
-          <div className="mc-empty">选择或新建一个动捕。</div>
+          <div className="mc-empty">Select or create a capture</div>
         )}
       </main>
       <aside className="mc-right">
         {take?.hasMotion ? (
           <>
             <section className="mc-section mc-section--grow">
-              <h2 className="ui-eyebrow">3D 观测（拖动旋转）</h2>
+              <h2 className="ui-eyebrow">3D view</h2>
               <SkeletonView pose={pose} comparison={comparison} frame={frame} selectedJoint={selectedJoint} />
             </section>
             <section className="mc-section">
-              <h2 className="ui-eyebrow">手动修正{editor.busy ? " · 计算中…" : ""}</h2>
+              <h2 className="ui-eyebrow">Keyframes{editor.busy ? " · computing…" : ""}</h2>
               <KeyframePanel
                 edits={editor.edits}
                 frame={frame}
@@ -577,7 +577,7 @@ export function MocapPage({ active, workspaceRoot, onReady }: Props) {
               />
             </section>
             <section className="mc-section">
-              <h2 className="ui-eyebrow">按部位修复</h2>
+              <h2 className="ui-eyebrow">Joint repair</h2>
               {pose ? (
                 <JointRepairPanel
                   pose={pose}
@@ -592,7 +592,7 @@ export function MocapPage({ active, workspaceRoot, onReady }: Props) {
               ) : null}
             </section>
             <section className="mc-section">
-              <h2 className="ui-eyebrow">问题帧</h2>
+              <h2 className="ui-eyebrow">Issues</h2>
               <IssuesPanel
                 issues={issues}
                 lowConfidence={lowConfidence}
@@ -601,7 +601,7 @@ export function MocapPage({ active, workspaceRoot, onReady }: Props) {
               />
             </section>
             <section className="mc-section">
-              <h2 className="ui-eyebrow">导出</h2>
+              <h2 className="ui-eyebrow">Export</h2>
               <ExportPanel workspaceRoot={workspaceRoot} take={take} range={range} />
               <BlenderFramesPanel
                 frames={exportFrames}

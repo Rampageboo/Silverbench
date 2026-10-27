@@ -18,8 +18,8 @@ export function App() {
   const { connected, error: backendError } = useBackend();
   const [startupPhase, setStartupPhase] = useState<StartupPhase>("active");
   const [startupProgress, setStartupProgress] = useState(1);
-  const [startupStage, setStartupStage] = useState("正在准备工作区...");
-  const [startupDetail, setStartupDetail] = useState("加载界面");
+  const [startupStage, setStartupStage] = useState("Preparing the workspace…");
+  const [startupDetail, setStartupDetail] = useState("Loading the interface");
   const [startupMode] = useState(readStartupOverlayMode);
   const bootFinishedRef = useRef(false);
   const overlayPaintedRef = useRef(false);
@@ -84,42 +84,45 @@ export function App() {
   useEffect(() => {
     if (!startupActive) return;
     if (!connected && runtime?.packaged && runtime.phase === "failed") {
-      setStartupStage("运行环境准备失败");
-      setStartupDetail(runtime.detail?.error || runtime.error || "详见日志");
+      setStartupStage("Runtime setup failed");
+      setStartupDetail(runtime.detail?.error || runtime.error || "See the log for details");
       return;
     }
     if (!connected && runtime?.packaged && runtime.phase === "preparing" && runtime.detail) {
       setStartupProgress(Math.max(1, Math.min(99, runtime.detail.percent)));
-      setStartupStage(runtime.detail.message || "正在准备运行环境...");
-      setStartupDetail(runtime.detail.log?.[runtime.detail.log.length - 1] || "首次启动会下载约 4 GB 依赖");
+      setStartupStage(runtime.detail.message || "Preparing the runtime…");
+      setStartupDetail(
+        runtime.detail.log?.[runtime.detail.log.length - 1] ||
+          "First launch downloads about 4 GB of dependencies"
+      );
       return;
     }
     if (!connected) {
       setStartupProgress((value) => Math.max(value, 12));
-      setStartupStage("正在连接后端...");
-      setStartupDetail(backendError || "等待 FastAPI 启动");
+      setStartupStage("Connecting to the backend…");
+      setStartupDetail(backendError || "Waiting for FastAPI to start");
       return;
     }
     setStartupProgress((value) => Math.max(value, 28));
-    setStartupStage("正在恢复工作区...");
-    setStartupDetail("后端已连接，正在打开上次工作区");
+    setStartupStage("Restoring the workspace…");
+    setStartupDetail("Backend connected, opening the last workspace");
   }, [backendError, connected, startupActive, runtime]);
 
   useEffect(() => {
     if (!startupActive) return;
 
-    function finishStartup(detail = "工具页已加载") {
+    function finishStartup(detail = "Tools loaded") {
       if (bootFinishedRef.current) return;
       bootFinishedRef.current = true;
       setStartupProgress(100);
-      setStartupStage("就绪");
+      setStartupStage("Ready");
       setStartupDetail(detail);
       setStartupPhase("done");
       window.setTimeout(() => setStartupPhase("hidden"), 280);
     }
 
     function onNativeTabReady() {
-      finishStartup("工具页已加载");
+      finishStartup("Tools loaded");
     }
 
     // A first-run runtime install can take many minutes: keep waiting while it runs.
@@ -127,7 +130,7 @@ export function App() {
     const armFallback = () => {
       fallbackTimer = window.setTimeout(() => {
         if (runtimeBusyRef.current) armFallback();
-        else finishStartup("加载超时，已进入工作台");
+        else finishStartup("Loading timed out; workbench opened");
       }, 90000);
     };
     armFallback();

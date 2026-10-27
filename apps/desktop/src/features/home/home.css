@@ -28,11 +28,6 @@
     letter-spacing: -0.025em;
   }
 
-  .start__sub {
-    margin-top: 2px;
-    color: var(--c-text-3);
-  }
-
   .start__continue {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -115,12 +110,6 @@
     font-weight: 600;
   }
 
-  .start__action small {
-    color: var(--c-text-3);
-    font-size: var(--fs-sm);
-    font-weight: 400;
-  }
-
   .start__recent {
     display: grid;
     gap: var(--sp-2);
@@ -188,11 +177,6 @@
     opacity: 1;
   }
 
-  .start__recent-empty {
-    color: var(--c-text-3);
-    font-size: var(--fs-sm);
-  }
-
   /* ── Create workspace dialog: class lists ───────────────────────────────── */
 
   .cw-class-section {
@@ -209,11 +193,6 @@
 
   .cw-class-section-title {
     font-weight: 600;
-  }
-
-  .cw-class-section-hint {
-    color: var(--c-text-3);
-    font-size: var(--fs-xs);
   }
 
   .cw-class-pills {

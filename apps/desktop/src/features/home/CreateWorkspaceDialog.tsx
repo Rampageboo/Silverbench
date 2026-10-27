@@ -30,7 +30,6 @@ type Props = {
 
 type ClassListEditorProps = {
   label: string;
-  hint: string;
   classes: string[];
   onChange: (next: string[]) => void;
   disabled: boolean;
@@ -40,7 +39,6 @@ type ClassListEditorProps = {
 
 function ClassListEditor({
   label,
-  hint,
   classes,
   onChange,
   disabled,
@@ -69,7 +67,6 @@ function ClassListEditor({
   return (
     <div className="ui-field">
       <label className="ui-field__label">{label}</label>
-      <p className="ui-field__hint">{hint}</p>
       <div className="ui-input-row">
         <input
           ref={inputRef}
@@ -113,13 +110,7 @@ function ClassListEditor({
             </span>
           ))}
         </div>
-      ) : (
-        <p className="ui-field__hint">
-          {showIds
-            ? 'No detect classes added — workspace will use a default "object" class.'
-            : 'No classification classes added — workspace will use a default "object" class.'}
-        </p>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -315,14 +306,10 @@ export function CreateWorkspaceDialog({ open, onCreate, onClose }: Props) {
             <div className="cw-class-section">
               <div className="cw-class-section-header">
                 <span className="cw-class-section-title">Classes</span>
-                <span className="cw-class-section-hint">
-                  Optional — add classes now or set them up later in the workspace.
-                </span>
               </div>
               {needDetect && (
                 <ClassListEditor
                   label="Detect Classes"
-                  hint="Order matters — the first class is YOLO id 0, second is id 1, etc."
                   classes={detectClasses}
                   onChange={setDetectClasses}
                   disabled={creating}
@@ -333,7 +320,6 @@ export function CreateWorkspaceDialog({ open, onCreate, onClose }: Props) {
               {needClf && (
                 <ClassListEditor
                   label="Classification Classes"
-                  hint="Names become folder-safe keys. They can be updated later."
                   classes={clfClasses}
                   onChange={setClfClasses}
                   disabled={creating}
@@ -350,7 +336,12 @@ export function CreateWorkspaceDialog({ open, onCreate, onClose }: Props) {
           <button type="button" onClick={onClose} disabled={creating}>
             Cancel
           </button>
-          <button type="button" className="ui-btn--solid" onClick={() => void handleCreate()} disabled={creating}>
+          <button
+            type="button"
+            className="ui-btn--solid"
+            onClick={() => void handleCreate()}
+            disabled={creating}
+          >
             {creating ? "Creating…" : "Create Workspace"}
           </button>
         </div>

@@ -100,10 +100,10 @@ describe("pose helpers", () => {
     ]);
   });
   it("formats durations like Studio", () => {
-    expect(formatDuration(0.5)).toBe("计算中");
-    expect(formatDuration(42)).toBe("42秒");
-    expect(formatDuration(125)).toBe("2分5秒");
-    expect(formatDuration(3720)).toBe("1小时2分");
+    expect(formatDuration(0.5)).toBe("estimating");
+    expect(formatDuration(42)).toBe("42 s");
+    expect(formatDuration(125)).toBe("2 min 5 s");
+    expect(formatDuration(3720)).toBe("1 h 2 min");
   });
 });
 

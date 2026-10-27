@@ -231,3 +231,6 @@ graphify-out/*
 
 # Installer staging (packaging/stage.ps1)
 packaging/stage/
+
+# Scratch screenshots from UI work
+.tmp-ui-refresh/

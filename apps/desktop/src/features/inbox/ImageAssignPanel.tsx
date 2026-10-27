@@ -95,9 +95,6 @@ export function ImageAssignPanel({
             Clf
           </button>
         </div>
-        <div className="hint inbox-assign-legend">
-          Thumbnail borders show current assignment state. Blue means selected.
-        </div>
         <div className="inbox-assign-target-panels">
           {!isDetect ? (
             <div className="inbox-assign-target-panel" id="inboxClfAssignPanel">
@@ -105,7 +102,7 @@ export function ImageAssignPanel({
                 <span>Clf Class</span>
                 <div className="hint" id="inboxClassHint">
                   {clfClasses.length
-                    ? `${clfClasses.length} classification classes (classes.json)`
+                    ? `${clfClasses.length} classification classes`
                     : "No classification classes yet — add them on the Classes page"}
                 </div>
                 <input
@@ -176,7 +173,7 @@ export function ImageAssignPanel({
                 <span>Detect Classes</span>
                 <div className="hint" id="inboxDetectClassHint">
                   {detectClasses.length
-                    ? `${detectClasses.length} detection classes (classes.json)`
+                    ? `${detectClasses.length} detection classes`
                     : "No detection classes yet — add them on the Classes page"}
                 </div>
                 <input
@@ -214,9 +211,6 @@ export function ImageAssignPanel({
                     })
                   )}
                 </div>
-              </div>
-              <div className="hint inbox-detect-assign-hint">
-                Select images, then click a class chip or Apply to Selected. Box labels stay in Box Label.
               </div>
               <div className="inbox-assign-action-row is-detect">
                 <button

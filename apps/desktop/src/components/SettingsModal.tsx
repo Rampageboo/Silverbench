@@ -20,12 +20,11 @@ type SettingsModalProps = {
 type StartupOption = {
   value: StartupOverlayMode;
   title: string;
-  desc: string;
 };
 
 const STARTUP_OPTIONS: StartupOption[] = [
-  { value: "overview", title: "功能概览", desc: "展示核心功能与简介" },
-  { value: "minimal", title: "简洁式", desc: "仅图标、标题与加载进度" }
+  { value: "overview", title: "Standard" },
+  { value: "minimal", title: "Compact" }
 ];
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
@@ -91,10 +90,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         ["Name", workspace.name],
         ["Folder", workspace.root],
         ["Format", `v${workspace.formatVersion}`],
-        ["Annotations", "labels/ and classes.json — the only source of truth"],
-        ["Datasets", "exports/ — generated from the annotations, safe to delete"],
-        ["Snapshots", "versions/ — labels and classes only"],
-        ["Local state", ".rwb/ — session and caches for this machine, safe to delete"]
+        ["Annotations", "labels/, classes.json"],
+        ["Datasets", "exports/"],
+        ["Snapshots", "versions/"],
+        ["Local state", ".rwb/"]
       ]
     : [];
 
@@ -113,9 +112,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       >
         <header className="ui-dialog__head">
           <h2 id="app-settings-title" className="ui-dialog__title">
-            Settings <span className="settings-dialog__zh">设置</span>
+            Settings
           </h2>
-          <button type="button" className="ui-btn--ghost ui-btn--sm" aria-label="关闭" onClick={onClose}>
+          <button type="button" className="ui-btn--ghost ui-btn--sm" onClick={onClose}>
             Close
           </button>
         </header>
@@ -123,7 +122,6 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           <section className="settings-group">
             <div className="settings-group__head">
               <h3>Appearance</h3>
-              <p>Color system for the whole workbench.</p>
             </div>
             <div className="settings-choices">
               {APP_THEME_OPTIONS.map((option) => (
@@ -145,7 +143,6 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                   </span>
                   <span className="settings-choice__copy">
                     <strong>{option.title}</strong>
-                    <span>{option.desc}</span>
                   </span>
                 </label>
               ))}
@@ -155,7 +152,6 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           <section className="settings-group">
             <div className="settings-group__head">
               <h3>Startup screen</h3>
-              <p>选择应用启动时加载遮罩的样式。</p>
             </div>
             <div className="ui-seg" role="radiogroup" aria-label="Startup screen">
               {STARTUP_OPTIONS.map((option) => (
@@ -165,7 +161,6 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                   role="radio"
                   aria-checked={mode === option.value}
                   aria-pressed={mode === option.value}
-                  title={option.desc}
                   onClick={() => selectMode(option.value)}
                 >
                   {option.title}
@@ -181,7 +176,6 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           <section className="settings-group">
             <div className="settings-group__head">
               <h3>Workspace</h3>
-              <p>How the open workspace is stored on disk.</p>
             </div>
             {workspace ? (
               <dl className="settings-kv">
