@@ -43,7 +43,7 @@ export function StartupOverlay({
 
     let cancelled = false;
     const icon = new Image();
-    icon.src = "/assets/app-icon.svg";
+    icon.src = "/assets/app-icon.png";
 
     function signalPainted() {
       if (cancelled || paintedRef.current) return;
@@ -82,7 +82,7 @@ export function StartupOverlay({
         <header className="startup-hero">
           <img
             className="startup-brand-mark startup-brand-image"
-            src="/assets/app-icon.svg"
+            src="/assets/app-icon.png"
             width={74}
             height={74}
             alt=""

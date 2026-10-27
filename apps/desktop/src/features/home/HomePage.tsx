@@ -22,7 +22,7 @@ export function HomePage({ onReady }: Props) {
     <div className="ui-page start-page">
       <div className="start">
         <header className="start__hero">
-          <img src="/assets/app-icon.svg" width={40} height={40} alt="" />
+          <img src="/assets/app-icon.png" width={40} height={40} alt="" />
           <div>
             <h1 className="start__title">RampageWorkbench</h1>
             <p className="start__sub">视觉数据与创作工作台</p>
