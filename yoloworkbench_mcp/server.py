@@ -11,7 +11,7 @@ from .gallery import GalleryTools
 
 
 SERVER_INSTRUCTIONS = (
-    "RampageWorkbench: a local workbench for YOLO datasets and an image gallery. "
+    "Silverbench: a local workbench for YOLO datasets and an image gallery. "
     "The app must be running. Workspaces are folders the user opened in the app (or configured roots).\n"
     "Labeling: call list_classes, then list_images (e.g. filter='unlabeled'), view_image to look at a picture "
     "(existing boxes are drawn as '#index classId:name'), then set_boxes / set_class. Boxes are normalized 0..1: "

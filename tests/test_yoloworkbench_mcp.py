@@ -215,7 +215,7 @@ class BackendClientTests(unittest.TestCase):
     def test_unavailable_backend_has_actionable_error(self) -> None:
         unavailable = BackendClient("http://127.0.0.1:1", timeout_seconds=0.1)
 
-        with self.assertRaisesRegex(BackendUnavailableError, "run.bat"):
+        with self.assertRaisesRegex(BackendUnavailableError, "Start Silverbench"):
             unavailable.health()
 
 

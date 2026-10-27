@@ -78,7 +78,7 @@ class BackendClient:
             raise BackendError(f"RampageWorkbench HTTP {error.code}: {message}") from error
         except (URLError, TimeoutError, socket.timeout, ConnectionError, OSError) as error:
             raise BackendUnavailableError(
-                f"RampageWorkbench backend is not reachable at {self.base_url}. Start RampageWorkbench, then retry."
+                f"Silverbench backend is not reachable at {self.base_url}. Start Silverbench, then retry."
             ) from error
         if len(raw) > MAX_RESPONSE_BYTES:
             raise BackendError(f"RampageWorkbench response exceeded {MAX_RESPONSE_BYTES // (1024 * 1024)} MB.")
@@ -100,8 +100,8 @@ class BackendClient:
             raise BackendError(f"RampageWorkbench HTTP {error.code}: {message}") from error
         except (URLError, TimeoutError, socket.timeout, ConnectionError, OSError) as error:
             raise BackendUnavailableError(
-                f"RampageWorkbench backend is not reachable at {self.base_url}. "
-                "Start RampageWorkbench with run.bat, then retry."
+                f"Silverbench backend is not reachable at {self.base_url}. "
+                "Start Silverbench, then retry."
             ) from error
 
         if len(raw) > MAX_RESPONSE_BYTES:
