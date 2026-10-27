@@ -9,7 +9,13 @@ import { imagePoint, sample, worldPoint } from "./mocapDomain";
 export type CurvePreset = "linear" | "ease-in" | "ease-out" | "smooth" | "hold";
 export type Trust = "locked" | "weighted" | "excluded";
 
-export type DragCorrection = { joint: number; keyframe: number; dragPx: [number, number]; radius?: number; curve?: CurvePreset };
+export type DragCorrection = {
+  joint: number;
+  keyframe: number;
+  dragPx: [number, number];
+  radius?: number;
+  curve?: CurvePreset;
+};
 
 export type ReviewMark = {
   frame: number;
@@ -29,7 +35,12 @@ export type EditSession = {
   review: { marks: ReviewMark[]; ranges: [number, number, number][] };
 };
 
-export const EMPTY_EDITS: EditSession = { version: 1, corrections: [], smoothedKeyframes: [], review: { marks: [], ranges: [] } };
+export const EMPTY_EDITS: EditSession = {
+  version: 1,
+  corrections: [],
+  smoothedKeyframes: [],
+  review: { marks: [], ranges: [] }
+};
 
 export const CURVE_LABELS: Record<CurvePreset, string> = {
   smooth: "平滑",
@@ -60,7 +71,13 @@ function currentTarget(pose: PoseData, frame: number, joint: number) {
  * A joint dragged on the video at a keyframe. A lock or weight on that joint
  * at that frame follows the drag (its target is re-taken from the corrected pose).
  */
-export function addDrag(edits: EditSession, joint: number, keyframe: number, dragPx: [number, number], curve: CurvePreset): EditSession {
+export function addDrag(
+  edits: EditSession,
+  joint: number,
+  keyframe: number,
+  dragPx: [number, number],
+  curve: CurvePreset
+): EditSession {
   const marks = edits.review.marks.map((mark) =>
     mark.frame === keyframe && mark.joint === joint && mark.trust !== "excluded"
       ? { frame: mark.frame, joint: mark.joint, trust: mark.trust, weight: mark.weight }
@@ -87,7 +104,10 @@ export function deleteKeyframe(edits: EditSession, frame: number): EditSession {
 }
 
 export function setCurveAt(edits: EditSession, frame: number, curve: CurvePreset): EditSession {
-  return { ...edits, corrections: edits.corrections.map((c) => (c.keyframe === frame ? { ...c, curve } : c)) };
+  return {
+    ...edits,
+    corrections: edits.corrections.map((c) => (c.keyframe === frame ? { ...c, curve } : c))
+  };
 }
 
 /** Local smoothing around an authored keyframe; the keyframe itself stays exact. */
@@ -96,7 +116,9 @@ export function toggleSmoothing(edits: EditSession, frame: number): EditSession 
   const has = edits.smoothedKeyframes.includes(frame);
   return {
     ...edits,
-    smoothedKeyframes: has ? edits.smoothedKeyframes.filter((value) => value !== frame) : [...edits.smoothedKeyframes, frame].sort((a, b) => a - b)
+    smoothedKeyframes: has
+      ? edits.smoothedKeyframes.filter((value) => value !== frame)
+      : [...edits.smoothedKeyframes, frame].sort((a, b) => a - b)
   };
 }
 
@@ -105,16 +127,35 @@ function withoutMarks(marks: ReviewMark[], joint: number, first: number, last: n
 }
 
 /** 锁定此帧 / 可信权重: keep the current value as an exact (locked) or soft (weighted) target. */
-export function trustCurrent(edits: EditSession, pose: PoseData, joint: number, frame: number, trust: "locked" | "weighted", weight = 8): EditSession {
-  const mark: ReviewMark = { frame, joint, trust, weight: trust === "weighted" ? weight : 8, ...currentTarget(pose, frame, joint) };
-  return { ...edits, review: { ...edits.review, marks: [...withoutMarks(edits.review.marks, joint, frame, frame), mark] } };
+export function trustCurrent(
+  edits: EditSession,
+  pose: PoseData,
+  joint: number,
+  frame: number,
+  trust: "locked" | "weighted",
+  weight = 8
+): EditSession {
+  const mark: ReviewMark = {
+    frame,
+    joint,
+    trust,
+    weight: trust === "weighted" ? weight : 8,
+    ...currentTarget(pose, frame, joint)
+  };
+  return {
+    ...edits,
+    review: { ...edits.review, marks: [...withoutMarks(edits.review.marks, joint, frame, frame), mark] }
+  };
 }
 
 /** 排除此部位: the joint's observations in [first, last] are ignored by a range rebuild. */
 export function exclude(edits: EditSession, joint: number, first: number, last: number): EditSession {
   const added: ReviewMark[] = [];
   for (let frame = first; frame <= last; frame++) added.push({ frame, joint, trust: "excluded" });
-  return { ...edits, review: { ...edits.review, marks: [...withoutMarks(edits.review.marks, joint, first, last), ...added] } };
+  return {
+    ...edits,
+    review: { ...edits.review, marks: [...withoutMarks(edits.review.marks, joint, first, last), ...added] }
+  };
 }
 
 /** 重建区间: solve the joint between two locked frames. Overlapping ranges of the joint are replaced. */
@@ -142,5 +183,7 @@ export function rangesFor(edits: EditSession, joint: number) {
 /** Weighted/excluded marks act only inside a rebuild range of their joint; others are pending. */
 export function isPending(edits: EditSession, mark: ReviewMark) {
   if (mark.trust === "locked") return false;
-  return !edits.review.ranges.some(([first, last, joint]) => joint === mark.joint && mark.frame >= first && mark.frame <= last);
+  return !edits.review.ranges.some(
+    ([first, last, joint]) => joint === mark.joint && mark.frame >= first && mark.frame <= last
+  );
 }

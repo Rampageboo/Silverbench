@@ -3,7 +3,7 @@
  * (gui_main.cpp, kept at tag archive-2026-10-23) so results read the same as
  * before. No motion maths lives here: every edit goes through the engine.
  */
-import type { PoseData, PoseDelta, Take } from "./mocapApi";
+import type { PoseData, PoseDelta, Take, TakeView } from "./mocapApi";
 
 export const JOINT_LABELS: Record<string, string> = {
   sceneRoot: "根节点",
@@ -179,7 +179,10 @@ export function makeProjection(
   }
   const width = Math.max(0.1, maxX - minX);
   const height = Math.max(0.1, maxY - minY);
-  const scale = Math.min(Math.max(24, viewport.width - padding * 2) / width, Math.max(24, viewport.height - padding * 2) / height);
+  const scale = Math.min(
+    Math.max(24, viewport.width - padding * 2) / width,
+    Math.max(24, viewport.height - padding * 2) / height
+  );
   const originX = viewport.width / 2 - ((minX + maxX) / 2) * scale;
   const floorY = viewport.height - padding;
   const originY = floorY + minY * scale;
@@ -246,7 +249,12 @@ export function applyDelta(pose: PoseData, delta: PoseDelta, inferred?: [number,
   };
   const joints = pose.joints.length;
   delta.frames.forEach((frame, index) => {
-    for (const [key, width] of [["image", 2], ["position", 3], ["confidence", 1], ["valid", 1]] as const) {
+    for (const [key, width] of [
+      ["image", 2],
+      ["position", 3],
+      ["confidence", 1],
+      ["valid", 1]
+    ] as const) {
       const size = joints * width;
       const source = delta[key];
       const target = next[key];
@@ -254,4 +262,43 @@ export function applyDelta(pose: PoseData, delta: PoseDelta, inferred?: [number,
     }
   });
   return next;
+}
+
+/**
+ * Multiview review on the reference timeline (Studio review_source_time): the
+ * view's fractional frame at a reference frame, and the time to seek its video to.
+ */
+export function viewFrameAt(view: TakeView, referenceFrame: number) {
+  const map = view.sourceFrameAtReference;
+  const count = view.pose.times.length;
+  if (!count) return 0;
+  if (!map.length) return Math.min(Math.max(referenceFrame, 0), count - 1);
+  const value = map[Math.min(Math.max(referenceFrame, 0), map.length - 1)];
+  return Math.min(Math.max(value, 0), count - 1);
+}
+
+export function viewTimeAt(view: TakeView, referenceFrame: number) {
+  const times = view.pose.times;
+  if (!times.length) return 0;
+  const source = viewFrameAt(view, referenceFrame);
+  const before = Math.floor(source);
+  const after = Math.min(before + 1, times.length - 1);
+  return times[before] + (times[after] - times[before]) * (source - before);
+}
+
+/** The reference frame whose mapped view frame is nearest to the view's frame at ``seconds``. */
+export function referenceFrameForViewTime(view: TakeView, seconds: number, referenceCount: number) {
+  const target = frameAtTime(view.pose.times, seconds);
+  const map = view.sourceFrameAtReference;
+  if (!map.length) return Math.min(Math.max(target, 0), Math.max(referenceCount - 1, 0));
+  let best = 0;
+  let bestDistance = Infinity;
+  for (let frame = 0; frame < map.length; frame++) {
+    const distance = Math.abs(map[frame] - target);
+    if (distance < bestDistance) {
+      best = frame;
+      bestDistance = distance;
+    }
+  }
+  return best;
 }

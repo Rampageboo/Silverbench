@@ -74,6 +74,42 @@ void check_frame_joint(const PoseSequence& pose, std::size_t frame, std::size_t 
 
 }  // namespace
 
+Vec2 image_right_in_world(const PoseSequence& pose) {
+    // Least squares of hip-relative image offsets du against world offsets
+    // (dx, dz): du ~ w.x * dx + w.z * dz. Single-view captures give w ~ (-s, 0)
+    // (image right is -X, Studio's drag), a fused multiview pose gives the
+    // reference camera's yawed axis s * (cos a, -sin a).
+    const auto skeleton = make_default_skeleton();
+    const auto hips = bone_index(skeleton, BoneSemantic::Hips);
+    double sxx = 0.0, sxz = 0.0, szz = 0.0, bx = 0.0, bz = 0.0;
+    for (const auto& frame : pose.frames) {
+        if (hips >= frame.joints.size() || !frame.joints[hips].valid) continue;
+        const auto& hip = frame.joints[hips];
+        for (const auto& joint : frame.joints) {
+            if (!joint.valid || joint.confidence <= 0.0f) continue;
+            const double dx = joint.position_m.x - hip.position_m.x;
+            const double dz = joint.position_m.z - hip.position_m.z;
+            const double du = joint.image_xy.x - hip.image_xy.x;
+            sxx += dx * dx;
+            sxz += dx * dz;
+            szz += dz * dz;
+            bx += dx * du;
+            bz += dz * du;
+        }
+    }
+    double wx = 0.0, wz = 0.0;
+    const double determinant = sxx * szz - sxz * sxz;
+    if (determinant > 1e-9 * std::max(1.0, sxx * szz)) {
+        wx = (bx * szz - bz * sxz) / determinant;
+        wz = (bz * sxx - bx * sxz) / determinant;
+    } else if (sxx > 1e-12) {
+        wx = bx / sxx;  // flat depth: only X explains the image
+    }
+    const double length = std::hypot(wx, wz);
+    if (!std::isfinite(length) || length < 1e-9) return {-1.0, 0.0};
+    return {wx / length, wz / length};
+}
+
 std::vector<double> curve_preset_weights(
     std::size_t frame_count, std::size_t keyframe, std::size_t radius, CurvePreset preset) {
     if (frame_count == 0 || keyframe >= frame_count) return {};
@@ -105,8 +141,10 @@ ManualPoseCorrection make_drag_correction(const PoseSequence& reference, const D
     const auto radius = drag.radius ? drag.radius : default_drag_radius(reference.fps);
     correction.frame_weights = curve_preset_weights(reference.frames.size(), drag.keyframe, radius, drag.curve);
     correction.position_deltas_m.reserve(reference.frames.size());
-    // Same pixel-to-metre estimate as the Studio drag: a 1.55 m head-to-feet
-    // height per frame. Depth is not edited by an image drag.
+    // Studio's pixel-to-metre estimate (a 1.55 m head-to-feet height per frame)
+    // along the take's own image-right direction, so a drag on a multiview take
+    // moves the joint where it moves on the reference video. Image down is -Y.
+    const auto right = image_right_in_world(reference);
     for (const auto& frame : reference.frames) {
         const auto head_xy = frame.joints[head].image_xy;
         const auto left_xy = frame.joints[left_foot].image_xy;
@@ -116,9 +154,9 @@ ManualPoseCorrection make_drag_correction(const PoseSequence& reference, const D
         const double body_pixels = std::max(1.0, std::hypot(head_xy.x - foot_x, head_xy.y - foot_y));
         const double meters_per_pixel = 1.55 / body_pixels;
         correction.position_deltas_m.push_back({
-            -drag.drag_px.x * meters_per_pixel,
+            drag.drag_px.x * meters_per_pixel * right.x,
             -drag.drag_px.y * meters_per_pixel,
-            0.0,
+            drag.drag_px.x * meters_per_pixel * right.y,
         });
     }
     return correction;

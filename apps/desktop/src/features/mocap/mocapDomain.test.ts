@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { PoseData } from "./mocapApi";
-import { formatDuration, frameAtTime, frameRuns, imagePoint, lowConfidenceFrames, makeProjection, worldPoint } from "./mocapDomain";
+import {
+  formatDuration,
+  frameAtTime,
+  frameRuns,
+  imagePoint,
+  lowConfidenceFrames,
+  makeProjection,
+  referenceFrameForViewTime,
+  viewFrameAt,
+  viewTimeAt,
+  worldPoint
+} from "./mocapDomain";
 
 function pose(frames: number, joints: number): PoseData {
   const count = frames * joints;
@@ -57,7 +68,8 @@ describe("makeProjection (Studio make_motion_projection)", () => {
   it("yaw 90 shows depth as horizontal", () => {
     const front = makeProjection(0, 0, { width: 400, height: 400 }, body);
     const side = makeProjection(90, 0, { width: 400, height: 400 }, body);
-    const dx = (p: ReturnType<typeof makeProjection>) => p.project([0.3, 1, 0.2])[0] - p.project([0, 1, 0])[0];
+    const dx = (p: ReturnType<typeof makeProjection>) =>
+      p.project([0.3, 1, 0.2])[0] - p.project([0, 1, 0])[0];
     expect(dx(front) / front.scale).toBeCloseTo(0.3);
     expect(dx(side) / side.scale).toBeCloseTo(0.2);
   });
@@ -81,12 +93,37 @@ describe("pose helpers", () => {
     expect(lowConfidenceFrames(data)).toEqual([2, 3]);
     data.inferred = [[3, 0]]; // inferred samples are listed apart
     expect(lowConfidenceFrames(data)).toEqual([2]);
-    expect(frameRuns([1, 2, 3, 7, 9, 10])).toEqual([[1, 3], [7, 7], [9, 10]]);
+    expect(frameRuns([1, 2, 3, 7, 9, 10])).toEqual([
+      [1, 3],
+      [7, 7],
+      [9, 10]
+    ]);
   });
   it("formats durations like Studio", () => {
     expect(formatDuration(0.5)).toBe("计算中");
     expect(formatDuration(42)).toBe("42秒");
     expect(formatDuration(125)).toBe("2分5秒");
     expect(formatDuration(3720)).toBe("1小时2分");
+  });
+});
+
+describe("multiview time mapping", () => {
+  const view = {
+    id: "left",
+    video: "media/left.mp4",
+    yaw: -45,
+    pose: { ...pose(5, 1), times: [0, 0.1, 0.2, 0.3, 0.4] },
+    sourceFrameAtReference: [0.5, 1.5, 2.5, 3.5],
+    meanOffsetS: 0.05
+  };
+  it("maps a reference frame to the view's interpolated time", () => {
+    expect(viewFrameAt(view, 1)).toBe(1.5);
+    expect(viewTimeAt(view, 1)).toBeCloseTo(0.15);
+    expect(viewTimeAt(view, 99)).toBeCloseTo(0.35); // clamps to the last mapped frame
+  });
+  it("maps the view's playing time back to the nearest reference frame", () => {
+    expect(referenceFrameForViewTime(view, 0.2, 4)).toBe(1); // view frame 2 is between 1.5 and 2.5
+    expect(referenceFrameForViewTime(view, 0.4, 4)).toBe(3);
+    expect(referenceFrameForViewTime({ ...view, sourceFrameAtReference: [] }, 0.2, 4)).toBe(2);
   });
 });

@@ -153,7 +153,7 @@ def test_edits_replay_and_refusals_leave_files_alone(workspace):
 
     before = (folder / "pose.json").read_bytes()
     broken = {**edits, "review": {"marks": [{"frame": 70, "joint": 10, "trust": "excluded"}], "ranges": [[60, 80, 10]]}}
-    with pytest.raises(takes.MocapError, match="refused"):
+    with pytest.raises(takes.MocapError, match="区间两端"):
         takes.save_edits(workspace, take_id, broken)
     assert takes.read_edits(workspace, take_id) == edits
     assert (folder / "pose.json").read_bytes() == before
@@ -407,3 +407,57 @@ def test_person_frame_and_blender_frames(workspace):
     assert len(document["selected_frames"]) == 3
     with pytest.raises(takes.MocapError, match="selected frame"):
         takes.export(workspace, take["id"], {"format": "blender", "frames": []})
+
+
+FAKE_PIPELINE = textwrap.dedent(
+    '''
+    import argparse, copy, json, math, os, subprocess, sys
+    from pathlib import Path
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--manifest"); parser.add_argument("--output")
+    args, _ = parser.parse_known_args()
+    manifest = json.load(open(args.manifest, encoding="utf-8"))
+    template = json.load(open(os.environ["FAKE_POSE_TEMPLATE"], encoding="utf-8"))
+    output = Path(args.output)
+    for index, view in enumerate(manifest["views"]):
+        print(json.dumps({"event": "view_started", "view": view["id"], "index": index + 1, "total": len(manifest["views"])}), flush=True)
+        a = math.radians(view["yaw_degrees"])
+        pose = copy.deepcopy(template)
+        pose["source_video"] = view["video"]
+        for frame in pose["frames"]:
+            for joint in frame["joints"]:
+                x, y, z = joint["position_m"]
+                joint["image_xy"] = [640 + 300 * (math.cos(a) * x - math.sin(a) * z), 700 - 300 * y]
+        folder = output / "poses" / view["id"]
+        folder.mkdir(parents=True, exist_ok=True)
+        json.dump(pose, open(folder / "pose_sequence.json", "w", encoding="utf-8"))
+    code = subprocess.call([os.environ["FAKE_ENGINE"], "fuse-multiview", args.manifest, "--poses", str(output / "poses"),
+                            "--output", str(output / "motion.amotion")], stdout=subprocess.DEVNULL)
+    print(json.dumps({"event": "complete"}), flush=True)
+    sys.exit(code)
+    '''
+)
+
+
+def test_multiview_views_and_drags(workspace, monkeypatch):
+    (engine.adapters_dir() / "multiview_pipeline.py").write_text(FAKE_PIPELINE)
+    monkeypatch.setenv("FAKE_ENGINE", str(engine.engine_exe()))
+    for name in ("front.mp4", "left.mp4", "right.mp4"):
+        (workspace.media / name).write_bytes(b"x")
+    take = takes.create_take(workspace, {"sources": [
+        {"video": "media/left.mp4", "yaw": -45}, {"video": "media/front.mp4", "yaw": 0}, {"video": "media/right.mp4", "yaw": 45},
+    ]})
+    takes.start_capture(workspace, take["id"])
+    takes.wait_for_capture(workspace, take["id"], timeout=180)
+    described = takes.describe(workspace, take["id"])
+    assert described["capture"]["status"] == "ready", described["capture"]
+    fused = takes.pose_data(workspace, take["id"])
+    views = takes.views(workspace, take["id"])
+    assert [view["id"] for view in views] == ["view_1", "view_2", "view_3"]
+    for view in views:
+        assert len(view["sourceFrameAtReference"]) == len(fused["times"])
+        assert len(view["pose"]["times"]) == 120 and view["pose"]["parents"] == fused["parents"]
+    # Drags work on a multiview take (direction fitted from the fused pose).
+    edits = {**takes.EMPTY_EDITS, "corrections": [{"joint": 10, "keyframe": 30, "dragPx": [10, 0]}]}
+    assert takes.save_edits(workspace, take["id"], edits)["pose"]["frames"]
+    assert takes.views(workspace, takes.create_take(workspace, {"sources": [{"video": "media/front.mp4"}]})["id"]) == []

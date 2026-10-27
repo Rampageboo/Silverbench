@@ -38,7 +38,12 @@ export function PersonFrame({
   }
 
   const shown = draft
-    ? [Math.min(draft.x0, draft.x1), Math.min(draft.y0, draft.y1), Math.abs(draft.x1 - draft.x0), Math.abs(draft.y1 - draft.y0)]
+    ? [
+        Math.min(draft.x0, draft.x1),
+        Math.min(draft.y0, draft.y1),
+        Math.abs(draft.x1 - draft.x0),
+        Math.abs(draft.y1 - draft.y0)
+      ]
     : roi;
 
   return (
@@ -73,7 +78,9 @@ export function PersonFrame({
           src={src}
           alt="第一帧"
           draggable={false}
-          onLoad={(event) => setNatural({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
+          onLoad={(event) =>
+            setNatural({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })
+          }
         />
         {shown && natural ? (
           <div
@@ -89,11 +96,18 @@ export function PersonFrame({
       </div>
       <div className="mc-inline">
         <span className="mc-muted">
-          {roi ? `人物范围 ${roi[2]}×${roi[3]}（左上 ${roi[0]}, ${roi[1]}）` : "自动人物范围 · 在画面上拖出一个框可手动指定"}
+          {roi
+            ? `人物范围 ${roi[2]}×${roi[3]}（左上 ${roi[0]}, ${roi[1]}）`
+            : "自动人物范围 · 在画面上拖出一个框可手动指定"}
         </span>
         <span className="mc-spacer" />
         {roi ? (
-          <button type="button" className="ui-btn--ghost ui-btn--sm" disabled={disabled} onClick={() => onChange(null)}>
+          <button
+            type="button"
+            className="ui-btn--ghost ui-btn--sm"
+            disabled={disabled}
+            onClick={() => onChange(null)}
+          >
             改回自动
           </button>
         ) : null}

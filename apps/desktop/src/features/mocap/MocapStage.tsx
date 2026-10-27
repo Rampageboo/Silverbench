@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { ensureVideoProxy, videoSourceUrl } from "../video/videoCaptureApi";
 import type { PoseData } from "./mocapApi";
-import { boneSide, imagePoint, inferredSet, jointLabel, sample } from "./mocapDomain";
-import { canvasColors, fitCanvas } from "./mocapCanvas";
+import { imagePoint, inferredSet } from "./mocapDomain";
+import { canvasColors, contentBox, drawSkeleton, fitCanvas } from "./mocapCanvas";
 
 type Props = {
   workspaceRoot: string;
@@ -19,6 +19,8 @@ type Props = {
   onDragJoint?: (joint: number, dragPx: [number, number]) => void;
   onTime: (seconds: number) => void;
   onPlayingChange: (playing: boolean) => void;
+  /** The video is ready to seek (first load, or after switching views). */
+  onLoaded?: () => void;
 };
 
 /** Source video with the observed 2D joints drawn over it in source-pixel space. */
@@ -35,7 +37,8 @@ export function MocapStage({
   editMode = false,
   onDragJoint,
   onTime,
-  onPlayingChange
+  onPlayingChange,
+  onLoaded
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -43,9 +46,31 @@ export function MocapStage({
   const [videoError, setVideoError] = useState("");
   const [size, setSize] = useState({ width: 0, height: 0 });
   // A joint being dragged: only it moves until the engine answers (Studio rule).
-  const [drag, setDrag] = useState<{ joint: number; startX: number; startY: number; dx: number; dy: number } | null>(null);
+  const [drag, setDrag] = useState<{
+    joint: number;
+    startX: number;
+    startY: number;
+    dx: number;
+    dy: number;
+  } | null>(null);
+  // After release the joint stays where it was dropped until the engine's pose arrives.
+  const [held, setHeld] = useState<{ joint: number; dx: number; dy: number; pose: PoseData } | null>(null);
 
   useEffect(() => {
+    if (!held) return;
+    if (held.pose !== pose) {
+      setHeld(null);
+      return;
+    }
+    const timer = window.setTimeout(() => setHeld(null), 3000); // refused or failed edit
+    return () => window.clearTimeout(timer);
+  }, [held, pose]);
+
+  // A new source reports time 0 before it loads; that must not move the timeline.
+  const ready = useRef(false);
+
+  useEffect(() => {
+    ready.current = false;
     setSource(video);
     setVideoError("");
   }, [video]);
@@ -53,7 +78,9 @@ export function MocapStage({
   useEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
-    const observer = new ResizeObserver(([entry]) => setSize({ width: entry.contentRect.width, height: entry.contentRect.height }));
+    const observer = new ResizeObserver(([entry]) =>
+      setSize({ width: entry.contentRect.width, height: entry.contentRect.height })
+    );
     observer.observe(wrap);
     return () => observer.disconnect();
   }, []);
@@ -69,11 +96,13 @@ export function MocapStage({
     let running = false;
     const onFrame = (_now: number, metadata?: { mediaTime: number }) => {
       if (!running) return;
-      onTime(metadata?.mediaTime ?? element.currentTime);
+      if (ready.current) onTime(metadata?.mediaTime ?? element.currentTime);
       schedule();
     };
     const schedule = () => {
-      handle = perFrame ? element.requestVideoFrameCallback!(onFrame) : requestAnimationFrame((now) => onFrame(now));
+      handle = perFrame
+        ? element.requestVideoFrameCallback!(onFrame)
+        : requestAnimationFrame((now) => onFrame(now));
     };
     const stop = () => {
       running = false;
@@ -90,9 +119,11 @@ export function MocapStage({
     const pause = () => {
       stop();
       onPlayingChange(false);
-      onTime(element.currentTime);
+      if (ready.current) onTime(element.currentTime);
     };
-    const sync = () => onTime(element.currentTime);
+    const sync = () => {
+      if (ready.current) onTime(element.currentTime);
+    };
     element.addEventListener("play", play);
     element.addEventListener("pause", pause);
     element.addEventListener("ended", pause);
@@ -118,13 +149,33 @@ export function MocapStage({
     const context = fitCanvas(canvas, size.width, size.height);
     if (!context || !pose || frame >= pose.times.length) return;
     const colors = canvasColors(canvas);
-    const toScreen = ([x, y]: [number, number]): [number, number] => [box.x + x * box.scale, box.y + y * box.scale];
+    const toScreen = ([x, y]: [number, number]): [number, number] => [
+      box.x + x * box.scale,
+      box.y + y * box.scale
+    ];
     if (comparison && frame < comparison.times.length) {
-      drawSkeleton(context, comparison, frame, toScreen, { ghost: true, colors, selectedJoint: null, inferred: new Set() });
+      drawSkeleton(context, comparison, frame, toScreen, {
+        ghost: true,
+        colors,
+        selectedJoint: null,
+        inferred: new Set()
+      });
     }
-    const moved = drag && box.scale ? { joint: drag.joint, dx: drag.dx / box.scale, dy: drag.dy / box.scale } : null;
-    drawSkeleton(context, pose, frame, toScreen, { ghost: false, colors, selectedJoint, inferred: inferredSet(pose), labels: showLabels, moved });
-  }, [pose, comparison, frame, size, box.x, box.y, box.scale, showLabels, selectedJoint, drag]);
+    const moved =
+      drag && box.scale
+        ? { joint: drag.joint, dx: drag.dx / box.scale, dy: drag.dy / box.scale }
+        : held && held.pose === pose
+          ? held
+          : null;
+    drawSkeleton(context, pose, frame, toScreen, {
+      ghost: false,
+      colors,
+      selectedJoint,
+      inferred: inferredSet(pose),
+      labels: showLabels,
+      moved
+    });
+  }, [pose, comparison, frame, size, box.x, box.y, box.scale, showLabels, selectedJoint, drag, held]);
 
   function pick(event: React.PointerEvent<HTMLCanvasElement>) {
     if (!pose) return;
@@ -143,8 +194,10 @@ export function MocapStage({
   function endDrag() {
     if (!drag) return;
     setDrag(null);
-    if (box.scale && Math.hypot(drag.dx, drag.dy) >= 1) {
-      onDragJoint?.(drag.joint, [drag.dx / box.scale, drag.dy / box.scale]);
+    if (pose && box.scale && Math.hypot(drag.dx, drag.dy) >= 1) {
+      const dragPx: [number, number] = [drag.dx / box.scale, drag.dy / box.scale];
+      setHeld({ joint: drag.joint, dx: dragPx[0], dy: dragPx[1], pose });
+      onDragJoint?.(drag.joint, dragPx);
     }
   }
 
@@ -186,7 +239,11 @@ export function MocapStage({
         preload="auto"
         playsInline
         muted
-        onLoadedMetadata={(event) => onTime(event.currentTarget.currentTime)}
+        onLoadedMetadata={(event) => {
+          if (onLoaded) onLoaded();
+          else onTime(event.currentTarget.currentTime);
+          ready.current = true;
+        }}
         onError={() => (source === video ? void switchToProxy() : setVideoError("预览副本也无法播放。"))}
       />
       <canvas
@@ -206,94 +263,3 @@ type FrameCallbackVideo = HTMLVideoElement & {
   requestVideoFrameCallback?: (callback: (now: number, metadata: { mediaTime: number }) => void) => number;
   cancelVideoFrameCallback?: (handle: number) => void;
 };
-
-/** Where the source frame sits inside the stage (object-fit: contain). */
-function contentBox(size: { width: number; height: number }, pose: PoseData | null) {
-  const width = pose?.width || 16;
-  const height = pose?.height || 9;
-  const scale = Math.min(size.width / width, size.height / height) || 0;
-  return { scale, x: (size.width - width * scale) / 2, y: (size.height - height * scale) / 2 };
-}
-
-type DrawOptions = {
-  ghost: boolean;
-  colors: ReturnType<typeof canvasColors>;
-  selectedJoint: number | null;
-  inferred: Set<number>;
-  labels?: boolean;
-  /** Preview offset of a dragged joint, in source pixels. */
-  moved?: { joint: number; dx: number; dy: number } | null;
-};
-
-function drawSkeleton(
-  context: CanvasRenderingContext2D,
-  pose: PoseData,
-  frame: number,
-  toScreen: (point: [number, number]) => [number, number],
-  { ghost, colors, selectedJoint, inferred, labels, moved }: DrawOptions
-) {
-  const point = (joint: number): [number, number] => {
-    const [x, y] = imagePoint(pose, frame, joint);
-    return moved && moved.joint === joint ? [x + moved.dx, y + moved.dy] : [x, y];
-  };
-  const joints = pose.joints.length;
-  context.save();
-  context.lineCap = "round";
-  context.globalAlpha = ghost ? 0.45 : 1;
-  if (ghost) context.setLineDash([5, 4]);
-  pose.parents.forEach((parent, joint) => {
-    if (parent < 0) return;
-    const a = sample(pose, frame, parent);
-    const b = sample(pose, frame, joint);
-    if (!a.valid || !b.valid) return;
-    const [x1, y1] = toScreen(point(parent));
-    const [x2, y2] = toScreen(point(joint));
-    context.strokeStyle = ghost ? colors.ghost : colors.side[boneSide(pose.joints[joint])];
-    context.lineWidth = ghost ? 2 : 3;
-    context.beginPath();
-    context.moveTo(x1, y1);
-    context.lineTo(x2, y2);
-    context.stroke();
-  });
-  context.setLineDash([]);
-  if (ghost) {
-    context.restore();
-    return;
-  }
-  context.font = `12px ${colors.font}`;
-  for (let joint = 0; joint < joints; joint++) {
-    const { confidence, valid } = sample(pose, frame, joint);
-    if (!valid) continue;
-    const [x, y] = toScreen(point(joint));
-    const isInferred = inferred.has(frame * joints + joint);
-    context.globalAlpha = confidence < 0.35 && !isInferred ? 0.5 : 1;
-    context.beginPath();
-    context.arc(x, y, joint === selectedJoint ? 6 : 4, 0, Math.PI * 2);
-    if (isInferred) {
-      context.strokeStyle = colors.inferred;
-      context.lineWidth = 2;
-      context.stroke();
-    } else {
-      context.fillStyle = colors.side[boneSide(pose.joints[joint])];
-      context.fill();
-    }
-    if (joint === selectedJoint) {
-      context.globalAlpha = 1;
-      context.strokeStyle = colors.selection;
-      context.lineWidth = 2;
-      context.beginPath();
-      context.arc(x, y, 10, 0, Math.PI * 2);
-      context.stroke();
-    }
-    if (labels || joint === selectedJoint) {
-      context.globalAlpha = 1;
-      const text = jointLabel(pose.joints[joint]);
-      context.lineWidth = 3;
-      context.strokeStyle = colors.labelHalo;
-      context.strokeText(text, x + 8, y - 6);
-      context.fillStyle = colors.label;
-      context.fillText(text, x + 8, y - 6);
-    }
-  }
-  context.restore();
-}

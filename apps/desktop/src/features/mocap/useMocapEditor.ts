@@ -84,10 +84,13 @@ export function useMocapEditor({ workspaceRoot, takeId, enabled, onApplied, onEr
   );
 
   /** Apply an edit built from the latest accepted session. */
-  const change = useCallback((build: (edits: EditSession) => EditSession) => {
-    const next = build(current.current);
-    if (next !== current.current) submit(next, "do");
-  }, [submit]);
+  const change = useCallback(
+    (build: (edits: EditSession) => EditSession) => {
+      const next = build(current.current);
+      if (next !== current.current) submit(next, "do");
+    },
+    [submit]
+  );
 
   const undo = useCallback(() => {
     const previous = past[past.length - 1];

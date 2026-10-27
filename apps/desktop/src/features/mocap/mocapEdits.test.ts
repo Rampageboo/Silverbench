@@ -61,7 +61,13 @@ describe("joint review", () => {
     let edits = trustCurrent(EMPTY_EDITS, pose, 0, 1, "locked");
     edits = trustCurrent(edits, pose, 0, 1, "weighted", 16);
     expect(edits.review.marks).toHaveLength(1);
-    expect(edits.review.marks[0]).toMatchObject({ trust: "weighted", weight: 16, confidence: 0.7, valid: true, target: [0.6, 0.7, 0.8, 5, 6] });
+    expect(edits.review.marks[0]).toMatchObject({
+      trust: "weighted",
+      weight: 16,
+      confidence: 0.7,
+      valid: true,
+      target: [0.6, 0.7, 0.8, 5, 6]
+    });
   });
 
   it("excluded and weighted marks are pending until a rebuild covers them", () => {
@@ -84,6 +90,10 @@ describe("joint review", () => {
     edits = rebuildRange(rebuildRange(edits, 0, 0, 10), 1, 0, 10);
     edits = restoreAuto(edits, 0, 8, 12);
     expect(edits.review.ranges).toEqual([[0, 10, 1]]);
-    expect(edits.review.marks.map((m) => [m.joint, m.frame])).toEqual([[0, 0], [1, 0], [1, 10]]);
+    expect(edits.review.marks.map((m) => [m.joint, m.frame])).toEqual([
+      [0, 0],
+      [1, 0],
+      [1, 10]
+    ]);
   });
 });

@@ -68,23 +68,39 @@ export function MocapTimeline({
   return (
     <div className="mc-timeline">
       <div className="mc-timeline__transport">
-        <button type="button" className="ui-btn--sm" onClick={() => onSeek(frame - 10)} title="后退 10 帧 (Shift+←)">
+        <button
+          type="button"
+          className="ui-btn--sm"
+          onClick={() => onSeek(frame - 10)}
+          title="后退 10 帧 (Shift+←)"
+        >
           −10
         </button>
         <button type="button" className="ui-btn--sm" onClick={() => onSeek(frame - 1)} title="上一帧 (←)">
           ◀
         </button>
-        <button type="button" className="mc-timeline__play ui-btn--sm" onClick={onTogglePlay} title="播放/暂停 (空格)">
+        <button
+          type="button"
+          className="mc-timeline__play ui-btn--sm"
+          onClick={onTogglePlay}
+          title="播放/暂停 (空格)"
+        >
           {playing ? "暂停" : "播放"}
         </button>
         <button type="button" className="ui-btn--sm" onClick={() => onSeek(frame + 1)} title="下一帧 (→)">
           ▶
         </button>
-        <button type="button" className="ui-btn--sm" onClick={() => onSeek(frame + 10)} title="前进 10 帧 (Shift+→)">
+        <button
+          type="button"
+          className="ui-btn--sm"
+          onClick={() => onSeek(frame + 10)}
+          title="前进 10 帧 (Shift+→)"
+        >
           +10
         </button>
         <span className="mc-timeline__readout">
-          帧 <strong>{frame}</strong> / {Math.max(frameCount - 1, 0)} · {time.toFixed(3)} s · {fps.toFixed(fps % 1 ? 2 : 0)} fps
+          帧 <strong>{frame}</strong> / {Math.max(frameCount - 1, 0)} · {time.toFixed(3)} s ·{" "}
+          {fps.toFixed(fps % 1 ? 2 : 0)} fps
         </span>
         <span className="mc-timeline__spacer" />
         <button type="button" className="ui-btn--sm" onClick={onSetRangeStart} title="设为起点 (I)">
@@ -125,9 +141,18 @@ export function MocapTimeline({
           if (event.buttons & 1) seekFromPointer(event.clientX);
         }}
       >
-        {range ? <div className="mc-timeline__span" style={{ left: percent(range.first), width: percent(range.last - range.first) }} /> : null}
+        {range ? (
+          <div
+            className="mc-timeline__span"
+            style={{ left: percent(range.first), width: percent(range.last - range.first) }}
+          />
+        ) : null}
         {(marks.ranges ?? []).map(([first, last]) => (
-          <div key={`r${first}-${last}`} className="mc-timeline__rebuild" style={{ left: percent(first), width: percent(last - first) }} />
+          <div
+            key={`r${first}-${last}`}
+            className="mc-timeline__rebuild"
+            style={{ left: percent(first), width: percent(last - first) }}
+          />
         ))}
         <MarkRow className="mc-mark--export" frames={marks.exportFrames ?? []} percent={percent} />
         <MarkRow className="mc-mark--excluded" frames={marks.excluded ?? []} percent={percent} />
@@ -143,7 +168,15 @@ export function MocapTimeline({
   );
 }
 
-function MarkRow({ className, frames, percent }: { className: string; frames: number[]; percent: (value: number) => string }) {
+function MarkRow({
+  className,
+  frames,
+  percent
+}: {
+  className: string;
+  frames: number[];
+  percent: (value: number) => string;
+}) {
   return (
     <>
       {frames.map((value) => (

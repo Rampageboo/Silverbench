@@ -60,7 +60,12 @@ export function KeyframePanel({
     <div className="mc-edit">
       <div className="mc-inline">
         <label className="mc-check" title={dragAllowed ? "在视频上拖动关节，生成当前帧的关键帧" : undefined}>
-          <input type="checkbox" checked={editMode && dragAllowed} disabled={!dragAllowed} onChange={(event) => onEditMode(event.target.checked)} />
+          <input
+            type="checkbox"
+            checked={editMode && dragAllowed}
+            disabled={!dragAllowed}
+            onChange={(event) => onEditMode(event.target.checked)}
+          />
           拖动修正
         </label>
         <select
@@ -79,26 +84,56 @@ export function KeyframePanel({
           ))}
         </select>
         <span className="mc-spacer" />
-        <button type="button" className="ui-btn--sm" onClick={onUndo} disabled={!canUndo || busy} title="撤销 (Ctrl+Z)">
+        <button
+          type="button"
+          className="ui-btn--sm"
+          onClick={onUndo}
+          disabled={!canUndo || busy}
+          title="撤销 (Ctrl+Z)"
+        >
           撤销
         </button>
-        <button type="button" className="ui-btn--sm" onClick={onRedo} disabled={!canRedo || busy} title="重做 (Ctrl+Y)">
+        <button
+          type="button"
+          className="ui-btn--sm"
+          onClick={onRedo}
+          disabled={!canRedo || busy}
+          title="重做 (Ctrl+Y)"
+        >
           重做
         </button>
       </div>
-      {!dragAllowed ? <p className="mc-muted">多视角动作的拖动方向尚未按参考视角校正，暂不可拖动；锁定、排除和区间重建可用。</p> : null}
+      {!dragAllowed ? (
+        <p className="mc-muted">正在回看其他视角（只读）。切回"融合（参考视角）"后可编辑。</p>
+      ) : null}
       <div className="mc-inline">
-        <button type="button" className="ui-btn--sm" disabled={!atKey || busy} onClick={() => onChange((current) => toggleSmoothing(current, frame))}>
+        <button
+          type="button"
+          className="ui-btn--sm"
+          disabled={!atKey || busy}
+          onClick={() => onChange((current) => toggleSmoothing(current, frame))}
+        >
           {edits.smoothedKeyframes.includes(frame) ? "取消关键帧平滑" : "以此关键帧平滑"}
         </button>
-        <button type="button" className="ui-btn--sm" disabled={!atKey || busy} onClick={() => onChange((current) => deleteKeyframe(current, frame))} title="Delete">
+        <button
+          type="button"
+          className="ui-btn--sm"
+          disabled={!atKey || busy}
+          onClick={() => onChange((current) => deleteKeyframe(current, frame))}
+          title="Delete"
+        >
           删除当前键
         </button>
       </div>
       {keys.length ? (
         <div className="mc-chips">
           {keys.map((key) => (
-            <button key={key} type="button" className={`mc-chip${key === frame ? " is-active" : ""}`} onClick={() => onSeek(key)}>
+            <button
+              key={key}
+              type="button"
+              className={`mc-chip${key === frame ? " is-active" : ""}`}
+              onClick={() => onSeek(key)}
+            >
               ◆ {key}
               {edits.smoothedKeyframes.includes(key) ? " · 平滑" : ""}
             </button>
@@ -139,10 +174,18 @@ export function JointRepairPanel({
     <div className="mc-edit">
       <div className="mc-inline">
         <strong>{jointLabel(pose.joints[joint])}</strong>
-        <span className="mc-muted">帧 {frame}{range ? ` · 区间 ${range.first}–${range.last}` : ""}</span>
+        <span className="mc-muted">
+          帧 {frame}
+          {range ? ` · 区间 ${range.first}–${range.last}` : ""}
+        </span>
       </div>
       <div className="mc-inline">
-        <button type="button" className="ui-btn--sm" disabled={busy} onClick={() => onChange((current) => trustCurrent(current, pose, joint, frame, "locked"))}>
+        <button
+          type="button"
+          className="ui-btn--sm"
+          disabled={busy}
+          onClick={() => onChange((current) => trustCurrent(current, pose, joint, frame, "locked"))}
+        >
           锁定此帧
         </button>
         <span className="mc-muted">可信权重</span>
@@ -152,14 +195,21 @@ export function JointRepairPanel({
             type="button"
             className="ui-btn--sm"
             disabled={busy}
-            onClick={() => onChange((current) => trustCurrent(current, pose, joint, frame, "weighted", weight))}
+            onClick={() =>
+              onChange((current) => trustCurrent(current, pose, joint, frame, "weighted", weight))
+            }
           >
             {weight}×
           </button>
         ))}
       </div>
       <div className="mc-inline">
-        <button type="button" className="ui-btn--sm" disabled={busy} onClick={() => onChange((current) => exclude(current, joint, span.first, span.last))}>
+        <button
+          type="button"
+          className="ui-btn--sm"
+          disabled={busy}
+          onClick={() => onChange((current) => exclude(current, joint, span.first, span.last))}
+        >
           排除此部位
         </button>
         <button
@@ -167,19 +217,34 @@ export function JointRepairPanel({
           className="ui-btn--sm"
           disabled={busy || !range}
           title={range ? "区间两端必须先锁定" : "先在时间轴上设起点/终点"}
-          onClick={() => range && onChange((current) => rebuildRange(current, joint, range.first, range.last))}
+          onClick={() =>
+            range && onChange((current) => rebuildRange(current, joint, range.first, range.last))
+          }
         >
           重建区间
         </button>
-        <button type="button" className="ui-btn--sm" disabled={busy} onClick={() => onChange((current) => restoreAuto(current, joint, span.first, span.last))}>
+        <button
+          type="button"
+          className="ui-btn--sm"
+          disabled={busy}
+          onClick={() => onChange((current) => restoreAuto(current, joint, span.first, span.last))}
+        >
           恢复自动
         </button>
       </div>
-      <p className="mc-muted">锁定与加权作用于当前帧；排除与恢复自动作用于选区（无选区时为当前帧）。重建区间要求两端锁定，缺口不超过 0.75 秒。</p>
+      <p className="mc-muted">
+        锁定与加权作用于当前帧；排除与恢复自动作用于选区（无选区时为当前帧）。重建区间要求两端锁定，缺口不超过
+        0.75 秒。
+      </p>
       {ranges.length ? (
         <div className="mc-chips">
           {ranges.map(([first, last]) => (
-            <button key={`${first}-${last}`} type="button" className="mc-chip mc-chip--range" onClick={() => onSeek(first)}>
+            <button
+              key={`${first}-${last}`}
+              type="button"
+              className="mc-chip mc-chip--range"
+              onClick={() => onSeek(first)}
+            >
               重建 {first}–{last}
             </button>
           ))}
@@ -236,7 +301,12 @@ export function BlenderFramesPanel({
         <button type="button" className="ui-btn--sm" onClick={onAddRange} disabled={!range}>
           选中区间
         </button>
-        <button type="button" className="ui-btn--ghost ui-btn--sm" onClick={onClear} disabled={!frames.length}>
+        <button
+          type="button"
+          className="ui-btn--ghost ui-btn--sm"
+          onClick={onClear}
+          disabled={!frames.length}
+        >
           清除
         </button>
       </div>

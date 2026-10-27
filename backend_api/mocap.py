@@ -94,6 +94,11 @@ def pose(take_id: str, workspaceRoot: str = Query(min_length=1), variant: str = 
     return _call(takes.pose_data, _layout(workspaceRoot), take_id, variant)
 
 
+@router.get("/takes/{take_id}/views")
+def views(take_id: str, workspaceRoot: str = Query(min_length=1)) -> dict[str, Any]:
+    return {"views": _call(takes.views, _layout(workspaceRoot), take_id)}
+
+
 @router.get("/takes/{take_id}/issues")
 def issues(take_id: str, workspaceRoot: str = Query(min_length=1)) -> dict[str, Any]:
     return {"issues": _call(takes.issues, _layout(workspaceRoot), take_id)}

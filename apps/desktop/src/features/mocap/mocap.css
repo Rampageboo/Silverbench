@@ -439,6 +439,53 @@
     pointer-events: none;
   }
 
+  .mc-stage-tools .is-active {
+    background: var(--c-accent-soft);
+    border-color: var(--c-accent-line);
+  }
+
+  .mc-overview {
+    min-height: 0;
+    overflow: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    align-content: start;
+    gap: 8px;
+    padding: 8px;
+    background: #000;
+  }
+
+  .mc-overview__tile {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    height: auto;
+    padding: 4px;
+    background: var(--c-surface);
+  }
+
+  .mc-overview__frame {
+    position: relative;
+    display: block;
+  }
+
+  .mc-overview__frame img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .mc-overview__frame canvas {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .mc-overview__label {
+    font-size: var(--fs-xs);
+    color: var(--c-text-2);
+  }
+
   .mc-skeleton {
     flex: 1;
     min-height: 0;

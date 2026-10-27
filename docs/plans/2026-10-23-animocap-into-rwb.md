@@ -1,6 +1,6 @@
 # AniMocap Fusion 整合进 RampageWorkbench
 
-状态：A、B、C、D 完成（2026-10-23），剩 E 与多视角逐视角回看。D：常驻引擎 `animocap serve`（3000 帧每次编辑 ≈ 23 ms）、拖动关键帧与曲线、关键帧平滑、按部位锁定/加权/排除/区间重建/恢复自动、撤销/重做（每次编辑即保存）、人物范围框选、Blender 选帧导出。未做：多视角拖动方向校正（暂禁用多视角拖动）、2×4 逐视角回看。3D 视图选 Canvas 2D（复刻 Studio 投影，无新依赖）。基线：AniMocap `main` @ `50549a85`（已 subtree 进 `engines/animocap/`），RWB `main` @ `d589c203`。
+状态：A、B、C、D 完成（2026-10-23），剩 E 与多视角逐视角回看。D：常驻引擎 `animocap serve`（3000 帧每次编辑 ≈ 23 ms）、拖动关键帧与曲线、关键帧平滑、按部位锁定/加权/排除/区间重建/恢复自动、撤销/重做（每次编辑即保存）、人物范围框选、Blender 选帧导出。2026-10-27 补齐：拖动方向按 take 自身拟合（多视角随参考相机），多视角可拖动；2×4 总览与逐视角只读回看（参考时间轴，`source_frame_at_reference`）。3D 视图选 Canvas 2D（复刻 Studio 投影，无新依赖）。基线：AniMocap `main` @ `50549a85`（已 subtree 进 `engines/animocap/`），RWB `main` @ `d589c203`。
 实施地点：Owner 改为这台电脑完成（"全部在这台电脑做"），另一台收尾。
 
 **Owner 2026-10-23 追加**：AniMocap 原前端不要。Studio（`gui_main.cpp` 等）已在整合时删除，不再等 E 阶段；对拍改用标签 `archive-2026-10-23` 的源码/Release 二进制在临时目录构建旧 Studio。引擎版本固定为 `50549a85`（= 该标签），归档 bundle 中唯一未合并的 `codex/multiview-architecture` 为受阻 R&D 且与 main 冲突，不合入（见 `DECISIONS.md`）。
@@ -77,7 +77,7 @@ C 可以在 A/B 完成前用 fixture 动作包开工。
 
 ## D 阶段必须处理的已知问题（2026-10-23 审查）
 
-- **多视角拖拽方向**：`make_drag_correction` 把像素直接映射到世界 X/Y，没有按参考视角 yaw 旋转。参考视角 yaw≠0 的多视角 take，拖拽会朝错误方向；在修好前编辑界面对这类 take 禁用拖拽（锁定/排除/区间重建不受影响）。
+- ~~多视角拖拽方向~~（已修复 2026-10-27）：单视角与多视角的图像→世界约定相反（单视角图像右 = −X，多视角图像右 = cos(yaw)·X − sin(yaw)·Z）。`image_right_in_world` 从 take 自身最小二乘拟合方向，单视角结果与 Studio 一致。
 - **未生效的标记**：加权/排除只在区间重建内起作用（见 `docs/animocap-engine.md`），界面要把区间外的这类标记显示为“待重建”。
 
 ## 待定（实施中由 Owner 决定）

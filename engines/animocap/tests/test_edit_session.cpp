@@ -104,6 +104,28 @@ int main() {
     CHECK(loaded.corrections.size() == 1 && loaded.corrections[0].drag_px == session.corrections[0].drag_px);
     CHECK(same(apply_edit_session(refined, loaded).pose, smoothed.pose));
 
+    // Drag direction follows the take's camera: the single-view fixture keeps
+    // Studio's -X; a pose seen by a camera yawed 30 degrees moves along its axis.
+    {
+        const auto single = image_right_in_world(refined);
+        CHECK(single.x < -0.999 && std::abs(single.y) < 1e-6);
+        auto yawed = refined;
+        const double a = 30.0 * 3.14159265358979323846 / 180.0;
+        for (std::size_t f = 0; f < yawed.frames.size(); ++f) {
+            auto& joints = yawed.frames[f].joints;
+            for (std::size_t j = 0; j < joints.size(); ++j) {
+                const double x = 0.02 * std::sin(0.7 * j + 0.1 * f), z = 0.03 * std::cos(1.3 * j - 0.2 * f);
+                joints[j].position_m = {x, 1.0 + j * 0.03, z};
+                joints[j].image_xy = {320.0 + 400.0 * (std::cos(a) * x - std::sin(a) * z), 400.0 - j * 12.0};
+            }
+        }
+        const auto axis = image_right_in_world(yawed);
+        CHECK(std::abs(axis.x - std::cos(a)) < 1e-6 && std::abs(axis.y + std::sin(a)) < 1e-6);
+        const auto drag = make_drag_correction(yawed, {10, 20, {10.0, 0.0}, 4, CurvePreset::Smooth});
+        const auto& delta = drag.position_deltas_m[20];
+        CHECK(delta.x > 0.0 && delta.z < 0.0 && std::abs(delta.z / delta.x + std::tan(a)) < 1e-6);
+    }
+
     // Invalid edits are refused rather than clamped.
     {
         const auto negative = std::filesystem::temp_directory_path() / "animocap-edit-session-negative.json";

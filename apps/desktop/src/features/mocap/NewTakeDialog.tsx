@@ -32,7 +32,9 @@ export function NewTakeDialog({ workspaceRoot, onClose, onCreated }: Props) {
   useEffect(() => {
     listWorkspaceVideos(workspaceRoot)
       .then(setVideos)
-      .catch((reason) => setError(`无法列出视频：${reason instanceof Error ? reason.message : String(reason)}`));
+      .catch((reason) =>
+        setError(`无法列出视频：${reason instanceof Error ? reason.message : String(reason)}`)
+      );
   }, [workspaceRoot]);
 
   useEffect(() => {
@@ -46,7 +48,13 @@ export function NewTakeDialog({ workspaceRoot, onClose, onCreated }: Props) {
   const multiview = selected.length > 1;
 
   function toggle(path: string) {
-    setSelected((current) => (current.includes(path) ? current.filter((value) => value !== path) : current.length < 8 ? [...current, path] : current));
+    setSelected((current) =>
+      current.includes(path)
+        ? current.filter((value) => value !== path)
+        : current.length < 8
+          ? [...current, path]
+          : current
+    );
   }
 
   function applyPreset(key: string) {
@@ -92,7 +100,12 @@ export function NewTakeDialog({ workspaceRoot, onClose, onCreated }: Props) {
           <button type="button" disabled={busy || !selected.length} onClick={() => void create(false)}>
             仅创建
           </button>
-          <button type="button" className="mc-primary" disabled={busy || !selected.length} onClick={() => void create(true)}>
+          <button
+            type="button"
+            className="mc-primary"
+            disabled={busy || !selected.length}
+            onClick={() => void create(true)}
+          >
             创建并开始捕捉
           </button>
         </>
@@ -103,7 +116,9 @@ export function NewTakeDialog({ workspaceRoot, onClose, onCreated }: Props) {
           <span className="ui-eyebrow">视频（选 1 个为单视角，2–8 个为分别录制的多视角）</span>
           <div className="mc-video-list">
             {videos === null ? <span className="mc-muted">正在读取工作区视频…</span> : null}
-            {videos?.length === 0 ? <span className="mc-muted">工作区 media/ 里没有视频。先在图片库或视频页导入。</span> : null}
+            {videos?.length === 0 ? (
+              <span className="mc-muted">工作区 media/ 里没有视频。先在图片库或视频页导入。</span>
+            ) : null}
             {videos?.map((video) => {
               const index = selected.indexOf(video.path);
               return (
@@ -120,7 +135,9 @@ export function NewTakeDialog({ workspaceRoot, onClose, onCreated }: Props) {
                         type="number"
                         step={15}
                         value={yaws[video.path] ?? 0}
-                        onChange={(event) => setYaws((current) => ({ ...current, [video.path]: Number(event.target.value) }))}
+                        onChange={(event) =>
+                          setYaws((current) => ({ ...current, [video.path]: Number(event.target.value) }))
+                        }
                       />
                       °
                     </span>
@@ -133,7 +150,13 @@ export function NewTakeDialog({ workspaceRoot, onClose, onCreated }: Props) {
             <div className="mc-inline">
               <span className="mc-muted">方向预设：</span>
               {Object.entries(PRESETS).map(([key, preset]) => (
-                <button key={key} type="button" className="ui-btn--sm" onClick={() => applyPreset(key)} disabled={selected.length !== preset.yaws.length}>
+                <button
+                  key={key}
+                  type="button"
+                  className="ui-btn--sm"
+                  onClick={() => applyPreset(key)}
+                  disabled={selected.length !== preset.yaws.length}
+                >
                   {preset.label}
                 </button>
               ))}
@@ -143,12 +166,19 @@ export function NewTakeDialog({ workspaceRoot, onClose, onCreated }: Props) {
         </div>
         <label className="ui-field">
           <span className="ui-eyebrow">名称（可选）</span>
-          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="默认用视频文件名" />
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="默认用视频文件名"
+          />
         </label>
         <div className="mc-options">
           <label className="ui-field">
             <span className="ui-eyebrow">辅助 AI 间隔</span>
-            <select value={interval} onChange={(event) => setExpertInterval(event.target.value as TakeOptions["expertInterval"])}>
+            <select
+              value={interval}
+              onChange={(event) => setExpertInterval(event.target.value as TakeOptions["expertInterval"])}
+            >
               <option value="1">每帧</option>
               <option value="2">每 2 帧（试用默认）</option>
               <option value="3">每 3 帧</option>
@@ -188,7 +218,17 @@ export function NewTakeDialog({ workspaceRoot, onClose, onCreated }: Props) {
   );
 }
 
-function Dialog({ title, onClose, children, footer }: { title: string; onClose: () => void; children: ReactNode; footer: ReactNode }) {
+function Dialog({
+  title,
+  onClose,
+  children,
+  footer
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  footer: ReactNode;
+}) {
   return (
     <div className="ui-dialog-scrim" role="presentation" onPointerDown={onClose}>
       <section
@@ -201,7 +241,12 @@ function Dialog({ title, onClose, children, footer }: { title: string; onClose: 
       >
         <header className="ui-dialog__head">
           <h2 className="ui-dialog__title">{title}</h2>
-          <button type="button" className="ui-btn--ghost ui-btn--icon ui-btn--sm" onClick={onClose} aria-label="关闭">
+          <button
+            type="button"
+            className="ui-btn--ghost ui-btn--icon ui-btn--sm"
+            onClick={onClose}
+            aria-label="关闭"
+          >
             <IconClose size={14} />
           </button>
         </header>

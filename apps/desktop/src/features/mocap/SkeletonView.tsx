@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import type { PoseData } from "./mocapApi";
-import { boneSide, distanceMm, framePositions, inferredSet, jointLabel, makeProjection, sample, worldPoint, type Vec3 } from "./mocapDomain";
+import {
+  boneSide,
+  distanceMm,
+  framePositions,
+  inferredSet,
+  jointLabel,
+  makeProjection,
+  sample,
+  worldPoint,
+  type Vec3
+} from "./mocapDomain";
 import { canvasColors, fitCanvas } from "./mocapCanvas";
 
 type Props = {
@@ -23,7 +33,9 @@ export function SkeletonView({ pose, comparison, frame, selectedJoint }: Props) 
   useEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
-    const observer = new ResizeObserver(([entry]) => setSize({ width: entry.contentRect.width, height: entry.contentRect.height }));
+    const observer = new ResizeObserver(([entry]) =>
+      setSize({ width: entry.contentRect.width, height: entry.contentRect.height })
+    );
     observer.observe(wrap);
     return () => observer.disconnect();
   }, []);
@@ -38,7 +50,9 @@ export function SkeletonView({ pose, comparison, frame, selectedJoint }: Props) 
     const colors = canvasColors(canvas);
     const positions = framePositions(pose, frame);
     const ghost: Vec3[] = hasComparison
-      ? comparison!.joints.map((_, joint) => worldPoint(comparison!, frame, joint)).filter((_, joint) => sample(comparison!, frame, joint).valid)
+      ? comparison!.joints
+          .map((_, joint) => worldPoint(comparison!, frame, joint))
+          .filter((_, joint) => sample(comparison!, frame, joint).valid)
       : [];
     const projection = makeProjection(view.yaw, view.pitch, size, positions, ghost);
 
@@ -105,7 +119,12 @@ export function SkeletonView({ pose, comparison, frame, selectedJoint }: Props) 
           name: jointLabel(pose.joints[selectedJoint]),
           confidence: sample(pose, frame, selectedJoint).confidence,
           depth: worldPoint(pose, frame, selectedJoint)[2],
-          delta: hasComparison ? distanceMm(worldPoint(pose, frame, selectedJoint), worldPoint(comparison!, frame, selectedJoint)) : null
+          delta: hasComparison
+            ? distanceMm(
+                worldPoint(pose, frame, selectedJoint),
+                worldPoint(comparison!, frame, selectedJoint)
+              )
+            : null
         }
       : null;
 

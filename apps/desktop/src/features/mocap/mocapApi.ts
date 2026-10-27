@@ -2,7 +2,14 @@
 import { backendBaseUrl } from "../../lib/backendConfig";
 import type { EditSession } from "./mocapEdits";
 
-export type CaptureStatus = "new" | "capturing" | "cancelling" | "ready" | "failed" | "cancelled" | "interrupted";
+export type CaptureStatus =
+  | "new"
+  | "capturing"
+  | "cancelling"
+  | "ready"
+  | "failed"
+  | "cancelled"
+  | "interrupted";
 
 export type TakeSource = { id: string; video: string; yaw?: number; timeOffset?: number };
 
@@ -43,10 +50,16 @@ export type Take = {
   options: TakeOptions;
   capture: CaptureState;
   hasMotion: boolean;
-  edits?: { frameCount: number; corrections: number; reviewMarks: number; reviewRanges: number; updatedAt: string };
+  edits?: {
+    frameCount: number;
+    corrections: number;
+    reviewMarks: number;
+    reviewRanges: number;
+    updatedAt: string;
+  };
 };
 
-export type PoseVariant = "current" | "baseline" | "refined";
+export type PoseVariant = "current" | "baseline" | "refined" | "view";
 
 /** One pose sequence as flat arrays: index ``(frame * joints + joint) * k``. */
 export type PoseData = {
@@ -63,6 +76,17 @@ export type PoseData = {
   confidence: number[];
   valid: number[];
   inferred: [number, number][];
+};
+
+/** One view of a multiview take, for read-only review on the reference timeline. */
+export type TakeView = {
+  id: string;
+  video: string;
+  yaw: number | null;
+  pose: PoseData;
+  /** View frame (fractional) shown at each reference frame. */
+  sourceFrameAtReference: number[];
+  meanOffsetS: number | null;
 };
 
 export type TakeIssue = {
@@ -93,9 +117,20 @@ export type ExportRequest = {
 };
 
 /** Frames that changed, all joints of each, in PoseData's flat layout. */
-export type PoseDelta = { frames: number[]; image: number[]; position: number[]; confidence: number[]; valid: number[] };
+export type PoseDelta = {
+  frames: number[];
+  image: number[];
+  position: number[];
+  confidence: number[];
+  valid: number[];
+};
 
-export type EditReply = { inferred: [number, number][]; pose: PoseDelta; baseline: PoseDelta; editsHash: string };
+export type EditReply = {
+  inferred: [number, number][];
+  pose: PoseDelta;
+  baseline: PoseDelta;
+  editsHash: string;
+};
 
 export class MocapApiError extends Error {
   constructor(
@@ -106,7 +141,12 @@ export class MocapApiError extends Error {
   }
 }
 
-async function request<T>(method: string, path: string, query: Record<string, string> = {}, body?: unknown): Promise<T> {
+async function request<T>(
+  method: string,
+  path: string,
+  query: Record<string, string> = {},
+  body?: unknown
+): Promise<T> {
   const params = new URLSearchParams(query).toString();
   const response = await fetch(`${backendBaseUrl()}/api/mocap${path}${params ? `?${params}` : ""}`, {
     method,
@@ -127,17 +167,27 @@ export const mocapApi = {
   status: (deep = false) => request<EngineStatus>("GET", "/status", deep ? { deep: "true" } : {}),
   refreshStatus: () => request<EngineStatus>("POST", "/status/refresh"),
   openSetup: (name: string) => request<{ started: string }>("POST", `/setup/${encodeURIComponent(name)}`),
-  takes: (workspaceRoot: string) => request<{ takes: Take[] }>("GET", "/takes", { workspaceRoot }).then((r) => r.takes),
+  takes: (workspaceRoot: string) =>
+    request<{ takes: Take[] }>("GET", "/takes", { workspaceRoot }).then((r) => r.takes),
   take: (workspaceRoot: string, id: string) => request<Take>("GET", takePath(id), { workspaceRoot }),
-  createTake: (workspaceRoot: string, body: { name?: string; sources: TakeSource[]; options: Partial<TakeOptions> }) =>
-    request<Take>("POST", "/takes", { workspaceRoot }, body),
-  capture: (workspaceRoot: string, id: string) => request<Take>("POST", `${takePath(id)}/capture`, { workspaceRoot }),
-  cancel: (workspaceRoot: string, id: string) => request<Take>("POST", `${takePath(id)}/cancel`, { workspaceRoot }),
+  createTake: (
+    workspaceRoot: string,
+    body: { name?: string; sources: TakeSource[]; options: Partial<TakeOptions> }
+  ) => request<Take>("POST", "/takes", { workspaceRoot }, body),
+  capture: (workspaceRoot: string, id: string) =>
+    request<Take>("POST", `${takePath(id)}/capture`, { workspaceRoot }),
+  cancel: (workspaceRoot: string, id: string) =>
+    request<Take>("POST", `${takePath(id)}/cancel`, { workspaceRoot }),
   pose: (workspaceRoot: string, id: string, variant: PoseVariant = "current") =>
     request<PoseData>("GET", `${takePath(id)}/pose`, { workspaceRoot, variant }),
+  views: (workspaceRoot: string, id: string) =>
+    request<{ views: TakeView[] }>("GET", `${takePath(id)}/views`, { workspaceRoot }).then((r) => r.views),
   issues: (workspaceRoot: string, id: string) =>
-    request<{ issues: TakeIssue[] }>("GET", `${takePath(id)}/issues`, { workspaceRoot }).then((r) => r.issues),
-  edits: (workspaceRoot: string, id: string) => request<EditSession>("GET", `${takePath(id)}/edits`, { workspaceRoot }),
+    request<{ issues: TakeIssue[] }>("GET", `${takePath(id)}/issues`, { workspaceRoot }).then(
+      (r) => r.issues
+    ),
+  edits: (workspaceRoot: string, id: string) =>
+    request<EditSession>("GET", `${takePath(id)}/edits`, { workspaceRoot }),
   saveEdits: (workspaceRoot: string, id: string, edits: EditSession) =>
     request<EditReply>("POST", `${takePath(id)}/edits`, { workspaceRoot }, edits),
   updateOptions: (workspaceRoot: string, id: string, changes: Partial<TakeOptions>) =>

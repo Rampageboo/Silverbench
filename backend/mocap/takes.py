@@ -629,6 +629,27 @@ def _session(folder: Path, take: dict[str, Any]) -> editor.EngineSession:
     )
 
 
+# Engine refusals a user can cause while editing, in the UI's language.
+_REFUSALS = {
+    "Lock the selected joint at both interval endpoints first": "重建区间前，要先在区间两端各锁定一次这个部位。",
+    "Missing interval endpoint": "重建区间前，要先在区间两端各锁定一次这个部位。",
+    "Gap exceeds 0.75 seconds": "连续缺失或排除超过 0.75 秒，请在中间补一个锁定或加权的可信点。",
+    "Cannot trust a missing joint": "这个部位在这一帧没有观测，不能锁定或加权；先拖动修正它，或改用排除。",
+    "Duplicate review sample": "这一帧的这个部位已经有标记。",
+    "Invalid review interval": "区间无效：终点要在起点之后。",
+    "Unsolvable review interval": "这个区间无法求解，请缩小区间或补充可信点。",
+    "Review sample outside clip": "标记超出了动作的帧范围。",
+    "Review weight must be in [1,100]": "可信权重必须在 1–100 之间。",
+}
+
+
+def explain_refusal(message: str) -> str:
+    for prefix, text in _REFUSALS.items():
+        if message.startswith(prefix):
+            return text
+    return f"引擎拒绝了这次修改：{message}"
+
+
 def save_edits(layout: WorkspaceLayout, take_id: str, edits: dict[str, Any]) -> dict[str, Any]:
     """Apply a whole edit session. Returns only the frames that changed since the last edit.
 
@@ -643,7 +664,7 @@ def save_edits(layout: WorkspaceLayout, take_id: str, edits: dict[str, Any]) -> 
         try:
             reply = _session(folder, take).request(cmd="apply", edits=edits)
         except editor.Refused as error:
-            raise MocapError(f"The engine refused these edits: {error}") from error
+            raise MocapError(explain_refusal(str(error))) from error
         except engine.EngineError:
             # A crashed or stopped engine: start a fresh one once and retry.
             editor.close(str(folder))
@@ -752,7 +773,23 @@ def pose_data(layout: WorkspaceLayout, take_id: str, variant: str = "current") -
     path = paths[variant]
     if not path.is_file():
         raise MocapError("This take has no pose yet.")
-    document = _read_json(path)
+    inferred: list[list[int]] = []
+    edit_result = folder / "edit-result.json"
+    if variant == "current" and edit_result.is_file():
+        inferred = _read_json(edit_result).get("inferred", [])
+    return {"variant": variant, **_compact_pose(_read_json(path), _parents(folder), inferred)}
+
+
+def _parents(folder: Path) -> list[int]:
+    skeleton_path = folder / "motion.amotion" / "skeleton.json"
+    if not skeleton_path.is_file():
+        return []
+    bones = _read_json(skeleton_path)["bones"]
+    index_of = {bone["semantic"]: index for index, bone in enumerate(bones)}
+    return [index_of.get(bone["parent"], -1) if bone["parent"] else -1 for bone in bones]
+
+
+def _compact_pose(document: dict[str, Any], parents: list[int], inferred: list[list[int]]) -> dict[str, Any]:
     frames = document["frames"]
     joints = [joint["semantic"] for joint in frames[0]["joints"]] if frames else []
     image, position, confidence, valid = [], [], [], []
@@ -762,18 +799,7 @@ def pose_data(layout: WorkspaceLayout, take_id: str, variant: str = "current") -
             position.extend(joint["position_m"])
             confidence.append(round(float(joint["confidence"]), 4))
             valid.append(1 if joint["valid"] else 0)
-    parents: list[int] = []
-    skeleton_path = folder / "motion.amotion" / "skeleton.json"
-    if skeleton_path.is_file():
-        bones = _read_json(skeleton_path)["bones"]
-        index_of = {bone["semantic"]: index for index, bone in enumerate(bones)}
-        parents = [index_of.get(bone["parent"], -1) if bone["parent"] else -1 for bone in bones]
-    inferred: list[list[int]] = []
-    edit_result = folder / "edit-result.json"
-    if variant == "current" and edit_result.is_file():
-        inferred = _read_json(edit_result).get("inferred", [])
     return {
-        "variant": variant,
         "fps": document["fps"],
         "width": document["image_width"],
         "height": document["image_height"],
@@ -787,6 +813,41 @@ def pose_data(layout: WorkspaceLayout, take_id: str, variant: str = "current") -
         "valid": valid,
         "inferred": inferred,
     }
+
+
+def views(layout: WorkspaceLayout, take_id: str) -> list[dict[str, Any]]:
+    """Each view of a multiview take with its own 2D pose, for read-only review.
+
+    ``sourceFrameAtReference[r]`` is the view's (fractional) frame shown at
+    reference frame ``r`` (the fused pose's timeline), from the solver's phase
+    alignment; Studio played the views on the reference timeline the same way.
+    """
+    folder = take_dir(layout, take_id)
+    take = _load(folder)
+    if take["mode"] != "multiview":
+        return []
+    capture = folder / "capture"
+    alignments: dict[str, dict[str, Any]] = {}
+    diagnostics = capture / "multiview-diagnostics.json"
+    if diagnostics.is_file():
+        for alignment in _read_json(diagnostics).get("alignments") or []:
+            alignments[str(alignment.get("view_id"))] = alignment
+    parents = _parents(folder)
+    result = []
+    for source in take["sources"]:
+        path = capture / "poses" / source["id"] / "pose_sequence.json"
+        if not path.is_file():
+            continue  # a view whose inference failed keeps no pose
+        alignment = alignments.get(source["id"], {})
+        result.append({
+            "id": source["id"],
+            "video": source["video"],
+            "yaw": source.get("yaw"),
+            "pose": {"variant": "view", **_compact_pose(_read_json(path), parents, [])},
+            "sourceFrameAtReference": [round(float(v), 3) for v in alignment.get("source_frame_at_reference") or []],
+            "meanOffsetS": alignment.get("mean_offset_s"),
+        })
+    return result
 
 
 def issues(layout: WorkspaceLayout, take_id: str) -> list[dict[str, Any]]:

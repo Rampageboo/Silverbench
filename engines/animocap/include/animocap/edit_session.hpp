@@ -54,6 +54,9 @@ struct EditResult {
 std::vector<double> curve_preset_weights(
     std::size_t frame_count, std::size_t keyframe, std::size_t radius, CurvePreset preset);
 std::size_t default_drag_radius(double fps);
+// World XZ direction (x, z) of image-right for this pose's camera, fitted from
+// the take itself. Single view: (-1, 0); fused multiview: the reference camera's axis.
+Vec2 image_right_in_world(const PoseSequence& pose);
 ManualPoseCorrection make_drag_correction(const PoseSequence& reference, const DragCorrection& drag);
 
 EditResult apply_edit_session(
