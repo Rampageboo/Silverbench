@@ -228,3 +228,6 @@ apps/desktop/src-tauri/target/
 # GRAPH_REPORT.md is kept because it is small, readable, and diffs meaningfully.
 graphify-out/*
 !graphify-out/GRAPH_REPORT.md
+
+# Installer staging (packaging/stage.ps1)
+packaging/stage/

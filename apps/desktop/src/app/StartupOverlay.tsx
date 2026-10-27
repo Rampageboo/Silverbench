@@ -22,6 +22,8 @@ type StartupOverlayProps = {
   stage: string;
   detail: string;
   onPainted?: () => void;
+  /** Installed app: the runtime could not be prepared; show its log and a retry. */
+  failure?: { log: string[]; onRetry: () => void };
 };
 
 export function StartupOverlay({
@@ -31,7 +33,8 @@ export function StartupOverlay({
   progress,
   stage,
   detail,
-  onPainted
+  onPainted,
+  failure
 }: StartupOverlayProps) {
   const paintedRef = useRef(false);
 
@@ -109,6 +112,15 @@ export function StartupOverlay({
             <span>{detail}</span>
             <span>{percent}%</span>
           </div>
+          {failure ? (
+            <div className="startup-failure">
+              {failure.log.length ? <pre>{failure.log.slice(-8).join("\n")}</pre> : null}
+              <button type="button" onClick={failure.onRetry}>
+                重试
+              </button>
+              <span>日志：%LOCALAPPDATA%\RampageWorkbench\logs</span>
+            </div>
+          ) : null}
         </div>
       </section>
     </div>

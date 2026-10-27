@@ -1,0 +1,76 @@
+name: Release
+
+# Push a tag vX.Y.Z (scripts/release.ps1 does it) to build the Windows installer,
+# sign it for the in-app updater and publish it with latest.json to the Release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      - name: Tag matches the app version
+        shell: pwsh
+        run: |
+          $version = (Get-Content apps/desktop/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ("v$version" -ne "${{ github.ref_name }}") { throw "tag ${{ github.ref_name }} != app version $version (run scripts/release.ps1)" }
+
+      - name: Frontend checks
+        working-directory: apps/desktop
+        run: |
+          npm ci --no-audit --no-fund
+          npx tsc --noEmit -p .
+          npx vitest run
+
+      - name: Build and test the motion-capture engine
+        working-directory: engines/animocap
+        shell: pwsh
+        run: |
+          python -m pip install ninja
+          ./tools/build_msvc.ps1 -Configuration Release
+
+      - name: Stage installer contents
+        shell: pwsh
+        run: ./packaging/stage.ps1
+
+      - name: Release notes
+        id: notes
+        shell: pwsh
+        run: |
+          $file = "docs/releases/${{ github.ref_name }}.md"
+          $body = if (Test-Path $file) { Get-Content $file -Raw -Encoding UTF8 } else { "RampageWorkbench ${{ github.ref_name }}" }
+          "body<<RWB_NOTES_END`n$body`nRWB_NOTES_END" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Build, sign and publish
+        uses: tauri-apps/tauri-action@action-v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: RampageWorkbench ${{ github.ref_name }}
+          releaseBody: ${{ steps.notes.outputs.body }}
+          releaseDraft: false
+          prerelease: false
+          args: --config src-tauri/tauri.release.conf.json
+          uploadUpdaterJson: true

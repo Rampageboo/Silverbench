@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -11,7 +12,8 @@ from .path_access import PathAccess
 
 SUPPORTED_SCHEMA_MAJOR = 2
 REPO_ROOT = Path(__file__).resolve().parent.parent
-UI_MAPS_ROOT = REPO_ROOT / "ui_maps"
+# The installed app keeps them per user (its install folder is replaced on update).
+UI_MAPS_ROOT = Path(os.environ["RWB_UI_MAPS_DIR"]) if os.environ.get("RWB_UI_MAPS_DIR") else REPO_ROOT / "ui_maps"
 _SCHEMA_VERSION_RE = re.compile(r"^(\d+)\.(\d+)$")
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 

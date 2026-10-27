@@ -141,3 +141,29 @@
     width: min(360px, calc(100vw - 48px));
   }
 }
+
+.startup-failure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 10px;
+}
+
+.startup-failure pre {
+  flex: 1 1 100%;
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+.startup-failure span {
+  opacity: 0.7;
+  font-size: 12px;
+}
+

@@ -1,5 +1,6 @@
 import { useMultimodalControls } from "../../input/MultimodalControlProvider";
 import { ModelMemoryStatus } from "./ModelMemoryStatus";
+import { UpdateStatus } from "../../features/update/AppUpdate";
 import type { ImageWorkspaceTab } from "../../features/image-pool/imageWorkspaceMode";
 import type { ToolTab } from "../../types/tools";
 import { IconMic, IconSearch, IconSettings, IconSidebar } from "../../ui/icons";
@@ -134,6 +135,7 @@ export function Sidebar({
             {collapsed ? null : <span>{backendConnected ? "Backend" : "Offline"}</span>}
           </span>
           <ModelMemoryStatus connected={backendConnected} collapsed={collapsed} />
+          <UpdateStatus collapsed={collapsed} />
           <button
             type="button"
             className={`shell-status__item shell-status__btn${controls.armed ? " is-armed" : ""}${controlsOpen ? " is-open" : ""}`}

@@ -23,12 +23,25 @@
     ],
     "security": {
       "csp": null,
-      "capabilities": ["default"]
+      "capabilities": [
+        "default"
+      ]
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
     "resources": []
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ1MTMzMjgzQkE3NThFQzAKUldUQWpuVzZneklUMWZxOVFuWXdnMGEwYjZIZmJYU2YyMVFQYzRuQnlYTU5YRDgzWjN6eWNFcTMK",
+      "endpoints": [
+        "https://github.com/Rampageboo/RampageWorkbench/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

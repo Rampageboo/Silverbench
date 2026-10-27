@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { UpdateSettingsSection } from "../features/update/AppUpdate";
 import { appSettings, writeAppSettings } from "../api";
 import {
   normalizeStartupOverlayMode,
@@ -172,6 +173,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               ))}
             </div>
           </section>
+
+          <UpdateSettingsSection />
 
           <GallerySettingsSection open={open} />
 

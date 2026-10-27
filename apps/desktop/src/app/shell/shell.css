@@ -599,4 +599,27 @@
     color: var(--c-text-3);
     word-break: break-all;
   }
+
+  .update-notes {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 4px 10px;
+    max-width: 360px;
+  }
+
+  .update-notes__body {
+    margin: 0;
+    max-height: 180px;
+    overflow: auto;
+    white-space: pre-wrap;
+    font-family: var(--font-ui);
+    font-size: var(--fs-xs);
+    color: var(--c-text-2);
+  }
+
+  .settings-actions {
+    display: flex;
+    gap: 8px;
+  }
 }
