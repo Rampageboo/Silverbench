@@ -8,6 +8,7 @@ import { IconSidebar } from "../../ui/icons";
 import "./labelWorkbench.css";
 import { LabelMediaGrid, type LabelMediaSelection } from "./LabelMediaGrid";
 import { AutoLabelModelPanel } from "./AutoLabelModelPanel";
+import { YoloAiReview } from "../ai-review/YoloAiReview";
 import { VideoBoxLabelSurface, wrappedAdjacentVideoMarkerTime } from "./VideoBoxLabelSurface";
 import { classBoxColor } from "../shared/classColors";
 import { useWorkspaceClasses } from "../workspace/useWorkspaceClasses";
@@ -490,6 +491,26 @@ export function LabelPage({ active = true, onReady }: Props) {
                           onAssignClassificationClass={assignClassificationClass}
                           onClassesChanged={reloadWorkspaceClasses}
                         />
+                      )
+                    },
+                    {
+                      id: "ai-review",
+                      label: "AI review",
+                      content: entry ? (
+                        <YoloAiReview
+                          key={`${workspaceRoot}:${entry.basename}`}
+                          workspaceRoot={workspaceRoot}
+                          filename={entry.basename}
+                          onAccept={(prediction) =>
+                            applyAutoLabelPredictions(entry, [prediction], {
+                              highConfidence: 0,
+                              proposalConfidence: 0,
+                              modelId: "api-human-reviewed"
+                            })
+                          }
+                        />
+                      ) : (
+                        <p>Select an image first.</p>
                       )
                     },
                     {

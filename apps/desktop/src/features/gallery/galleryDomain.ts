@@ -148,17 +148,22 @@ export type AssetDraft = {
   collection: string;
   personalTags: string;
   notes: string;
+  caption?: string;
+  aiRequestId?: string;
   userEdits: GalleryUserEdits;
 };
 
 export function draftFromAsset(
-  asset: Pick<GalleryAsset, "rating" | "collection" | "personalTags" | "notes" | "userEdits">
+  asset: Pick<GalleryAsset, "rating" | "collection" | "personalTags" | "notes" | "userEdits"> & {
+    caption?: string;
+  }
 ): AssetDraft {
   return {
     rating: asset.rating,
     collection: asset.collection,
     personalTags: asset.personalTags.join(", "),
     notes: asset.notes,
+    caption: asset.caption ?? "",
     userEdits: structuredClone(asset.userEdits ?? {})
   };
 }
@@ -182,16 +187,20 @@ function sameJson(a: unknown, b: unknown) {
 
 /** Only fields that actually differ; userEdits is sent whole (the API replaces it). */
 export function draftPatch(
-  asset: Pick<GalleryAsset, "rating" | "collection" | "personalTags" | "notes" | "userEdits">,
+  asset: Pick<GalleryAsset, "rating" | "collection" | "personalTags" | "notes" | "userEdits"> & {
+    caption?: string;
+  },
   draft: AssetDraft
 ) {
-  const patch: Partial<Pick<GalleryAsset, "rating" | "collection" | "personalTags" | "notes" | "userEdits">> =
-    {};
+  const patch: Partial<
+    Pick<GalleryAsset, "rating" | "collection" | "personalTags" | "notes" | "userEdits" | "caption">
+  > = {};
   if (draft.rating !== asset.rating) patch.rating = draft.rating;
   if (draft.collection !== asset.collection) patch.collection = draft.collection;
   const tags = parsePersonalTags(draft.personalTags);
   if (!sameJson(tags, asset.personalTags)) patch.personalTags = tags;
   if (draft.notes !== asset.notes) patch.notes = draft.notes;
+  if (draft.caption !== undefined && draft.caption !== (asset.caption ?? "")) patch.caption = draft.caption;
   if (!sameJson(draft.userEdits, asset.userEdits ?? {})) patch.userEdits = draft.userEdits;
   return patch;
 }

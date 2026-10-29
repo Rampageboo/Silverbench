@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "../../components/useToast";
+import { aiRequest } from "../ai-review/aiApi";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import {
   IconDownload,
@@ -232,6 +233,15 @@ export function GalleryPage({ active = true, onReady }: Props) {
     setSaveError(null);
     try {
       const updated = await galleryApi.editAsset(id, patch);
+      if (savedDraft.aiRequestId) {
+        await aiRequest(`/requests/${savedDraft.aiRequestId}/caption-decision`, {
+          decision: "accepted"
+        }).catch(() =>
+          setSaveError(
+            "Image edits saved; AI provenance update failed. Refresh the review ledger before retrying."
+          )
+        );
+      }
       // Only adopt the response if the user is still on the same image.
       setAsset((current) => (current?.id === id ? updated : current));
       // Drop the draft only if nothing was typed while the save was in flight.

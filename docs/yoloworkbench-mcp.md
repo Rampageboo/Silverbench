@@ -66,3 +66,11 @@ Workspace and inference:
   and poll.
 
 No tool deletes images or files.
+
+Optional model API review:
+
+- `review_image_with_api` calls the shared [AI review API](ai-review-api.md).
+  It defaults to local-only and returns pending proposals without changing labels.
+  Cloud mode requires configured prices/budgets and explicit image-upload consent.
+  This tool is non-idempotent and open-world; inspect its ledger before repeating
+  an interrupted call. Use `YWB_MCP_BACKEND_TIMEOUT_SECONDS=60` for cloud review.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 import threading
 import tomllib
@@ -222,8 +223,8 @@ class BackendClientTests(unittest.TestCase):
 class McpStdioContractTests(unittest.IsolatedAsyncioTestCase):
     async def test_stdio_initializes_with_expected_tools_and_annotations(self) -> None:
         params = StdioServerParameters(
-            command="cmd.exe",
-            args=["/d", "/c", str(ROOT / "scripts" / "run-yoloworkbench-mcp.cmd")],
+            command=sys.executable,
+            args=["-m", "yoloworkbench_mcp.server"],
             cwd=str(ROOT),
         )
 
@@ -233,7 +234,7 @@ class McpStdioContractTests(unittest.IsolatedAsyncioTestCase):
                 response = await session.list_tools()
 
         tools = {tool.name: tool for tool in response.tools}
-        self.assertEqual(len(tools), 26)
+        self.assertEqual(len(tools), 27)
         self.assertEqual(
             set(tools),
             {
@@ -263,6 +264,7 @@ class McpStdioContractTests(unittest.IsolatedAsyncioTestCase):
                 "start_folder_inference",
                 "get_inference_job",
                 "cancel_inference_job",
+                "review_image_with_api",
             },
         )
         stateful = {
@@ -276,10 +278,11 @@ class McpStdioContractTests(unittest.IsolatedAsyncioTestCase):
             "set_image_status",
             "export_dataset",
             "gallery_describe",
+            "review_image_with_api",
         }
         for name, tool in tools.items():
             self.assertEqual(tool.annotations.readOnlyHint, name not in stateful, name)
-            self.assertFalse(tool.annotations.openWorldHint, name)
+            self.assertEqual(tool.annotations.openWorldHint, name == "review_image_with_api", name)
         self.assertFalse(tools["start_image_inference"].annotations.readOnlyHint)
         self.assertFalse(tools["start_image_inference"].annotations.destructiveHint)
         self.assertTrue(tools["cancel_inference_job"].annotations.idempotentHint)
@@ -298,8 +301,8 @@ class McpStdioContractTests(unittest.IsolatedAsyncioTestCase):
         env["YWB_BACKEND_URL"] = f"http://{host}:{port}"
         env["YWB_MCP_ALLOWED_ROOTS"] = str(ROOT)
         params = StdioServerParameters(
-            command="cmd.exe",
-            args=["/d", "/c", str(ROOT / "scripts" / "run-yoloworkbench-mcp.cmd")],
+            command=sys.executable,
+            args=["-m", "yoloworkbench_mcp.server"],
             cwd=str(ROOT),
             env=env,
         )

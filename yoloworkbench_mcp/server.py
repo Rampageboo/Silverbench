@@ -248,6 +248,36 @@ def create_server(bridge: YoloWorkBenchBridge | None = None) -> FastMCP:
         """Write a caption and/or tags (plus optional notes, 0-5 rating, collection) for a gallery image."""
         return gallery.describe(asset_id, caption, tags, tags_mode, notes, rating, collection)
 
+    # -- Opt-in model API review -------------------------------------------------
+
+    @server.tool(annotations=ToolAnnotations(
+        title="Propose boxes using a model API", readOnlyHint=False,
+        destructiveHint=False, idempotentHint=False, openWorldHint=True,
+    ))
+    def review_image_with_api(
+        workspace_root: str,
+        filename: str,
+        provider: Literal["local", "openai", "claude", "openai_decisions"] = "local",
+        model: str = "",
+        allow_cloud_upload: bool = False,
+        batch_id: str = "default",
+        detail: Literal["low", "high", "auto"] = "low",
+        max_output_tokens: int = 2048,
+        questions: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Get independent, approximate box proposals or typed routing answers.
+
+        Cloud calls require the user's upload consent, enabled backend settings and configured model prices.
+        Never infer upload consent from a request to inspect or label locally. Proposals remain pending;
+        this tool does not change labels, reviewed status or training data. No retries after unknown billing.
+        """
+        root = tools._workspace_ready(workspace_root)
+        return tools.backend.post_json("/api/ai/review", {
+            "workspace_root": str(root), "filename": filename, "provider": provider, "model": model,
+            "allow_cloud_upload": allow_cloud_upload, "batch_id": batch_id, "detail": detail,
+            "max_output_tokens": max_output_tokens, "questions": questions,
+        })
+
     # -- Inference jobs ----------------------------------------------------------
 
     @server.tool(annotations=_read_only("Get inference job"))

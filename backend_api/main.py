@@ -82,6 +82,10 @@ from backend_api.mocap import router as mocap_router
 app.include_router(gallery_router)
 app.include_router(mocap_router)
 service = create_desktop_backend_service(APP_DIR, SESSION_DIR, app_data_dir())
+from backend.ai_review import AiReviewService
+from backend_api.ai_review import create_router as create_ai_review_router
+
+app.include_router(create_ai_review_router(AiReviewService(app_data_dir()), service.path_access.require_path))
 
 app.add_middleware(
     CORSMiddleware,

@@ -234,3 +234,12 @@ packaging/stage/
 
 # Scratch screenshots from UI work
 .tmp-ui-refresh/
+
+# Local API credentials and temporary encrypted-key setup
+.env.local
+.keysetup/
+.venv-api/
+.tmp-ai-tests*/
+
+.release-public/
+.release-public.patch

@@ -24,6 +24,7 @@ import {
 import { IconAlert, IconCopy, IconEyeOff, IconStar } from "../../ui/icons";
 import { GalleryBreakdown } from "./GalleryBreakdown";
 import { GalleryControls } from "./GalleryControls";
+import { GalleryAiReview } from "../ai-review/GalleryAiReview";
 
 type Props = {
   asset: GalleryAssetDetail;
@@ -219,6 +220,15 @@ export function GalleryDetail({
 
         <section className="gal-section">
           <h3 className="gal-section__title">Organize</h3>
+          <label className="gal-field">
+            <span>Caption</span>
+            <textarea
+              aria-label="Saved caption draft"
+              rows={3}
+              value={draft.caption ?? ""}
+              onChange={(event) => onDraftChange({ ...draft, caption: event.target.value })}
+            />
+          </label>
           <div className="gal-field gal-field--inline">
             <span>Rating</span>
             <div className="gal-stars gal-stars--lg" role="radiogroup" aria-label="Rating">
@@ -268,6 +278,8 @@ export function GalleryDetail({
             />
           </label>
         </section>
+
+        <GalleryAiReview key={asset.id} asset={asset} draft={draft} onDraftChange={onDraftChange} />
 
         <section className="gal-section">
           <div className="gal-section__head">
